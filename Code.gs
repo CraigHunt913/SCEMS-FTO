@@ -3094,9 +3094,7 @@ function refreshSkillValidationQueueV19_() {
     ]);
   });
 
-  Object.keys(open).forEach(function (key) {
-    if (!readyKeys[key]) queue.getRange(open[key], 12).setValue('CANCELLED : CRITERIA CHANGED');
-  });
+  sweepStaleQueueRowsV20_2_(queue, open, readyKeys, matrixRows.length, queueRows);
 
   if (add.length) {
     var start = Math.max(queue.getLastRow() + 1, 5);
@@ -3124,6 +3122,93 @@ function refreshSkillValidationQueueV19_() {
 
   // and refresh the review flags for anything newly added
   try { runSkillAuditV20(); } catch (e) {}
+}
+
+/* ---------------------------------------------------------------- *
+ *  Stale-queue sweep  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** The most rows one automatic sweep may cancel before it refuses and asks
+ *  for a human. A real criteria change — a catalog edit, a level correction —
+ *  moves a handful of rows. Dozens at once is a symptom, not an intention. */
+var QUEUE_SWEEP_MAX_V20_2 = 10;
+
+/** Cancels queue rows whose skill is no longer ready.
+ *
+ *  This used to be one line:
+ *
+ *    Object.keys(open).forEach(function (key) {
+ *      if (!readyKeys[key]) queue.getRange(open[key], 12)
+ *        .setValue('CANCELLED : CRITERIA CHANGED');
+ *    });
+ *
+ *  readyKeys is built entirely from the matrix, and its caller,
+ *  rebuildSkillMatrixV19_, clears the matrix and then writes rows only
+ *  `if (output.length)`. So any run that produced no output — an empty
+ *  roster, a catalog with no active skills, a level lookup that threw —
+ *  left readyKeys empty, and the sweep cancelled EVERY open sign-off
+ *  request in the queue. In bulk. With no log, no attribution, and no
+ *  confirmation, on a schedule, including rows a leader was mid-decision on
+ *  three lines above where drafts are explicitly protected from sorting.
+ *
+ *  A stale OPEN row is a visible nuisance. A wrongly cancelled one is lost
+ *  work that nobody is told about. This refuses when it cannot tell the
+ *  difference. */
+function sweepStaleQueueRowsV20_2_(queue, open, readyKeys, matrixRowCount, queueRows) {
+  var openKeys = Object.keys(open);
+  if (!openKeys.length) return 0;
+
+  // 1. No matrix means "we cannot tell", never "nothing qualifies".
+  if (!matrixRowCount) {
+    systemLog_('ERROR', 'QUEUE SWEEP REFUSED',
+      'The skill matrix read back empty, so every one of the ' + openKeys.length +
+      ' open request(s) would have been cancelled as "criteria changed". ' +
+      'Nothing was cancelled. Rebuild the matrix and check the roster and catalog.');
+    return 0;
+  }
+
+  // 2. A row holding a draft decision belongs to whoever is deciding it.
+  var draftRows = {};
+  (queueRows || []).forEach(function (qr, i) {
+    if (String(qr[11]) === 'OPEN' && String(qr[6] || '').trim()) draftRows[i + 5] = true;
+  });
+
+  var stale = [], protectedDrafts = 0;
+  openKeys.forEach(function (key) {
+    if (readyKeys[key]) return;
+    if (draftRows[open[key]]) { protectedDrafts++; return; }
+    stale.push({ row: open[key], key: key });
+  });
+  if (protectedDrafts) {
+    systemLog_('INFO', 'QUEUE SWEEP SKIPPED DRAFTS',
+      protectedDrafts + ' row(s) left alone because a decision is part-written on them.');
+  }
+  if (!stale.length) return 0;
+
+  // 3. Mass cancellation is a symptom. Refuse the whole sweep and say so.
+  if (stale.length > QUEUE_SWEEP_MAX_V20_2 || stale.length * 2 > openKeys.length) {
+    var why = 'Would have cancelled ' + stale.length + ' of ' + openKeys.length +
+      ' open request(s) as "criteria changed". That is past the safety limit (' +
+      QUEUE_SWEEP_MAX_V20_2 + ' rows, or half the open queue), so nothing was cancelled.\n\n' +
+      'This usually means the matrix rebuilt from incomplete data rather than that ' +
+      'the criteria really changed for that many skills at once.\n\n' +
+      'Affected rows: ' + stale.slice(0, 20).map(function (x) { return x.row; }).join(', ') +
+      (stale.length > 20 ? ' …' : '') + '\n\n' +
+      'Check 01 TRAINEE MASTER, 15 SKILL CATALOG and 16 SKILLS, then re-run ' +
+      'rebuildSkillMatrixV19_(). The requests are still OPEN and safe.';
+    systemLog_('ERROR', 'QUEUE SWEEP REFUSED', why.slice(0, 400));
+    try { sendMail(CONFIG.TCO_EMAIL, 'SCEMS : queue sweep refused, nothing cancelled', why); } catch (e) {}
+    return 0;
+  }
+
+  // 4. Cancel, and record each one.
+  stale.forEach(function (x) {
+    queue.getRange(x.row, 12).setValue('CANCELLED : CRITERIA CHANGED');
+    systemLog_('WARN', 'QUEUE ROW CANCELLED',
+      'row ' + x.row + ' | ' + x.key.split('||').join(' / ') +
+      ' | no longer ready on the matrix');
+  });
+  return stale.length;
 }
 
 /* ---- ported from zz (effective winner) ---- */
@@ -4427,6 +4512,33 @@ function rebuildSkillMatrixV19_() {
         ]);
       });
   });
+  // v20.2 — never clear the matrix down to nothing.
+  //
+  // This clears up to 3,000 rows and then writes `output` only when it has
+  // rows. An empty roster, a catalog with no ACTIVE skills, or a level
+  // lookup that came back blank therefore wiped the matrix, and everything
+  // downstream reads an empty matrix as fact: refreshSkillValidationQueueV19_
+  // cancelled the whole open queue as "criteria changed", and the v20.2
+  // evidence gate refuses every approval as "not on the matrix".
+  //
+  // Computing nothing while the sheet holds something is not a valid
+  // rebuild — it is a failed read. Say so and leave the previous matrix
+  // standing.
+  if (!output.length) {
+    var hadRows = matrix.getLastRow() >= 5;
+    var why = 'Matrix rebuild produced 0 rows. Trainees on the master: ' +
+      Object.keys(trainees).length + '. Active catalog skills: ' + catalog.length + '. ' +
+      (hadRows ? 'The existing matrix was LEFT IN PLACE rather than cleared.'
+               : 'The matrix was already empty; nothing changed.');
+    systemLog_('ERROR', 'MATRIX REBUILD PRODUCED NOTHING', why);
+    if (hadRows) {
+      try { sendMail(CONFIG.TCO_EMAIL, 'SCEMS : matrix rebuild produced nothing', why +
+        '\n\nCheck 01 TRAINEE MASTER for trainees and 15 SKILL CATALOG for rows marked ' +
+        'ACTIVE. Nothing was cancelled and no records were touched.'); } catch (e) {}
+      return;
+    }
+  }
+
   ensureSheetCapacityV19_(matrix, Math.max(3000, output.length + 4), 23);
   matrix.getDataRange().getMergedRanges().forEach(function (r) { r.breakApart(); });
   matrix.getRange(5, 1, matrix.getMaxRows() - 4, 20).clearContent();
