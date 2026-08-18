@@ -3922,6 +3922,33 @@ function dailyChecks() {
 
 /* ---- ported from master (effective winner) ---- */
 
+
+/* ================================================================
+ *  START HERE
+ * ================================================================ */
+
+/** The one function to run after pasting v20.2.
+ *
+ *  It takes NO arguments on purpose. The Apps Script editor's Run button
+ *  cannot pass any, so goLiveChecklistV20_2("someone@example.com") is not
+ *  actually runnable from the editor — a detail that matters more than it
+ *  should, because it is the first thing anyone does.
+ *
+ *  It works out who you are from the session, so there is nothing to type.
+ *  Falls back to the configured program director if Google says nothing.
+ *
+ *  Safe to run again at any time. It writes no records and deletes nothing.
+ */
+function START_HERE() {
+  var who = '';
+  try { who = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (!who) {
+    try { who = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e2) {}
+  }
+  if (!who) who = String(CONFIG.FTO_PROGRAM_DIRECTOR || CONFIG.TCO_EMAIL || '').toLowerCase();
+  return goLiveChecklistV20_2(who);
+}
+
 /* ---------------------------------------------------------------- *
  *  Deployment  (v20.2)
  * ---------------------------------------------------------------- */

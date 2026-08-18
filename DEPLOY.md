@@ -1,11 +1,15 @@
 # Deploying SCEMS v20.2
 
-Two commands. The first tells you what state you are in; the second changes it.
+One function. Paste the code, then run **`START_HERE`**.
 
 ```
+START_HERE()                                   // does everything, in order
 deploymentStatusV20_2()                        // read-only, safe any time
-goLiveChecklistV20_2("you@example.com")        // does the work, in order
 ```
+
+`START_HERE` takes no arguments, because the Apps Script Run button cannot
+pass any. It works out who you are from the session, so there is nothing to
+type. See STEP-BY-STEP.md for click-by-click instructions.
 
 Both are in the script editor. `deploymentStatusV20_2` is also on the menu
 under **SCEMS ▸ Admin ▸ Deployment status**.
@@ -20,8 +24,7 @@ under **SCEMS ▸ Admin ▸ Deployment status**.
    it does not appear, the file did not save — check for a red error marker
    in the editor.
 
-3. **Run `goLiveChecklistV20_2("your-address@example.com")`** from the script
-   editor. Use the address you are signed in as. Authorize the script when
+3. **Run `START_HERE`** from the script editor. Authorize the script when
    Google asks.
 
    It performs, stopping at the first failure:
@@ -50,8 +53,8 @@ under **SCEMS ▸ Admin ▸ Deployment status**.
 
 ## After an upgrade
 
-Run `goLiveChecklistV20_2()` with no argument. It skips the operator step if
-identity already resolves, and re-runs the rest.
+Run `START_HERE` again. It skips the operator step if identity already
+resolves, and re-runs the rest. Every step is safe to repeat.
 
 ---
 
