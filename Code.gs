@@ -5987,16 +5987,31 @@ function onSkillsGridSubmitV20(e) {
           TAB.SKILL_EVIDENCE + '.\n\nReasons seen:\n- ' + Object.keys(reasonsSeen).join('\n- ') +
           '\n\nNo competency state was changed by the rejected events.');
       }
+      // An unsafe outcome is a safety signal in its own right, so it is NOT
+      // gated on validation. A rejected event accrues no competency evidence
+      // and would otherwise be visible to nobody — which is exactly the case
+      // where somebody needs to hear about it.
       var unsafe = prospective.filter(function (ev) {
-        return ev.validation === EV_ACCEPTED_V19 && ev.outcome === 'Unsuccessful / unsafe';
+        return ev.outcome === 'Unsuccessful / unsafe';
       });
       if (unsafe.length) {
+        var unsafeRejected = unsafe.filter(function (ev) {
+          return ev.validation !== EV_ACCEPTED_V19;
+        });
         sendMail(CONFIG.TCO_EMAIL + ',' + CONFIG.SUPERVISOR_EMAILS,
           'URGENT : Skill Event Unsuccessful / Unsafe : ' + traineeName,
           'FTO ' + ftoName + ' recorded ' + unsafe.length + ' unsuccessful/unsafe skill event(s) on ' +
           dateKeyV20_1_(shiftDate) + ':\n\n' +
-          unsafe.map(function (ev) { return '- ' + ev.skill + ' (' + ev.context + ')'; }).join('\n') +
+          unsafe.map(function (ev) {
+            return '- ' + ev.skill + ' (' + ev.context + ')' +
+              (ev.validation === EV_ACCEPTED_V19 ? '' : '\n     NOT RECORDED : ' + ev.validation);
+          }).join('\n') +
           '\n\nEvidence: ' + note + '\nCall/scenario: ' + (refCall || 'not provided') +
+          (unsafeRejected.length
+            ? '\n\nNOTE: ' + unsafeRejected.length + ' of the above did not pass validation, so no ' +
+              'competency\nevidence was recorded for them. The safety concern still stands — a ' +
+              'rejection\nis a bookkeeping defect, not a judgement about what happened on the call.'
+            : '') +
           '\n\nReview the Skill Evidence Log and determine immediate training restrictions.');
       }
       if (unparsedAll.length) {
@@ -6146,6 +6161,45 @@ function ensureQueueRequestIdsV20_1_() {
     added++;
   });
   return added;
+}
+
+/** Re-resolves a queue row from its REQUEST ID. Row numbers are NOT stable
+ *  across a call to recordDecisionForRowV20_1_: that rebuilds the matrix,
+ *  which calls refreshSkillValidationQueueV19_, which re-sorts the queue by
+ *  RECORD STATUS. Any batch that captured row numbers up front must re-derive
+ *  each row immediately before writing to it. Returns 0 when the request is
+ *  no longer on the sheet. */
+function queueRowByRequestIdV20_1_(requestId) {
+  var id = String(requestId || '').trim();
+  if (!id) return 0;
+  var t = queueTableV20_1_();
+  if (!t.ok || t.col['REQUEST ID'] === undefined) return 0;
+  for (var i = 0; i < t.rows.length; i++) {
+    if (String(t.rows[i][t.col['REQUEST ID']] || '').trim() === id) return t.firstDataRow + i;
+  }
+  return 0;
+}
+
+/** Writes the four operator-owned decision cells on one queue row, mapped by
+ *  header name rather than by fixed column number, so a column insert refuses
+ *  instead of silently writing into the wrong cells. Rationale is sanitized:
+ *  it is free text that recordDecisionForRowV20_1_ later reads back into the
+ *  permanent sign-off record. */
+function writeQueueDecisionV20_1_(row, decision, decider, decisionDate, rationale) {
+  var t = queueTableV20_1_();
+  if (!t.ok) throw new Error('Queue not found; nothing written to row ' + row + '.');
+  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE'];
+  var idx = need.map(function (h) { return t.col[h]; });
+  var missing = need.filter(function (h, i) { return idx[i] === undefined; });
+  if (missing.length) {
+    throw new Error('Refusing to write queue row ' + row + ': missing header(s) ' +
+      missing.join(', ') + '. Repair the header row on "' + TAB.SKILL_VALIDATION + '".');
+  }
+  var sh = t.sheet;
+  sh.getRange(row, idx[0] + 1).setValue(decision);
+  sh.getRange(row, idx[1] + 1).setValue(decider);
+  sh.getRange(row, idx[2] + 1).setValue(decisionDate || new Date());
+  sh.getRange(row, idx[3] + 1).setValue(sanitizeCellV20_1_(String(rationale || '')));
 }
 
 /** Loads the sign-off log indexed by decision ID and by request ID. */
@@ -6876,6 +6930,7 @@ function applyLinkDecisionsV20_1(confirmToken) {
  *  Closed-trainee rows are left alone (they go through the stranded
  *  workflow). Shows a count and asks once before doing anything. */
 function approveAllReadyV20_1() {
+  ensureQueueRequestIdsV20_1_(); // every candidate needs a stable ID to re-find its row
   var t = queueTableV20_1_();
   if (!t.ok) return 'Queue not found.';
   var closed = {}, onMaster = {};
@@ -6892,6 +6947,8 @@ function approveAllReadyV20_1() {
     var tn = normalizeNameV20_1_(trainee);
     if (closed[tn] || !onMaster[tn]) return; // stranded workflow owns these
     candidates.push({ row: t.firstDataRow + i, trainee: trainee,
+                      requestId: t.col['REQUEST ID'] !== undefined
+                        ? String(r[t.col['REQUEST ID']] || '').trim() : '',
                       skill: String(r[t.col['SKILL']] || '').slice(0, 30) });
   });
   if (!candidates.length) {
@@ -6914,16 +6971,22 @@ function approveAllReadyV20_1() {
       return 'Cancelled. Nothing recorded.';
     }
   }
-  var sh = t.sheet;
   var decider = sessionEmailV20_1_() || 'C. Hunt';
   var out = [];
   candidates.forEach(function (c) {
-    sh.getRange(c.row, 7).setValue('Approve sign-off');
-    sh.getRange(c.row, 8).setValue(decider);
-    sh.getRange(c.row, 9).setValue(new Date());
-    sh.getRange(c.row, 11).setValue('Evidence thresholds met, FTO recommendation accepted');
-    try { out.push(recordDecisionForRowV20_1_(c.row)); }
-    catch (e2) { out.push('row ' + c.row + ' FAILED: ' + e2); }
+    // Recording rebuilds the matrix, which re-sorts the queue, so the row
+    // captured before this loop may now belong to a different request.
+    var row = c.requestId ? queueRowByRequestIdV20_1_(c.requestId) : 0;
+    if (!row) {
+      out.push(c.trainee + ' — ' + c.skill + ' SKIPPED: request ' +
+        (c.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
+      return;
+    }
+    try {
+      writeQueueDecisionV20_1_(row, 'Approve sign-off', decider, new Date(),
+        'Evidence thresholds met, FTO recommendation accepted');
+      out.push(recordDecisionForRowV20_1_(row));
+    } catch (e2) { out.push(c.trainee + ' — ' + c.skill + ' FAILED: ' + e2); }
   });
   var homeNote = '';
   try { refreshHomeNowV20_1(); homeNote = '\n\nHOME page updated.'; } catch (eH) {}
@@ -8192,6 +8255,7 @@ function makeQueueReadableV20_1() {
 
 function workMyQueueV20_1() {
   var ui = SpreadsheetApp.getUi();
+  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
   var t = queueTableV20_1_();
   if (!t.ok) { ui.alert('Queue tab not found.'); return; }
 
@@ -8215,7 +8279,9 @@ function workMyQueueV20_1() {
         'finish it on the tab with the RECORD checkbox, or clear it)');
       return;
     }
-    items.push({ row: row, trainee: trainee, skill: skill });
+    items.push({ row: row, trainee: trainee, skill: skill,
+                 requestId: t.col['REQUEST ID'] !== undefined
+                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
   });
 
   if (!items.length) {
@@ -8261,16 +8327,23 @@ function workMyQueueV20_1() {
         'Additional documented evidence required before sign-off';
     }
 
-    var sh = t.sheet;
-    sh.getRange(it.row, 7).setValue(choice === 'A' ? 'Approve sign-off' : 'Return for more evidence');
-    sh.getRange(it.row, 8).setValue(decider);
-    sh.getRange(it.row, 9).setValue(new Date());
-    sh.getRange(it.row, 11).setValue(rationale);
+    // Recording rebuilds the matrix, which re-sorts the queue, so the row
+    // captured before this loop may now belong to a different request.
+    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
+    if (!liveRow) {
+      skippedN++;
+      results.push(it.trainee + ' — ' + it.skill + ' SKIPPED: request ' +
+        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
+      continue;
+    }
     try {
-      results.push(recordDecisionForRowV20_1_(it.row));
+      writeQueueDecisionV20_1_(liveRow,
+        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
+        decider, new Date(), rationale);
+      results.push(recordDecisionForRowV20_1_(liveRow));
       if (choice === 'A') approved++; else returned++;
     } catch (e) {
-      results.push('row ' + it.row + ' ' + it.trainee + ' FAILED: ' + e);
+      results.push(it.trainee + ' — ' + it.skill + ' FAILED: ' + e);
     }
   }
 
@@ -8599,6 +8672,7 @@ function approveTraineeOnViewV20_1() {
   var rec = resolved.record;
   if (rec.closed) { ui.alert(rec.name + ' is closed/released. Nothing to decide.'); return; }
 
+  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
   var t = queueTableV20_1_();
   if (!t.ok) { ui.alert('Queue tab not found.'); return; }
   var items = [], drafts = [];
@@ -8611,7 +8685,9 @@ function approveTraineeOnViewV20_1() {
       drafts.push(skill + ' (row ' + row + ' has a draft decision — finish it on tab 20)');
       return;
     }
-    items.push({ row: row, skill: skill });
+    items.push({ row: row, skill: skill,
+                 requestId: t.col['REQUEST ID'] !== undefined
+                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
   });
 
   if (!items.length) {
@@ -8658,16 +8734,23 @@ function approveTraineeOnViewV20_1() {
         'Additional documented evidence required before sign-off';
     }
 
-    var sh = t.sheet;
-    sh.getRange(it.row, 7).setValue(choice === 'A' ? 'Approve sign-off' : 'Return for more evidence');
-    sh.getRange(it.row, 8).setValue(decider);
-    sh.getRange(it.row, 9).setValue(new Date());
-    sh.getRange(it.row, 11).setValue(rationale);
+    // Recording rebuilds the matrix, which re-sorts the queue, so the row
+    // captured before this loop may now belong to a different request.
+    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
+    if (!liveRow) {
+      skippedN++;
+      results.push(it.skill + ' SKIPPED: request ' +
+        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
+      continue;
+    }
     try {
-      results.push(recordDecisionForRowV20_1_(it.row));
+      writeQueueDecisionV20_1_(liveRow,
+        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
+        decider, new Date(), rationale);
+      results.push(recordDecisionForRowV20_1_(liveRow));
       if (choice === 'A') approved++; else returned++;
     } catch (e) {
-      results.push('row ' + it.row + ' FAILED: ' + e);
+      results.push(it.skill + ' FAILED: ' + e);
     }
   }
 
