@@ -1,0 +1,862 @@
+<title>SCEMS v20.1.0i Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F4F6F7;
+    --surface:    #FFFFFF;
+    --ink:        #12191F;
+    --muted:      #5C6D78;
+    --faint:      #8496A1;
+    --hairline:   #D9E1E5;
+    --rule-heavy: #B9C7CE;
+    --accent:     #0F5C6B;
+    --accent-dim: #E2EEF0;
+
+    --sev-stop:   #A8201A;
+    --sev-crit:   #B3402A;
+    --sev-high:   #9A5B12;
+    --sev-med:    #6F6420;
+    --sev-clear:  #1D6A4F;
+
+    --stop-wash:  #FBEEEC;
+    --clear-wash: #E9F2EE;
+
+    --measure: 68ch;
+    --step--1: 0.815rem;
+    --step-0:  1.0rem;
+    --step-1:  1.19rem;
+    --step-2:  1.48rem;
+    --step-3:  1.95rem;
+    --step-4:  2.7rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0D1317;
+      --surface:    #141D23;
+      --ink:        #E3EBEF;
+      --muted:      #97A9B4;
+      --faint:      #6E828E;
+      --hairline:   #26343C;
+      --rule-heavy: #3A4C56;
+      --accent:     #58B6C6;
+      --accent-dim: #17323A;
+
+      --sev-stop:   #F0796C;
+      --sev-crit:   #E8836F;
+      --sev-high:   #DCA24E;
+      --sev-med:    #BFB055;
+      --sev-clear:  #5FBE95;
+
+      --stop-wash:  #2A1614;
+      --clear-wash: #12271F;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0D1317;
+    --surface:    #141D23;
+    --ink:        #E3EBEF;
+    --muted:      #97A9B4;
+    --faint:      #6E828E;
+    --hairline:   #26343C;
+    --rule-heavy: #3A4C56;
+    --accent:     #58B6C6;
+    --accent-dim: #17323A;
+
+    --sev-stop:   #F0796C;
+    --sev-crit:   #E8836F;
+    --sev-high:   #DCA24E;
+    --sev-med:    #BFB055;
+    --sev-clear:  #5FBE95;
+
+    --stop-wash:  #2A1614;
+    --clear-wash: #12271F;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size: var(--step-0);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 0 1.5rem 6rem;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    padding: 4rem 0 1.75rem;
+    border-bottom: 2px solid var(--rule-heavy);
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-4);
+    line-height: 1.06;
+    letter-spacing: -0.021em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: var(--step-1);
+    line-height: 1.5;
+    color: var(--muted);
+    margin: 0;
+    max-width: var(--measure);
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2.4rem;
+    padding-top: 0.4rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    color: var(--faint);
+  }
+  .facts b {
+    display: block;
+    font-weight: 600;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .facts div { padding: 0.35rem 0; }
+
+  /* ---------- sections ---------- */
+
+  section { padding-top: 3.4rem; }
+
+  h2 {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-3);
+    letter-spacing: -0.014em;
+    line-height: 1.15;
+    margin: 0 0 0.5rem;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+    font-size: var(--step-1);
+    letter-spacing: -0.005em;
+    line-height: 1.28;
+    margin: 0 0 0.45rem;
+    text-wrap: balance;
+  }
+
+  .lede {
+    color: var(--muted);
+    max-width: var(--measure);
+    margin: 0 0 1.6rem;
+  }
+
+  p { margin: 0 0 0.9rem; max-width: var(--measure); }
+  p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.87em;
+  }
+  code {
+    background: var(--accent-dim);
+    color: var(--ink);
+    padding: 0.1em 0.34em;
+  }
+
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--rule-heavy);
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    margin: 0 0 0.9rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  /* ---------- findings: gutter + prose ---------- */
+
+  .finding {
+    display: grid;
+    grid-template-columns: 12.5rem 1fr;
+    gap: 0 2.2rem;
+    padding: 1.7rem 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .finding:first-of-type { border-top: 1px solid var(--rule-heavy); }
+
+  .gutter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    align-items: flex-start;
+  }
+
+  .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.24rem 0.5rem;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .t-stop  { color: var(--sev-stop); background: var(--stop-wash); }
+  .t-crit  { color: var(--sev-crit); }
+  .t-high  { color: var(--sev-high); }
+  .t-med   { color: var(--sev-med); }
+  .t-clear { color: var(--sev-clear); background: var(--clear-wash); }
+
+  .refs {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.755rem;
+    line-height: 1.75;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    word-break: break-word;
+  }
+  .refs span { display: block; }
+
+  .body > :last-child { margin-bottom: 0; }
+
+  .verdict {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.735rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sev-clear);
+  }
+
+  /* ---------- callout ---------- */
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-top: 3px solid var(--sev-stop);
+    padding: 1.4rem 1.5rem;
+    margin: 0 0 1.8rem;
+  }
+  .callout h3 { margin-top: 0; }
+  .callout > :last-child { margin-bottom: 0; }
+
+  /* ---------- tables ---------- */
+
+  .tablewrap { overflow-x: auto; margin: 0 0 1.2rem; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 34rem;
+    font-size: var(--step--1);
+  }
+  caption {
+    text-align: left;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.735rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding-bottom: 0.6rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.55rem 1rem 0.55rem 0;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: top;
+  }
+  th {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+    font-size: 0.775rem;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+  td.num { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.8rem; }
+
+  /* ---------- ordered roadmap ---------- */
+
+  ol.roadmap { list-style: none; counter-reset: step; padding: 0; margin: 0; }
+  ol.roadmap > li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 3rem 1fr;
+    gap: 0 1.4rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--hairline);
+  }
+  ol.roadmap > li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.12rem;
+  }
+  ol.roadmap p { margin-bottom: 0.35rem; }
+  ol.roadmap .cost {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.735rem;
+    color: var(--faint);
+  }
+
+  ul.plain { padding-left: 1.15rem; margin: 0 0 0.9rem; max-width: var(--measure); }
+  ul.plain li { margin-bottom: 0.4rem; }
+
+  details {
+    border-top: 1px solid var(--hairline);
+    padding: 0.9rem 0;
+  }
+  summary {
+    cursor: pointer;
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+    font-size: var(--step-0);
+  }
+  details[open] summary { margin-bottom: 0.8rem; }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.4rem;
+    border-top: 2px solid var(--rule-heavy);
+    color: var(--faint);
+    font-size: var(--step--1);
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 46rem) {
+    .finding { grid-template-columns: 1fr; gap: 0.7rem; }
+    .gutter { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
+    .refs span { display: inline; margin-right: 0.8rem; }
+    :root { --step-4: 2.1rem; --step-3: 1.6rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Field Training &amp; Personnel Development System</p>
+    <h1>SCEMS v20.1.0i Review</h1>
+    <p class="standfirst">Six independent reviews of the consolidated Apps Script build, cross-checked against the source. The competency pipeline is not running, and three tools written to repair records destroy them instead.</p>
+    <div class="facts">
+      <div>Reviewed <b>10,289 lines</b></div>
+      <div>Functions <b>277</b></div>
+      <div>Review passes <b>6</b></div>
+      <div>Findings verified <b>at source</b></div>
+      <div>Build <b>v20.1.0i</b></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Fix these first</h2>
+    <p class="lede">Two of these are single-word changes. Together they are why no trainee has accrued skill evidence and why no unsafe-skill alert has ever been sent.</p>
+
+    <div class="callout">
+      <h3>The skills pipeline rejects 100% of submissions</h3>
+      <p><code>validateSkillEventV20_1_</code> reads a property that no code ever assigns:</p>
+      <pre><code>// Code.gs:5687
+if (String(catalogEntry.approval || '').toUpperCase() !== 'APPROVED') {
+  problems.push('catalog row is not APPROVED');
+}</code></pre>
+      <p><code>catalogObjectsV19_</code> — the only builder of that object — maps the <span class="mono">APPROVAL STATUS</span> column to <code>status</code>, not <code>approval</code>. I grepped all 10,289 lines: <code>approval:</code> is never assigned. So the check is <em>true for every skill event ever submitted</em>.</p>
+      <p>The consequence that matters most is not the blocked evidence. It is this, at <span class="mono">Code.gs:5983</span>:</p>
+      <pre><code>var unsafe = prospective.filter(function (ev) {
+  return ev.validation === EV_ACCEPTED_V19 &amp;&amp; ev.outcome === 'Unsuccessful / unsafe';
+});</code></pre>
+      <p>Nothing is ever <span class="mono">ACCEPTED</span>, so <code>unsafe.length</code> is always zero. <strong>An FTO who documents that a trainee was unsuccessful or unsafe on a live patient generates no urgent email to anyone.</strong> The only mail sent is a generic rejection notice whose body never contains the word "unsafe."</p>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-stop">Blocker</span>
+        <div class="refs"><span>Code.gs:5687</span></div>
+      </div>
+      <div class="body">
+        <h3>Change <code>catalogEntry.approval</code> to <code>catalogEntry.status</code></h3>
+        <p>One word. Then, separately, move the unsafe-outcome alert <em>outside</em> the acceptance gate — an unsafe outcome must reach leadership even when the event is rejected for a roster or date defect.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-stop">Blocker</span>
+        <div class="refs"><span>Code.gs:4516</span><span>Code.gs:5705</span></div>
+      </div>
+      <div class="body">
+        <h3>A second, independent blocker on the same pipeline</h3>
+        <p><code>promptingForStageV19_('I')</code> returns <code>'None'</code>. The validator accepts only <code>'No prompting required'</code> or <code>'Minimal verbal cue'</code> for an Independent stage. <code>'None'</code> is neither.</p>
+        <p>So even after the first fix, <strong>every "Performed independently" rep is still rejected</strong>, <span class="mono">INDEPENDENT REPS</span> stays at zero forever, and <span class="mono">MIN INDEPENDENT REPS</span> can never be met. Two separate fixes are required, not one.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-stop">Blocker</span>
+        <div class="refs"><span>Code.gs:10168</span><span>Code.gs:10026</span><span>Code.gs:10269</span></div>
+      </div>
+      <div class="body">
+        <h3>Stop running the two flag tools; run the reversal</h3>
+        <p>Detailed under <a href="#integrity">Records integrity</a>. The immediate action is to run <code>unwrapAuditFormulasV20_1</code>, which restores the audit formulas <code>simplifyFlagsV20_1</code> rewrote — and to leave the acknowledgement rows in place as the record of what happened.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="integrity">
+    <h2>Records integrity</h2>
+    <p class="lede">This system exists to produce defensible personnel documentation. These four findings go directly to whether it can.</p>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-stop">Blocker</span>
+        <div class="refs"><span>Code.gs:10168</span><span>Code.gs:10227</span><span>Code.gs:10256</span></div>
+      </div>
+      <div class="body">
+        <h3>The flag system can be silenced by the person it audits</h3>
+        <p><code>simplifyFlagsV20_1</code> does three things in sequence: it writes a review-log row for every burning flag with no human reading any of them, then rewrites each detection formula to consult the log it just wrote, then hides the tab.</p>
+        <pre><code>// Code.gs:10227
+au.getRange(rowN, 2 + c2).setFormula('=IF(' + ackTest + ',"ACK",' + inner + ')');</code></pre>
+        <p>It is a closed loop: <strong>the function fabricates the acknowledgement, then rewires the detector to accept its own fabrication.</strong> The key is <span class="mono">(trainee, flag-type)</span>, not per-event, so once logged, every future flag of that type for that trainee reads <span class="mono">ACK</span> permanently. The completion message states "A flag returns on its own only if NEW data re-triggers it." That is false.</p>
+        <p>The file itself declares this prohibited. <code>redoAuditTabV20_1</code> writes "Nothing here is dismissed by hand" onto every flag header, and <code>onSheetEdit</code> hard-blocks the bulk-clear checkbox with <span class="mono">AUDIT CLEAR-ALL BLOCKED</span>. The code specifies the control, builds the enforcement, then ships a function that defeats it wholesale.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-stop">Blocker</span>
+        <div class="refs"><span>Code.gs:10090</span><span>Code.gs:10094</span></div>
+      </div>
+      <div class="body">
+        <h3><code>fixAllFlagsNowV20_1</code> alters primary records</h3>
+        <p>It flips an FTO's submitted "Scored 1 or 5" answer from No to Yes on the tab of record, then writes narrative text into the evaluation attributed to that FTO — asserting the words are theirs. The FTO never wrote, saw, or approved that sentence.</p>
+        <p>The practical consequence is worse than the individual rows: the Google Form response history still holds the original answers, so <strong>tab 02 and the Forms record now disagree.</strong> That divergence is independently discoverable, and once found it puts every evaluation in the workbook in question — including the honest ones.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-crit">Corruption</span>
+        <div class="refs"><span>Code.gs:6913</span><span>Code.gs:8257</span><span>Code.gs:8654</span><span>Code.gs:3092</span></div>
+      </div>
+      <div class="body">
+        <h3>Bulk approval writes decisions onto the wrong rows</h3>
+        <p>The three approval loops capture row numbers in a snapshot <em>before</em> iterating. Each call to <code>recordDecisionForRowV20_1_</code> sets the status to <span class="mono">RECORDED</span>, then triggers a rebuild that reaches <code>sortQueueByTraineeV20_</code> — which sorts by <span class="mono">RECORD STATUS</span>, moving the just-recorded row below the OPEN block and shifting every remaining row up.</p>
+        <p>The guard at <span class="mono">3089</span> was added specifically to prevent this, but it only trips on OPEN rows that <em>already</em> hold a decision. These three functions select rows with no decision and fill it one row at a time, so the guard is false on every pass.</p>
+        <p>From iteration two onward the loop writes the decision, decider, date and canned rationale onto whatever row now occupies that index. <strong>One trainee is silently skipped; another is signed off without ever appearing in the confirmation dialog.</strong> Later iterations overwrite already-recorded rows, leaving visible cells that no longer match the immutable sign-off record behind them.</p>
+        <p><code>recordPendingDecisionsV20_1</code> is accidentally safe — its candidates all carry decisions, which keeps the sort suppressed. That asymmetry is why this has stayed hidden.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-crit">Corruption</span>
+        <div class="refs"><span>Code.gs:8760</span><span>Code.gs:3069</span></div>
+      </div>
+      <div class="body">
+        <h3>The phantom repair destroys the decisions it is meant to restore</h3>
+        <p><code>fixPhantomsNowV20_1</code> reopens every phantom row to <span class="mono">OPEN</span>, then records them one at a time. After the <em>first</em> record, the rebuild chain reaches an unconditional sweep:</p>
+        <pre><code>// Code.gs:3069
+Object.keys(open).forEach(function (key) {
+  if (!readyKeys[key]) queue.getRange(open[key], 12).setValue('CANCELLED : CRITERIA CHANGED');
+});</code></pre>
+        <p>A phantom's skill is by definition already decided, so its readiness is <span class="mono">SIGNED OFF</span> — not in <code>readyKeys</code>. Every remaining reopened row is cancelled, and the recorder then skips them as "not OPEN."</p>
+        <p><strong>Only the first phantom is repaired. The rest lose their original status permanently</strong> — and the summary reports "Phantoms remaining: 0", because <code>phantomRowsV20_1_</code> only inspects rows in the three decided states. The cancelled rows are invisible to it. It reports success while having lost the records.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:6916</span><span>Code.gs:8311</span><span>Code.gs:6322</span></div>
+      </div>
+      <div class="body">
+        <h3>No evidence gate exists in the write path</h3>
+        <p><code>recordDecisionForRowV20_1_</code> — the single writer to the permanent sign-off log — validates form completeness and decider authority. It never consults <code>skillReadinessV19_</code>, the evidence log, or any threshold. The readiness column is advisory only.</p>
+        <p>Three call sites then hard-code the rationale <span class="mono">"Evidence thresholds met, FTO recommendation accepted"</span> — a factual assertion the code never checked, written into the immutable record under a named decider.</p>
+        <p>The sharpest case: a row queued as <span class="mono">SIGNED OFF - REVIEW REQUIRED</span> means the trainee performed the skill <em>unsafely after being signed off</em>. <code>approveAllReadyV20_1</code> picks it up like any other row. On the next rebuild the new decision post-dates the unsafe event, so the flag clears and readiness reverts to plain <span class="mono">SIGNED OFF</span>. One menu click erases a post-sign-off safety flag and replaces it with a competency attestation.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:5212</span><span>Code.gs:1723</span><span>Code.gs:5190</span></div>
+      </div>
+      <div class="body">
+        <h3>The paramedic dual sign-off gate has four silent bypasses</h3>
+        <p><code>needsDualSignoffV19_</code> returns <code>false</code> — falling through to the single-signature path that closes the queue item — on any of: the trainee failing an exact-string lookup in a 40-row window, a level string that isn't exactly <span class="mono">Paramedic</span> or <span class="mono">Advanced EMT</span>, a phase that isn't exactly <span class="mono">Phase 4</span>, or a release filed under any other item type.</p>
+        <p>It also never checks that the two signatures come from different people. <code>signaturesOnFileV19_</code> keys purely on the self-declared role string in the form, so <strong>one person can satisfy both keys by submitting twice and choosing a different role each time.</strong></p>
+        <p>Separately: an Advanced EMT correctly routed through the gate is documented in the permanent authorisation email as a <em>Paramedic</em>, because the code prints the constant <code>DUAL_SIGNOFF_LEVEL_V19</code> instead of <code>rec.level</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Authorization</h2>
+    <p class="lede">The file defines a competent authorization model and then barely calls it. Across 10,289 lines there are four call sites.</p>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Where authorization is actually checked</caption>
+        <thead>
+          <tr><th>Function</th><th>Line</th><th>Guarded?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Handover card request</td><td class="num">1187, 1199</td><td>Yes</td></tr>
+          <tr><td>Skills form ingest</td><td class="num">5874</td><td>Partly — see below</td></tr>
+          <tr><td>Skill decision recording</td><td class="num">6360</td><td>Yes, with a fallback hole</td></tr>
+          <tr><td>Advance a trainee</td><td class="num">8029</td><td>No</td></tr>
+          <tr><td>Close / release a trainee</td><td class="num">6694</td><td>No</td></tr>
+          <tr><td>Approve everything ready</td><td class="num">6870</td><td>No</td></tr>
+          <tr><td>Go live / back to test</td><td class="num">78, 106</td><td>No</td></tr>
+          <tr><td>FTO scoreboard</td><td class="num">9569</td><td>No</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-crit">Critical</span>
+        <div class="refs"><span>Code.gs:6203</span></div>
+      </div>
+      <div class="body">
+        <h3>Authority granted by typing a job title</h3>
+        <p>When <code>Session.getActiveUser().getEmail()</code> returns an empty string — normal for consumer Gmail accounts, and this program already uses <span class="mono">@gmail.com</span> addresses — the entire authorization decision collapses to:</p>
+        <pre><code>var leaders = ['divisionchiefoftraining', 'medicaldirector'];
+var match = leaders.indexOf(norm) >= 0;</code></pre>
+        <p>Typing <span class="mono">Medical Director</span> into DECIDED BY grants sign-off authority. The row is tagged <span class="mono">[IDENTITY UNVERIFIED]</span> and a notice is mailed, but the competency record is already written and the matrix already rebuilt.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-crit">Critical</span>
+        <div class="refs"><span>Code.gs:5889</span><span>Code.gs:5954</span></div>
+      </div>
+      <div class="body">
+        <h3>The skills-form identity check is decorative on its main branch</h3>
+        <p><code>identityFlag</code> is assigned at <span class="mono">5889</span> and <span class="mono">5893</span>, logged at <span class="mono">5896</span>, and never referenced again. Only <code>identityProblem</code> reaches <code>problems.push()</code>. A submission from an unrecognised Google account is logged as a warning and written anyway, with no marker on the evidence row itself.</p>
+        <p>These forms are published on the public portal. The hard rejection fires only when the submitter's email resolves to a <em>different registered FTO</em> — an attacker's address resolves to nobody and takes the soft path.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-crit">Critical</span>
+        <div class="refs"><span>Code.gs:8029</span><span>Code.gs:6694</span><span>Code.gs:8070</span></div>
+      </div>
+      <div class="body">
+        <h3>Advancement and release are unguarded</h3>
+        <p>Neither function calls any authorization check. The only identity handling is <code>var decider = sessionEmailV20_1_() || 'C. Hunt';</code> — a label, not a gate. Any spreadsheet editor can promote a trainee to Phase 4 or close their record, and where the platform cannot reveal the account, the permanent record attributes the decision to a named person who did not make it.</p>
+        <p>That <span class="mono">'C. Hunt'</span> fallback appears at five decision-writing sites and three more unconditionally inside the flag tools.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:706</span><span>Code.gs:9569</span><span>Code.gs:8260</span><span>Code.gs:4808</span></div>
+      </div>
+      <div class="body">
+        <h3>Four further exposures</h3>
+        <ul class="plain">
+          <li><strong>Privilege escalation via tab 22.</strong> The roster's EMAIL column is part of the allowlist directly, and the tab has no protections. Adding a row with your own address and <span class="mono">TRAINS PARAMEDIC=Y</span> grants the FTO role.</li>
+          <li><strong>The scoreboard has no scope filter.</strong> <code>ftoScoreboardV20_1</code> mails every active trainee's phase, overdue status and <em>audit flags</em> to whoever clicks the menu item — including flags the handover card deliberately withholds.</li>
+          <li><strong>Formula injection reaches the permanent record.</strong> <code>sanitizeCellV20_1_</code> has only six call sites; the free-text rationale prompts write straight to cells. Worse, <code>recordDecisionForRowV20_1_</code> reads that cell back with <code>getValues()</code>, so an injected formula's <em>evaluated result</em> is frozen into the sign-off record.</li>
+          <li><strong>HTML injection into leadership email.</strong> <code>escHtmlV19_</code> is used 21 times and zero of them are in <code>traineeCard_</code>, which interpolates FTO-typed free text raw into the weekly supervisor digest.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Safety alerting</h2>
+    <p class="lede">Every path below can stop an urgent notification from reaching a human, without producing an error anywhere.</p>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:389</span><span>Code.gs:3549</span></div>
+      </div>
+      <div class="body">
+        <h3>One mail failure kills every later alert in the same submission</h3>
+        <p><code>sendMail</code> rethrows on failure, and <code>evalAlerts</code> is a bare sequence of six sends with no try/catch around any of them — with each <code>queueAdd</code> running <em>after</em> its send. A quota exhaustion on the first send means the controlled-substance alert, the red-flag alert, the Medical Director notice, the NRT alert and the advancement alert all never happen — <strong>and their 72-hour queue rows are never created</strong>, so the breach detector has nothing to find.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:1486</span><span>Code.gs:1515</span></div>
+      </div>
+      <div class="body">
+        <h3>The retry guard overwrites itself</h3>
+        <p><code>alreadyMirrored</code> is true only when the ledger state is exactly <span class="mono">VALIDATED</span> — but the <code>catch</code> writes <span class="mono">FAILED</span>, overwriting it. Any post-mirror failure therefore guarantees a second mirror write on retry, and the alerts sit outside the guard entirely, so they re-fire too.</p>
+        <p>The inverse is worse: if the platform does <em>not</em> retry, the evaluation sits on tab 02 with no unsafe-score alert ever sent. The comment asserting "Apps Script retries" is not reliable for installable triggers.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:4632</span><span>Code.gs:3554</span><span>Code.gs:1421</span></div>
+      </div>
+      <div class="body">
+        <h3>A form-question reorder silently corrupts every eval alert</h3>
+        <p>The eval path reads entirely by fixed position — <code>EV.CS</code>, <code>EV.REDFLAG</code>, <code>v[12 + i]</code> for the six domain scores — and there is <strong>no header verification on this path anywhere in the file.</strong> <code>classifySheetEventV20_1_</code> inspects exactly one cell.</p>
+        <p>Insert a question anywhere in positions 3–12 and the row still classifies as an eval, but every index shifts. Real unsafe scores produce nothing, and unrelated "Yes" answers produce false urgent alerts and phantom 72-hour clocks. Move or rename the "FTO name" question instead and the submission is quarantined with nothing mirrored and no alert of any kind.</p>
+        <p>The inconsistency proves the fix is known: the skills handler reads the same form by header name. Only the safety-critical reader is positional.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:61</span><span>Code.gs:376</span><span>Code.gs:3634</span></div>
+      </div>
+      <div class="body">
+        <h3>Two more ways alerting goes quiet</h3>
+        <ul class="plain">
+          <li><strong>Test mode is fail-dead, not fail-safe.</strong> Any unreadable Properties store yields TEST mode, which reroutes every alert — including unsafe scores and 72-hour breaches — to one consumer inbox. Nothing raises an alarm: <code>systemHeartbeat</code> does not check the flag. Given <code>stepE_replayLostResponses</code> exists to recover "restore-eaten responses," this workbook has already been through a restore.</li>
+          <li><strong>A full decision queue permanently blocks ingestion.</strong> <code>queueAdd</code> throws once rows 5–300 are occupied, from inside <code>onHubFormSubmit</code>'s try block. Closed items are never removed, so the window fills monotonically and never recovers.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Platform limits</h2>
+    <p class="lede">Apps Script gives you six minutes per execution and, on a consumer account, 100 mail recipients per day. Both are already at risk.</p>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:4237</span><span>Code.gs:4350</span></div>
+      </div>
+      <div class="body">
+        <h3>The matrix rebuild is a full workbook re-render on every write</h3>
+        <p><code>rebuildSkillMatrixV19_</code> does not just write data. It also calls <code>rewriteEngineSkillMetricV19_</code> (40 individual formula round trips), <code>refreshSkillValidationQueueV19_</code> → <code>runSkillAuditV20</code> (one <code>setValue</code> per open queue row), and <code>applySkillsLayoutV19_</code> — which repaints roughly a quarter-million cell formats, rebuilds nine conditional-format rules, and recreates filters on four sheets.</p>
+        <p>It runs on every skill submission, every recorded decision, every trainee close, and every new name typed on tab 01. A timeout inside the submit lock leaves the ledger stuck at <span class="mono">RECEIVED</span>, because a hard kill never reaches the catch.</p>
+        <p><strong>This is the single highest-leverage change available.</strong> Splitting the data write from the presentation repaint, and batching the three per-cell loops, takes the per-submission cost from tens of seconds to under one — and removes the row-shift corruption as a side effect, since a single post-loop rebuild sorts once, after all writes are done.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-high">High</span>
+        <div class="refs"><span>Code.gs:4457</span><span>Code.gs:4495</span><span>Code.gs:552</span></div>
+      </div>
+      <div class="body">
+        <h3>Trainee 41 disappears silently</h3>
+        <p>Three readers of the same tab use three different row windows:</p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Reader</th><th>Window</th><th>Feeds</th></tr></thead>
+            <tbody>
+              <tr><td><code>masterTraineeMapV19_</code></td><td class="num">rows 5–44 (40)</td><td>the skill matrix</td></tr>
+              <tr><td><code>getList</code></td><td class="num">rows 5–64 (60)</td><td>tab 05 and tab 23 pickers</td></tr>
+              <tr><td><code>masterTraineeRowsV20_1_</code></td><td class="num">getLastRow (∞)</td><td>Google Form choices</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>So the 41st trainee appears in the form dropdown, can have evidence submitted for them, and has zero matrix rows, no queue entry, no reminder, no status card and no audit flag. Nothing errors. <code>dailyChecks</code> reads 40 rows too, so they never get an overdue notice either.</p>
+        <p>The cheap mitigation is two lines: log a <span class="mono">BLOCKER</span> from <code>masterTraineeRowsV20_1_</code> when the count exceeds 40. That converts a silent failure into a loud one before you widen the windows.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-med">Medium</span>
+        <div class="refs"><span>Code.gs:7966</span><span>Code.gs:1389</span><span>Code.gs:9386</span></div>
+      </div>
+      <div class="body">
+        <h3>Three quieter ceilings</h3>
+        <ul class="plain">
+          <li><strong>The combined skills form has no trigger.</strong> Form-bound triggers are created for the three level forms and handover only. Yet <code>formTitlesOwnedByFormTriggersV20_1_</code> lists the combined form, so <code>onHubFormSubmit</code> marks its submissions <span class="mono">SKIPPED_OWNED</span> — a terminal success state — and defers them to a handler that does not exist.</li>
+          <li><strong>Mail quota.</strong> A normal Monday with all weekly triggers firing reaches roughly 138 recipients before a single form is submitted, against a 100/day consumer cap. Worse, a mail failure inside a submit handler marks the ledger <span class="mono">FAILED</span> — quota exhaustion becomes an ingestion failure.</li>
+          <li><strong>Matrix counters capped at row 3000.</strong> The engine and HOME KPI formulas count <code>$A$5:$A$3000</code> while the matrix grows unbounded. At 40 trainees the cap is breached at 75 applicable skills each — almost certainly already true.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is working</h2>
+    <p class="lede">Three of the six reviews set out to find specific classes of defect and found none. That is worth recording, because it tells you where <em>not</em> to spend effort.</p>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-clear">Clear</span>
+        <div class="refs"><span>Code.gs:4237</span><span>Code.gs:3063</span></div>
+      </div>
+      <div class="body">
+        <h3>Every column index checked was correct</h3>
+        <p><code>rebuildSkillMatrixV19_</code>'s evidence reads, its sign-off reads, its 20-wide output row, and <code>refreshSkillValidationQueueV19_</code>'s 13-wide queue row all match their declared header schemas position for position. So do <code>traineeSkillsV19_</code> and <code>handoverSkillsV19_</code>. Where the header discipline is applied, it holds.</p>
+        <p class="verdict">Two minor exceptions in <code>traineeEventsV19_</code> — a call reference showing the evidence note, and an unread <code>domain</code> field.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-clear">Clear</span>
+        <div class="refs"><span>Code.gs:261</span></div>
+      </div>
+      <div class="body">
+        <h3>No nested lock acquisitions, and no stale lock flag</h3>
+        <p>All ten locked functions and every caller were traced. Nothing nests, so the deliberate throw never fires in practice. The <code>finally</code> block resets the flag before releasing, and Apps Script re-initialises globals per execution, so staleness is impossible.</p>
+        <p class="verdict">The caveat: the batch paths avoid nesting by running unlocked, which is where the row-shift corruption lives.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-clear">Clear</span>
+        <div class="refs"><span>Code.gs:9422</span><span>Code.gs:9456</span></div>
+      </div>
+      <div class="body">
+        <h3>No undefined calls, and the load order is genuinely safe</h3>
+        <p>All 45 menu targets and all 8 managed trigger handlers resolve. The ~18 missing function names are string references inside guidance messages and the <code>KEEP_TOOLS_V19</code> inventory only — nothing live calls them.</p>
+        <p>There is no top-level executable code, and the only derived globals reference <code>TAB</code>, which is assigned above them. <code>CONFIG</code> being defined 9,000 lines below its first use is harmless — and it stays harmless if you split the file, because Apps Script shares one global scope across all files.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="gutter">
+        <span class="tag t-clear">Clear</span>
+        <div class="refs"><span>Code.gs:326</span><span>Code.gs:5665</span></div>
+      </div>
+      <div class="body">
+        <h3>Two pieces of genuinely good design</h3>
+        <p><code>appendRowsHeaderMappedV20_1_</code> refuses to write on a header mismatch rather than clearing the sheet — the correct instinct, and the foundation everything else should be built on.</p>
+        <p><code>validateSkillEventV20_1_</code> is pure: plain objects in, a problems array out, no I/O in its call chain. It is the most valuable function in the file to have a test for, and it is <em>already</em> in testable shape.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Suggested order of work</h2>
+    <p class="lede">Sized for one part-time maintainer. Every step is independently shippable and nothing here requires a rewrite.</p>
+
+    <ol class="roadmap">
+      <li>
+        <div>
+          <p><strong>Get a safety net before touching logic.</strong> <code>clasp clone</code>, commit the current build as a baseline, push it. Then add a <code>Tests.gs</code> that runs inside Apps Script — no npm, no mocks — with a dozen assertions against the pure functions.</p>
+          <p class="cost">2–3 hours · makes every later change reviewable and reversible</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Restore the skills pipeline.</strong> <code>catalogEntry.approval</code> → <code>.status</code>; fix the prompting vocabulary; move the unsafe-outcome alert outside the acceptance gate.</p>
+          <p class="cost">under an hour · three edits, and the system starts doing its job again</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Stop the record-destroying tools.</strong> Run <code>unwrapAuditFormulasV20_1</code>. Delete <code>simplifyFlagsV20_1</code> and the narrative-rewriting block of <code>fixAllFlagsNowV20_1</code>. Begin reconciling tab 02 against the Form response history.</p>
+          <p class="cost">half a day, plus reconciliation time</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Fix the two corruption paths.</strong> Re-derive queue rows by REQUEST ID inside each loop iteration rather than trusting the pre-loop snapshot, and make the <span class="mono">CANCELLED : CRITERIA CHANGED</span> sweep skip rows that carry a decision.</p>
+          <p class="cost">2 hours</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Gate the mutating menu items.</strong> The authorization model already exists and is sound — call it from advancement, close/release, bulk approval, mode switching, the scoreboard and the backup. Then delete the name-matching fallback so an unidentifiable session refuses rather than guesses.</p>
+          <p class="cost">2–3 hours · highest security value per line changed</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Make alerting survive failure.</strong> Wrap each send in <code>evalAlerts</code> and <code>dailyChecks</code> in its own try/catch; create the queue row <em>before</em> attempting the mail; header-map the eval path; surface ledger <span class="mono">QUARANTINED</span> counts and the effective mail mode in <code>systemHeartbeat</code>.</p>
+          <p class="cost">a day</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Split data from presentation in the rebuild.</strong> Drop the layout and engine-formula calls out of <code>rebuildSkillMatrixV19_</code>, batch the three per-cell loops into single <code>setValues</code> calls, and call the rebuild once per batch instead of once per row.</p>
+          <p class="cost">half a day · removes the timeout risk and most of the latency</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>Delete what is provably dead.</strong> 36 zero-reference functions (~984 lines), 10 never-read constants, and the three stale inventory lists whose entries are 73% fictional. Commit each category separately.</p>
+          <p class="cost">1–2 hours · the file drops ~10% and stops offering three competing answers to the same problem</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Before you act on this</h2>
+
+    <details>
+      <summary>Four things to check against your live sheet, not the source</summary>
+      <ul class="plain">
+        <li><strong>Queue column alignment.</strong> <code>setupQueueReviewV20</code> is called from nowhere and is on no menu, so on a fresh install <span class="mono">REQUEST ID</span> and <span class="mono">RECORD</span> land in columns 14 and 15 — while the code hard-codes 14 for REVIEW and 16 for RECORD. That would mean the audit overwrites request IDs and the RECORD checkbox does nothing. But the function's own message says "Run once," so it may well have been run manually from the editor. Check tab 20's actual header row.</li>
+        <li><strong>Trigger identity.</strong> Whether <code>Session.getActiveUser().getEmail()</code> inside the installable <code>onEdit</code> trigger returns the editor or the trigger owner. If it returns the owner, every checkbox sign-off is stamped <em>verified</em> under one identity regardless of who ticked it. Cheap to test with a second account, high consequence either way.</li>
+        <li><strong>The portal file.</strong> <code>portal.html</code> was not part of what I reviewed. If it contains anything beyond static cards and form links, it is world-readable through the deployed web app.</li>
+        <li><strong>Manually created triggers.</strong> The dead-function list assumes the 8 managed handlers are the only roots. A trigger added by hand in the Apps Script UI would not appear in the source — check the project's trigger list before deleting anything you don't recognise.</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>How these findings were produced</summary>
+      <p>Six independent review passes over the same file, each with a different brief: correctness, security and privacy, concurrency and data integrity, platform limits, architecture, and domain risk. Each was asked to verify every claim against actual lines and to mark anything uncertain.</p>
+      <p>I then re-checked the load-bearing claims myself at the source — the <code>approval</code> property, the prompting mismatch, the identity flag, the sort-during-loop, the cancel sweep, the authorization call sites, the row windows, the missing trigger, and the escaping gaps. Everything presented above as fact was confirmed that way. Where a reviewer could not verify something, it is in the checklist above rather than in the findings.</p>
+      <p>Two reviews independently found the <code>approval</code> bug from different directions, which is the strongest signal in the set.</p>
+    </details>
+  </section>
+
+  <footer>
+    <p>Reviewed against the consolidated v20.1.0i build committed to <span class="mono">claude/multi-agent-code-review-1zeb1j</span>. The <code>BADGE_B64</code> constant in that copy holds a placeholder image; no code path that reads it was altered.</p>
+  </footer>
+
+</div>
