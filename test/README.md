@@ -11,9 +11,10 @@ node test/queue-row-resolution.test.js    # queue row identity + decision writer
 node test/governance-gate.test.js         # v20.2 authorization + evidence gates
 node test/ingestion-durability.test.js    # form bindings, retry safety, mail budget
 node test/queue-sweep.test.js             # stale-queue sweep + matrix rebuild guards
+node test/identity-tiers.test.js          # identity tiers + deployment checklist
 ```
 
-All five exit non-zero on failure. 161 assertions total.
+All six exit non-zero on failure. 215 assertions total.
 
 | Harness | Covers | Guards against |
 | --- | --- | --- |
@@ -22,6 +23,8 @@ All five exit non-zero on failure. 161 assertions total.
 | `governance-gate.test.js` | `requireActorV20_2_`, `deciderAuthorityV20_1_`, `evidenceGateProblemV20_2_`, `burningFlagsV20_2_`, the retired stubs | the v20.2 rule being quietly walked back |
 | `ingestion-durability.test.js` | `formBoundTriggerPlanV20_2_`, `evidenceExistsForResponseV20_2_`, `mailBudgetOkV20_2_` | submissions dropped by an unbound form, retries duplicating a written record, bulk mail starving safety alerts |
 | `queue-sweep.test.js` | `sweepStaleQueueRowsV20_2_`, the `rebuildSkillMatrixV19_` empty-output guard | one failed matrix read cancelling the entire pending sign-off queue |
+
+| `identity-tiers.test.js` | `identityV20_2_`, `identityStampV20_2_`, `setOperatorAccountV20_2`, `goLiveChecklistV20_2` | the gate locking out its own operator, and the typed-name hole returning under cover of the fix |
 
 `queue-sweep.test.js` drives the real sweep against a fake queue and reads the
 cells back afterwards, so it proves behaviour rather than the shape of the

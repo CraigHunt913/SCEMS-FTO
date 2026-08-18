@@ -211,3 +211,65 @@ Ship only when every line is true.
   had actually reviewed.
 - **Protections may collide with existing manual edits.** The applier
   reports rather than forces, and is re-runnable.
+
+---
+
+## Amendment 1 — identity tiers
+
+*Added after the build, because shipping revealed the brief was wrong.*
+
+§1 said the gate must refuse "when the platform cannot identify the session —
+no fallback to a typed name, ever", and I accepted the lockout under *Risks*
+on the grounds that a system which cannot say who signed a record is worse
+than one that is briefly hard to use.
+
+That reasoning still holds. The implementation did not follow from it.
+
+The gate resolved identity through `Session.getActiveUser()` alone, which
+returns `''` on a consumer Google account. So v20.2 as first built refused
+**every** gated action for its only operator — it could not be deployed at
+all. A correctness release nobody can run fixes nothing, and the defects it
+addresses stay live in production.
+
+The error was treating "verified identity" as one bit when it is three:
+
+| Tier | Source | What it is |
+| --- | --- | --- |
+| `ACTIVE` | `Session.getActiveUser()` | the platform naming the human at the keyboard |
+| `EFFECTIVE` | `Session.getEffectiveUser()` | the platform naming the account the script runs as |
+| `OPERATOR` | script property, set by `setOperatorAccountV20_2()` | the script owner declaring it once, out of band |
+
+The rule this release exists to draw is *never self-attested*. A name typed
+into `DECIDED BY` at decision time is self-attestation: the person asserting
+the identity is the person benefiting from it, at the moment of benefit, in a
+field anyone with sheet access can edit. That is still refused, and
+`decidedByText` is still never read.
+
+The other two are not that. `EFFECTIVE` is the platform answering a second,
+weaker question. `OPERATOR` is a one-time declaration by whoever owns the
+script, stored where no formula, form response or sheet edit can reach it.
+Both are credentials about the container. Neither is the actor vouching for
+themselves mid-decision.
+
+So the gate accepts all three, and the difference is carried rather than
+erased:
+
+- every record written under an attested tier is stamped
+  `[IDENTITY EFFECTIVE, ATTESTED]` or `[IDENTITY OPERATOR, ATTESTED]`,
+  permanently
+- the access log records the tier on every grant and every denial
+- the health check reports an attested tier every single run and does not
+  stop, because Workspace accounts are what make attribution real
+
+Acceptance check 1 is amended to: *every function in the list at §1 refuses
+when no tier resolves, the refusal explains why and names the one-line fix,
+and any record written under an attested tier says so on its face.*
+
+Check 2 is unchanged and still holds: `deciderAuthorityV20_1_` grants nothing
+on a typed name.
+
+**What this costs.** A consumer account cannot distinguish the owner from a
+delegate — `EFFECTIVE` inside an installable trigger is the trigger's owner,
+not whoever caused the event. Records will say `ATTESTED` and mean it. That is
+a real limitation, stated on the record rather than hidden, and it is the
+argument for the Workspace migration rather than a substitute for it.

@@ -3923,6 +3923,151 @@ function dailyChecks() {
 /* ---- ported from master (effective winner) ---- */
 
 /* ---------------------------------------------------------------- *
+ *  Deployment  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** ONE COMMAND. Run this from the script editor after pasting v20.2, and it
+ *  takes the project from "code is present" to "system is running".
+ *
+ *  Every step is one that already existed and is safe to repeat. This adds
+ *  no new behaviour of its own; it removes the need to remember an order.
+ *  It writes no records and deletes nothing.
+ *
+ *  Pass the account that will operate the system:
+ *      goLiveChecklistV20_2("you@example.com")
+ *
+ *  Steps, in dependency order:
+ *    1. operator account   — so the gate can attribute anything at all
+ *    2. form IDs           — so triggers have forms to bind to
+ *    3. triggers           — including the combined skills form v20.1 missed
+ *    4. migration top-up   — REQUEST ID and the v20.1 system tabs
+ *    5. matrix rebuild     — so readiness is current before anyone decides
+ *    6. tab protections    — so immutability is a control, not a convention
+ *    7. health check       — the standing to-do list
+ *
+ *  It stops at the first step that fails and tells you which one, because a
+ *  later step run against a broken earlier one is how you get a mess. */
+function goLiveChecklistV20_2(operatorEmail) {
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT CHECKLIST', ''];
+  var failed = '';
+
+  function step(n, what, fn) {
+    if (failed) { L.push(n + '. ' + what + ' : SKIPPED (step ' + failed + ' failed)'); return; }
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      failed = String(n);
+      L.push(n + '. ' + what + ' : FAILED');
+      L.push('      ' + String(e).slice(0, 300));
+    }
+  }
+
+  step(1, 'Operator account', function () {
+    var id = identityV20_2_();
+    if (id.tier === 'ACTIVE') {
+      return 'Google names the session directly (' + id.email + '). No operator account needed.';
+    }
+    if (operatorEmail) return setOperatorAccountV20_2(operatorEmail);
+    if (id.email) return 'Identity available as ' + id.tier + ' (' + id.email + ').';
+    throw new Error('Nothing identifies this session and no operator email was passed. ' +
+      'Call goLiveChecklistV20_2("you@example.com").');
+  });
+
+  step(2, 'Form IDs', function () { return rebuildFormIdsNow(); });
+  step(3, 'Triggers', function () { return repairAllTriggersNow(); });
+  step(4, 'Migration top-up', function () { return applyMigrationV20_1('APPLY V20_1'); });
+  step(5, 'Skill matrix rebuild', function () { rebuildSkillMatrixV19_(); return 'matrix rebuilt'; });
+  step(6, 'Record tab protection', function () { return protectRecordTabsV20_2(); });
+
+  L.push('');
+  if (failed) {
+    L.push('STOPPED at step ' + failed + '. Fix that, then run this again — every step is');
+    L.push('safe to repeat.');
+  } else {
+    L.push('All steps completed. The health check below is your standing to-do list;');
+    L.push('run healthCheckV20_2() from the SCEMS menu any time.');
+    L.push('');
+    try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+  }
+
+  var msg = L.join('\n');
+  systemLog_(failed ? 'ERROR' : 'INFO', 'DEPLOYMENT CHECKLIST',
+    failed ? 'stopped at step ' + failed : 'completed');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Read-only companion: what would the checklist find right now? Runs
+ *  nothing, changes nothing, and is safe on a live system at any time. */
+function deploymentStatusV20_2() {
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT STATUS (read only)', ''];
+
+  var id = identityV20_2_();
+  L.push('Identity   : ' + (id.email || 'NOBODY') +
+    (id.tier ? '  [' + id.tier + (id.verified ? ', verified' : ', attested') + ']' : ''));
+  if (!id.email) L.push('             → run setOperatorAccountV20_2("you@example.com")');
+
+  try {
+    var ids = storedFormIdsV20_1_();
+    L.push('Form IDs   : ' + ids.length + ' stored of ' + EXPECTED_FORMS_V19.length + ' expected');
+    if (ids.length < EXPECTED_FORMS_V19.length) L.push('             → run rebuildFormIdsNow()');
+  } catch (e) { L.push('Form IDs   : unreadable — ' + e); }
+
+  try {
+    var bound = {};
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      var src = ''; try { src = String(t.getTriggerSourceId() || ''); } catch (e2) {}
+      if (src) bound[src] = true;
+    });
+    var unbound = [];
+    formBoundTriggerPlanV20_2_().forEach(function (p) {
+      var f = getStoredFormV19_(p.title);
+      if (f && !bound[f.getId()]) unbound.push(p.title);
+    });
+    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+    var miss = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
+    L.push('Triggers   : ' + (miss.length ? miss.length + ' handler(s) missing' : 'all handlers present') +
+      (unbound.length ? ', ' + unbound.length + ' form(s) UNBOUND' : ', all forms bound'));
+    if (miss.length || unbound.length) L.push('             → run repairAllTriggersNow()');
+  } catch (e) { L.push('Triggers   : unreadable — ' + e); }
+
+  var sysTabs = [TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
+  var absent = sysTabs.filter(function (n) { return !getSheetOrNullV20_1_(n); });
+  L.push('v20.1 tabs : ' + (absent.length ? absent.length + ' missing (' + absent.join(', ') + ')'
+                                          : 'all present'));
+  if (absent.length) L.push('             → run applyMigrationV20_1("APPLY V20_1")');
+
+  try {
+    var m = getSheetOrNullV20_1_(TAB.SKILLS);
+    var rows = m && m.getLastRow() >= 5 ? m.getLastRow() - 4 : 0;
+    L.push('Matrix     : ' + rows + ' row(s)');
+    if (!rows) L.push('             → run rebuildSkillMatrixV19_()');
+  } catch (e) { L.push('Matrix     : unreadable — ' + e); }
+
+  var unprot = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].filter(function (n) {
+    var sh = getSheetOrNullV20_1_(n);
+    return sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length;
+  });
+  L.push('Protection : ' + (unprot.length ? unprot.length + ' record tab(s) unprotected'
+                                          : 'record tabs protected'));
+  if (unprot.length) L.push('             → run protectRecordTabsV20_2()');
+
+  L.push('Mode       : ' + (isLiveMode_() ? 'LIVE' : 'TEST — alerts reach nobody but the test inbox'));
+  L.push('');
+  L.push('To do all of the above in order: goLiveChecklistV20_2("you@example.com")');
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
  *  Mail quota
  * ---------------------------------------------------------------- */
 
@@ -6495,23 +6640,25 @@ function sessionEmailV20_1_() {
  *  is recorded only if DECIDED BY matches an authorized leader, and the
  *  record is flagged IDENTITY UNVERIFIED for the audit trail. */
 function deciderAuthorityV20_1_(decidedByText) {
-  var email = sessionEmailV20_1_();
-  if (email) {
-    var actor = resolveAuthorizedActorV20_1_(email);
+  var id = identityV20_2_();
+  if (id.email) {
+    var actor = resolveAuthorizedActorV20_1_(id.email);
     var authorized = actor.ok && (actor.roles.indexOf('PROGRAM_DIRECTOR') >= 0 ||
       actor.roles.indexOf('TRAINING_DIVISION') >= 0 ||
       actor.roles.indexOf('MEDICAL_DIRECTOR') >= 0 || actor.roles.indexOf('COMMAND') >= 0);
-    return { allowed: authorized, verified: true, email: email,
-             note: authorized ? '' : 'session account is not an authorized decision-maker' };
+    return { allowed: authorized, verified: id.verified, email: id.email, tier: id.tier,
+             note: authorized ? '' :
+               'the account acting (' + id.email + ', ' + id.tier +
+               ') is not an authorized decision-maker' };
   }
   // v20.2: the name-matching fallback is GONE. It granted sign-off authority
   // to anyone who typed "Medical Director" into DECIDED BY, which is how a
   // permanent record ends up credited to someone who never made the decision.
   // decidedByText is now display data only; it is deliberately not consulted.
-  return { allowed: false, verified: false, email: '',
-    note: 'no session identity — v20.2 will not attribute a permanent record to a ' +
-          'typed name. This is the consumer-account problem; the fix is Workspace ' +
-          'accounts. See SPEC-v20.2.md.' };
+  return { allowed: false, verified: false, email: '', tier: '',
+    note: 'nothing identifies who is acting. Run setOperatorAccountV20_2() once, or ' +
+          'move the program to Workspace accounts. v20.2 will not attribute a ' +
+          'permanent record to a name typed into a cell. See SPEC-v20.2.md.' };
 }
 
 /* ---------------------------------------------------------------- *
@@ -6701,7 +6848,7 @@ function recordDecisionForRowV20_1_(row) {
     var record = {
       'DECISION ID': decisionId, 'TIMESTAMP': new Date(), 'TRAINEE': trainee,
       'SKILL ID': skillId, 'SKILL': skill, 'DECISION': decision,
-      'DECIDED BY': decidedBy + (authority.verified ? '' : ' [IDENTITY UNVERIFIED]'),
+      'DECIDED BY': decidedBy + identityStampV20_2_(authority),
       'DECISION DATE': decisionDate, 'EXPIRATION': expiration || '',
       'RATIONALE': rationale, 'SOURCE QUEUE ROW': row,
       'STANDARD / CATALOG VERSION': String(CONFIG.SKILL_STANDARD || ''),
@@ -10498,6 +10645,118 @@ function unwrapAuditFormulasV20_1() {
 
 var OVERRIDE_MARKER_V20_2 = '[THRESHOLD OVERRIDE]';
 
+/* ---------------------------------------------------------------- *
+ *  Identity  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** Script property holding the one account allowed to operate this system
+ *  when the platform will not name the session. Set it with
+ *  setOperatorAccountV20_2(); it is deliberately not editable from a sheet
+ *  cell, because a value a form or a formula can reach is not a credential. */
+var OPERATOR_PROP_V20_2 = 'SCEMS_OPERATOR_EMAIL';
+
+/** How sure we are about who is running this, strongest first.
+ *
+ *  ACTIVE     Session.getActiveUser(). The platform names the human at the
+ *             keyboard. Only reliable on Workspace accounts.
+ *  EFFECTIVE  Session.getEffectiveUser(). The account the script RUNS AS.
+ *             For a container-bound script invoked from its own menu, that
+ *             is the person clicking, and on a consumer account it is
+ *             usually the only answer available. Inside an installable
+ *             trigger it is the trigger's owner rather than whoever caused
+ *             the event, so it is attested, not verified.
+ *  OPERATOR   The account configured in script properties. A deliberate,
+ *             one-time declaration by whoever owns the script, stored where
+ *             no sheet formula or form response can reach it.
+ *
+ *  All three are the platform or the owner answering. None of them is the
+ *  thing v20.2 removed: reading a name a user typed into a spreadsheet cell
+ *  at decision time and treating it as authority. */
+var IDENTITY_TIERS_V20_2 = ['ACTIVE', 'EFFECTIVE', 'OPERATOR'];
+
+/** Resolves who is acting. Returns { email, tier, verified, note }.
+ *  email is '' only when nothing could identify the session at all. */
+function identityV20_2_() {
+  var e1 = '';
+  try { e1 = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (e1) {
+    return { email: e1, tier: 'ACTIVE', verified: true, note: '' };
+  }
+
+  var e2 = '';
+  try { e2 = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (e2) {
+    return { email: e2, tier: 'EFFECTIVE', verified: false,
+      note: 'the account this script runs as, not confirmed as the person at the keyboard' };
+  }
+
+  var e3 = '';
+  try {
+    e3 = String(PropertiesService.getScriptProperties()
+      .getProperty(OPERATOR_PROP_V20_2) || '').trim().toLowerCase();
+  } catch (e) {}
+  if (e3 && isValidEmailV20_1_(e3)) {
+    return { email: e3, tier: 'OPERATOR', verified: false,
+      note: 'the configured operator account; the platform named nobody' };
+  }
+
+  return { email: '', tier: '', verified: false,
+    note: 'the platform named nobody and no operator account is configured' };
+}
+
+/** The label stamped beside a decider on a permanent record. Empty when the
+ *  identity was actually verified, so clean records stay clean. */
+function identityStampV20_2_(id) {
+  if (!id || !id.email) return ' [IDENTITY UNKNOWN]';
+  if (id.verified) return '';
+  return ' [IDENTITY ' + id.tier + ', ATTESTED]';
+}
+
+/** Declares the account that may operate this system when Google will not
+ *  name the session. Run once, from the script editor, by the person who
+ *  owns the script.
+ *
+ *  This is the consumer-account accommodation, and it is narrower than it
+ *  looks: it names ONE address, it is stored in script properties where no
+ *  sheet or form can reach it, every use of it is logged, and every record
+ *  written under it carries [IDENTITY OPERATOR, ATTESTED] permanently. It
+ *  does not restore the v20.1 hole, which let anyone who typed "Medical
+ *  Director" into a cell sign off a clinical competency. */
+function setOperatorAccountV20_2(email) {
+  var e = String(email || '').trim().toLowerCase();
+  if (!e) {
+    var cur = PropertiesService.getScriptProperties().getProperty(OPERATOR_PROP_V20_2) || '(none)';
+    var m0 = 'Operator account is currently: ' + cur +
+      '\n\nTo set it:  setOperatorAccountV20_2("you@example.com")' +
+      '\nTo clear it: setOperatorAccountV20_2("CLEAR")';
+    Logger.log(m0); return m0;
+  }
+  if (e === 'clear') {
+    PropertiesService.getScriptProperties().deleteProperty(OPERATOR_PROP_V20_2);
+    systemLog_('WARN', 'OPERATOR ACCOUNT CLEARED', 'fallback identity removed');
+    var m1 = 'Operator account cleared. If Google does not name the session, every ' +
+             'gated action will now refuse.';
+    Logger.log(m1); return m1;
+  }
+  if (!isValidEmailV20_1_(e)) {
+    var m2 = 'Refused: "' + email + '" is not a valid email address. Nothing was set.';
+    Logger.log(m2); return m2;
+  }
+  PropertiesService.getScriptProperties().setProperty(OPERATOR_PROP_V20_2, e);
+  systemLog_('WARN', 'OPERATOR ACCOUNT SET', e);
+  var msg = 'Operator account set to ' + e + '.\n\n' +
+    'This is used ONLY when Google will not name the session. Every record ' +
+    'written that way is stamped [IDENTITY OPERATOR, ATTESTED] permanently, ' +
+    'and every use is logged to 93 ACCESS LOG.\n\n' +
+    'It is an accommodation for consumer Google accounts, not a substitute ' +
+    'for Workspace accounts. The health check will keep saying so.';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e2) {}
+  return msg;
+}
+
+
+
 /** Which roles may perform which action. Anything not listed is director-only
  *  by default, so a new action fails closed rather than open. */
 var ACTION_ROLES_V20_2 = Object.freeze({
@@ -10539,19 +10798,26 @@ function logAccessV20_2_(action, email, authorized, detail) {
 function requireActorV20_2_(action, allowedRoles) {
   var act = String(action || '').toUpperCase();
   var roles = allowedRoles || ACTION_ROLES_V20_2[act] || ['PROGRAM_DIRECTOR'];
-  var email = sessionEmailV20_1_();
-  var out = { ok: false, actor: null, email: email, message: '' };
+  var id = identityV20_2_();
+  var email = id.email;
+  var out = { ok: false, actor: null, email: email, identity: id, message: '' };
 
   if (!email) {
     out.message =
       'REFUSED : ' + act + '\n\n' +
-      'Google did not tell this script which account is running it, so the\n' +
-      'decision could not be attributed to anyone. Nothing was written.\n\n' +
-      'This happens on consumer Google accounts. Until the program runs on\n' +
-      'Workspace accounts, records cannot be reliably attributed — see\n' +
-      'SPEC-v20.2.md. Earlier versions guessed a name here; that is exactly\n' +
-      'what produced sign-offs credited to people who never made them.';
-    logAccessV20_2_(act, '', false, 'no session identity');
+      'Nothing identifies who is running this, so the action could not be\n' +
+      'attributed to anyone. Nothing was written.\n\n' +
+      'Google names the session on Workspace accounts. On a consumer account\n' +
+      'it often will not, and this script has no operator account configured\n' +
+      'either.\n\n' +
+      'FIX: open the script editor and run\n' +
+      '     setOperatorAccountV20_2("' + (CONFIG.TCO_EMAIL || 'you@example.com') + '")\n' +
+      'once. Records written that way are permanently stamped\n' +
+      '[IDENTITY OPERATOR, ATTESTED].\n\n' +
+      'Earlier versions instead read whatever name was typed into the\n' +
+      'DECIDED BY cell. That is what produced sign-offs credited to people\n' +
+      'who never made them, and it is not coming back.';
+    logAccessV20_2_(act, '', false, 'no identity at any tier');
     return out;
   }
 
@@ -10561,7 +10827,7 @@ function requireActorV20_2_(action, allowedRoles) {
   if (!granted) {
     out.message =
       'REFUSED : ' + act + '\n\n' +
-      'Signed in as ' + email + '\n' +
+      'Signed in as ' + email + '  [' + id.tier + (id.verified ? '' : ', attested') + ']\n' +
       'Roles held  : ' + (actor.roles.length ? actor.roles.join(', ') : 'none') + '\n' +
       'Roles needed: ' + roles.join(', ') + '\n\n' +
       'Nothing was written. If this is wrong, the fix is on 22 FTO ROSTER or\n' +
@@ -10571,7 +10837,9 @@ function requireActorV20_2_(action, allowedRoles) {
   }
 
   out.ok = true;
-  logAccessV20_2_(act, email, true, 'roles [' + actor.roles.join(',') + ']');
+  logAccessV20_2_(act, email, true,
+    'roles [' + actor.roles.join(',') + '] | identity ' + id.tier +
+    (id.verified ? ' (verified)' : ' (attested: ' + id.note + ')'));
   return out;
 }
 
@@ -10978,10 +11246,20 @@ function healthCheckV20_2() {
   });
 
   guard(function () {
-    if (!sessionEmailV20_1_()) {
-      add('BLOCKER', 'Google is not revealing which account is running this script, so no ' +
-        'decision can be attributed and every gated action will refuse. This is the ' +
-        'consumer-account problem; the fix is Workspace accounts.', '');
+    var id = identityV20_2_();
+    if (!id.email) {
+      add('BLOCKER', 'Nothing identifies who is running this script, so every gated action ' +
+        'will refuse and no decision can be attributed. Run setOperatorAccountV20_2() once ' +
+        'from the script editor, or move the program to Workspace accounts.',
+        'setOperatorAccountV20_2');
+    } else if (id.tier === 'OPERATOR') {
+      add('WARN', 'Running as the configured operator account (' + id.email + '). Google is ' +
+        'naming nobody, so every record written is stamped [IDENTITY OPERATOR, ATTESTED]. ' +
+        'That is honest, but it is not the same as a verified signature — Workspace accounts ' +
+        'are what make attribution real.', '');
+    } else if (!id.verified) {
+      add('WARN', 'Identity is ' + id.tier + ' rather than verified (' + id.email + '): ' +
+        id.note + '. Records are stamped accordingly.', '');
     }
   });
 
@@ -11027,6 +11305,7 @@ function onOpen(e) {
       .addSeparator()
       .addSubMenu(ui.createMenu('Admin')
         .addItem('Health check', 'healthCheckV20_2')
+        .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
         .addSeparator()
         .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
         .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
