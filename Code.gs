@@ -9251,9 +9251,78 @@ function stepD_fixPhantoms() { Logger.log(fixPhantomsNowV20_1('FIX PHANTOMS')); 
 /** One-click runner: replay everything lost since the restore point. */
 function stepE_replayLostResponses() { Logger.log(replayMissingSinceV20_1_('8/5/2026')); }
 
+/** Recovers form submissions that never reached the evidence log.
+ *
+ *  The case this exists for: a form declared owned by a form-bound trigger
+ *  that never had one. onHubFormSubmit refused those submissions and wrote
+ *  SKIPPED_OWNED to the ledger — "handled by the form-bound trigger" — for a
+ *  handler that did not exist, so the loss looked like a successful handoff.
+ *
+ *  Safe to run, and safe to run twice: evidence rows carry SOURCE RESPONSE
+ *  ID, so a response already expanded is detected and skipped rather than
+ *  duplicated. Defaults to every response ever, because the point is to find
+ *  what was missed, not to guess when. */
+function recoverLostSubmissionsV20_2() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  var unbound = [];
+  try {
+    var bound = {};
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      var src = ''; try { src = String(t.getTriggerSourceId() || ''); } catch (e2) {}
+      if (src) bound[src] = true;
+    });
+    formBoundTriggerPlanV20_2_().forEach(function (p) {
+      var f = getStoredFormV19_(p.title);
+      if (f && !bound[f.getId()]) unbound.push(p.title);
+    });
+  } catch (e3) {}
+
+  var cutoff = '';
+  if (ui) {
+    var warn = 'RECOVER LOST SUBMISSIONS\n\n' +
+      (unbound.length
+        ? 'STILL UNBOUND: ' + unbound.join(', ') + '\nRun repairAllTriggersNow() first, or ' +
+          'new submissions keep going missing.\n\n'
+        : 'Every live form currently has a trigger bound.\n\n') +
+      'This re-runs skills and handover responses that never reached the ' +
+      'evidence log. Responses already recorded are detected by their ' +
+      'response ID and skipped, so nothing is duplicated.\n\n' +
+      'Continue?';
+    if (ui.alert('Recover lost submissions', warn, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
+      return 'Cancelled. Nothing was replayed.';
+    }
+    var r = ui.prompt('Recover lost submissions',
+      'Earliest submission date to consider.\n\n' +
+      'Leave BLANK for every response ever — that is the right answer unless ' +
+      'you know the loss started on a particular day.',
+      ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return 'Cancelled. Nothing was replayed.';
+    cutoff = String(r.getResponseText() || '').trim();
+  }
+
+  var msg = replayMissingSinceV20_1_(cutoff);
+  if (unbound.length) {
+    msg += '\n\nWARNING: ' + unbound.join(', ') + ' still has no trigger bound. ' +
+           'Run repairAllTriggersNow() or this will happen again.';
+  }
+  Logger.log(msg);
+  if (ui) ui.alert(msg.slice(0, 1400));
+  return msg;
+}
+
 function replayMissingSinceV20_1_(cutoffText) {
-  var cutoff = parseDateSafeV20_1_(cutoffText);
-  if (!cutoff) return 'Unreadable cutoff date: ' + cutoffText;
+  // v20.2: a blank cutoff now means "every response, however old", instead of
+  // being an error. The old caller hardcoded 8/5/2026, which silently skipped
+  // anything earlier as skippedOld — including the combined skills form's
+  // oldest submissions, since that form predates the cutoff. A recovery tool
+  // that quietly declines to look at the very responses it exists to find is
+  // worse than no tool.
+  var noCutoff = !String(cutoffText || '').trim();
+  var cutoff = noCutoff ? null : parseDateSafeV20_1_(cutoffText);
+  if (!noCutoff && !cutoff) return 'Unreadable cutoff date: ' + cutoffText;
 
   var ledger = readTableV20_1_(TAB.LEDGER, 4);
   var inLedger = {};
@@ -9285,7 +9354,7 @@ function replayMissingSinceV20_1_(cutoffText) {
     f.getResponses().forEach(function (resp) {
       var rid = resp.getId();
       var when = resp.getTimestamp();
-      if (when && when.getTime() < cutoff.getTime()) { skippedOld++; return; }
+      if (cutoff && when && when.getTime() < cutoff.getTime()) { skippedOld++; return; }
       if (inLedger[rid]) { skippedLedger++; return; }
       if (inEvidence[rid]) {
         skippedEvidence++;
@@ -9306,8 +9375,8 @@ function replayMissingSinceV20_1_(cutoffText) {
   });
 
   try { refreshHomeNowV20_1(); } catch (eH) {}
-  var msg = 'LOST-RESPONSE REPLAY — skills + handover forms, submitted on/after ' +
-    dateKeyV20_1_(cutoff) + '\n\n' +
+  var msg = 'LOST-RESPONSE REPLAY — skills + handover forms, ' +
+    (cutoff ? 'submitted on/after ' + dateKeyV20_1_(cutoff) : 'ALL responses, no date cutoff') + '\n\n' +
     'Replayed : ' + replayed +
     '\nFailed : ' + failed +
     '\nSkipped, submitted before the cutoff (their data survived inside the restored sheets) : ' + skippedOld +
@@ -9316,7 +9385,8 @@ function replayMissingSinceV20_1_(cutoffText) {
     (out.length ? '\n\n' + out.join('\n') : '') +
     '\n\nNext: the hub-form lane (shift evals, reflections, concerns, decision records).';
   systemLog_('WARN', 'LOST RESPONSES REPLAYED',
-    replayed + ' replayed, ' + failed + ' failed, cutoff ' + dateKeyV20_1_(cutoff));
+    replayed + ' replayed, ' + failed + ' failed, cutoff ' +
+    (cutoff ? dateKeyV20_1_(cutoff) : 'none'));
   Logger.log(msg);
   return msg;
 }
@@ -11312,6 +11382,8 @@ function onOpen(e) {
         .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
         .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
         .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
+        .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
+        .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
         .addSeparator()
         .addItem('Which mode am I in?', 'whichMode')
         .addItem('Version report', 'versionReportV20_1')
