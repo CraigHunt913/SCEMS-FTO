@@ -5684,7 +5684,9 @@ function validateSkillEventV20_1_(ev, catalogEntry, traineeResolved, ftoResolved
   if (!catalogEntry) {
     problems.push('skill is not in the approved catalog');
   } else {
-    if (String(catalogEntry.approval || '').toUpperCase() !== 'APPROVED') {
+    // catalogObjectsV19_ maps the APPROVAL STATUS column to .status, not
+    // .approval. Reading .approval rejected every event ever submitted.
+    if (String(catalogEntry.status || '').toUpperCase() !== 'APPROVED') {
       problems.push('catalog row is not APPROVED');
     }
     if (traineeResolved.ok && traineeResolved.record &&
@@ -5702,7 +5704,13 @@ function validateSkillEventV20_1_(ev, catalogEntry, traineeResolved, ftoResolved
   if (['O', 'A', 'P', 'I'].indexOf(ev.stage) < 0) {
     problems.push('stage must be Observed, Assisted, Performed with coaching, or Performed independently');
   }
-  if (ev.stage === 'I' && ev.prompting && ev.prompting !== 'No prompting required' &&
+  // Prompting is DERIVED from the stage by promptingForStageV19_, which
+  // returns 'None' for Independent. 'No prompting required' is produced by
+  // nothing in this project; it is kept only so a future form field using
+  // that wording still validates. The check's real job is to reject an
+  // Independent stage carrying 'Moderate coaching' or 'Full takeover'.
+  if (ev.stage === 'I' && ev.prompting && ev.prompting !== 'None' &&
+      ev.prompting !== 'No prompting required' &&
       ev.prompting !== 'Minimal verbal cue') {
     problems.push('Performed independently is inconsistent with prompting "' + ev.prompting + '"');
   }
