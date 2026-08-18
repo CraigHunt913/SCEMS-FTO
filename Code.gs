@@ -1281,7 +1281,27 @@ function hardenLevelFormsV20_1() {
  ************************************************************************/
 
 var LEDGER_STATES_V20_1 = ['RECEIVED', 'VALIDATED', 'PROCESSED', 'FAILED', 'RETRIED',
-                           'RECONCILED', 'SKIPPED_DUPLICATE', 'SKIPPED_OWNED', 'QUARANTINED'];
+                           'RECONCILED', 'SKIPPED_DUPLICATE', 'SKIPPED_OWNED', 'QUARANTINED',
+                           'FAILED_AFTER_WRITE'];
+
+/* v20.2 — why FAILED_AFTER_WRITE exists.
+ *
+ * Both ingestion handlers write durable rows and THEN send mail. When the
+ * mail step threw, the catch stamped 'FAILED' over the 'VALIDATED' that
+ * recorded the write having happened. Apps Script then retried, the retry
+ * read 'FAILED', concluded nothing had been written, and mirrored the same
+ * response a second time.
+ *
+ * The states are not interchangeable: FAILED means nothing durable landed
+ * and a replay is safe; FAILED_AFTER_WRITE means the record IS in the sheet
+ * and only the notification failed. Both are non-terminal, so both still
+ * appear in the exception report — but only one of them may be replayed
+ * blind.
+ *
+ * This is the mail-quota interaction: a consumer MailApp quota running out
+ * mid-day is precisely a throw after the write, so quota exhaustion used to
+ * duplicate every form response it touched. */
+var LEDGER_WROTE_ALREADY_V20_2 = ['VALIDATED', 'FAILED_AFTER_WRITE'];
 
 /* ---------------------------------------------------------------- *
  *  Ledger primitives
@@ -1356,8 +1376,30 @@ function ledgerAlreadyDoneV20_1_(key) {
  *  onHubFormSubmit must never process these, even when their responses
  *  also land in a destination sheet. */
 function formTitlesOwnedByFormTriggersV20_1_() {
-  return [FORM_TITLES.SKILLS_COMBINED, FORM_TITLES.SKILLS_EMT,
-          FORM_TITLES.SKILLS_AEMT, FORM_TITLES.SKILLS_PMD, FORM_TITLES.HANDOVER];
+  return formBoundTriggerPlanV20_2_().map(function (p) { return p.title; });
+}
+
+/** The single source of truth for form-bound triggers: which form title is
+ *  handled by which handler.
+ *
+ *  v20.2 fix. This list and the installer had drifted apart.
+ *  formTitlesOwnedByFormTriggersV20_1_ named SKILLS_COMBINED, so
+ *  onHubFormSubmit refused those submissions and wrote SKIPPED_OWNED to the
+ *  ledger saying "Handled by the form-bound trigger" — but
+ *  repairAllTriggersNow only ever bound the three per-level skills forms.
+ *  Nothing was handling the combined form, so every skill logged through it
+ *  was dropped, and the ledger recorded the loss as a successful handoff.
+ *
+ *  Both the installer and the health check read this array now, so the two
+ *  cannot drift again. */
+function formBoundTriggerPlanV20_2_() {
+  return [
+    { title: FORM_TITLES.SKILLS_COMBINED, handler: 'onSkillsGridSubmitV20' },
+    { title: FORM_TITLES.SKILLS_EMT,      handler: 'onSkillsGridSubmitV20' },
+    { title: FORM_TITLES.SKILLS_AEMT,     handler: 'onSkillsGridSubmitV20' },
+    { title: FORM_TITLES.SKILLS_PMD,      handler: 'onSkillsGridSubmitV20' },
+    { title: FORM_TITLES.HANDOVER,        handler: 'onHandoverSubmitV19' }
+  ];
 }
 
 /** Resolves the destination sheet of a Sheets form event to a stored
@@ -1457,33 +1499,43 @@ function onHubFormSubmit(e) {
       if (haveLedger && ledgerRow) {
         var lt = readTableV20_1_(TAB.LEDGER, 4);
         var st0 = String(lt.sheet.getRange(ledgerRow, lt.col['STATE'] + 1).getValue() || '');
-        alreadyMirrored = st0 === 'VALIDATED';
+        alreadyMirrored = LEDGER_WROTE_ALREADY_V20_2.indexOf(st0) >= 0;
       }
       var vals = e.values || [];
+      var mirroredThisAttempt = false;
       if (kind === 'eval') {
-        if (!alreadyMirrored) { mirror(TAB.EVAL, vals); if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
+        if (!alreadyMirrored) { mirror(TAB.EVAL, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
         evalAlerts(vals);
       } else if (kind === 'reflect') {
-        if (!alreadyMirrored) { mirror(TAB.REFLECT, vals); if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
+        if (!alreadyMirrored) { mirror(TAB.REFLECT, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
         reflectAlerts(vals);
       } else if (kind === 'urgent') {
         if (!alreadyMirrored) {
           mirror(TAB.URGENT, vals);
+          mirroredThisAttempt = true;
           var urgentSheet = requireSheetV20_1_(TAB.URGENT);
           urgentSheet.getRange(urgentSheet.getLastRow(), 14).setValue('Division Chief of Training');
           if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored');
         }
         urgentAlerts(vals);
       } else if (kind === 'decision') {
-        if (!alreadyMirrored) { mirror(DECISIONS_TAB, vals); if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
+        if (!alreadyMirrored) { mirror(DECISIONS_TAB, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
         decisionAlerts(vals);
       }
 
       if (haveLedger) ledgerSetV20_1_(ledgerRow, 'PROCESSED', kind + ' mirrored and routed', '');
       systemLog_('INFO', 'FORM PROCESSED', kind + ' | ' + key);
     } catch (err) {
-      if (haveLedger) ledgerSetV20_1_(ledgerRow, 'FAILED', String(err));
-      systemLog_('ERROR', 'FORM PROCESSING FAILED', key + ' | ' + err);
+      // Do NOT erase the record that the mirror already happened; that is what
+      // made a retry duplicate the row. See LEDGER_WROTE_ALREADY_V20_2.
+      var wrote = alreadyMirrored || mirroredThisAttempt;
+      if (haveLedger) {
+        ledgerSetV20_1_(ledgerRow, wrote ? 'FAILED_AFTER_WRITE' : 'FAILED',
+          (wrote ? '[' + kind + ' IS mirrored; the routing/alert step failed. Do not replay ' +
+                   'blind — the row is already on the RAW tab.] ' : '') + String(err));
+      }
+      systemLog_('ERROR', wrote ? 'FORM ROUTING FAILED AFTER MIRROR' : 'FORM PROCESSING FAILED',
+        key + ' | ' + err);
       throw err; // Apps Script retries; the ledger key makes the retry safe.
     }
   });
@@ -1604,6 +1656,12 @@ function ingestionExceptionReportV20_1() {
       String(r[t.col['FORM TITLE']] || '') + ' | ' + String(r[t.col['DETAIL']] || '').slice(0, 80));
   });
   var L = ['INGESTION EXCEPTIONS', ''];
+  if (groups['FAILED_AFTER_WRITE']) {
+    L.push('READ THIS FIRST — FAILED_AFTER_WRITE means the record IS in the sheet and only');
+    L.push('the notification failed. Do NOT replay these; you would duplicate the row.');
+    L.push('Send the missed notification by hand, then mark the row RECONCILED.');
+    L.push('');
+  }
   var any = false;
   Object.keys(groups).forEach(function (st) {
     any = true;
@@ -3778,6 +3836,53 @@ function dailyChecks() {
 }
 
 /* ---- ported from master (effective winner) ---- */
+
+/* ---------------------------------------------------------------- *
+ *  Mail quota
+ * ---------------------------------------------------------------- */
+
+/** Recipients held back from bulk mail so that safety alerts can always
+ *  send. A consumer Google account allows 100 recipients a day; a Monday
+ *  run of traineeStatusCards plus supervisorDigest can consume most of it,
+ *  and the alerts that matter most — an unsafe skill outcome, a 72-hour
+ *  breach — are the ones that happen later in the day.
+ *
+ *  Bulk senders call the guard below and stop when they would eat into the
+ *  reserve. Alert paths deliberately do NOT call it: the reserve exists for
+ *  them, and an alert that cannot send must fail loudly rather than politely
+ *  decline. */
+var MAIL_ALERT_RESERVE_V20_2 = 25;
+
+/** True when one more bulk message may be sent. Logs once when it starts
+ *  refusing, so a truncated run is never silent. */
+function mailBudgetOkV20_2_(purpose, alreadySent) {
+  var left = 0;
+  try { left = MailApp.getRemainingDailyQuota(); } catch (e) { return true; }
+  if (left > MAIL_ALERT_RESERVE_V20_2) return true;
+  if (!alreadySent || alreadySent === 1) {
+    systemLog_('ERROR', 'MAIL BUDGET EXHAUSTED',
+      purpose + ' stopped: ' + left + ' recipient(s) left, holding ' +
+      MAIL_ALERT_RESERVE_V20_2 + ' back for safety alerts.');
+  }
+  return false;
+}
+
+/** Wraps a bulk run: reports what did not go out instead of failing silently
+ *  part-way through. */
+function reportBulkTruncationV20_2_(purpose, sent, unsent) {
+  if (!unsent.length) return;
+  var msg = purpose + ' sent ' + sent + ' message(s) and STOPPED. ' + unsent.length +
+    ' did not go out because the daily mail quota is nearly gone:\n\n  ' +
+    unsent.slice(0, 30).join('\n  ') +
+    (unsent.length > 30 ? '\n  …and ' + (unsent.length - 30) + ' more' : '') +
+    '\n\nThe remaining quota is held back so unsafe-outcome and 72-hour ' +
+    'breach alerts can still send today. Consumer Google accounts allow 100 ' +
+    'recipients a day; Workspace accounts allow 1,500.';
+  systemLog_('ERROR', 'BULK MAIL TRUNCATED', purpose + ' | ' + unsent.length + ' unsent');
+  try { MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg); } catch (e) {}
+  Logger.log(msg);
+}
+
 function traineeStatusCards() {
   var S = ss();
   var master = S.getSheetByName(TAB.MASTER).getRange(5, 1, 40, 9).getValues();
@@ -3788,8 +3893,10 @@ function traineeStatusCards() {
     if (r[0] && !r[8] && String(r[0]).indexOf('EXAMPLE') !== 0) skipped.push(r[0]);
   });
   var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 12).getValues();
+  var sentN = 0, unsent = [];
   view.forEach(function (r) {
     if (!r[0] || !emailByTrainee[r[0]] || String(r[0]).indexOf('EXAMPLE') === 0) return;
+    if (!mailBudgetOkV20_2_('Trainee status cards', sentN + 1)) { unsent.push(String(r[0])); return; }
     var due = r[10] instanceof Date ? Utilities.formatDate(r[10], 'America/New_York', 'yyyy-MM-dd') : 'none scheduled';
     var body =
       'Your field training status, ' + r[0] + ':\n\n' +
@@ -3804,7 +3911,9 @@ function traineeStatusCards() {
       'Questions about your status go to your FTO or the Training and Compliance Officer.';
     sendMail(emailByTrainee[r[0]], 'Your Field Training Status : Week of ' +
       Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd'), body);
+    sentN++;
   });
+  reportBulkTruncationV20_2_('Trainee status cards', sentN, unsent);
   if (skipped.length) {
     sendMail(CONFIG.TCO_EMAIL,
       'Trainee Cards : ' + skipped.length + ' Trainee(s) Have No Email on File',
@@ -3853,7 +3962,12 @@ function supervisorDigest() {
   var now = new Date();
   var week = Utilities.formatDate(now, 'America/New_York', 'MMMM d, yyyy');
 
+  var digestSent = 0, digestUnsent = [];
   Object.keys(byShift).forEach(function (shift) {
+    if (!mailBudgetOkV20_2_('Supervisor digest', digestSent + 1)) {
+      digestUnsent.push(shift + ' shift');
+      return;
+    }
     var cards = [], textBlocks = [];
     byShift[shift].forEach(function (r) {
       var name = r[0], level = r[1], fto = r[3] || 'unassigned', phase = String(r[4] || ''),
@@ -3904,8 +4018,11 @@ function supervisorDigest() {
     } else {
       sendHtmlMail(String(target.email), shift + ' Shift; Field Training Snapshot : ' + week, text, html);
     }
+    digestSent++;
   });
-  Logger.log('HTML supervisor snapshots sent.');
+  reportBulkTruncationV20_2_('Supervisor digest', digestSent, digestUnsent);
+  Logger.log('HTML supervisor snapshots sent: ' + digestSent +
+    (digestUnsent.length ? ' (' + digestUnsent.length + ' held back for quota)' : '') + '.');
 }
 
 /* ---- ported from master (effective winner) ---- */
@@ -5774,6 +5891,22 @@ function parseRepsV20_1_(text, offeredSkills) {
   return out;
 }
 
+/** True when the evidence log already holds at least one row sourced from
+ *  this form response. The durable write is self-identifying, so this is the
+ *  authoritative idempotency check — the ledger is only a bookkeeping mirror
+ *  of it and can be stale after a crash. */
+function evidenceExistsForResponseV20_2_(responseId) {
+  var rid = String(responseId || '').trim();
+  if (!rid) return false;
+  var t = readTableV20_1_(TAB.SKILL_EVIDENCE, 4);
+  if (!t.ok || t.col['SOURCE RESPONSE ID'] === undefined) return false;
+  var ci = t.col['SOURCE RESPONSE ID'];
+  for (var i = 0; i < t.rows.length; i++) {
+    if (String(t.rows[i][ci] || '').trim() === rid) return true;
+  }
+  return false;
+}
+
 /** PUBLIC HANDLER — name preserved; the form-bound triggers on all four
  *  skills forms keep firing. Fully idempotent via the response ID. */
 function onSkillsGridSubmitV20(e) {
@@ -5802,7 +5935,27 @@ function onSkillsGridSubmitV20(e) {
       return;
     }
     var haveLedger = !!getSheetOrNullV20_1_(TAB.LEDGER);
-    var ledgerRow = haveLedger ? ledgerOpenV20_1_(key, formId, responseId, formTitle, 'skills') : 0;
+    // v20.2: reuse the row a failed attempt left behind. Opening a fresh row
+    // per attempt gave one response several ledger rows, so ledgerFind could
+    // answer from a stale one and the exception report double-counted.
+    var ledgerRow = 0;
+    if (haveLedger) {
+      ledgerRow = ledgerFindV20_1_(key) ||
+        ledgerOpenV20_1_(key, formId, responseId, formTitle, 'skills');
+    }
+
+    // v20.2: evidence rows carry SOURCE RESPONSE ID, so the durable write is
+    // self-identifying. If a previous attempt already expanded this response,
+    // re-expanding would append the whole submission a second time — which is
+    // what happened whenever the post-write mail step threw.
+    var alreadyWritten = evidenceExistsForResponseV20_2_(responseId);
+    if (alreadyWritten) {
+      if (haveLedger) ledgerSetV20_1_(ledgerRow, 'RECONCILED',
+        'Evidence for this response is already on ' + TAB.SKILL_EVIDENCE +
+        '; a previous attempt wrote it. Nothing re-expanded.');
+      systemLog_('WARN', 'SKILLS SUBMISSION ALREADY EXPANDED', key);
+      return;
+    }
 
     try {
       var header = {}, grids = [], reps = {}, labReps = '';
@@ -5999,8 +6152,16 @@ function onSkillsGridSubmitV20(e) {
         prospective.length + ' event(s) (' + accepted + ' accepted) from one submission by ' +
         ftoName + ' for ' + traineeName + ' | ' + key);
     } catch (err) {
-      if (haveLedger) ledgerSetV20_1_(ledgerRow, 'FAILED', String(err));
-      systemLog_('ERROR', 'SKILLS SUBMIT FAILED', key + ' | ' + err);
+      // Same rule as the hub handler: a throw after the evidence rows landed
+      // must not be recorded as though nothing was written.
+      var wroteEvidence = evidenceExistsForResponseV20_2_(responseId);
+      if (haveLedger) {
+        ledgerSetV20_1_(ledgerRow, wroteEvidence ? 'FAILED_AFTER_WRITE' : 'FAILED',
+          (wroteEvidence ? '[Evidence IS on ' + TAB.SKILL_EVIDENCE + '; a later step failed. ' +
+                           'Do not replay blind.] ' : '') + String(err));
+      }
+      systemLog_('ERROR', wroteEvidence ? 'SKILLS SUBMIT FAILED AFTER WRITE' : 'SKILLS SUBMIT FAILED',
+        key + ' | ' + err);
       throw err;
     }
   });
@@ -7966,15 +8127,19 @@ function repairAllTriggersNow() {
   ScriptApp.newTrigger('supervisorDigest').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).create();
   ScriptApp.newTrigger('systemHeartbeat').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(5).create();
   ScriptApp.newTrigger('monthlySnapshot').timeBased().onMonthDay(1).atHour(4).create();
-  var formBound = 0;
-  [FORM_TITLES.SKILLS_EMT, FORM_TITLES.SKILLS_AEMT, FORM_TITLES.SKILLS_PMD].forEach(function (title) {
-    var f = getStoredFormV19_(title);
-    if (f) { ScriptApp.newTrigger('onSkillsGridSubmitV20').forForm(f).onFormSubmit().create(); formBound++; }
+  var plan = formBoundTriggerPlanV20_2_();
+  var formBound = 0, absent = [];
+  plan.forEach(function (p) {
+    var f = getStoredFormV19_(p.title);
+    if (f) { ScriptApp.newTrigger(p.handler).forForm(f).onFormSubmit().create(); formBound++; }
+    else { absent.push(p.title); }
   });
-  var hForm = getStoredFormV19_(FORM_TITLES.HANDOVER);
-  if (hForm) { ScriptApp.newTrigger('onHandoverSubmitV19').forForm(hForm).onFormSubmit().create(); formBound++; }
   var msg = 'Removed ' + removed + ' stale trigger(s). Installed 8 schedule/sheet triggers + ' +
-            formBound + ' form-bound (expect 4).';
+            formBound + ' of ' + plan.length + ' form-bound.' +
+            (absent.length ? '\n\nNOT BOUND (form not found in the stored ID list): ' +
+              absent.join(', ') + '\nSubmissions to a form with no bound trigger are DROPPED — ' +
+              'onHubFormSubmit refuses them as form-trigger-owned. Run rebuildFormIdsNow() if ' +
+              'the form exists.' : '');
   systemLog_('WARN', 'TRIGGERS REINSTALLED', msg);
   Logger.log(msg);
   return msg;
@@ -10595,6 +10760,31 @@ function healthCheckV20_2() {
     if (missing.length) add('BLOCKER', 'Trigger(s) not installed: ' + missing.join(', '), 'repairAllTriggersNow');
   });
 
+  // A form-bound trigger cannot be checked by handler name alone: one handler
+  // serves four forms, so "onSkillsGridSubmitV20 exists" says nothing about
+  // WHICH forms reach it. This is exactly how the combined skills form went
+  // unbound while every trigger check in the system reported healthy.
+  guard(function () {
+    var bound = {};
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      var src = '';
+      try { src = String(t.getTriggerSourceId() || ''); } catch (e) {}
+      if (src) bound[src] = true;
+    });
+    var unbound = [];
+    formBoundTriggerPlanV20_2_().forEach(function (p) {
+      var f = getStoredFormV19_(p.title);
+      if (!f) return;                       // absent form is a different problem
+      if (!bound[f.getId()]) unbound.push(p.title);
+    });
+    if (unbound.length) {
+      add('BLOCKER', unbound.length + ' live form(s) have NO trigger bound: ' + unbound.join(', ') +
+        '. Submissions to them are dropped — onHubFormSubmit refuses them as form-trigger-owned, ' +
+        'and the ledger records the loss as SKIPPED_OWNED. Nothing reaches the evidence log.',
+        'repairAllTriggersNow');
+    }
+  });
+
   guard(function () {
     var dq = getSheetOrNullV20_1_(TAB.QUEUE);
     if (!dq) return;
@@ -10651,6 +10841,17 @@ function healthCheckV20_2() {
     if (unprotected.length) {
       add('WARN', 'Any editor can still overwrite these record tabs: ' + unprotected.join(', '),
         'protectRecordTabsV20_2');
+    }
+  });
+
+  guard(function () {
+    var left = MailApp.getRemainingDailyQuota();
+    if (left <= MAIL_ALERT_RESERVE_V20_2) {
+      add('BLOCKER', 'Mail quota is down to ' + left + ' recipient(s). Bulk digests are now ' +
+        'held back, but if this reaches zero an unsafe-outcome or 72-hour breach alert will ' +
+        'not send either. Consumer accounts allow 100/day; Workspace allows 1,500.', '');
+    } else if (left < MAIL_ALERT_RESERVE_V20_2 * 2) {
+      add('WARN', 'Mail quota is at ' + left + ' recipient(s) for the rest of today.', '');
     }
   });
 
