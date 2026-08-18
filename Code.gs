@@ -73,6 +73,8 @@ function isTestMode_() {
 
 /** Turns live delivery on. Confirmation dialog when a UI is present. */
 function goLive() {
+  var denyV20_2 = denyV20_2_('CHANGE DELIVERY MODE');
+  if (denyV20_2) return denyV20_2;
   var ui = null;
   try { ui = SpreadsheetApp.getUi(); } catch (e) {}
   if (ui) {
@@ -104,6 +106,8 @@ function goLive() {
 
 /** Reverses go-live. Everything reroutes to the test inbox. */
 function backToTestMode() {
+  var denyV20_2 = denyV20_2_('CHANGE DELIVERY MODE');
+  if (denyV20_2) return denyV20_2;
   PropertiesService.getScriptProperties().setProperty(LIVE_FLAG_KEY, 'TEST');
   var msg = 'Back in TEST MODE.\n\nAll mail reroutes to ' + CONFIG.TEST_INBOX +
             '.\nNothing was lost. Delivery to real recipients has stopped.';
@@ -445,40 +449,6 @@ function controlDialV20_1_(label, fallback) {
  *  Menu
  * ---------------------------------------------------------------- */
 
-function onOpen(e) {
-  try {
-    SpreadsheetApp.getUi()
-      .createMenu('SCEMS')
-      .addItem('Work my queue', 'workMyQueueV20_1')
-      .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
-      .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
-      .addItem('Approve everything ready (one click)', 'approveAllReadyV20_1')
-      .addSeparator()
-      .addItem('Advance a trainee', 'advanceTraineeNow')
-      .addItem('Close / release a trainee', 'closeTraineeV20_1')
-      .addSeparator()
-      .addSubMenu(SpreadsheetApp.getUi().createMenu('Admin and health')
-        .addItem('Which mode am I in?', 'whichMode')
-        .addItem('Version report', 'versionReportV20_1')
-        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
-        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
-        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
-        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
-        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
-        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
-        .addItem('System audit (read-only)', 'auditV20_1')
-        .addItem('Runtime health check (read-only)', 'runtimeHealthCheckV20_1')
-        .addItem('Migration preview (read-only)', 'previewMigrationV20_1')
-        .addItem('Full backup package', 'fullBackupV20_1'))
-      .addSubMenu(SpreadsheetApp.getUi().createMenu('Go live / test')
-        .addItem('Go LIVE', 'goLive')
-        .addItem('Back to TEST mode', 'backToTestMode'))
-      .addToUi();
-  } catch (err) {
-    Logger.log('onOpen menu skipped: ' + err);
-  }
-}
 
 
 /* ==================== 10_identity.gs ==================== */
@@ -6261,23 +6231,14 @@ function deciderAuthorityV20_1_(decidedByText) {
     return { allowed: authorized, verified: true, email: email,
              note: authorized ? '' : 'session account is not an authorized decision-maker' };
   }
-  var norm = normalizeNameV20_1_(decidedByText).replace(/[.\s]/g, '');
-  // Authorized deciders come from the person registry's leadership rows
-  // (written by the migration from the configured role addresses) plus the
-  // two role titles themselves. No personal-name shorthands in code.
-  var leaders = ['divisionchiefoftraining', 'medicaldirector'];
-  var reg = loadRegistryV20_1_();
-  if (reg.ok) {
-    reg.rows.forEach(function (p) {
-      if (p.type === 'LEADER' || (p.role && /chief|director/i.test(p.role))) {
-        leaders.push(p.norm.replace(/[.\s]/g, ''));
-      }
-    });
-  }
-  var match = leaders.indexOf(norm) >= 0;
-  return { allowed: match, verified: false, email: '',
-           note: match ? 'IDENTITY UNVERIFIED (platform did not reveal the session account)'
-                       : 'DECIDED BY does not match an authorized decision-maker' };
+  // v20.2: the name-matching fallback is GONE. It granted sign-off authority
+  // to anyone who typed "Medical Director" into DECIDED BY, which is how a
+  // permanent record ends up credited to someone who never made the decision.
+  // decidedByText is now display data only; it is deliberately not consulted.
+  return { allowed: false, verified: false, email: '',
+    note: 'no session identity — v20.2 will not attribute a permanent record to a ' +
+          'typed name. This is the consumer-account problem; the fix is Workspace ' +
+          'accounts. See SPEC-v20.2.md.' };
 }
 
 /* ---------------------------------------------------------------- *
@@ -6421,6 +6382,13 @@ function recordDecisionForRowV20_1_(row) {
     }
     var authority = deciderAuthorityV20_1_(decidedBy);
     if (!authority.allowed) problems.push('authority check failed: ' + authority.note);
+    // v20.2 SPEC-v20.2.md #2: this is the single writer to the permanent
+    // sign-off log, and until now it never once consulted the evidence it was
+    // certifying. An approval on a skill the matrix does not call READY FOR
+    // VALIDATION is still allowed - judgement is the point of a decider - but
+    // it must be typed, not defaulted, and it is stamped forever.
+    var evGate = evidenceGateProblemV20_2_(decision, trainee, skillId, rationale);
+    if (evGate) problems.push(evGate);
     if (problems.length) {
       var msg = 'Row ' + row + ' NOT recorded: ' + problems.join('; ') + '.';
       systemLog_('WARN', 'SKILL DECISION BLOCKED', requestId + ' | ' + msg);
@@ -6441,6 +6409,19 @@ function recordDecisionForRowV20_1_(row) {
     var supersedes = '';
     if (contradiction.length) {
       supersedes = contradiction[contradiction.length - 1].decisionId;
+    }
+
+    // v20.2: when a decider overrides the evidence gate, the permanent record
+    // says WHAT was overridden, not merely that something was. The marker leads
+    // the rationale so it is visible without reading to the end of a paragraph.
+    var overrodeGate = (decision === 'Approve sign-off' &&
+      String(rationale).indexOf(OVERRIDE_MARKER_V20_2) >= 0);
+    if (overrodeGate) {
+      var wasReadiness = skillReadinessNowV20_2_(trainee, skillId) || 'not on the matrix';
+      if (wasReadiness !== 'READY FOR VALIDATION') {
+        rationale = OVERRIDE_MARKER_V20_2 + ' (matrix read "' + wasReadiness + '") ' +
+          rationale.split(OVERRIDE_MARKER_V20_2).join('').trim();
+      }
     }
 
     var decisionId = newIdV20_1_('SD');
@@ -6754,6 +6735,7 @@ function applyAdvancementV20_1(traineeName, decidedBy, effectiveDate, rationale)
  *  PHASE START DATE), closes open queue items, cancels open skill-queue
  *  requests, and re-scopes the forms. */
 function closeTraineeV20_1() {
+  if (!gateV20_2_('CLOSE TRAINEE')) return;
   var ui = SpreadsheetApp.getUi();
   var resp = ui.prompt('Close / release trainee',
     'Exact trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
@@ -6930,71 +6912,18 @@ function applyLinkDecisionsV20_1(confirmToken) {
  *  Closed-trainee rows are left alone (they go through the stranded
  *  workflow). Shows a count and asks once before doing anything. */
 function approveAllReadyV20_1() {
-  ensureQueueRequestIdsV20_1_(); // every candidate needs a stable ID to re-find its row
-  var t = queueTableV20_1_();
-  if (!t.ok) return 'Queue not found.';
-  var closed = {}, onMaster = {};
-  masterTraineeRowsV20_1_().forEach(function (m) {
-    onMaster[m.norm] = true;
-    if (m.closed) closed[m.norm] = true;
-  });
-  var candidates = [];
-  t.rows.forEach(function (r, i) {
-    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
-    if (!trainee) return;
-    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-    if (String(r[t.col['DECISION']] || '').trim()) return; // drafts keep the manual flow
-    var tn = normalizeNameV20_1_(trainee);
-    if (closed[tn] || !onMaster[tn]) return; // stranded workflow owns these
-    candidates.push({ row: t.firstDataRow + i, trainee: trainee,
-                      requestId: t.col['REQUEST ID'] !== undefined
-                        ? String(r[t.col['REQUEST ID']] || '').trim() : '',
-                      skill: String(r[t.col['SKILL']] || '').slice(0, 30) });
-  });
-  if (!candidates.length) {
-    var none = 'Nothing waiting. Every open request already has a decision in progress.';
-    try { SpreadsheetApp.getUi().alert(none); } catch (e) {}
-    return none;
-  }
-  var ui = null;
-  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
-  if (ui) {
-    var msg = 'APPROVE ALL READY\n\n' + candidates.length +
-      ' open request(s) with no decision entered yet:\n\n' +
-      candidates.slice(0, 15).map(function (c) {
-        return '   ' + c.trainee + ' — ' + c.skill; }).join('\n') +
-      (candidates.length > 15 ? '\n   …and ' + (candidates.length - 15) + ' more' : '') +
-      '\n\nEach gets: Approve sign-off, rationale "Evidence thresholds met, ' +
-      'FTO recommendation accepted", your name, today, and a permanent record.' +
-      '\n\nAnything you meant to Return instead: cancel now and handle that row by hand first.';
-    if (ui.alert('Approve all ready', msg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
-      return 'Cancelled. Nothing recorded.';
-    }
-  }
-  var decider = sessionEmailV20_1_() || 'C. Hunt';
-  var out = [];
-  candidates.forEach(function (c) {
-    // Recording rebuilds the matrix, which re-sorts the queue, so the row
-    // captured before this loop may now belong to a different request.
-    var row = c.requestId ? queueRowByRequestIdV20_1_(c.requestId) : 0;
-    if (!row) {
-      out.push(c.trainee + ' — ' + c.skill + ' SKIPPED: request ' +
-        (c.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
-      return;
-    }
-    try {
-      writeQueueDecisionV20_1_(row, 'Approve sign-off', decider, new Date(),
-        'Evidence thresholds met, FTO recommendation accepted');
-      out.push(recordDecisionForRowV20_1_(row));
-    } catch (e2) { out.push(c.trainee + ' — ' + c.skill + ' FAILED: ' + e2); }
-  });
-  var homeNote = '';
-  try { refreshHomeNowV20_1(); homeNote = '\n\nHOME page updated.'; } catch (eH) {}
-  var summary = 'APPROVE ALL READY — ' + candidates.length + ' processed\n\n' + out.join('\n') + homeNote;
-  systemLog_('INFO', 'BULK APPROVAL', candidates.length + ' request(s) via approveAllReadyV20_1');
-  Logger.log(summary);
-  if (ui) ui.alert(summary.slice(0, 1400));
-  return summary;
+  // SPEC-v20.2.md #4 — bulk approval of permanent clinical records cannot
+  // survive the rule this release exists to draw. It wrote "Evidence
+  // thresholds met, FTO recommendation accepted" under a named decider,
+  // in one keystroke, for every open request at once, without ever reading
+  // the evidence it was asserting.
+  var m = 'RETIRED in v20.2. Bulk sign-off is gone: a permanent record of ' +
+          'clinical competency is not something to approve in a batch.\n\n' +
+          'Use "Work my queue", which asks about one request at a time and ' +
+          'requires a reason you actually chose. It is slower on purpose.';
+  systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'approveAllReadyV20_1');
+  try { SpreadsheetApp.getUi().alert(m); } catch (e) {}
+  Logger.log(m); return m;
 }
 
 
@@ -7356,6 +7285,8 @@ function purgeExamples() {
 /** ZZ TEST cleanup: preview first; delete only rows whose trainee/name
  *  field begins with the ZZ TEST prefix. Never touches other rows. */
 function purgeTestRows(confirmToken) {
+  var denyV20_2 = denyV20_2_('DELETE TEST ROWS');
+  if (denyV20_2) return denyV20_2;
   var targets = [
     { tab: TAB.EVAL, col: 3 }, { tab: TAB.REFLECT, col: 2 },
     { tab: TAB.URGENT, col: 5 }, { tab: DECISIONS_TAB, col: 4 },
@@ -7667,6 +7598,8 @@ function runtimeHealthCheckV20_1() {
  *  states this and the runbook's export step covers it. A workbook-only
  *  export is never called a full backup anywhere in v20.1. */
 function fullBackupV20_1() {
+  var denyV20_2 = denyV20_2_('RUN BACKUP');
+  if (denyV20_2) return denyV20_2;
   var stamp = Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm');
   var folderName = 'SCEMS Tracker Backups';
   var it = DriveApp.getFoldersByName(folderName);
@@ -8098,6 +8031,7 @@ function stepC_migrationTopUp() { Logger.log(applyMigrationV20_1('APPLY V20_1'))
  * future dates, and anything past Phase 4 (governance, not code).
  * ================================================================ */
 function advanceTraineeNow() {
+  if (!gateV20_2_('ADVANCE TRAINEE')) return;
   var ui = SpreadsheetApp.getUi();
 
   var r1 = ui.prompt('Advance a trainee (1 of 3)',
@@ -8254,6 +8188,7 @@ function makeQueueReadableV20_1() {
  * ================================================================ */
 
 function workMyQueueV20_1() {
+  if (!gateV20_2_('WORK QUEUE')) return;
   var ui = SpreadsheetApp.getUi();
   ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
   var t = queueTableV20_1_();
@@ -8280,6 +8215,7 @@ function workMyQueueV20_1() {
       return;
     }
     items.push({ row: row, trainee: trainee, skill: skill,
+                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
                  requestId: t.col['REQUEST ID'] !== undefined
                    ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
   });
@@ -8316,7 +8252,9 @@ function workMyQueueV20_1() {
 
     var rationale;
     if (choice === 'A') {
-      rationale = 'Evidence thresholds met, FTO recommendation accepted';
+      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
+        it.trainee, it.skillId);
+      if (!rationale) { skippedN++; continue; }
     } else {
       var r2 = ui.prompt('Return : ' + it.trainee,
         'What should the FTO add? (this becomes the official reason on the record)\n' +
@@ -8390,6 +8328,7 @@ function refreshHomeNowV20_1() {
  * path, not around it.
  * ================================================================ */
 function recordSkillDirectV20_1() {
+  if (!gateV20_2_('RECORD WITNESSED SKILL')) return;
   var ui = SpreadsheetApp.getUi();
 
   var r1 = ui.prompt('Record a skill (1 of 4)',
@@ -8656,6 +8595,7 @@ function queueShowAllV20_1() {
 
 /** Approve everything waiting for the trainee selected on tab 23. */
 function approveTraineeOnViewV20_1() {
+  if (!gateV20_2_('WORK QUEUE')) return;
   var ui = SpreadsheetApp.getUi();
   var view = ss().getSheetByName(TRAINEE_SKILLS_TAB_V19);
   if (!view) { ui.alert('Tab 23 not found.'); return; }
@@ -8685,7 +8625,8 @@ function approveTraineeOnViewV20_1() {
       drafts.push(skill + ' (row ' + row + ' has a draft decision — finish it on tab 20)');
       return;
     }
-    items.push({ row: row, skill: skill,
+    items.push({ row: row, skill: skill, trainee: rec.name,
+                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
                  requestId: t.col['REQUEST ID'] !== undefined
                    ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
   });
@@ -8723,7 +8664,9 @@ function approveTraineeOnViewV20_1() {
 
     var rationale;
     if (choice === 'A') {
-      rationale = 'Evidence thresholds met, FTO recommendation accepted';
+      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
+        it.trainee, it.skillId);
+      if (!rationale) { skippedN++; continue; }
     } else {
       var r2 = ui.prompt('Return : ' + it.skill,
         'What should the FTO add? (this becomes the official reason on the record)\n' +
@@ -9468,8 +9411,8 @@ function stepL_acknowledgeHistorical() {
  * goLive() / backToTestMode() / whichMode() live in 00_core.gs.
  ************************************************************************/
 
-var SCEMS_VERSION = 'v20.1.0i';
-var SCEMS_WRITER_VERSION = 'SCEMS v20.1.0i';
+var SCEMS_VERSION = 'v20.2.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.2.0';
 
 var CONFIG = Object.freeze({
 
@@ -9658,6 +9601,8 @@ var CONTROL_DIALS = Object.freeze({
  * SCEMS v20.1.0i ADD-ON : FTO scoreboard
  * ================================================================ */
 function ftoScoreboardV20_1() {
+  var denyV20_2 = denyV20_2_('READ PROGRAM REPORT');
+  if (denyV20_2) return denyV20_2;
   var threshold = 5;
   try {
     var tv = ss().getSheetByName(TAB.CONTROL).getRange('B5').getValue();
@@ -9803,41 +9748,6 @@ function ftoScoreboardV20_1() {
   return msg;
 }
 
-/** INTENTIONAL OVERRIDE : menu gains the scoreboard. */
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('SCEMS')
-    .addItem('Work my queue', 'workMyQueueV20_1')
-    .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
-    .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
-    .addItem('Approve everything ready (one click)', 'approveAllReadyV20_1')
-    .addSeparator()
-    .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
-    .addSeparator()
-    .addItem('Advance a trainee', 'advanceTraineeNow')
-    .addItem('Close / release a trainee', 'closeTraineeV20_1')
-    .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Admin and health')
-      .addItem('Which mode am I in?', 'whichMode')
-      .addItem('Version report', 'versionReportV20_1')
-      .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
-      .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
-      .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-      .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
-      .addItem('Refresh the home page', 'refreshHomeNowV20_1')
-      .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
-      .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
-      .addItem('System review — core (read-only)', 'reviewCoreV20_1')
-      .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
-      .addItem('System audit (read-only)', 'auditV20_1')
-      .addItem('Runtime health check (read-only)', 'runtimeHealthCheckV20_1')
-      .addItem('Migration preview (read-only)', 'previewMigrationV20_1')
-      .addItem('Full backup package', 'fullBackupV20_1'))
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Go live / test')
-      .addItem('Go LIVE', 'goLive')
-      .addItem('Back to TEST mode', 'backToTestMode'))
-    .addToUi();
-}
 
 
 /* ================================================================
@@ -10125,9 +10035,11 @@ function fixAllFlagsNowV20_1() {
     var ok = ui.alert('Fix all current flags',
       'This will:\n' +
       '1. Acknowledge every burning PHASE MISMATCH (built-in J/K mechanism)\n' +
-      '2. Fix praise-only NO NARRATIVE evals using the FTO\'s own written words, attributed\n' +
-      '3. Log adverse (score-of-1) cases and SILENT RECORD to the review log — amber, not erased\n' +
-      '4. Apply amber/red colors and refresh HOME\n\nProceed?', ui.ButtonSet.OK_CANCEL);
+      '2. Review-log every NO NARRATIVE eval so it is visible and owned\n' +
+      '3. Log SILENT RECORD cases to the review log — amber, not erased\n' +
+      '4. Apply amber/red colors and refresh HOME\n\n' +
+      'It does NOT edit tab 02. An FTO\'s submitted evaluation is their ' +
+      'statement; only they can change it.\n\nProceed?', ui.ButtonSet.OK_CANCEL);
     if (ok !== ui.Button.OK) return 'Cancelled. Nothing changed.';
   }
 
@@ -10149,15 +10061,17 @@ function fixAllFlagsNowV20_1() {
   if (!acked) R.push('PHASE MISMATCH : none burning.');
 
   // ---- 2/3. narrative dodges on 02 ----
+  //
+  // SPEC-v20.2.md #4: this block used to WRITE to tab 02 — it flipped the
+  // FTO's own "Scored 1 or 5" answer from No to Yes, then composed a
+  // justification out of their Strength/Improve text and filed it as though
+  // they had written it. An evaluation is the evaluator's statement about a
+  // person. Correcting it on their behalf, in their name, is the single worst
+  // thing this codebase did. It now detects and review-logs; it writes nothing.
   var ev = readTableV20_1_(TAB.EVAL, 4);
-  var fixedN = 0, adverse = [];
+  var adverse = [];
   if (ev.ok && ev.col['Scored 1 or 5'] !== undefined) {
     var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation', 'Scene Leadership', 'Professionalism'];
-    var narrCol;
-    ev.headers.forEach(function (h, hi) {
-      var hl = String(h || '').toLowerCase();
-      if (narrCol === undefined && (hl.indexOf('situation') >= 0 || hl.indexOf('justif') >= 0 || hl.indexOf('narrat') >= 0)) narrCol = hi;
-    });
     ev.rows.forEach(function (r, k) {
       if (String(r[ev.col['Scored 1 or 5']] || '').trim() !== 'No') return;
       var hasOne = false, hasFive = false;
@@ -10171,21 +10085,11 @@ function fixAllFlagsNowV20_1() {
       var row = ev.firstDataRow + k;
       var who = String(r[2] || '').trim();
       var fto = String(r[1] || '').trim();
-      if (hasOne) {
-        adverse.push({ trainee: who, fto: fto, row: row });
-        R.push('ADVERSE (score of 1) left for the FTO\'s own words : ' + who + ' by ' + fto + ' (02 row ' + row + ') — review-logged');
-        return;
-      }
-      var strength = ev.col['Strength'] !== undefined ? String(r[ev.col['Strength']] || '').trim() : '';
-      var improve = ev.col['Improve'] !== undefined ? String(r[ev.col['Improve']] || '').trim() : '';
-      ev.sheet.getRange(row, ev.col['Scored 1 or 5'] + 1).setValue('Yes');
-      if (narrCol !== undefined && !String(r[narrCol] || '').trim()) {
-        var just = 'Justification transcribed from this evaluation\'s Strength/Improvement fields by C. Hunt (FTO\'s own words): ' +
-          (strength || '(see Strength)') + (improve ? ' / ' + improve : '');
-        ev.sheet.getRange(row, narrCol + 1).setValue(sanitizeCellV20_1_(just.slice(0, 400)));
-      }
-      fixedN++;
-      R.push('NO NARRATIVE fixed (praise-only 5s) : ' + who + ' by ' + fto + ' (02 row ' + row + ') — declaration corrected, FTO\'s words transcribed');
+      adverse.push({ trainee: who, fto: fto, row: row,
+                     kind: hasOne ? 'score of 1' : 'praise-only 5' });
+      R.push('NO NARRATIVE (' + (hasOne ? 'score of 1' : 'praise-only 5') + ') : ' + who +
+        ' by ' + fto + ' (02 row ' + row + ') — review-logged; the FTO must supply the ' +
+        'justification themselves. Nothing was written to tab 02.');
     });
   } else {
     R.push('Eval mirror or "Scored 1 or 5" column not found — narrative fixes skipped.');
@@ -10211,14 +10115,16 @@ function fixAllFlagsNowV20_1() {
     function logIt(trainee, flagType, action, status) {
       if (used[normalizeNameV20_1_(trainee) + '|' + flagType]) { R.push('review log already holds ' + trainee + ' / ' + flagType); return; }
       if (nextFree < 0) { R.push('review log full — add rows'); return; }
-      au.getRange(nextFree, 1, 1, 6).setValues([[new Date(), trainee, flagType, 'C. Hunt', action, status]]);
+      au.getRange(nextFree, 1, 1, 6).setValues([[new Date(), trainee, flagType,
+        deciderIdentityV20_2_() || '(unidentified session)', action, status]]);
       used[normalizeNameV20_1_(trainee) + '|' + flagType] = true;
       nextFree++;
       R.push('review-logged : ' + trainee + ' / ' + flagType + ' → amber');
     }
     adverse.forEach(function (a) {
       logIt(a.trainee, 'NO NARRATIVE',
-        'Score of 1 by ' + a.fto + ' (02 row ' + a.row + ') requires the FTO\'s own justification — requested', 'Under review');
+        'A ' + a.kind + ' by ' + a.fto + ' (02 row ' + a.row + ') was recorded without a ' +
+        'written justification — requested from the FTO', 'Under review');
     });
     for (var i2 = 0; i2 < 40; i2++) {
       if (String(flags[i2][3]).trim() !== 'FLAG') continue; // col E = SILENT RECORD (index 3)
@@ -10246,7 +10152,7 @@ function fixAllFlagsNowV20_1() {
     '\n\nStill burning (red or amber): ' + (still.length ? still.join(' ; ') : 'NONE') +
     '\nAmber = logged and being handled. These go out when the FTO\'s words / the reflection arrive.';
   systemLog_('INFO', 'FLAGS FIXED',
-    acked + ' phase acks, ' + fixedN + ' narrative fixes, ' + adverse.length + ' adverse logged');
+    acked + ' phase acks, ' + adverse.length + ' narrative gap(s) review-logged, 0 writes to tab 02');
   Logger.log(msg);
   try { if (ui) ui.alert(msg.slice(0, 1400)); } catch (e6) {}
   return msg;
@@ -10257,104 +10163,22 @@ function fixAllFlagsNowV20_1() {
  * SCEMS v20.1.0i ADD-ON : flags, simplified for one human
  * ================================================================ */
 function simplifyFlagsV20_1() {
-  var au = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!au) return 'Tab 13 not found.';
-  var R = [];
-
-  // ---- 1. un-split ----
-  try { au.setFrozenRows(0); au.setFrozenColumns(0); R.push('Frozen panes removed — no more split page.'); } catch (e1) {}
-
-  // ---- find the review log ----
-  var scanN = Math.max(au.getLastRow(), 60);
-  var scan = au.getRange(1, 1, scanN, 2).getValues();
-  var logRow = 0;
-  for (var s = 44; s < scan.length; s++) {
-    if (String(scan[s][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
-        String(scan[s][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = s + 1; break; }
-  }
-  if (!logRow) return 'FLAG REVIEW LOG not found — run redoAuditTabV20_1 once first.';
-  var first = logRow + 2, last = logRow + 21;
-
-  // ---- 2. log every burning flag under the director's name ----
-  var heads = au.getRange(4, 2, 1, 6).getDisplayValues()[0];
-  var names = au.getRange(5, 1, 40, 1).getDisplayValues();
-  var burning = au.getRange(5, 2, 40, 6).getDisplayValues();
-  var existing = au.getRange(first, 1, last - first + 1, 6).getValues();
-  var used = {}, nextFree = -1;
-  existing.forEach(function (r3, i3) {
-    var t3 = String(r3[1] || '').trim(), f3 = String(r3[2] || '').trim();
-    if (t3) used[normalizeNameV20_1_(t3) + '|' + f3] = true;
-    else if (nextFree < 0) nextFree = first + i3;
-  });
-  var logged = 0;
-  for (var i = 0; i < 40; i++) {
-    var nm = String(names[i][0] || '').trim();
-    if (!nm) continue;
-    for (var c = 0; c < 6; c++) {
-      if (String(burning[i][c]).trim() !== 'FLAG') continue;
-      var key = normalizeNameV20_1_(nm) + '|' + heads[c];
-      if (used[key]) continue;
-      if (nextFree < 0) { R.push('Review log full — add rows below it.'); break; }
-      au.getRange(nextFree, 1, 1, 6).setValues([[new Date(), nm, heads[c], 'C. Hunt',
-        'Acknowledged by program director — monitoring until the data clears', 'Under review']]);
-      used[key] = true; nextFree++; logged++;
-    }
-  }
-  R.push(logged + ' flag(s) review-logged under your name.');
-
-  // ---- 3. teach the formulas: logged = ACK ----
-  var fmls = au.getRange(5, 2, 40, 6).getFormulas();
-  var wrapped = 0, skipped = 0;
-  for (var r = 0; r < 40; r++) {
-    for (var c2 = 0; c2 < 6; c2++) {
-      var f = fmls[r][c2];
-      if (!f) continue;
-      if (f.indexOf('"ACK"') >= 0) { skipped++; continue; } // already taught
-      var rowN = 5 + r;
-      var colL = String.fromCharCode(66 + c2); // B..G
-      var ackTest = 'COUNTIFS($B$' + first + ':$B$' + last + ',$A' + rowN +
-                    ',$C$' + first + ':$C$' + last + ',' + colL + '$4)>0';
-      var inner = f.replace(/^=/, '');
-      au.getRange(rowN, 2 + c2).setFormula('=IF(' + ackTest + ',"ACK",' + inner + ')');
-      wrapped++;
-    }
-  }
-  R.push(wrapped + ' flag formula(s) taught to honor your log' + (skipped ? ' (' + skipped + ' already taught)' : '') + '.');
-
-  // ---- 4. colors ----
-  var matrix = au.getRange(5, 2, 40, 6);
-  au.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('ACK').setBackground('#B7791F').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenCellNotEmpty().setFontColor('#9E9E9E').setRanges([matrix]).build()
-  ]);
-
-  // ---- 5 + 6. hide the machinery, refresh the surface ----
-  SpreadsheetApp.flush();
-  var after = au.getRange(5, 2, 40, 6).getDisplayValues();
-  var red = 0, amber = 0;
-  after.forEach(function (row2) {
-    row2.forEach(function (v) {
-      if (String(v).trim() === 'FLAG') red++;
-      if (String(v).trim() === 'ACK') amber++;
-    });
-  });
-  try { au.hideSheet(); R.push('Tab 13 hidden — machinery, not your daily surface.'); } catch (e5) {}
-  try { refreshHomeNowV20_1(); } catch (e6) {}
-
-  var msg = 'FLAGS SIMPLIFIED\n\n' + R.join('\n') +
-    '\n\nBoard state: ' + red + ' red (unhandled), ' + amber + ' amber (yours, monitored).' +
-    '\nHOME stops listing anything amber. A flag returns on its own only if NEW data re-triggers it.' +
-    '\nUndo any time: unwrapAuditFormulasV20_1 restores the original formulas.';
-  systemLog_('INFO', 'FLAGS SIMPLIFIED', logged + ' logged, ' + wrapped + ' formulas taught, tab 13 hidden');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e7) {}
-  return msg;
+  // SPEC-v20.2.md #4 — this rewrote the audit tab's detection formulas so they
+  // would return "ACK" for any flag it had just logged under the director's
+  // name, then hid the tab. A detector that answers to acknowledgements it
+  // wrote itself is not a detector. redoAuditTabV20_1 prints "Nothing here is
+  // dismissed by hand" onto the same tab; this dismissed all of it by hand.
+  var m = 'RETIRED in v20.2. Flags are no longer silenced by rewriting the ' +
+          'formulas that raise them.\n\n' +
+          'Use "Accept a flag" (acceptFlagV20_2). It records one flag, one ' +
+          'named human, one typed reason and a review-by date. The flag stays ' +
+          'visible as ACCEPTED, the detection formula is untouched, and the ' +
+          'acceptance expires instead of lasting forever.\n\n' +
+          'If a previous run already wrapped the formulas, ' +
+          'unwrapAuditFormulasV20_1() reverses it.';
+  systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'simplifyFlagsV20_1');
+  try { SpreadsheetApp.getUi().alert(m); } catch (e) {}
+  Logger.log(m); return m;
 }
 
 /** Reversal: strips the ACK wrapper, restoring the original formulas. */
@@ -10377,4 +10201,546 @@ function unwrapAuditFormulasV20_1() {
   systemLog_('INFO', 'AUDIT FORMULAS UNWRAPPED', msg);
   Logger.log(msg);
   return msg;
+}
+
+
+/* ==================== 05_governance.gs (v20.2) ==================== */
+
+/************************************************************************
+ * SCEMS FTPD v20.2 : 05_governance.gs
+ *
+ * THE RULE THIS FILE ENFORCES
+ *   Anything that becomes part of a person's permanent record has exactly
+ *   one way in, and that way is never bulk, never defaulted, and never
+ *   self-attested. Everything else may be as convenient as we can make it.
+ *
+ * Full reasoning, scope and acceptance checks: SPEC-v20.2.md.
+ *
+ * Nothing in this file deletes a row from any tab.
+ ************************************************************************/
+
+var OVERRIDE_MARKER_V20_2 = '[THRESHOLD OVERRIDE]';
+
+/** Which roles may perform which action. Anything not listed is director-only
+ *  by default, so a new action fails closed rather than open. */
+var ACTION_ROLES_V20_2 = Object.freeze({
+  'ADVANCE TRAINEE':        ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'CLOSE TRAINEE':          ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'WORK QUEUE':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'RECORD WITNESSED SKILL': ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'ACCEPT AUDIT FLAG':      ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'CHANGE DELIVERY MODE':   ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'READ PROGRAM REPORT':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'COMMAND', 'MEDICAL_DIRECTOR'],
+  'RUN BACKUP':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'PROTECT RECORD TABS':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'DELETE TEST ROWS':       ['PROGRAM_DIRECTOR']
+});
+
+/** Writes one row to the access log, and always to the system log. The access
+ *  log may not exist before migration; that must never lose the entry. */
+function logAccessV20_2_(action, email, authorized, detail) {
+  systemLog_(authorized ? 'INFO' : 'WARN',
+    'ACCESS ' + (authorized ? 'GRANTED' : 'REFUSED'),
+    action + ' | ' + (email || '(unidentified)') + ' | ' + String(detail || '').slice(0, 300));
+  try {
+    appendRowsHeaderMappedV20_1_(TAB.ACCESS, 4, [{
+      'ACCESS ID': newIdV20_1_('AC'), 'TIMESTAMP': new Date(), 'KIND': action,
+      'REQUESTED BY': email || '(unidentified)', 'VERIFIED EMAIL': email || '(none)',
+      'AUTHORIZED': authorized ? 'YES' : 'NO', 'SUBJECT': '', 'DELIVERED TO': '',
+      'REASON': '', 'DETAIL': String(detail || '').slice(0, 400)
+    }], ['ACCESS ID']);
+  } catch (e) { /* system log above already holds it */ }
+}
+
+/** THE GATE. Returns { ok, actor, email, message }.
+ *
+ *  Refuses outright when the platform cannot identify the session. There is
+ *  deliberately no fallback to a typed name: a record that cannot say who
+ *  made it is worse than an operator who is briefly locked out. When this
+ *  refuses on a consumer Google account, that is the Workspace move becoming
+ *  urgent rather than optional — the message says so. */
+function requireActorV20_2_(action, allowedRoles) {
+  var act = String(action || '').toUpperCase();
+  var roles = allowedRoles || ACTION_ROLES_V20_2[act] || ['PROGRAM_DIRECTOR'];
+  var email = sessionEmailV20_1_();
+  var out = { ok: false, actor: null, email: email, message: '' };
+
+  if (!email) {
+    out.message =
+      'REFUSED : ' + act + '\n\n' +
+      'Google did not tell this script which account is running it, so the\n' +
+      'decision could not be attributed to anyone. Nothing was written.\n\n' +
+      'This happens on consumer Google accounts. Until the program runs on\n' +
+      'Workspace accounts, records cannot be reliably attributed — see\n' +
+      'SPEC-v20.2.md. Earlier versions guessed a name here; that is exactly\n' +
+      'what produced sign-offs credited to people who never made them.';
+    logAccessV20_2_(act, '', false, 'no session identity');
+    return out;
+  }
+
+  var actor = resolveAuthorizedActorV20_1_(email);
+  var granted = actor.ok && roles.some(function (r) { return actor.roles.indexOf(r) >= 0; });
+  out.actor = actor;
+  if (!granted) {
+    out.message =
+      'REFUSED : ' + act + '\n\n' +
+      'Signed in as ' + email + '\n' +
+      'Roles held  : ' + (actor.roles.length ? actor.roles.join(', ') : 'none') + '\n' +
+      'Roles needed: ' + roles.join(', ') + '\n\n' +
+      'Nothing was written. If this is wrong, the fix is on 22 FTO ROSTER or\n' +
+      '90 PERSON REGISTRY, not here.';
+    logAccessV20_2_(act, email, false, 'held [' + actor.roles.join(',') + '] needed [' + roles.join(',') + ']');
+    return out;
+  }
+
+  out.ok = true;
+  logAccessV20_2_(act, email, true, 'roles [' + actor.roles.join(',') + ']');
+  return out;
+}
+
+/** Returns '' when the action is allowed, or the refusal message (already
+ *  logged and shown) when it is not. Lets a string-returning function refuse
+ *  with `var deny = denyV20_2_('X'); if (deny) return deny;`. */
+function denyV20_2_(action, allowedRoles) {
+  var g = requireActorV20_2_(action, allowedRoles);
+  if (g.ok) return '';
+  Logger.log(g.message);
+  try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
+  return g.message;
+}
+
+/** Gate helper for the menu flows: refuses, tells the operator why, returns
+ *  false. Callers do `if (!gateV20_2_('WORK QUEUE')) return;`. */
+function gateV20_2_(action, allowedRoles) {
+  var g = requireActorV20_2_(action, allowedRoles);
+  if (!g.ok) {
+    Logger.log(g.message);
+    try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
+    return false;
+  }
+  return true;
+}
+
+/** The identity to stamp on a record, or '' when unknown. Never invents one. */
+function deciderIdentityV20_2_() {
+  return sessionEmailV20_1_();
+}
+
+/* ---------------------------------------------------------------- *
+ *  Evidence gate
+ * ---------------------------------------------------------------- */
+
+/** Current READINESS for one trainee/skill straight off the matrix, or ''
+ *  when the pair is not on it. Read-only. */
+function skillReadinessNowV20_2_(trainee, skillId) {
+  var t = readTableV20_1_(TAB.SKILLS, 4);
+  if (!t.ok) return '';
+  var cT = t.col['TRAINEE'], cS = t.col['SKILL ID'], cR = t.col['READINESS'];
+  if (cT === undefined || cS === undefined || cR === undefined) return '';
+  var tn = normalizeNameV20_1_(trainee);
+  var sid = String(skillId || '').trim();
+  for (var i = 0; i < t.rows.length; i++) {
+    if (normalizeNameV20_1_(t.rows[i][cT]) !== tn) continue;
+    if (String(t.rows[i][cS] || '').trim() !== sid) continue;
+    return String(t.rows[i][cR] || '').trim();
+  }
+  return '';
+}
+
+/** SPEC-v20.2.md #3 — an approval needs a reason a human actually chose.
+ *
+ *  The old code filled in "Evidence thresholds met, FTO recommendation
+ *  accepted" on a keystroke. That is a factual claim about evidence, written
+ *  under a named decider, that nothing had checked. This asks instead, and
+ *  when the matrix disagrees with the approval it says so BEFORE the reason is
+ *  typed, so the override is a decision rather than a surprise error.
+ *
+ *  Returns '' when the operator backs out — callers treat that as a skip.
+ */
+function approvalRationalePromptV20_2_(ui, title, trainee, skillId) {
+  var readiness = skillReadinessNowV20_2_(trainee, skillId);
+  var ready = (readiness === 'READY FOR VALIDATION');
+
+  if (!ready) {
+    var warn = ui.alert('Evidence gate : ' + title,
+      'The matrix reads "' + (readiness || 'not on the matrix') + '" for this skill, ' +
+      'not READY FOR VALIDATION.\n\n' +
+      'You may still approve — your judgement is the point of this role — but the ' +
+      'record will be permanently stamped ' + OVERRIDE_MARKER_V20_2 + ' so the ' +
+      'exception is visible to anyone who reads it later.\n\n' +
+      'Approve anyway?', ui.ButtonSet.YES_NO);
+    if (warn !== ui.Button.YES) return '';
+  }
+
+  var r = ui.prompt('Approve : ' + title,
+    'Why is this competency signed off? This becomes the official reason on a ' +
+    'permanent record, in your name.\n\n' +
+    (ready ? 'Examples: "Evidence thresholds met, FTO recommendation accepted", ' +
+             '"Directly observed and verified".'
+           : 'Say what you relied on instead of the thresholds.') +
+    '\n\n(Blank cancels this one and moves on.)',
+    ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return '';
+  var text = String(r.getResponseText() || '').trim();
+  if (!text) return '';
+  if (!ready && text.indexOf(OVERRIDE_MARKER_V20_2) < 0) {
+    text = OVERRIDE_MARKER_V20_2 + ' ' + text;
+  }
+  return text;
+}
+
+/** Evidence gate for an Approve sign-off. Returns a problem string, or ''.
+ *  An approval below threshold is not forbidden — it is required to be
+ *  DISTINGUISHABLE, by carrying the override marker into the permanent
+ *  record. Returns and revokes are never gated. */
+function evidenceGateProblemV20_2_(decision, trainee, skillId, rationale) {
+  if (decision !== 'Approve sign-off') return '';
+  var readiness = skillReadinessNowV20_2_(trainee, skillId);
+  if (readiness === 'READY FOR VALIDATION') return '';
+  if (String(rationale || '').indexOf(OVERRIDE_MARKER_V20_2) >= 0) return '';
+  return 'evidence gate: this skill reads "' + (readiness || 'not on the matrix') +
+    '", not READY FOR VALIDATION. Approving anyway is allowed but must be ' +
+    'deliberate — add the override through the menu so the record shows it';
+}
+
+/* ---------------------------------------------------------------- *
+ *  Audit flags : an honest acceptance path
+ * ---------------------------------------------------------------- */
+
+var FLAG_ACCEPT_STATUS_V20_2 = 'Accepted';
+var FLAG_ACCEPT_DAYS_V20_2 = 90;
+
+/** Locates the FLAG REVIEW LOG on tab 13. Returns { headerRow, firstEntry,
+ *  lastEntry } or null. Same scan the existing tools use. */
+function flagReviewLogV20_2_(sh) {
+  var scanN = Math.max(sh.getLastRow(), 60);
+  var scan = sh.getRange(1, 1, scanN, 2).getValues();
+  for (var i = 44; i < scan.length; i++) {
+    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
+        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) {
+      return { headerRow: i + 2, firstEntry: i + 3, lastEntry: i + 22 };
+    }
+  }
+  return null;
+}
+
+/** Every currently burning flag on tab 13, read-only. */
+function burningFlagsV20_2_() {
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  var out = [];
+  if (!sh) return out;
+  var heads = sh.getRange(4, 2, 1, 6).getDisplayValues()[0];
+  var names = sh.getRange(5, 1, 40, 1).getDisplayValues();
+  var vals = sh.getRange(5, 2, 40, 6).getDisplayValues();
+  for (var i = 0; i < 40; i++) {
+    var who = String(names[i][0] || '').trim();
+    if (!who) continue;
+    for (var c = 0; c < 6; c++) {
+      if (String(vals[i][c]).trim() !== 'FLAG') continue;
+      out.push({ trainee: who, flagType: heads[c] || ('column ' + (c + 2)), row: 5 + i });
+    }
+  }
+  return out;
+}
+
+/** ACCEPT ONE FLAG. One flag, one named human, one typed reason, one date.
+ *
+ *  The flag STAYS VISIBLE and keeps reading FLAG — acceptance is recorded
+ *  beside it, never instead of it, and no detection formula is touched. The
+ *  acceptance expires, so it is a decision with a shelf life rather than a
+ *  permanent silence. This is the supported replacement for the bulk
+ *  silencing that v20.1 shipped and v20.2 retires. */
+function acceptFlagV20_2() {
+  if (!gateV20_2_('ACCEPT AUDIT FLAG')) return;
+  var ui = SpreadsheetApp.getUi();
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) { ui.alert('Tab 13 not found.'); return; }
+
+  var burning = burningFlagsV20_2_();
+  if (!burning.length) { ui.alert('No flags are burning. Nothing to accept.'); return; }
+
+  var log = flagReviewLogV20_2_(sh);
+  if (!log) { ui.alert('FLAG REVIEW LOG not found on tab 13. Run redoAuditTabV20_1 once first.'); return; }
+
+  var listing = burning.slice(0, 20).map(function (f, i) {
+    return (i + 1) + '  ' + f.trainee + ' — ' + f.flagType; }).join('\n');
+  var r1 = ui.prompt('Accept one flag  (1 of 2)',
+    burning.length + ' flag(s) burning. Type the number of the ONE you are accepting:\n\n' +
+    listing + (burning.length > 20 ? '\n   …and ' + (burning.length - 20) + ' more' : ''),
+    ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  var pick = parseInt(String(r1.getResponseText() || '').trim(), 10);
+  if (!(pick >= 1 && pick <= Math.min(burning.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
+  var flag = burning[pick - 1];
+
+  var r2 = ui.prompt('Accept one flag  (2 of 2)',
+    flag.trainee + ' — ' + flag.flagType + '\n\n' +
+    'Why is this acceptable? This goes on the record in your name.\n' +
+    'There is no default: a blank answer cancels.',
+    ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  var reason = String(r2.getResponseText() || '').trim();
+  if (!reason) { ui.alert('No reason given. Nothing recorded.'); return; }
+
+  var reviewBy = new Date();
+  reviewBy.setDate(reviewBy.getDate() + FLAG_ACCEPT_DAYS_V20_2);
+  var who = deciderIdentityV20_2_();
+
+  var existing = sh.getRange(log.firstEntry, 1, log.lastEntry - log.firstEntry + 1, 6).getValues();
+  var free = -1;
+  for (var i = 0; i < existing.length; i++) {
+    if (!String(existing[i][1] || '').trim()) { free = log.firstEntry + i; break; }
+  }
+  if (free < 0) { ui.alert('The FLAG REVIEW LOG is full. Add rows beneath it, then try again.'); return; }
+
+  sh.getRange(free, 1, 1, 6).setValues([[
+    new Date(), flag.trainee, flag.flagType, who,
+    sanitizeCellV20_1_('Accepted until ' + dateKeyV20_1_(reviewBy) + ' — ' + reason),
+    FLAG_ACCEPT_STATUS_V20_2
+  ]]);
+
+  // Keep the STATUS dropdown honest about the value we just wrote.
+  try {
+    sh.getRange(log.firstEntry, 6, log.lastEntry - log.firstEntry + 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(
+        ['Under review', 'Action taken — awaiting data', 'Resolved', FLAG_ACCEPT_STATUS_V20_2], true)
+        .setAllowInvalid(true).build());
+  } catch (e) {}
+
+  var msg = 'Accepted.\n\n' + flag.trainee + ' — ' + flag.flagType +
+    '\nAccepted by : ' + who +
+    '\nReview by   : ' + dateKeyV20_1_(reviewBy) +
+    '\nReason      : ' + reason +
+    '\n\nThe flag stays visible and still counts as outstanding. Acceptance is ' +
+    'recorded beside it, not instead of it, and it expires on the review date. ' +
+    'No detection formula was changed.';
+  systemLog_('WARN', 'AUDIT FLAG ACCEPTED',
+    flag.trainee + ' | ' + flag.flagType + ' | by ' + who + ' | review by ' + dateKeyV20_1_(reviewBy));
+  ui.alert(msg);
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Record-tab protections : immutability as a control
+ * ---------------------------------------------------------------- */
+
+/** Applies sheet protection to the tabs that hold permanent records, so
+ *  "append-only" stops being a convention that seven code paths ignore.
+ *  Reports rather than forces, and is safe to re-run. */
+function protectRecordTabsV20_2() {
+  if (!gateV20_2_('PROTECT RECORD TABS')) return;
+  var DESC = 'SCEMS v20.2 record tab — script writes, people do not';
+  var tabs = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+              TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS, TAB.LOG];
+  var out = [];
+  tabs.forEach(function (name) {
+    var sh = getSheetOrNullV20_1_(name);
+    if (!sh) { out.push('  ' + name + ' : absent, skipped'); return; }
+    try {
+      var existing = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+        .filter(function (p) { return String(p.getDescription() || '') === DESC; });
+      var p = existing.length ? existing[0] : sh.protect().setDescription(DESC);
+      var editors = p.getEditors();
+      if (editors.length) p.removeEditors(editors.map(function (u) { return u.getEmail(); }));
+      if (p.canDomainEdit && p.canDomainEdit()) p.setDomainEdit(false);
+      p.setWarningOnly(false);
+      out.push('  ' + name + ' : protected (' + (existing.length ? 'refreshed' : 'new') + ')');
+    } catch (e) {
+      out.push('  ' + name + ' : NOT protected — ' + e);
+    }
+  });
+  var msg = 'RECORD TAB PROTECTION\n\n' + out.join('\n') +
+    '\n\nOnly this account and the script may now write to these tabs.\n' +
+    'Everything the system does still works: the script writes as you.\n' +
+    'Re-run this after adding an editor to the spreadsheet.';
+  systemLog_('INFO', 'RECORD TABS PROTECTED', out.join(' | ').slice(0, 400));
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Health check : the one diagnostic that names the next action
+ * ---------------------------------------------------------------- */
+
+var HEALTH_RANK_V20_2 = { BLOCKER: 0, WARN: 1, INFO: 2, CLEAR: 3 };
+
+/** Runs the cheap read-only detectors and returns what needs attention,
+ *  worst first, each naming the exact function to run. This exists because
+ *  every gap-detector in this system is otherwise editor-only and invisible:
+ *  the checks were already written, nobody could find them. Writes nothing. */
+function healthCheckV20_2() {
+  var items = [];
+  function add(sev, headline, run) { items.push({ sev: sev, headline: headline, run: run || '' }); }
+  function guard(fn) { try { fn(); } catch (e) { add('WARN', 'A check could not run: ' + e, ''); } }
+
+  guard(function () {
+    if (isTestMode_()) {
+      add('BLOCKER', 'Delivery is in TEST MODE. Every alert — including unsafe scores and ' +
+        '72-hour breaches — reroutes to ' + CONFIG.TEST_INBOX + ' and reaches nobody else.', 'goLive');
+    }
+  });
+
+  guard(function () {
+    var n = masterTraineeRowsV20_1_().length;
+    if (n > 40) {
+      add('BLOCKER', n + ' trainees on the master, but most readers only see the first 40. ' +
+        'Trainee 41 onward gets no reminder, no status card, no digest line and no skill matrix.', '');
+    }
+  });
+
+  guard(function () {
+    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+    var missing = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
+    if (missing.length) add('BLOCKER', 'Trigger(s) not installed: ' + missing.join(', '), 'repairAllTriggersNow');
+  });
+
+  guard(function () {
+    var dq = getSheetOrNullV20_1_(TAB.QUEUE);
+    if (!dq) return;
+    var used = dq.getRange(5, 1, 296, 1).getValues().filter(function (r) { return r[0]; }).length;
+    if (used >= 296) {
+      add('BLOCKER', 'Decision queue is FULL (296/296). queueAdd now throws, which blocks ' +
+        'shift-evaluation ingestion entirely.', '');
+    } else if (used > 250) {
+      add('WARN', 'Decision queue is ' + used + '/296 full. At 296 it throws and blocks ingestion.', '');
+    }
+  });
+
+  guard(function () {
+    var led = readTableV20_1_(TAB.LEDGER, 4);
+    if (!led.ok) return;
+    var terminal = ['PROCESSED', 'SKIPPED_OWNED', 'SKIPPED_DUPLICATE', 'RECONCILED'];
+    var bad = 0;
+    led.rows.forEach(function (r) {
+      var st = String(r[led.col['STATE']] || '');
+      if (st && terminal.indexOf(st) < 0) bad++;
+    });
+    if (bad) add('WARN', bad + ' form submission(s) never reached a terminal state.', 'ingestionExceptionReportV20_1');
+  });
+
+  guard(function () {
+    var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+    if (!q.ok) return;
+    var open = 0, stranded = 0;
+    q.rows.forEach(function (r) {
+      if (!String(r[q.col['TRAINEE']] || '').trim()) return;
+      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+      open++;
+      if (String(r[q.col['DECISION']] || '').trim()) stranded++;
+    });
+    if (stranded) add('WARN', stranded + ' queue row(s) hold a decision that was never recorded.',
+      'previewStrandedDecisionsV20_1');
+    if (open) add('INFO', open + ' skill request(s) waiting on you.', 'workMyQueueV20_1');
+  });
+
+  guard(function () {
+    var f = burningFlagsV20_2_();
+    if (f.length) {
+      add('WARN', f.length + ' audit flag(s) burning. Fix the condition, or accept one on the ' +
+        'record with a reason and a review date.', 'acceptFlagV20_2');
+    }
+  });
+
+  guard(function () {
+    var unprotected = [];
+    [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].forEach(function (n) {
+      var sh = getSheetOrNullV20_1_(n);
+      if (sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) unprotected.push(n);
+    });
+    if (unprotected.length) {
+      add('WARN', 'Any editor can still overwrite these record tabs: ' + unprotected.join(', '),
+        'protectRecordTabsV20_2');
+    }
+  });
+
+  guard(function () {
+    var last = PropertiesService.getScriptProperties().getProperty('LAST_FULL_BACKUP') || '';
+    if (!last) { add('WARN', 'No full backup package has ever been created.', 'fullBackupV20_1'); return; }
+    var d = parseDateSafeV20_1_(last.slice(0, 10));
+    if (d && (new Date() - d) / 86400000 > 40) {
+      add('WARN', 'Newest full backup is ' + Math.round((new Date() - d) / 86400000) +
+        ' days old (' + last + ').', 'fullBackupV20_1');
+    }
+  });
+
+  guard(function () {
+    if (!sessionEmailV20_1_()) {
+      add('BLOCKER', 'Google is not revealing which account is running this script, so no ' +
+        'decision can be attributed and every gated action will refuse. This is the ' +
+        'consumer-account problem; the fix is Workspace accounts.', '');
+    }
+  });
+
+  items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
+
+  var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
+  if (!items.length) {
+    L.push('CLEAR. Nothing needs you.');
+  } else {
+    items.forEach(function (it) {
+      L.push(it.sev + '  ' + it.headline);
+      if (it.run) L.push('        run: ' + it.run + '()');
+      L.push('');
+    });
+    var blockers = items.filter(function (i) { return i.sev === 'BLOCKER'; }).length;
+    L.push(blockers ? blockers + ' blocker(s) first — the rest can wait.'
+                    : 'No blockers. Work the list top down.');
+  }
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Menu : six verbs, everything else behind Admin
+ * ---------------------------------------------------------------- */
+
+/** THE ONLY onOpen IN THIS PROJECT. The two earlier definitions were deleted
+ *  in v20.2 — the first had been dead since the second was appended, which is
+ *  exactly the failure mode of editing by pasting at the bottom. */
+function onOpen(e) {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.createMenu('SCEMS')
+      .addItem('Work my queue', 'workMyQueueV20_1')
+      .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
+      .addItem('Advance a trainee', 'advanceTraineeNow')
+      .addItem('Close / release a trainee', 'closeTraineeV20_1')
+      .addSeparator()
+      .addItem('Health check', 'healthCheckV20_2')
+      .addItem('Backup now', 'fullBackupV20_1')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Admin')
+        .addItem('Health check', 'healthCheckV20_2')
+        .addSeparator()
+        .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
+        .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
+        .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
+        .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
+        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
+        .addSeparator()
+        .addItem('Which mode am I in?', 'whichMode')
+        .addItem('Version report', 'versionReportV20_1')
+        .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
+        .addSeparator()
+        .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
+        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
+        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
+        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
+        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
+        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
+        .addSeparator()
+        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
+        .addItem('System review — core (read-only)', 'reviewCoreV20_1')
+        .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
+        .addItem('Migration preview (read-only)', 'previewMigrationV20_1'))
+      .addSubMenu(ui.createMenu('Go live / test')
+        .addItem('Go LIVE', 'goLive')
+        .addItem('Back to TEST mode', 'backToTestMode'))
+      .addToUi();
+  } catch (err) {
+    Logger.log('onOpen menu skipped: ' + err);
+  }
 }

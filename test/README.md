@@ -8,14 +8,24 @@ reached.
 ```
 node test/validate-skill-event.test.js    # skill evidence validator
 node test/queue-row-resolution.test.js    # queue row identity + decision writer
+node test/governance-gate.test.js         # v20.2 authorization + evidence gates
 ```
 
-Both exit non-zero on failure.
+All three exit non-zero on failure. 86 assertions total.
 
 | Harness | Covers | Guards against |
 | --- | --- | --- |
 | `validate-skill-event.test.js` | `validateSkillEventV20_1_`, `promptingForStageV19_` | the catalog-property and prompting-vocabulary blockers returning |
 | `queue-row-resolution.test.js` | `queueRowByRequestIdV20_1_`, `writeQueueDecisionV20_1_` | batch approval writing to a row the queue sort moved |
+| `governance-gate.test.js` | `requireActorV20_2_`, `deciderAuthorityV20_1_`, `evidenceGateProblemV20_2_`, `burningFlagsV20_2_`, the retired stubs | the v20.2 rule being quietly walked back |
 
 `queue-row-resolution.test.js` asserts the *old* broken behaviour as well
 as the new, so it demonstrates the defect rather than merely passing.
+
+`governance-gate.test.js` is written against the numbered acceptance checks
+in `SPEC-v20.2.md`; each section names the check it proves. Several
+assertions read a function's own source (`fn.toString()`) rather than its
+return value — that is deliberate. Checks like "no longer writes to tab 02"
+and "deletes nothing" are claims about what a function *cannot* do, and a
+behavioural test can only ever show that one particular input did not
+trigger it.
