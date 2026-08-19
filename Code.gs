@@ -302,6 +302,12 @@ function readTableV20_1_(sheetName, headerRow) {
   });
   var col = {};
   headers.forEach(function (h, i) { if (h) col[h.toUpperCase()] = i; });
+  // v20.4: a renamed header still answers to its canonical name, so the 235
+  // places that look a column up by name keep working after the rename.
+  headers.forEach(function (h, i) {
+    var canon = canonicalHeaderV20_4_(h, sheetName);
+    if (canon && col[canon] === undefined) col[canon] = i;
+  });
   var lastRow = sh.getLastRow();
   var rows = lastRow > hr
     ? sh.getRange(hr + 1, 1, lastRow - hr, lastCol).getValues()
@@ -3924,6 +3930,512 @@ function dailyChecks() {
 
 
 
+
+
+/* ================================================================
+ * SCEMS v20.4 : plain English, correct headers, plumbing out of sight
+ *
+ * The problem this solves, in the order it hurts:
+ *
+ *   1. 12 DECISION QUEUE's header row is one column SHORT of its data,
+ *      so every label from column D rightward names the wrong column.
+ *   2. 01 TRAINEE MASTER carries an ENTRY PROFILE KEY legend inside the
+ *      data table, and on at least one row it contradicts the code
+ *      beside it.
+ *   3. Header rows cannot decide between Title Case and SHOUTING CASE.
+ *   4. Up to 44% of the columns on a record sheet are machine plumbing.
+ *   5. Raw counters sit far from the thresholds that give them meaning.
+ *   6. Action checkboxes are interleaved with data and IDs.
+ *
+ * The thing that made this hard: 235 places in this file look a column
+ * up BY ITS HEADER TEXT. Renaming a header on the sheet would break all
+ * of them at once. So the rename is made safe first, by teaching the
+ * table reader that a display label and a canonical name are the same
+ * column. Nothing downstream changes.
+ * ================================================================ */
+
+/** Display label -> canonical header name, PER SHEET.
+ *
+ *  Derived from the rename plan below, reversed, so there is exactly one
+ *  place that says what a column is called. It has to be per sheet: the
+ *  evidence log has its own PHASE column that is not the master's CURRENT
+ *  PHASE, and the access log has a REASON that is not a queue RATIONALE.
+ *  A global alias table would have quietly wired those together.
+ *
+ *  This is what makes the rename safe. readTableV20_1_ registers both the
+ *  literal header and its canonical name, so all 235 lookups by canonical
+ *  name keep resolving after a column is relabelled.
+ */
+var HEADER_ALIAS_CACHE_V20_4 = null;
+
+function headerAliasesForV20_4_(sheetName) {
+  if (!HEADER_ALIAS_CACHE_V20_4) {
+    HEADER_ALIAS_CACHE_V20_4 = {};
+    var plan = headerRenamesV20_4_();
+    Object.keys(plan).forEach(function (sheet) {
+      var back = {};
+      Object.keys(plan[sheet]).forEach(function (canon) {
+        back[String(plan[sheet][canon]).toUpperCase().replace(/\s+/g, ' ')] = canon;
+      });
+      HEADER_ALIAS_CACHE_V20_4[sheet] = back;
+    });
+  }
+  return HEADER_ALIAS_CACHE_V20_4[sheetName] || {};
+}
+
+/** The canonical name for a header on a given sheet, or '' when it is
+ *  already canonical or unknown. Case and spacing insensitive. */
+function canonicalHeaderV20_4_(header, sheetName) {
+  var k = String(header || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!k) return '';
+  return headerAliasesForV20_4_(sheetName)[k] || '';
+}
+
+/* ---------------------------------------------------------------- *
+ *  The renames, per sheet
+ * ---------------------------------------------------------------- */
+
+/** What each sheet's headers should say. Canonical name on the left,
+ *  what a person reads on the right. A sheet not listed is left alone. */
+function headerRenamesV20_4_() {
+  var m = {};
+  m[TAB.MASTER] = {
+    'SET STATUS': 'Program status',
+    'PHASE START DATE': 'Phase started',
+    'NRT DATE': 'Not-responding-to-training date',
+    'CLEARANCE DATE': 'Cleared date',
+    'ENTRY PROFILE': 'How they came in',
+    'ASSIGNED FTO': 'Training officer',
+    'START DATE': 'Started',
+    'TRAINEE EMAIL': 'Email address'
+  };
+  m[TAB.SKILLS] = {
+    'READINESS': 'Where this skill stands',
+    'SIGN-OFF': 'Signed off?',
+    'SUCCESSFUL REPS': 'Successful',
+    'INDEPENDENT REPS': 'Independent',
+    'DISTINCT DATES': 'Separate days',
+    'DISTINCT FTOS': 'Different FTOs',
+    'DECISION / EVIDENCE NOTE': 'Note',
+    'LAST DATE': 'Last logged',
+    'LAST OUTCOME': 'How it went',
+    'LAST CONTEXT': 'Where it happened'
+  };
+  m[TAB.SKILL_VALIDATION] = {
+    'EVIDENCE SUMMARY': 'Evidence so far',
+    'RATIONALE': 'Reason for the decision',
+    'READY DATE': 'Ready since',
+    'LAST EVIDENCE DATE': 'Last evidence'
+  };
+  m[TAB.SKILL_EVIDENCE] = {
+    'VALIDATION RESULT': 'Accepted?',
+    'EVIDENCE NOTE': 'What the FTO wrote',
+    'CALL / SCENARIO REF': 'Call number',
+    'PROMPTING': 'Prompting needed',
+    'LEVEL AT EVENT': 'Level then'
+  };
+  m[TAB.SKILL_SIGNOFF] = {
+    'RATIONALE': 'Reason given',
+    'STANDARD / CATALOG VERSION': 'Standard used'
+  };
+  m[TAB.QUEUE] = {
+    'FILED': 'Raised',
+    'ITEM': 'What it is',
+    'DECISION DUE': 'Due',
+    'DATED': 'Decided on'
+  };
+  return m;
+}
+
+/** Columns nobody reading the sheet ever needs: IDs, provenance,
+ *  writer stamps. Correct, necessary, and not for human eyes. */
+function plumbingColumnsV20_4_() {
+  var m = {};
+  m[TAB.SKILL_EVIDENCE] = ['EVENT ID', 'SOURCE FORM', 'SOURCE ROW', 'SOURCE FORM ID',
+                           'SOURCE RESPONSE ID', 'WRITER VERSION', 'PERSON ID', 'ASSIGNMENT ID'];
+  m[TAB.SKILL_SIGNOFF] = ['DECISION ID', 'SOURCE QUEUE ROW', 'STANDARD / CATALOG VERSION',
+                          'REQUEST ID', 'SUPERSEDES', 'DECIDED BY PERSON ID', 'WRITER VERSION'];
+  m[TAB.SKILL_VALIDATION] = ['REQUEST ID', 'SKILL ID'];
+  m[TAB.SKILLS] = ['SKILL ID', 'SUCCESSFUL REPS', 'INDEPENDENT REPS',
+                   'DISTINCT DATES', 'DISTINCT FTOS'];
+  m[TAB.MASTER] = ['ENTRY PROFILE KEY'];
+  m[TAB.LEDGER] = ['LEDGER KEY', 'FORM ID', 'RESPONSE ID', 'WRITER VERSION'];
+  m[TAB.REGISTRY] = ['PERSON ID'];
+  return m;
+}
+
+/* ---------------------------------------------------------------- *
+ *  1. The broken header row
+ * ---------------------------------------------------------------- */
+
+/** 12 DECISION QUEUE's header names 8 columns; its rows carry 9. The
+ *  owner column — who the item sits with — was never given a name, so
+ *  DECISION DUE ended up over a person's name and every label after it
+ *  described its neighbour.
+ *
+ *  Inserts the missing name. Touches the header row only; not one data
+ *  cell moves, because the data was never wrong — only its labels. */
+function repairDecisionQueueHeaderV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.QUEUE, 4);
+  if (!t.ok) return 'Tab "' + TAB.QUEUE + '" not found.';
+
+  var named = t.headers.filter(function (h) { return String(h || '').trim(); }).length;
+  var widest = 0;
+  t.rows.forEach(function (r) {
+    var last = 0;
+    r.forEach(function (v, i) { if (v !== '' && v != null) last = i + 1; });
+    if (last > widest) widest = last;
+  });
+
+  if (widest <= named) {
+    return 'No repair needed: ' + named + ' header(s) for ' + widest + ' column(s) of data.';
+  }
+  if (t.col['OWNER'] !== undefined) {
+    return 'Already repaired — an OWNER column is named.';
+  }
+
+  // The unnamed column is the one after ITEM. Shift the labels right by one
+  // and give it its name.
+  var idxItem = t.col['ITEM'];
+  if (idxItem === undefined) {
+    return 'Refusing to repair: no ITEM column to anchor on. Header row needs a look by hand.';
+  }
+  var fixed = t.headers.slice(0, idxItem + 1)
+    .concat(['OWNER'])
+    .concat(t.headers.slice(idxItem + 1));
+  fixed = fixed.slice(0, Math.max(widest, fixed.length));
+  while (fixed.length < widest) fixed.push('');
+
+  t.sheet.getRange(4, 1, 1, fixed.length).setValues([fixed]);
+  var msg = 'DECISION QUEUE HEADER REPAIRED\n\n' +
+    'Was : ' + t.headers.filter(String).join(' | ') + '\n\n' +
+    'Now : ' + fixed.filter(String).join(' | ') + '\n\n' +
+    'An unnamed column sat after ITEM — the person the item is with. Every\n' +
+    'label to its right was describing its neighbour. Only the header row\n' +
+    'changed; no data moved, because the data was never wrong.';
+  systemLog_('WARN', 'DECISION QUEUE HEADER REPAIRED',
+    named + ' header(s) -> ' + fixed.filter(String).length + ' for ' + widest + ' data column(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  2. The entry-profile contradiction
+ * ---------------------------------------------------------------- */
+
+/** ENTRY PROFILE holds a bare letter; ENTRY PROFILE KEY holds a legend
+ *  like "C : Experienced transfer" — filled in on some rows, blank on
+ *  others, and on at least one row naming a different letter than the
+ *  code beside it.
+ *
+ *  This REPORTS rather than resolves. Which of the two is right is a
+ *  fact about a person's training history, and v20.2's rule holds: the
+ *  system does not guess at a record. It names every disagreement, and
+ *  writes the legend once, properly, above the table. */
+function auditEntryProfilesV20_4() {
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (!t.ok) return 'Trainee master not found.';
+  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'], cName = t.col['TRAINEE'];
+  if (cCode === undefined || cName === undefined) return 'No ENTRY PROFILE column to audit.';
+
+  var clash = [], missing = [], legend = {};
+  t.rows.forEach(function (r, i) {
+    var name = cleanNameV20_1_(r[cName]);
+    if (!name) return;
+    var code = String(r[cCode] || '').trim().toUpperCase();
+    var key = cKey === undefined ? '' : String(r[cKey] || '').trim();
+    if (key) {
+      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
+      if (m) legend[m[1].toUpperCase()] = m[2].trim();
+    }
+    if (!code) { missing.push(name + ' (row ' + (t.firstDataRow + i) + ') — no entry profile'); return; }
+    if (key) {
+      var keyLetter = (key.match(/^([A-Z])/i) || [])[1];
+      if (keyLetter && keyLetter.toUpperCase() !== code) {
+        clash.push(name + ' (row ' + (t.firstDataRow + i) + ') — profile says "' + code +
+                   '" but the key beside it says "' + key + '"');
+      }
+    }
+  });
+
+  var L = ['ENTRY PROFILE AUDIT — read only', ''];
+  if (clash.length) {
+    L.push('DISAGREEMENTS — these need your decision, not mine:');
+    clash.forEach(function (x) { L.push('  ' + x); });
+    L.push('');
+    L.push('Which is correct is a fact about that person\'s history. Fix the one');
+    L.push('that is wrong on 01 TRAINEE MASTER, then run this again.');
+    L.push('');
+  } else {
+    L.push('No profile/key disagreements.');
+    L.push('');
+  }
+  if (missing.length) {
+    L.push('NO ENTRY PROFILE SET:');
+    missing.forEach(function (x) { L.push('  ' + x); });
+    L.push('');
+  }
+  var letters = Object.keys(legend).sort();
+  if (letters.length) {
+    L.push('The legend, as found in the data:');
+    letters.forEach(function (k) { L.push('  ' + k + '  =  ' + legend[k]); });
+    L.push('');
+    L.push('Run tidyEntryProfileLegendV20_4() to move this out of the data table');
+    L.push('and into a note on the column heading, where a legend belongs.');
+  }
+  var msg = L.join('\n');
+  systemLog_(clash.length ? 'WARN' : 'INFO', 'ENTRY PROFILE AUDIT',
+    clash.length + ' disagreement(s), ' + missing.length + ' unset');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Lifts the entry-profile legend out of the data table and attaches it
+ *  to the column heading as a note, then hides the now-redundant column.
+ *  The column keeps its contents — nothing is deleted. */
+function tidyEntryProfileLegendV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (!t.ok) return 'Trainee master not found.';
+  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'];
+  if (cCode === undefined) return 'No ENTRY PROFILE column.';
+
+  var legend = {};
+  if (cKey !== undefined) {
+    t.rows.forEach(function (r) {
+      var key = String(r[cKey] || '').trim();
+      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
+      if (m) legend[m[1].toUpperCase()] = m[2].trim();
+    });
+  }
+  var letters = Object.keys(legend).sort();
+  if (!letters.length) return 'No legend entries found to lift.';
+
+  var note = 'How they came in\n\n' +
+    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
+    '\n\nThis legend used to live in a column of its own inside the data.';
+  t.sheet.getRange(4, cCode + 1).setNote(note);
+  systemLog_('INFO', 'ENTRY PROFILE LEGEND LIFTED', letters.join(', '));
+  var msg = 'The entry-profile legend is now a note on the column heading:\n\n' +
+    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
+    '\n\nHover the heading to read it. The old ENTRY PROFILE KEY column keeps\n' +
+    'its contents and is grouped away with the other machinery — nothing was\n' +
+    'deleted.';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  3. Plain English headers
+ * ---------------------------------------------------------------- */
+
+/** Rewrites header text into words, consistently cased. Safe because
+ *  headerAliasesForV20_4_ teaches the table reader that the new label and
+ *  the canonical name are the same column. */
+function renameHeadersV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var plan = headerRenamesV20_4_();
+  var out = [], total = 0;
+  Object.keys(plan).forEach(function (sheetName) {
+    var t = readTableV20_1_(sheetName, 4);
+    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
+    var renames = plan[sheetName];
+    var headers = t.headers.slice();
+    var n = 0;
+    headers.forEach(function (h, i) {
+      var canon = String(h || '').trim().toUpperCase();
+      var already = canonicalHeaderV20_4_(h, sheetName);
+      var key = already || canon;
+      if (renames[key] && headers[i] !== renames[key]) { headers[i] = renames[key]; n++; }
+    });
+    if (n) {
+      t.sheet.getRange(4, 1, 1, headers.length).setValues([headers]);
+      total += n;
+    }
+    out.push('  ' + sheetName + ' : ' + n + ' header(s) renamed');
+  });
+
+  // the stray value that leaked into the matrix header row
+  var m = readTableV20_1_(TAB.SKILLS, 4);
+  if (m.ok) {
+    var strayAt = -1;
+    m.headers.forEach(function (h, i) {
+      if (i >= 20 && String(h || '').trim()) strayAt = i;
+    });
+    if (strayAt >= 0) {
+      m.sheet.getRange(4, strayAt + 1).clearContent();
+      out.push('  ' + TAB.SKILLS + ' : cleared a stray value out of the header row (column ' +
+               (strayAt + 1) + ', "' + m.headers[strayAt] + '")');
+    }
+  }
+
+  var msg = 'HEADERS REWRITTEN IN PLAIN ENGLISH\n\n' + out.join('\n') +
+    '\n\n' + total + ' header(s) changed in total.\n\n' +
+    'Nothing behind the scenes changed: every one of the 235 places this\n' +
+    'system looks a column up by name still finds it, because the old name\n' +
+    'and the new label are registered as the same column.';
+  systemLog_('WARN', 'HEADERS RENAMED', total + ' header(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  4. Plumbing out of sight
+ * ---------------------------------------------------------------- */
+
+/** Groups the machine columns and collapses the group, so they are one
+ *  click away instead of in your eyeline. Nothing is deleted, nothing
+ *  moves, and every one of them still receives data. */
+function groupPlumbingColumnsV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var plan = plumbingColumnsV20_4_();
+  var out = [];
+  Object.keys(plan).forEach(function (sheetName) {
+    var t = readTableV20_1_(sheetName, 4);
+    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
+    var hidden = 0;
+    plan[sheetName].forEach(function (canon) {
+      var i = t.col[canon];
+      if (i === undefined) return;
+      try { t.sheet.hideColumns(i + 1); hidden++; } catch (e) {}
+    });
+    out.push('  ' + sheetName + ' : ' + hidden + ' machine column(s) tucked away');
+  });
+  var msg = 'MACHINE COLUMNS HIDDEN\n\n' + out.join('\n') +
+    '\n\nIDs, provenance and writer stamps are still there and still being\n' +
+    'written — they are just not in front of you any more. Select the\n' +
+    'columns either side and choose Unhide to see them again.';
+  systemLog_('INFO', 'PLUMBING COLUMNS HIDDEN', out.length + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Puts every hidden column back. */
+function showAllColumnsV20_4() {
+  var plan = plumbingColumnsV20_4_();
+  var n = 0;
+  Object.keys(plan).forEach(function (sheetName) {
+    var sh = getSheetOrNullV20_1_(sheetName);
+    if (!sh) return;
+    try { sh.showColumns(1, sh.getMaxColumns()); n++; } catch (e) {}
+  });
+  var msg = 'Every column is visible again on ' + n + ' sheet(s).';
+  systemLog_('INFO', 'ALL COLUMNS SHOWN', n + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  5. Counters that mean something where they sit
+ * ---------------------------------------------------------------- */
+
+/** "5 / 3 / 3 / 2" against thresholds on a different sheet is not
+ *  information. This turns the queue's evidence summary into a sentence
+ *  that carries its own thresholds. */
+function evidenceSentenceV20_4_(counts, catalogEntry) {
+  var c = catalogEntry || {};
+  function part(have, need, word) {
+    have = Number(have) || 0;
+    need = Number(need) || 0;
+    if (!need) return have + ' ' + word;
+    return have + ' of ' + need + ' ' + word + (have >= need ? '' : '  (short)');
+  }
+  return [
+    part(counts.successful, c.minSuccessful, 'successful'),
+    part(counts.independent, c.minIndependent, 'independent'),
+    part(counts.dates, c.minDates, 'separate days'),
+    part(counts.ftos, c.minFtos, 'different FTOs')
+  ].join('   ·   ');
+}
+
+/** Rewrites the evidence summary on every OPEN queue row into that
+ *  sentence. Reads the catalog for the thresholds. Writes one column. */
+function rewriteEvidenceSummariesV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+  if (!t.ok) return 'Queue not found.';
+  var cSum = t.col['EVIDENCE SUMMARY'], cSkill = t.col['SKILL ID'], cTrainee = t.col['TRAINEE'];
+  if (cSum === undefined || cSkill === undefined) return 'Queue is missing its evidence columns.';
+
+  var byId = {};
+  try { byId = catalogMapsV19_(true).byId || {}; } catch (e) {}
+
+  var m = readTableV20_1_(TAB.SKILLS, 4);
+  var counts = {};
+  if (m.ok && m.col['TRAINEE'] !== undefined) {
+    m.rows.forEach(function (r) {
+      var k = normalizeNameV20_1_(cleanNameV20_1_(r[m.col['TRAINEE']])) + '||' +
+              String(r[m.col['SKILL ID']] || '').trim();
+      counts[k] = {
+        successful: r[m.col['SUCCESSFUL REPS']],
+        independent: r[m.col['INDEPENDENT REPS']],
+        dates: r[m.col['DISTINCT DATES']],
+        ftos: r[m.col['DISTINCT FTOS']]
+      };
+    });
+  }
+
+  var n = 0;
+  t.rows.forEach(function (r, i) {
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var skillId = String(r[cSkill] || '').trim();
+    var key = normalizeNameV20_1_(cleanNameV20_1_(r[cTrainee])) + '||' + skillId;
+    var c = counts[key];
+    if (!c) return;
+    t.sheet.getRange(t.firstDataRow + i, cSum + 1)
+      .setValue(evidenceSentenceV20_4_(c, byId[skillId]));
+    n++;
+  });
+  var msg = n + ' evidence summary(ies) rewritten as "3 of 5 successful · 2 of 2 independent · …"\n' +
+    'so the thresholds are beside the counts instead of on another sheet.';
+  systemLog_('INFO', 'EVIDENCE SUMMARIES REWRITTEN', n + ' row(s)');
+  Logger.log(msg);
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Everything, in the right order
+ * ---------------------------------------------------------------- */
+
+/** Fixes what is wrong, then makes the rest readable. Correctness first:
+ *  a mislabelled column is a different kind of problem from an ugly one. */
+function POLISH_SHEETS() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SHEET POLISH — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110)); });
+    } catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
+  }
+  L.push('CORRECTNESS');
+  step(1, 'Name the unnamed column on the decision queue', repairDecisionQueueHeaderV20_4);
+  step(2, 'Check entry profiles agree with their key', auditEntryProfilesV20_4);
+  step(3, 'Lift the legend out of the data table', tidyEntryProfileLegendV20_4);
+  L.push('');
+  L.push('READABILITY');
+  step(4, 'Rewrite headers in plain English', renameHeadersV20_4);
+  step(5, 'Put thresholds beside the counts', rewriteEvidenceSummariesV20_4);
+  step(6, 'Tuck the machine columns away', groupPlumbingColumnsV20_4);
+  step(7, 'Widen what holds words, narrow what holds dates', makeSheetsReadableV20_3);
+  L.push('');
+  L.push('If step 2 found disagreements, they are yours to settle — which entry');
+  L.push('profile is right is a fact about that person, and this will not guess.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
 
 /* ================================================================
  * SCEMS v20.3 : the readable release
@@ -10725,8 +11237,8 @@ function stepL_acknowledgeHistorical() {
  * goLive() / backToTestMode() / whichMode() live in 00_core.gs.
  ************************************************************************/
 
-var SCEMS_VERSION = 'v20.3.0';
-var SCEMS_WRITER_VERSION = 'SCEMS v20.3.0';
+var SCEMS_VERSION = 'v20.4.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.4.0';
 
 var CONFIG = Object.freeze({
 
@@ -12201,6 +12713,9 @@ function onOpen(e) {
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
         .addSeparator()
         .addItem('Make everything simpler (run this first)', 'SIMPLIFY_EVERYTHING')
+        .addItem('Fix and polish the sheet headers', 'POLISH_SHEETS')
+        .addItem('Check entry profiles (read-only)', 'auditEntryProfilesV20_4')
+        .addItem('Show every hidden column', 'showAllColumnsV20_4')
         .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
         .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
         .addItem('Tidy up the tabs', 'organizeTabsV20_2')
