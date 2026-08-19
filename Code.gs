@@ -3924,6 +3924,565 @@ function dailyChecks() {
 
 
 
+
+/* ================================================================
+ * SCEMS v20.3 : the readable release
+ *
+ *   "if im the division chief and i open the spreadsheet i should be
+ *    able to see any submissions, where the trainee is at, and have a
+ *    simple button to press on each trainee ... once someone is ready
+ *    to be released this should be a simple check box ... it should
+ *    take all the information gathered on that trainee, create a file
+ *    of everything done from day 1 until release, and i should be able
+ *    to get that information any time i like ... i want to view any
+ *    comments in their entirety, not having to constantly wrap the
+ *    text because the cells aren't big enough."
+ *
+ * Three things, and nothing else:
+ *   1. TRAINEES  — one row per person, plain words, two checkboxes
+ *   2. the file  — everything from day one, as a document you can keep
+ *   3. readable  — narrative columns wide enough to actually read
+ * ================================================================ */
+
+var TAB_CONSOLE_V20_3 = 'TRAINEES';
+
+var CONSOLE_HEADERS_V20_3 = [
+  'Trainee', 'Level', 'Phase', 'Weeks in phase', 'Last evaluation',
+  'Evaluations', 'Skills signed off', 'Waiting on you', 'Concerns',
+  'Open file', 'Release', 'Their file'
+];
+
+/* Column numbers on TRAINEES, so the edit handler and the builder agree. */
+var CONSOLE_COL_V20_3 = Object.freeze({
+  NAME: 1, LEVEL: 2, PHASE: 3, WEEKS: 4, LAST_EVAL: 5, EVALS: 6,
+  SIGNED: 7, WAITING: 8, CONCERNS: 9, OPEN: 10, RELEASE: 11, FILE: 12
+});
+var CONSOLE_FIRST_ROW_V20_3 = 3;
+
+/* ---------------------------------------------------------------- *
+ *  1. The console
+ * ---------------------------------------------------------------- */
+
+
+/** Opens the TRAINEES tab, building it first if it is not there yet. */
+function openTraineeConsoleV20_3() {
+  var S = ss();
+  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
+  if (!sh) { buildTraineeConsoleV20_3(); sh = S.getSheetByName(TAB_CONSOLE_V20_3); }
+  if (sh) {
+    try { if (sh.isSheetHidden()) sh.showSheet(); } catch (e) {}
+    S.setActiveSheet(sh);
+    try { S.moveActiveSheet(1); } catch (e2) {}
+  }
+  return 'TRAINEES is open.';
+}
+
+/** Builds or refreshes TRAINEES: one row per person, in words rather
+ *  than codes. Reads everything, decides nothing, writes no record. */
+function buildTraineeConsoleV20_3() {
+  var S = ss();
+  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
+  if (!sh) sh = S.insertSheet(TAB_CONSOLE_V20_3, 0);
+
+  var people = masterTraineeRowsV20_1_().filter(function (p) { return !p.closed; });
+  var closed = masterTraineeRowsV20_1_().filter(function (p) { return p.closed; });
+
+  // ---- gather, once, rather than per person ----
+  var evalRows = [], reflectRows = [], urgentRows = [];
+  try { var e = readTableV20_1_(TAB.EVAL, 4); if (e.ok) evalRows = e.rows.map(function (r) {
+    return { when: parseDateSafeV20_1_(r[0]), trainee: cleanNameV20_1_(r[2]) }; }); } catch (e1) {}
+  try { var u = readTableV20_1_(TAB.URGENT, 4); if (u.ok) urgentRows = u.rows.map(function (r) {
+    return { trainee: cleanNameV20_1_(r[3]) }; }); } catch (e2) {}
+
+  var matrix = readTableV20_1_(TAB.SKILLS, 4);
+  var signedBy = {}, applicableBy = {}, readyBy = {};
+  if (matrix.ok && matrix.col['TRAINEE'] !== undefined) {
+    matrix.rows.forEach(function (r) {
+      var who = normalizeNameV20_1_(cleanNameV20_1_(r[matrix.col['TRAINEE']]));
+      if (!who) return;
+      applicableBy[who] = (applicableBy[who] || 0) + 1;
+      var readiness = String(r[matrix.col['READINESS']] || '').trim();
+      if (readiness === 'SIGNED OFF' || String(r[matrix.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF') {
+        signedBy[who] = (signedBy[who] || 0) + 1;
+      }
+      if (readiness === 'READY FOR VALIDATION') readyBy[who] = (readyBy[who] || 0) + 1;
+    });
+  }
+
+  var waitingBy = {};
+  var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+  if (q.ok && q.col['TRAINEE'] !== undefined) {
+    q.rows.forEach(function (r) {
+      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+      var who = normalizeNameV20_1_(cleanNameV20_1_(r[q.col['TRAINEE']]));
+      if (who) waitingBy[who] = (waitingBy[who] || 0) + 1;
+    });
+  }
+
+  function countFor(list, norm) {
+    var n = 0;
+    list.forEach(function (x) { if (normalizeNameV20_1_(x.trainee) === norm) n++; });
+    return n;
+  }
+  function lastEvalFor(norm) {
+    var latest = null;
+    evalRows.forEach(function (x) {
+      if (normalizeNameV20_1_(x.trainee) !== norm) return;
+      if (x.when && (!latest || x.when.getTime() > latest.getTime())) latest = x.when;
+    });
+    return latest;
+  }
+
+  var fileLinks = consoleFileLinksV20_3_(sh);   // keep any links already on the sheet
+
+  var body = people.map(function (p) {
+    var norm = p.norm;
+    var last = lastEvalFor(norm);
+    var days = last ? Math.floor((new Date() - last) / 86400000) : null;
+    var weeks = p.phaseStart ? Math.max(0, Math.floor((new Date() - p.phaseStart) / (7 * 86400000))) : '';
+    var waiting = waitingBy[norm] || 0;
+    var ready = readyBy[norm] || 0;
+    var concerns = countFor(urgentRows, norm);
+    return [
+      p.name,
+      p.level || '',
+      p.phase || '',
+      weeks === '' ? '' : weeks,
+      last ? (days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago') : 'never',
+      countFor(evalRows, norm),
+      (signedBy[norm] || 0) + ' of ' + (applicableBy[norm] || 0),
+      waiting ? waiting + ' waiting' : (ready ? ready + ' nearly ready' : ''),
+      concerns ? concerns : '',
+      false,
+      false,
+      fileLinks[norm] || ''
+    ];
+  });
+
+  // ---- write ----
+  var width = CONSOLE_HEADERS_V20_3.length;
+  ensureSheetCapacityV19_(sh, Math.max(body.length + CONSOLE_FIRST_ROW_V20_3 + 10, 60), width + 2);
+  sh.getRange(1, 1, sh.getMaxRows(), width).clearContent().clearDataValidations();
+
+  sh.getRange(1, 1).setValue('TRAINEES')
+    .setFontSize(20).setFontWeight('bold').setFontColor('#1d1b18');
+  sh.getRange(1, 3).setValue(people.length + ' active   ·   ' + closed.length +
+    ' released   ·   updated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE d MMM, h:mm a'))
+    .setFontColor('#6f6859').setFontSize(10);
+
+  sh.getRange(2, 1, 1, width).setValues([CONSOLE_HEADERS_V20_3])
+    .setFontWeight('bold').setFontSize(11)
+    .setBackground('#1d1b18').setFontColor('#f4f1ea')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  if (body.length) {
+    sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, body.length, width).setValues(body);
+    sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.OPEN, body.length, 2)
+      .insertCheckboxes();
+  }
+
+  applyConsoleLookV20_3_(sh, body.length);
+  systemLog_('INFO', 'TRAINEE CONSOLE BUILT', people.length + ' active trainee(s)');
+  return 'TRAINEES refreshed: ' + people.length + ' active, ' + closed.length + ' released.';
+}
+
+/** Existing file links, keyed by normalized name, so a rebuild never
+ *  loses a document that was already generated. */
+function consoleFileLinksV20_3_(sh) {
+  var out = {};
+  try {
+    if (sh.getLastRow() < CONSOLE_FIRST_ROW_V20_3) return out;
+    var n = sh.getLastRow() - CONSOLE_FIRST_ROW_V20_3 + 1;
+    var names = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.NAME, n, 1).getValues();
+    var links = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.FILE, n, 1).getValues();
+    for (var i = 0; i < n; i++) {
+      var nm = normalizeNameV20_1_(cleanNameV20_1_(names[i][0]));
+      if (nm && links[i][0]) out[nm] = links[i][0];
+    }
+  } catch (e) {}
+  return out;
+}
+
+/** Readable by default: room for words, no squinting. */
+function applyConsoleLookV20_3_(sh, rows) {
+  var W = { 1: 210, 2: 110, 3: 120, 4: 110, 5: 130, 6: 100, 7: 140, 8: 150, 9: 90, 10: 90, 11: 90, 12: 260 };
+  Object.keys(W).forEach(function (c) { try { sh.setColumnWidth(Number(c), W[c]); } catch (e) {} });
+  try { sh.setFrozenRows(2); sh.setFrozenColumns(1); } catch (e) {}
+  try { sh.setRowHeight(1, 40); sh.setRowHeight(2, 38); } catch (e) {}
+  if (rows > 0) {
+    var r = sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, rows, CONSOLE_HEADERS_V20_3.length);
+    r.setVerticalAlignment('middle').setWrap(true).setFontSize(11);
+    for (var i = 0; i < rows; i++) {
+      try { sh.setRowHeight(CONSOLE_FIRST_ROW_V20_3 + i, 34); } catch (e) {}
+    }
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains('waiting')
+        .setBackground('#fdf3d6').setFontColor('#7a5c00').setBold(true)
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.WAITING, rows, 1)]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(0)
+        .setBackground('#fbeeec').setFontColor('#a62a21').setBold(true)
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.CONCERNS, rows, 1)]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains('never')
+        .setBackground('#fbeeec').setFontColor('#a62a21')
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.LAST_EVAL, rows, 1)]).build()
+    ]);
+  }
+  try { sh.getRange(1, 1, sh.getMaxRows(), 40).setFontFamily('Arial'); } catch (e) {}
+}
+
+/* ---------------------------------------------------------------- *
+ *  2. The file
+ * ---------------------------------------------------------------- */
+
+/** Everything recorded about one trainee, from the first day to now, as
+ *  a document. Narratives appear in full — this is the thing the
+ *  spreadsheet cannot show you.
+ *
+ *  Read-only with respect to the record: it copies, it never changes. */
+function buildTraineeFileV20_3(traineeName) {
+  var name = cleanNameV20_1_(traineeName);
+  if (!name) throw new Error('No trainee name given.');
+  var norm = normalizeNameV20_1_(name);
+  var resolved = resolveTraineeV20_1_(name);
+  var rec = resolved.record;
+
+  var doc = DocumentApp.create('SCEMS Training File — ' + name + ' — ' +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'));
+  var b = doc.getBody();
+  b.setMarginTop(48).setMarginBottom(48).setMarginLeft(56).setMarginRight(56);
+
+  function H1(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING1); }
+  function H2(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING2); }
+  function P(t) { return b.appendParagraph(String(t == null ? '' : t)); }
+  function small(t) { P(t).setFontSize(9).setForegroundColor('#666666'); }
+  function kv(k, v) { P(k + ':  ' + (v === '' || v == null ? '—' : v)); }
+  function rule() { b.appendHorizontalRule(); }
+
+  // ---- cover ----
+  b.appendParagraph('SUMTER COUNTY EMS').setFontSize(10).setBold(true).setForegroundColor('#a8811a');
+  b.appendParagraph('Field Training Record').setHeading(DocumentApp.ParagraphHeading.TITLE);
+  b.appendParagraph(name).setFontSize(20).setBold(true);
+  small('Generated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEEE d MMMM yyyy, h:mm a') +
+        '  ·  ' + SCEMS_VERSION + '  ·  ' + String(CONFIG.POLICY_VERSION || ''));
+  rule();
+
+  H1('Who this is');
+  if (rec) {
+    kv('Certification level', rec.level);
+    kv('Entry profile', rec.entryProfile);
+    kv('Employee ID', rec.employeeId);
+    kv('Assigned FTO', rec.fto);
+    kv('Started', rec.startDate ? dateKeyV20_1_(rec.startDate) : '');
+    kv('Current phase', rec.phase);
+    kv('Phase started', rec.phaseStart ? dateKeyV20_1_(rec.phaseStart) : '');
+    kv('Program status', rec.setStatus);
+    if (rec.startDate) {
+      kv('Time in program', Math.floor((new Date() - rec.startDate) / 86400000) + ' days');
+    }
+  } else {
+    P('No master record found for this name. The evidence below is everything filed under it.');
+  }
+
+  // ---- shift evaluations, in full ----
+  H1('Shift evaluations');
+  var ev = readTableV20_1_(TAB.EVAL, 4);
+  var evN = 0;
+  if (ev.ok) {
+    var evMine = ev.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[2])) === norm; });
+    evMine.sort(function (a, b) {
+      var da = parseDateSafeV20_1_(a[0]), db = parseDateSafeV20_1_(b[0]);
+      return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+    });
+    evN = evMine.length;
+    if (!evN) P('None recorded.');
+    evMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2((when ? dateKeyV20_1_(when) : 'undated') + '  ·  FTO ' + (cleanNameV20_1_(r[1]) || 'unnamed'));
+      ev.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || i <= 2) return;
+        var val = r[i];
+        if (val === '' || val == null) return;
+        P(head + ':  ' + String(val));      // full text, never truncated
+      });
+    });
+  } else { P('The evaluation mirror is not present.'); }
+
+  // ---- self-reflections ----
+  H1('The trainee in their own words');
+  var rf = readTableV20_1_(TAB.REFLECT, 4);
+  var rfN = 0;
+  if (rf.ok) {
+    var rfMine = rf.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[1])) === norm; });
+    rfN = rfMine.length;
+    if (!rfN) P('None submitted.');
+    rfMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2(when ? dateKeyV20_1_(when) : 'undated');
+      rf.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || i <= 1) return;
+        if (r[i] === '' || r[i] == null) return;
+        P(head + ':  ' + String(r[i]));
+      });
+    });
+  }
+
+  // ---- skills ----
+  H1('Skills — every logged repetition');
+  var sk = readTableV20_1_(TAB.SKILL_EVIDENCE, 4);
+  var skN = 0, skAccepted = 0;
+  if (sk.ok && sk.col['TRAINEE'] !== undefined) {
+    var skMine = sk.rows.filter(function (r) {
+      return normalizeNameV20_1_(cleanNameV20_1_(r[sk.col['TRAINEE']])) === norm; });
+    skN = skMine.length;
+    if (!skN) P('None recorded.');
+    skMine.forEach(function (r) {
+      var val = String(r[sk.col['VALIDATION RESULT']] || '');
+      if (val === 'ACCEPTED') skAccepted++;
+      var when = parseDateSafeV20_1_(r[sk.col['SHIFT DATE']]);
+      var line = (when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' +
+        String(r[sk.col['SKILL']] || '') + '  ·  ' + String(r[sk.col['OUTCOME']] || '') +
+        '  ·  FTO ' + String(r[sk.col['FTO']] || '') +
+        (val === 'ACCEPTED' ? '' : '  ·  [' + val + ']');
+      P(line);
+      var note = String(r[sk.col['EVIDENCE NOTE']] || '').trim();
+      if (note) P('       ' + note).setFontSize(10).setForegroundColor('#444444');
+    });
+  }
+
+  // ---- decisions ----
+  H1('Sign-off decisions');
+  var so = readTableV20_1_(TAB.SKILL_SIGNOFF, 4);
+  var soN = 0;
+  if (so.ok && so.col['TRAINEE'] !== undefined) {
+    var soMine = so.rows.filter(function (r) {
+      return normalizeNameV20_1_(cleanNameV20_1_(r[so.col['TRAINEE']])) === norm; });
+    soN = soMine.length;
+    if (!soN) P('None recorded.');
+    soMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[so.col['DECISION DATE']]);
+      P((when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' + String(r[so.col['SKILL']] || '') +
+        '  ·  ' + String(r[so.col['DECISION']] || ''));
+      P('       by ' + String(r[so.col['DECIDED BY']] || '') + ' — ' +
+        String(r[so.col['RATIONALE']] || '')).setFontSize(10).setForegroundColor('#444444');
+    });
+  }
+
+  // ---- concerns ----
+  H1('Urgent concerns');
+  var ur = readTableV20_1_(TAB.URGENT, 4);
+  var urN = 0;
+  if (ur.ok) {
+    var urMine = ur.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[3])) === norm; });
+    urN = urMine.length;
+    if (!urN) P('None filed.');
+    urMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2(when ? dateKeyV20_1_(when) : 'undated');
+      ur.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || r[i] === '' || r[i] == null) return;
+        P(head + ':  ' + String(r[i]));
+      });
+    });
+  }
+
+  // ---- decisions raw / phase history ----
+  H1('Phase and programme decisions');
+  var dr = readTableV20_1_(TAB.DECISIONS, 4);
+  var drN = 0;
+  if (dr.ok) {
+    var drMine = dr.rows.filter(function (r) {
+      return r.some(function (c) { return normalizeNameV20_1_(cleanNameV20_1_(c)) === norm; }); });
+    drN = drMine.length;
+    if (!drN) P('None recorded.');
+    drMine.forEach(function (r) {
+      var parts = [];
+      dr.headers.forEach(function (h, i) {
+        if (String(h || '').trim() && r[i] !== '' && r[i] != null) parts.push(h + ': ' + r[i]);
+      });
+      P(parts.join('   ·   '));
+    });
+  }
+
+  rule();
+  H1('What this file contains');
+  kv('Shift evaluations', evN);
+  kv('Self-reflections', rfN);
+  kv('Skill repetitions logged', skN + ' (' + skAccepted + ' accepted into the record)');
+  kv('Sign-off decisions', soN);
+  kv('Urgent concerns', urN);
+  kv('Programme decisions', drN);
+  small('Compiled by ' + (deciderIdentityV20_2_() || 'an unidentified session') +
+        ' from the SCEMS Field Training record on ' +
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy') +
+        '. Source of truth is the tracker; this document is a copy made at that moment. ' +
+        'Retention: ' + String(CONFIG.RETENTION_STATEMENT || 'per county policy') + '.');
+
+  doc.saveAndClose();
+
+  // file it next to the tracker
+  try {
+    var f = DriveApp.getFileById(doc.getId());
+    var parents = DriveApp.getFileById(ss().getId()).getParents();
+    if (parents.hasNext()) parents.next().addFile(f);
+  } catch (e) {}
+
+  var url = doc.getUrl();
+  systemLog_('WARN', 'TRAINEE FILE BUILT', name + ' | ' + url);
+  return { url: url, name: name, counts: { evals: evN, reflections: rfN, skills: skN,
+           accepted: skAccepted, signoffs: soN, concerns: urN, decisions: drN } };
+}
+
+/* ---------------------------------------------------------------- *
+ *  3. The checkboxes
+ * ---------------------------------------------------------------- */
+
+/** Handles a tick on TRAINEES. Called from onSheetEdit; returns true when
+ *  it owned the edit, so the rest of the handler is skipped. */
+function consoleEditV20_3_(e, sh) {
+  if (sh.getName() !== TAB_CONSOLE_V20_3) return false;
+  var row = e.range.getRow(), col = e.range.getColumn();
+  if (row < CONSOLE_FIRST_ROW_V20_3) return false;
+  if (col !== CONSOLE_COL_V20_3.OPEN && col !== CONSOLE_COL_V20_3.RELEASE) return false;
+  if (e.range.getValue() !== true) return true;         // unticking does nothing
+
+  var ui = null; try { ui = SpreadsheetApp.getUi(); } catch (e0) {}
+  var name = cleanNameV20_1_(sh.getRange(row, CONSOLE_COL_V20_3.NAME).getValue());
+  e.range.setValue(false);                              // a checkbox is a button, not a state
+  if (!name) return true;
+
+  if (col === CONSOLE_COL_V20_3.OPEN) {
+    try {
+      var built = buildTraineeFileV20_3(name);
+      sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(built.url);
+      if (ui) ui.alert('File ready — ' + name,
+        'Everything on record from day one, in full.\n\n' +
+        built.counts.evals + ' shift evaluation(s)\n' +
+        built.counts.reflections + ' self-reflection(s)\n' +
+        built.counts.skills + ' skill repetition(s), ' + built.counts.accepted + ' accepted\n' +
+        built.counts.signoffs + ' sign-off decision(s)\n' +
+        built.counts.concerns + ' urgent concern(s)\n\n' +
+        'The link is in the last column. The document stays in Drive — open it any time.',
+        ui.ButtonSet.OK);
+    } catch (err) {
+      if (ui) ui.alert('Could not build the file for ' + name + '.\n\n' + err);
+      systemLog_('ERROR', 'TRAINEE FILE FAILED', name + ' | ' + err);
+    }
+    return true;
+  }
+
+  // ---- release ----
+  if (!gateV20_2_('CLOSE TRAINEE')) return true;
+  if (ui) {
+    var waiting = String(sh.getRange(row, CONSOLE_COL_V20_3.WAITING).getValue() || '');
+    var ok = ui.alert('Release ' + name + '?',
+      'This closes their training record and builds their complete file.\n\n' +
+      (waiting ? 'NOTE: ' + waiting + ' — releasing does not decide those.\n\n' : '') +
+      'The file covers day one to today and stays in Drive for good.\n\nRelease?',
+      ui.ButtonSet.YES_NO);
+    if (ok !== ui.Button.YES) return true;
+  }
+  var report = [];
+  try { report.push(String(closeTraineeV20_1(name))); }
+  catch (err2) { report.push('Close step failed: ' + err2); }
+  try {
+    var file = buildTraineeFileV20_3(name);
+    sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(file.url);
+    report.push('File built: ' + file.url);
+  } catch (err3) { report.push('File build failed: ' + err3); }
+
+  systemLog_('WARN', 'TRAINEE RELEASED VIA CONSOLE', name + ' | ' + report.join(' | ').slice(0, 300));
+  if (ui) ui.alert('Released — ' + name, report.join('\n\n').slice(0, 1400), ui.ButtonSet.OK);
+  try { buildTraineeConsoleV20_3(); } catch (e4) {}
+  return true;
+}
+
+/* ---------------------------------------------------------------- *
+ *  4. Room to read
+ * ---------------------------------------------------------------- */
+
+/** Column widths by what the column HOLDS, not by position.
+ *  Anything whose name suggests prose gets real width and wrapping;
+ *  dates and counts stay narrow so the prose has somewhere to go. */
+function readableWidthForV20_3_(header) {
+  var h = String(header || '').toLowerCase();
+  if (!h) return 100;
+  if (/note|narrative|detail|comment|rationale|summary|reason|concern|what |why|situation|justif|strength|improve|focus|feedback|action|plan|evidence/.test(h)) return 460;
+  if (/name|trainee|fto|skill|decided by|signed by|assigned/.test(h)) return 190;
+  if (/date|timestamp|when|expiration/.test(h)) return 110;
+  if (/id$|^id| id /.test(h)) return 150;
+  if (/status|decision|outcome|level|phase|stage|context|domain|result|prompting|attestation/.test(h)) return 165;
+  return 130;
+}
+
+/** Makes the record sheets readable: wide narrative columns, wrapping on,
+ *  taller rows, frozen headers. Formatting only — no cell value changes. */
+function makeSheetsReadableV20_3() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var targets = [TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS,
+                 TAB.SKILL_VALIDATION, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+                 TAB.CATALOG, TAB.FTO_ROSTER, TAB.DECISIONS];
+  var done = [];
+  targets.forEach(function (name) {
+    var t = readTableV20_1_(name, 4);
+    if (!t.ok || !t.headers.length) { done.push('  ' + name + ' : not present'); return; }
+    var sh = t.sheet;
+    try {
+      t.headers.forEach(function (h, i) {
+        if (!String(h || '').trim()) return;
+        sh.setColumnWidth(i + 1, readableWidthForV20_3_(h));
+      });
+      sh.getRange(4, 1, 1, Math.max(t.headers.length, 1))
+        .setWrap(true).setVerticalAlignment('middle').setFontWeight('bold');
+      var lastRow = Math.max(sh.getLastRow(), 5);
+      sh.getRange(5, 1, lastRow - 4, Math.max(t.headers.length, 1))
+        .setWrap(true).setVerticalAlignment('top');
+      sh.setFrozenRows(4);
+      sh.setFrozenColumns(name === TAB.SKILLS || name === TAB.SKILL_VALIDATION ? 2 : 1);
+      try { sh.setRowHeights(5, Math.max(lastRow - 4, 1), 46); } catch (e2) {}
+      try { sh.setRowHeight(4, 40); } catch (e3) {}
+      done.push('  ' + name + ' : ' + t.headers.filter(String).length + ' column(s) sized');
+    } catch (e) {
+      done.push('  ' + name + ' : ' + e);
+    }
+  });
+  var msg = 'READABLE LAYOUT APPLIED\n\n' + done.join('\n') +
+    '\n\nNarrative columns are now wide and wrapping; dates and counts stay narrow.\n' +
+    'Header rows are frozen so they stay put when you scroll.\n' +
+    'Nothing was moved, renamed or deleted — this is formatting only.';
+  systemLog_('INFO', 'READABLE LAYOUT APPLIED', done.length + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** One command: build the console, make everything readable, tidy the tabs. */
+function SIMPLIFY_EVERYTHING() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
+    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
+  L.push('');
+  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
+  L.push('history as a document; tick "Release" when they are done. Nothing else is');
+  L.push('needed day to day.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
 /* ================================================================
  *  Post-upgrade repair  (v20.2)
  * ================================================================ */
@@ -4015,7 +4574,7 @@ function repairCancelledQueueRowsV20_2() {
 /** Left-to-right order: the things you use, then the things you consult,
  *  then the machinery. Anything not listed keeps its place at the end. */
 function tabOrderV20_2_() {
-  return ['HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
           TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
           TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
           TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
@@ -4028,7 +4587,7 @@ function tabOrderV20_2_() {
 /** The tabs a person actually opens. Everything else is machinery: still
  *  live, still receiving data, just not in your way. */
 function dailyTabsV20_2_() {
-  return ['HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
           TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
           TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
           TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
@@ -6927,6 +7486,9 @@ function onSheetEdit(e) {
   try {
     var sh = e.range.getSheet();
     var name = sh.getName();
+
+    // v20.3: the TRAINEES console owns its own ticks.
+    if (consoleEditV20_3_(e, sh)) return;
 
     if (name === TAB.SKILL_VALIDATION && e.range.getRow() >= 5) {
       var row = e.range.getRow();
@@ -10163,8 +10725,8 @@ function stepL_acknowledgeHistorical() {
  * goLive() / backToTestMode() / whichMode() live in 00_core.gs.
  ************************************************************************/
 
-var SCEMS_VERSION = 'v20.2.0';
-var SCEMS_WRITER_VERSION = 'SCEMS v20.2.0';
+var SCEMS_VERSION = 'v20.3.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.3.0';
 
 var CONFIG = Object.freeze({
 
@@ -11623,6 +12185,9 @@ function onOpen(e) {
   try {
     var ui = SpreadsheetApp.getUi();
     ui.createMenu('SCEMS')
+      .addItem('Trainees (start here)', 'openTraineeConsoleV20_3')
+      .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
+      .addSeparator()
       .addItem('Work my queue', 'workMyQueueV20_1')
       .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
       .addItem('Advance a trainee', 'advanceTraineeNow')
@@ -11635,6 +12200,8 @@ function onOpen(e) {
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
         .addSeparator()
+        .addItem('Make everything simpler (run this first)', 'SIMPLIFY_EVERYTHING')
+        .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
         .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
         .addItem('Tidy up the tabs', 'organizeTabsV20_2')
         .addItem('Show every tab', 'showAllTabsV20_2')

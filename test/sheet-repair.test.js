@@ -209,7 +209,8 @@ ok(daily.indexOf(TAB.AUDIT) >= 0, 'the audit tab stays visible — flags matter'
 [TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.LOG, TAB.LEDGER, TAB.ACCESS, TAB.REGISTRY].forEach(t => {
   ok(daily.indexOf(t) < 0, '"' + t + '" is machinery and gets hidden');
 });
-ok(order.indexOf('HOME') === 0, 'HOME sorts first');
+ok(order[0] === TAB_CONSOLE_V20_3, 'TRAINEES sorts first — v20.3 made it the start of the day');
+ok(order.indexOf('HOME') === 1, 'HOME sits right behind it');
 ok(order.indexOf(TAB.SKILL_VALIDATION) < order.indexOf(TAB.LOG),
    'what you use sorts before what you never open');
 ok(new Set(order).size === order.length, 'the order list has no duplicates');
