@@ -118,7 +118,10 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 </div>
 
 <script>
-var BOOT = <?= boot ?>;
+// <?!= ?> prints raw. <?= ?> HTML-escapes, which turns every quote in this
+// JSON into &quot; and makes the line invalid JavaScript - the page then sits
+// on "Loading" forever because the script died before render() ran.
+var BOOT = <?!= boot ?>;
 var S = { screen: 'main', ctx: null, busy: false };
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){

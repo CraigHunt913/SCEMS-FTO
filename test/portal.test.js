@@ -294,5 +294,42 @@ ok(/google\.script\.run/.test(idx), 'and every action goes back to the server');
 ok(/function esc\(/.test(idx) && (idx.match(/esc\(/g) || []).length > 30,
    'and server data is escaped before it reaches the DOM');
 
+
+// ---------------------------------------------------------------- //
+section('The boot payload survives templating');
+// ---------------------------------------------------------------- //
+// Apps Script has two scriptlets. <?= x ?> HTML-escapes; <?!= x ?> prints raw.
+// Injecting JSON with the escaping one turns every " into &quot; and the page
+// dies before it renders - which looks like "Loading" forever, not an error.
+// This reproduces both and requires the result to be parseable JavaScript.
+const tpl = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html', 'utf8');
+const bootLine = (tpl.match(/var BOOT = <\?!?=\s*boot\s*\?>;/) || [''])[0];
+ok(!!bootLine, 'the page injects a boot payload');
+ok(/<\?!=/.test(bootLine), 'using the NON-escaping scriptlet <?!= ?>');
+
+function escapeLikeAppsScript(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+const realBoot = JSON.stringify({
+  version:'portal-1.0.0', mode:'STAGING',
+  viewer:{ email:'chief@example.org', role:'TRAINING_DIVISION', name:"Dana O'Neill", ok:true, why:'' },
+  data:{ queue:[{ trainee:'Jamie Rivers', skill:'IV access', evidence:'4 of 4 successful' }] },
+  error:''
+});
+
+function parses(js){ try { new Function(js); return true; } catch (e) { return false; } }
+
+ok(parses('var BOOT = ' + realBoot + ';'),
+   'the raw payload is valid JavaScript');
+// take the whole <script> block, not a slice of it, so braces stay balanced
+const scriptBody = tpl.slice(tpl.lastIndexOf('<script>') + 8, tpl.lastIndexOf('</script>'));
+ok(parses(scriptBody.replace(/<\?!=\s*boot\s*\?>/, realBoot)),
+   'the whole page script parses once the payload is substituted');
+ok(!parses(scriptBody.replace(/<\?!=\s*boot\s*\?>/, escapeLikeAppsScript(realBoot))),
+   'and fails to parse if that payload were escaped');
+ok(!parses('var BOOT = ' + escapeLikeAppsScript(realBoot) + ';'),
+   'and the ESCAPED payload does not parse - this is the bug that showed as "Loading" forever');
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);
