@@ -1,0 +1,227 @@
+/**
+ * The payload each role receives.
+ *
+ * One function per role. Each builds ONLY what that role is entitled to, so
+ * a filtering mistake cannot leak another person's record into the page: the
+ * data was never assembled in the first place.
+ */
+
+function daysAgoTextV1_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return 'never';
+  var n = Math.floor((new Date() - d) / 86400000);
+  if (n <= 0) return 'today';
+  if (n === 1) return 'yesterday';
+  return n + ' days ago';
+}
+function asDateV1_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) return v;
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+function levelKeyV1_(level) {
+  var l = String(level || '').toLowerCase();
+  if (l.indexOf('param') >= 0) return 'pmd';
+  if (l.indexOf('advanc') >= 0 || l === 'aemt') return 'aemt';
+  return 'emt';
+}
+
+/** Every trainee on the master, normalized. Closed people are marked, never
+ *  silently dropped, so a caller must decide rather than inherit a filter. */
+function traineesV1_() {
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) return [];
+  return t.rows.map(function (r, i) {
+    var name = String(r[t.col['TRAINEE']] || '').trim();
+    if (!name) return null;
+    var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
+    return {
+      row: t.firstDataRow + i,
+      name: name,
+      norm: normNameV1_(name),
+      level: String(r[t.col['LEVEL']] || '').trim(),
+      levelKey: levelKeyV1_(r[t.col['LEVEL']]),
+      phase: String(r[t.col['CURRENT PHASE']] || r[t.col['PHASE']] || '').trim(),
+      fto: String(r[t.col['ASSIGNED FTO']] || r[t.col['TRAINING OFFICER']] || '').trim(),
+      shift: String(r[t.col['SHIFT']] || '').trim(),
+      email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
+      started: asDateV1_(r[t.col['START DATE']]),
+      phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
+      status: status,
+      closed: /closed|released|withdraw|archiv/i.test(status),
+      setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
+                        String(r[t.col['CURRENT PHASE']] || '').trim() &&
+                        String(r[t.col['ASSIGNED FTO']] || '').trim() &&
+                        asDateV1_(r[t.col['START DATE']]))
+    };
+  }).filter(Boolean);
+}
+
+function skillsForV1_(norm) {
+  var t = readTabV1_(PORTAL.TAB.SKILLS);
+  if (!t.ok) return [];
+  var out = [];
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    out.push({
+      skill: String(r[t.col['SKILL']] || '').trim(),
+      readiness: String(r[t.col['READINESS']] || '').trim(),
+      signed: String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
+              String(r[t.col['READINESS']] || '').trim() === 'SIGNED OFF',
+      successful: Number(r[t.col['SUCCESSFUL REPS']]) || 0,
+      independent: Number(r[t.col['INDEPENDENT REPS']]) || 0
+    });
+  });
+  return out;
+}
+
+function openQueueV1_() {
+  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!t.ok) return [];
+  var out = [];
+  t.rows.forEach(function (r, i) {
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    out.push({
+      row: t.firstDataRow + i,
+      trainee: String(r[t.col['TRAINEE']] || '').trim(),
+      norm: normNameV1_(r[t.col['TRAINEE']]),
+      skill: String(r[t.col['SKILL']] || '').trim(),
+      skillId: String(r[t.col['SKILL ID']] || '').trim(),
+      evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
+      since: asDateV1_(r[t.col['READY DATE']]),
+      requestId: String(r[t.col['REQUEST ID']] || '').trim()
+    });
+  });
+  return out;
+}
+
+function lastEvalForV1_(norm) {
+  var t = readTabV1_(PORTAL.TAB.EVAL);
+  if (!t.ok) return null;
+  var latest = null;
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[2]) !== norm) return;
+    var d = asDateV1_(r[0]);
+    if (d && (!latest || d > latest)) latest = d;
+  });
+  return latest;
+}
+
+function coachingForV1_(norm) {
+  var t = readTabV1_(PORTAL.TAB.COACHING);
+  if (!t.ok) return [];
+  var out = [];
+  t.rows.forEach(function (r, i) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    out.push({
+      row: t.firstDataRow + i,
+      when: asDateV1_(r[t.col['DATE']]),
+      from: String(r[t.col['FROM']] || '').trim(),
+      text: String(r[t.col['NOTE']] || '').trim(),
+      acknowledged: String(r[t.col['ACKNOWLEDGED']] || '').trim() === 'YES'
+    });
+  });
+  return out;
+}
+
+/* ---------------- role payloads ---------------- */
+
+function traineePayloadV1_(viewer) {
+  var me = traineesV1_().filter(function (t) { return t.norm === normNameV1_(viewer.traineeName); })[0];
+  if (!me) return { error: 'No training record found for ' + viewer.email + '.' };
+  var skills = skillsForV1_(me.norm);
+  var signed = skills.filter(function (s) { return s.signed; }).length;
+  var waiting = openQueueV1_().filter(function (q) { return q.norm === me.norm; });
+  var coaching = coachingForV1_(me.norm);
+  return {
+    name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
+    fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
+    lastEval: daysAgoTextV1_(lastEvalForV1_(me.norm)),
+    signed: signed, applicable: skills.length,
+    percent: skills.length ? Math.round(signed / skills.length * 100) : 0,
+    waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
+    coaching: coaching.filter(function (c) { return !c.acknowledged; })
+      .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+                                   when: c.when ? c.when.toDateString() : '' }; }),
+    skills: skills.slice(0, 40)
+  };
+}
+
+function ftoPayloadV1_(viewer) {
+  var mine = traineesV1_().filter(function (t) {
+    return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
+  return {
+    name: viewer.name,
+    trainees: mine.map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
+               setupComplete: t.setupComplete };
+    })
+  };
+}
+
+function divisionPayloadV1_() {
+  var all = traineesV1_();
+  var active = all.filter(function (t) { return !t.closed; });
+  var queue = openQueueV1_();
+  var incomplete = active.filter(function (t) { return !t.setupComplete; });
+
+  var seen = {}, dupes = [];
+  active.forEach(function (t) {
+    if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
+  });
+
+  return {
+    activeCount: active.length,
+    closedCount: all.length - active.length,
+    queue: queue.slice(0, 25).map(function (q) {
+      return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
+               since: daysAgoTextV1_(q.since), requestId: q.requestId, row: q.row };
+    }),
+    queueCount: queue.length,
+    incomplete: incomplete.map(function (t) {
+      var missing = [];
+      if (!t.level) missing.push('level');
+      if (!t.phase) missing.push('phase');
+      if (!t.fto) missing.push('training officer');
+      if (!t.started) missing.push('start date');
+      return { name: t.name, missing: missing.join(', ') };
+    }),
+    duplicates: dupes,
+    releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
+      .map(function (t) { return { name: t.name, level: t.level }; }),
+    mode: modeV1_()
+  };
+}
+
+function supervisorPayloadV1_(viewer) {
+  var shift = normNameV1_(viewer.shift);
+  var mine = traineesV1_().filter(function (t) {
+    return !t.closed && (!shift || normNameV1_(t.shift) === shift); });
+  return {
+    shift: viewer.shift || 'All shifts',
+    trainees: mine.map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey,
+               phase: t.phase, fto: t.fto,
+               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
+    })
+  };
+}
+
+function medicalPayloadV1_() {
+  var t = readTabV1_(PORTAL.TAB.URGENT);
+  var cases = [];
+  if (t.ok) {
+    t.rows.forEach(function (r, i) {
+      var who = String(r[3] || '').trim();
+      if (!who) return;
+      cases.push({
+        row: t.firstDataRow + i,
+        trainee: who,
+        when: asDateV1_(r[0]) ? asDateV1_(r[0]).toDateString() : '',
+        from: String(r[2] || '').trim(),
+        what: String(r[4] || '').trim()
+      });
+    });
+  }
+  return { cases: cases.slice(0, 20) };
+}

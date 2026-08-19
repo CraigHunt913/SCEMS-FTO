@@ -1,0 +1,285 @@
+// SCEMS Portal v1 — role isolation and write safety.
+//
+// The claim this portal makes is that a person receives ONLY their own
+// record, decided on the server. These tests attack that claim: they build a
+// sandbox holding several people and check that each viewer's payload cannot
+// be made to contain anyone else's data, and that nothing can be written to
+// a spreadsheet the portal is not in staging against.
+//
+//   node test/portal.test.js
+
+const fs = require('fs');
+let PASS = 0, FAIL = 0;
+function ok(c, w) { if (c) { PASS++; console.log('  PASS  ' + w); } else { FAIL++; console.log('  FAIL  ' + w); } }
+function section(t) { console.log('\n' + t); }
+
+let PROPS = {}, SHEETS = {}, ACTIVE = '', EFFECTIVE = '';
+
+function FakeSheet(name, grid) { this.name = name; this.g = grid; }
+FakeSheet.prototype.getName = function () { return this.name; };
+FakeSheet.prototype.getLastRow = function () { return this.g.length; };
+FakeSheet.prototype.getLastColumn = function () { return this.g.reduce((w, r) => Math.max(w, (r || []).length), 1); };
+FakeSheet.prototype.appendRow = function (r) { this.g.push(r.slice()); return this; };
+FakeSheet.prototype.setFrozenRows = function () { return this; };
+FakeSheet.prototype.clear = function () { this.g = []; return this; };
+FakeSheet.prototype.getRange = function (r, c, nr, nc) {
+  const sh = this, R = r, C = c, NR = nr || 1, NC = nc || 1;
+  const api = {
+    getValues: function () { const o = [];
+      for (let i = 0; i < NR; i++) { const row = sh.g[R - 1 + i] || [], s = [];
+        for (let j = 0; j < NC; j++) s.push(row[C - 1 + j] === undefined ? '' : row[C - 1 + j]); o.push(s); } return o; },
+    getValue: function () { return (sh.g[R - 1] || [])[C - 1]; },
+    setValue: function (v) { (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
+    setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
+      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
+  };
+  ['setFontWeight','setFontColor','setBackground','setWrap','setNumberFormat'].forEach(m => api[m] = () => api);
+  return api;
+};
+
+const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
+               getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
+
+global.SpreadsheetApp = { openById: () => BOOK, create: () => BOOK,
+  getUi: () => ({ alert: () => {} }) };
+global.Session = { getActiveUser: () => ({ getEmail: () => ACTIVE }),
+  getEffectiveUser: () => ({ getEmail: () => EFFECTIVE }),
+  getScriptTimeZone: () => 'America/New_York' };
+global.PropertiesService = { getScriptProperties: () => ({
+  getProperty: k => (PROPS[k] === undefined ? null : PROPS[k]),
+  setProperty: (k, v) => { PROPS[k] = v; }, deleteProperty: k => { delete PROPS[k]; } }) };
+global.Utilities = { formatDate: () => '2026-08-19 0200' };
+global.Logger = { log: () => {} };
+global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
+  setTitle: function () { return this; }, addMetaTag: function () { return this; },
+  setXFrameOptionsMode: function () { return this; } }) }), XFrameOptionsMode: { DENY: 1 } };
+
+// one eval at module scope: eval inside a callback would scope the
+// declarations into that callback and nothing would be visible here
+eval(['00_Config','10_Identity','20_Data','30_WebApp','90_Staging']
+  .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
+  .join('\n'));
+
+const HR = PORTAL.HEADER_ROW;
+function tab(name, headers, rows) {
+  const g = [];
+  for (let i = 0; i < HR - 1; i++) g.push([]);
+  g.push(headers.slice());
+  rows.forEach(r => g.push(r));
+  SHEETS[name] = new FakeSheet(name, g);
+}
+function world() {
+  PROPS = {}; SHEETS = {}; PEOPLE_CACHE_V1 = null;
+  PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
+  PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
+  PROPS['PORTAL_DIVISION_EMAILS'] = 'chief@example.org';
+  PROPS['PORTAL_MEDICAL_EMAILS'] = 'md@example.org';
+  PROPS['PORTAL_SUPERVISORS'] = JSON.stringify({ 'sup@example.org': 'A' });
+
+  tab(PORTAL.TAB.MASTER,
+    ['TRAINEE','EMPLOYEE ID','LEVEL','ENTRY PROFILE','ASSIGNED FTO','START DATE',
+     'CURRENT PHASE','SET STATUS','TRAINEE EMAIL','PHASE START DATE','SHIFT'],
+    [['Jamie Rivers','S1','Paramedic','A','Dana Whitlock',new Date('2026-06-01'),'Phase 2','Active','jamie@example.org',new Date('2026-07-15'),'A'],
+     ['Alex Bramble','S2','EMT','A','Dana Whitlock',new Date('2026-05-04'),'Phase 3','Active','alex@example.org',new Date('2026-07-01'),'A'],
+     ['Priya Okafor','S3','Advanced EMT','B','Marcus Vane',new Date('2026-04-12'),'Phase 4','Active','priya@example.org',new Date('2026-08-01'),'B'],
+     ['Sam Ledger','S4','EMT','A','','','','Active','sam@example.org','','A'],
+     ['Rosa Quill','S5','Paramedic','C','Marcus Vane',new Date('2026-01-06'),'Phase 4','Closed / Released','rosa@example.org',new Date('2026-03-01'),'B']]);
+  tab(PORTAL.TAB.ROSTER, ['FTO','EMAIL','LEVEL','ACTIVE'],
+    [['Dana Whitlock','dana@example.org','Paramedic','Yes'],
+     ['Marcus Vane','marcus@example.org','Paramedic','Yes']]);
+  tab(PORTAL.TAB.SKILLS,
+    ['TRAINEE','SKILL','STAGE','LAST DATE','LAST FTO','LEVEL','READINESS','SIGN-OFF',
+     'DOMAIN','SKILL ID','SUCCESSFUL REPS','INDEPENDENT REPS','DISTINCT DATES','DISTINCT FTOS'],
+    [['Jamie Rivers','IV access','I',new Date(),'Dana Whitlock','Paramedic','SIGNED OFF','SIGNED OFF','V','SK-1',5,3,3,2],
+     ['Jamie Rivers','Intubation','A',new Date(),'Dana Whitlock','Paramedic','READY FOR VALIDATION','','A','SK-2',4,2,2,2],
+     ['Alex Bramble','Tourniquet','A',new Date(),'Dana Whitlock','EMT','READY FOR VALIDATION','','T','SK-6',3,3,3,2],
+     ['Priya Okafor','Vascular access','I',new Date(),'Marcus Vane','Advanced EMT','SIGNED OFF','SIGNED OFF','V','SK-7',8,5,5,3]]);
+  tab(PORTAL.TAB.QUEUE,
+    ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+     'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+    [[new Date(),'Jamie Rivers','SK-2','A','Intubation','4 of 4 successful','','','','','','OPEN',new Date(),'QR-1'],
+     [new Date(),'Alex Bramble','SK-6','T','Tourniquet','3 of 3 successful','','','','','','OPEN',new Date(),'QR-2']]);
+  tab(PORTAL.TAB.EVAL, ['TIMESTAMP','FTO','TRAINEE','LEVEL','PHASE'],
+    [[new Date(),'Dana Whitlock','Jamie Rivers','Paramedic','Phase 2']]);
+  tab(PORTAL.TAB.REFLECT, ['TIMESTAMP','TRAINEE','WENT WELL','WAS HARD','WORK ON'], []);
+  tab(PORTAL.TAB.URGENT, ['TIMESTAMP','CALLED','YOUR NAME','TRAINEE INVOLVED','WHAT HAPPENED'],
+    [[new Date(),'Yes','Dana Whitlock','Alex Bramble','Medication concentration error caught before administration.']]);
+  tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'],
+    [[new Date(),'Jamie Rivers','Dana Whitlock','Radio reports still rushed.',''],
+     [new Date(),'Alex Bramble','Dana Whitlock','Slow the primary survey down.','']]);
+  tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
+}
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; }
+function payloadFor(email) { as(email); const v = resolveViewerV1_(whoIsAskingV1_()); return { v, d: payloadForV1_(v) }; }
+
+// ---------------------------------------------------------------- //
+section('Roles resolve from the data, not from what the browser claims');
+// ---------------------------------------------------------------- //
+world();
+ok(resolveViewerV1_('jamie@example.org').role === PORTAL.ROLE.TRAINEE, 'a trainee email resolves to TRAINEE');
+ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.FTO, 'a roster email resolves to FTO');
+ok(resolveViewerV1_('chief@example.org').role === PORTAL.ROLE.DIVISION, 'the division email resolves to TRAINING_DIVISION');
+ok(resolveViewerV1_('md@example.org').role === PORTAL.ROLE.MEDICAL, 'the medical email resolves to MEDICAL_DIRECTOR');
+ok(resolveViewerV1_('sup@example.org').role === PORTAL.ROLE.SUPERVISOR, 'a supervisor email resolves to SUPERVISOR');
+ok(resolveViewerV1_('nobody@example.org').ok === false, 'an unknown email gets no role at all');
+ok(resolveViewerV1_('').ok === false, 'an empty identity gets no role');
+ok(/not on the roster/.test(resolveViewerV1_('nobody@example.org').why), 'and is told why, plainly');
+ok(resolveViewerV1_('JAMIE@Example.ORG').role === PORTAL.ROLE.TRAINEE, 'matching is case-insensitive');
+
+// ---------------------------------------------------------------- //
+section('A trainee receives their own record and nobody else appears in it');
+// ---------------------------------------------------------------- //
+world();
+let r = payloadFor('jamie@example.org');
+let blob = JSON.stringify(r.d);
+ok(r.d.name === 'Jamie Rivers', 'Jamie gets Jamie');
+ok(r.d.signed === 1 && r.d.applicable === 2, 'their own skill counts');
+ok(r.d.coaching.length === 1, 'their own unacknowledged coaching');
+ok(!/Alex Bramble/.test(blob), 'Alex Bramble appears NOWHERE in the payload');
+ok(!/Priya Okafor/.test(blob), 'nor does Priya Okafor');
+ok(!/Rosa Quill/.test(blob), 'nor does the released trainee');
+ok(!/Slow the primary survey/.test(blob), "nor another trainee's coaching text");
+ok(!/Medication concentration/.test(blob), 'nor the urgent concern about someone else');
+
+r = payloadFor('alex@example.org');
+blob = JSON.stringify(r.d);
+ok(r.d.name === 'Alex Bramble', 'Alex gets Alex');
+ok(!/Jamie Rivers/.test(blob), 'and Jamie is absent from it');
+ok(!/Radio reports/.test(blob), "including Jamie's coaching");
+
+// ---------------------------------------------------------------- //
+section('An FTO sees only the people assigned to them');
+// ---------------------------------------------------------------- //
+world();
+r = payloadFor('dana@example.org');
+let names = r.d.trainees.map(t => t.name);
+ok(names.indexOf('Jamie Rivers') >= 0 && names.indexOf('Alex Bramble') >= 0, "Dana's two trainees are listed");
+ok(names.indexOf('Priya Okafor') < 0, "Marcus's trainee is not");
+ok(names.indexOf('Rosa Quill') < 0, 'a released trainee is not listed as active');
+ok(!/Radio reports|Medication concentration/.test(JSON.stringify(r.d)),
+   'and an FTO list carries no coaching or concern narrative');
+
+r = payloadFor('marcus@example.org');
+ok(r.d.trainees.length === 1 && r.d.trainees[0].name === 'Priya Okafor', 'Marcus sees only Priya');
+
+// ---------------------------------------------------------------- //
+section('A supervisor is scoped to their shift and gets no detail');
+// ---------------------------------------------------------------- //
+world();
+r = payloadFor('sup@example.org');
+names = r.d.trainees.map(t => t.name);
+ok(names.indexOf('Jamie Rivers') >= 0 && names.indexOf('Alex Bramble') >= 0, 'A shift trainees are shown');
+ok(names.indexOf('Priya Okafor') < 0, 'a B shift trainee is not');
+ok(names.indexOf('Rosa Quill') < 0, 'nor is a released one');
+ok(!/coaching|Radio reports|Medication/i.test(JSON.stringify(r.d)),
+   'and the supervisor payload contains no coaching or concern text');
+
+// ---------------------------------------------------------------- //
+section('The Medical Director gets clinical cases and nothing else');
+// ---------------------------------------------------------------- //
+world();
+r = payloadFor('md@example.org');
+ok(r.d.cases.length === 1, 'one referred case');
+ok(/Medication concentration/.test(JSON.stringify(r.d)), 'with the clinical narrative');
+ok(!/Radio reports/.test(JSON.stringify(r.d)), 'but no routine coaching');
+ok(!r.d.trainees, 'and no trainee roster at all');
+
+// ---------------------------------------------------------------- //
+section('The Division sees the queue, and closed people are excluded');
+// ---------------------------------------------------------------- //
+world();
+r = payloadFor('chief@example.org');
+ok(r.d.activeCount === 4, 'four active trainees');
+ok(r.d.closedCount === 1, 'the released one is counted separately, not silently dropped');
+ok(r.d.queueCount === 2, 'both open sign-offs');
+ok(r.d.incomplete.length === 1 && r.d.incomplete[0].name === 'Sam Ledger',
+   'the incomplete enrolment is surfaced');
+ok(/level|phase|training officer|start date/.test(r.d.incomplete[0].missing),
+   'and it says exactly what is missing');
+
+// ---------------------------------------------------------------- //
+section('Writes: only in staging, only by the right role, only your own row');
+// ---------------------------------------------------------------- //
+world();
+as('jamie@example.org');
+let out = submitReflectionV1({ wentWell: 'good', wasHard: 'hard', workOn: 'this' });
+ok(/^RF-/.test(out.ref), 'a trainee can file a reflection in staging');
+ok(SHEETS[PORTAL.TAB.REFLECT].g.length === HR + 1, 'and one row is appended');
+ok(SHEETS[PORTAL.TAB.AUDIT].g.length === HR + 1, 'and it is audited');
+ok(SHEETS[PORTAL.TAB.AUDIT].g[HR][2] === 'jamie@example.org',
+   'the audit row names the account that acted, not a typed name');
+
+world(); as('dana@example.org');
+let threw = false;
+try { submitReflectionV1({}); } catch (e) { threw = /Only a trainee/.test(e.message); }
+ok(threw, 'an FTO cannot file a reflection as a trainee');
+
+world(); as('jamie@example.org');
+threw = false;
+try { approveSignoffV1(HR + 1, 'looks fine to me'); } catch (e) { threw = /Only the Training Division/.test(e.message); }
+ok(threw, 'a trainee cannot approve a sign-off');
+
+world(); as('chief@example.org');
+threw = false;
+try { approveSignoffV1(HR + 1, 'ok'); } catch (e) { threw = /Type why/.test(e.message); }
+ok(threw, 'the Division cannot approve with a token reason');
+
+world(); as('chief@example.org');
+approveSignoffV1(HR + 1, 'Directly observed on two separate shifts and verified.');
+let q = readTabV1_(PORTAL.TAB.QUEUE);
+ok(q.rows[0][q.col['DECISION']] === 'Approve sign-off', 'a proper approval records the decision');
+ok(q.rows[0][q.col['DECIDED BY']] === 'chief@example.org', 'against the real signed-in account');
+ok(q.rows[0][q.col['RECORD STATUS']] === 'RECORDED', 'and closes the queue row');
+
+world(); as('jamie@example.org');
+threw = false;
+try { ackCoachingV1(HR + 2); } catch (e) { threw = /belongs to someone else/.test(e.message); }
+ok(threw, "a trainee cannot acknowledge another trainee's coaching note");
+
+world(); as('jamie@example.org');
+ackCoachingV1(HR + 1);
+let c = readTabV1_(PORTAL.TAB.COACHING);
+ok(c.rows[0][c.col['ACKNOWLEDGED']] === 'YES', 'but can acknowledge their own');
+
+// ---------------------------------------------------------------- //
+section('Production mode is read-only, absolutely');
+// ---------------------------------------------------------------- //
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
+ok(mayWriteV1_() === false, 'PRODUCTION mode disallows writes');
+['submitReflectionV1','approveSignoffV1','ackCoachingV1'].forEach(fn => {
+  as(fn === 'approveSignoffV1' ? 'chief@example.org' : 'jamie@example.org');
+  let blocked = false;
+  try { eval(fn)(HR + 1, 'a perfectly good reason here'); }
+  catch (e) { blocked = /read-only|Refusing/.test(e.message); }
+  ok(blocked, fn + ' refuses outside staging');
+});
+
+world(); delete PROPS[PORTAL.PROPERTY_TARGET];
+threw = false;
+try { targetIdV1_(); } catch (e) { threw = /not pointed at a spreadsheet/.test(e.message); }
+ok(threw, 'with no target configured the portal refuses to run at all');
+ok(!/1YL-9Er9|1q7OnZox/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/00_Config.gs','utf8')),
+   'and no production spreadsheet id is hard-coded anywhere in config');
+
+// ---------------------------------------------------------------- //
+section('Submitted text cannot become a formula');
+// ---------------------------------------------------------------- //
+ok(clean_('=IMPORTRANGE("x","y")').charAt(0) === "'", 'a leading = is neutralised');
+['+','-','@'].forEach(ch => ok(clean_(ch + 'danger').charAt(0) === "'", 'a leading ' + ch + ' is neutralised'));
+ok(clean_('Normal text') === 'Normal text', 'ordinary text is untouched');
+
+// ---------------------------------------------------------------- //
+section('The page cannot be framed, and carries no secrets');
+// ---------------------------------------------------------------- //
+const web = fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs','utf8');
+ok(/XFrameOptionsMode\.DENY/.test(web), 'the web app denies framing');
+const idx = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html','utf8');
+ok(!/AKfycb|1YL-9Er9|@gmail\.com|@sumtercountysc/.test(idx),
+   'the page embeds no deployment id, spreadsheet id or real address');
+ok(/google\.script\.run/.test(idx), 'and every action goes back to the server');
+ok(/function esc\(/.test(idx) && (idx.match(/esc\(/g) || []).length > 30,
+   'and server data is escaped before it reaches the DOM');
+
+console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
+process.exit(FAIL ? 1 : 0);
