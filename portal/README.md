@@ -25,26 +25,16 @@ write path refuses, by design and under test.
 
 ## Setting it up
 
+**One file.** Paste
+[`SCEMS_PORTAL_ONE_FILE.gs`](SCEMS_PORTAL_ONE_FILE.gs) over `Code.gs` in a new
+Apps Script project and you are done — the page is in there too, as a string
+at the bottom. There is nothing else to add.
+
 1. **script.google.com** → **New project**. Name it `SCEMS Portal`.
    This is a *new* project. Do not paste any of this into the tracker's script.
 
-2. Create these files and paste each one in:
-
-   | File | Type |
-   | --- | --- |
-   | `00_Config.gs` | script |
-   | `10_Identity.gs` | script |
-   | `20_Data.gs` | script |
-   | `30_WebApp.gs` | script |
-   | `40_Forms.gs` | script |
-   | `50_Production.gs` | script |
-   | `60_History.gs` | script |
-   | `70_Backfill.gs` | script |
-   | `80_Import.gs` | script |
-   | `90_Staging.gs` | script |
-   | `Index.html` | **HTML** |
-
-   `Index.html` must be added with **File → New → HTML**, named `Index`.
+2. Select everything in `Code.gs`, delete it, and paste
+   `SCEMS_PORTAL_ONE_FILE.gs` in its place. Save.
 
 3. Run **`setUpStaging`**. It builds a sandbox with invented people and points
    the portal at it. Form links are **off** in the sandbox, on purpose: the
@@ -328,4 +318,9 @@ node test/portal.test.js           73 assertions — role isolation and write sa
 node test/portal-forms.test.js    103 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
 node test/portal-backfill.test.js  97 assertions — importing responses, the production gate, the rollback
+node test/portal-onefile.test.js   43 assertions — the pasted file matches its sources and runs alone
 ```
+
+`SCEMS_PORTAL_ONE_FILE.gs` is **built**, not written. Edit the files in this
+folder and run `node tools/build-one-file.js`. `portal-onefile.test.js` fails
+if the two ever disagree, so what you paste can never quietly go stale.

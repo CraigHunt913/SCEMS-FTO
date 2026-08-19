@@ -26,7 +26,7 @@ function doGet(e) {
     error: err
   };
 
-  var t = HtmlService.createTemplateFromFile('Index');
+  var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
   // XFrameOptionsMode has exactly two members: DEFAULT and ALLOWALL. DEFAULT
   // is the protective one - Google sends X-Frame-Options: SAMEORIGIN, so no
@@ -39,6 +39,18 @@ function doGet(e) {
 }
 
 function safeModeV1_() { try { return modeV1_(); } catch (e) { return 'UNSET'; } }
+
+/** The page, from wherever it lives.
+ *
+ *  Pasted as separate files, the page is an HTML file named Index. Pasted as
+ *  the single combined file, it is a string constant the build put there.
+ *  Same source either way; this is the one line that has to know which. */
+function portalTemplateV1_() {
+  if (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML) {
+    return HtmlService.createTemplate(PORTAL_PAGE_HTML);
+  }
+  return HtmlService.createTemplateFromFile('Index');
+}
 
 function payloadForV1_(viewer) {
   switch (viewer.role) {

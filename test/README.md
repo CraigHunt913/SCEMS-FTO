@@ -20,9 +20,10 @@ node test/portal.test.js                 # portal role isolation and write safet
 node test/portal-forms.test.js           # the form registry, prefill, production mode
 node test/portal-history.test.js         # current-first records, nothing lost
 node test/portal-backfill.test.js        # importing responses, the production gate, the rollback
+node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All fourteen exit non-zero on failure. 884 assertions total.
+All fifteen exit non-zero on failure. 927 assertions total.
 
 The last two cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that
@@ -46,6 +47,7 @@ not offer.
 | `portal.test.js` | `resolveViewerV1_`, the five role payloads, `doGet`, every portal action | one person's payload being made to contain another's record, a write reaching a spreadsheet the portal is not in staging against, and the two page-templating bugs that shipped |
 | `portal-forms.test.js` | `PORTAL_FORMS`, `prefilledUrlV1_`, `probeItemV1_`, `traineeFormsForV1_`, `pointAtProductionReadOnly`, `productionReadinessCheck` | the unbound combined form being offered to anyone, a form id escaping the registry into the page, a dropdown prefilled with a value the form does not offer, discovery submitting a response, and production mode permitting a write |
 | `portal-history.test.js` | `recordForV1_`, `submissionsFromV1_`, `markCurrentV1_`, `recordScopeV1_`, `recordV1`, `duplicateSubmissionsV1_`, `readTabV1_` caching | a submission being dropped, shortened, merged or reordered on its way to the screen; an undated row becoming current; a duplicate being resolved silently; one person opening another's record; and the six-tabs-per-person read that would make the Division screen unusable |
+| `portal-onefile.test.js` | `tools/build-one-file.js`, `SCEMS_PORTAL_ONE_FILE.gs`, `portalTemplateV1_` | the pasted file drifting from the sources it was built from, a function being lost in the concatenation, the embedded page differing by a byte from `Index.html`, and `doGet` asking for an HTML file the single-file project does not have |
 | `portal-backfill.test.js` | `backfillPlanV1_`, `columnForAnswerV1_`, `backfillPreview`, `backfillIntoStaging`, `requireImportAuthorityV1_`, `runBackfillForReal`, `undoLastBackfill` | an answer being lost because its question matched no column, the same response being imported twice, a stale sandbox confirmation firing against production, a half-imported record, and an undo deleting rows that had moved |
 
 `queue-sweep.test.js` drives the real sweep against a fake queue and reads the
