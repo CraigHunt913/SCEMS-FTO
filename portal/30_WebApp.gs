@@ -69,6 +69,7 @@ function ackCoachingV1(row) {
     throw new Error('That coaching note belongs to someone else.');
   }
   t.sheet.getRange(r, t.col['ACKNOWLEDGED'] + 1).setValue('YES');
+  forgetTabsV1_();
   auditV1_('COACHING ACKNOWLEDGED', viewer.email, 'row ' + r);
   return 'Acknowledged.';
 }
@@ -84,6 +85,7 @@ function submitReflectionV1(answers) {
   sh.appendRow([new Date(), viewer.traineeName,
                 clean_(a.wentWell), clean_(a.wasHard), clean_(a.workOn)]);
   var ref = 'RF-' + String(sh.getLastRow());
+  forgetTabsV1_();
   auditV1_('REFLECTION FILED', viewer.email, ref);
   return { ref: ref, at: new Date().toString() };
 }
@@ -105,8 +107,35 @@ function approveSignoffV1(row, reason) {
   t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(new Date());
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
   t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue('RECORDED');
+  forgetTabsV1_();
   auditV1_('SIGN-OFF APPROVED', viewer.email, 'row ' + r + ' | ' + why.slice(0, 120));
   return 'Recorded.';
+}
+
+/** One person's whole record: the most recent submission of each kind, then
+ *  every earlier one, in full. Read only in every mode — it opens nothing and
+ *  writes nothing, so it is safe against the live tracker.
+ *
+ *  Authorisation is decided here, from the signed-in account. The browser
+ *  sends a name; if the viewer is not entitled to that name's record, no
+ *  record is built. A trainee asking for someone else gets a refusal, not a
+ *  filtered version of the answer. */
+function recordV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
+
+  var name = String(traineeName || '').trim();
+  if (!name) throw new Error('No name was given.');
+
+  var scope = recordScopeV1_(viewer, name);
+  if (!scope) throw new Error('You are not able to open that record.');
+
+  var rec = recordForV1_(name, scope);
+  rec.partial = scope.length < PORTAL_SOURCES.length;
+  rec.scopeNote = rec.partial
+    ? 'You are seeing only the parts of this record your role covers.' : '';
+  auditV1_('RECORD OPENED', viewer.email, name + ' | ' + scope.join(','));
+  return rec;
 }
 
 /** Refreshes the current role's payload without a page reload. */
@@ -124,7 +153,12 @@ function clean_(v) {
   return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
 }
 
+/** The portal's own log. It is a WRITE, so it obeys the same rule everything
+ *  else does: in PRODUCTION this portal puts nothing in the live book, not
+ *  even a note about itself. Read paths call this too, which is exactly why
+ *  the check has to be here and not only on the actions. */
 function auditV1_(what, who, detail) {
+  if (!mayWriteV1_()) return;
   try {
     var sh = targetBookV1_().getSheetByName(PORTAL.TAB.AUDIT);
     if (!sh) return;

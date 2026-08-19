@@ -145,7 +145,11 @@ function traineePayloadV1_(viewer) {
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
-    })
+    }),
+    // How current each kind of submission is. The record itself is fetched on
+    // demand, so a person with two years of history does not pay for it on
+    // every page load.
+    freshness: safeFormsV1_(function () { return freshnessForV1_(me.name); })
   };
 }
 
@@ -164,7 +168,8 @@ function ftoPayloadV1_(viewer) {
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
                    { fto: viewer.name, trainee: t.name });
-               }) };
+               }),
+               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
@@ -207,12 +212,16 @@ function divisionPayloadV1_() {
                fto: t.fto || '', shift: t.shift || '',
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
-               }) };
+               }),
+               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
     }),
     retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
+    // Where two submissions of the same kind landed on the same day. Both are
+    // kept; this is the list of calls to make, not a list of rows to remove.
+    duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_()
   };

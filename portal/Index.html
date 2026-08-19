@@ -101,6 +101,25 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .back{background:none;border:none;color:var(--ink-3);font-family:"Barlow Semi Condensed",sans-serif;
   font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;font-weight:600;cursor:pointer;padding:0;margin:0 0 12px;}
 .back:hover{color:var(--ink);}
+/* record screen: current at the top, everything earlier below it */
+.rec{border:1px solid var(--line);border-radius:9px;padding:14px 15px;margin-bottom:9px;background:var(--paper);}
+.rec.cur{border-left:4px solid var(--gold);}
+.rec.dup{border-left:4px solid var(--stop);}
+.rec .when{font-family:"Barlow Semi Condensed",sans-serif;font-size:.74rem;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;}
+.rec .when b{color:var(--gold);font-weight:700;}
+.rec .fld{margin-top:9px;}
+.rec .fld .l{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);}
+.rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;}
+.fresh{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 14px;}
+.fresh span{font-size:.78rem;color:var(--ink-2);background:var(--surface);
+  border:1px solid var(--line);border-radius:20px;padding:3px 11px;}
+.fresh span b{color:var(--ink);font-weight:600;}
+.fresh span.never{color:var(--ink-3);}
+.more{background:none;border:1px solid var(--line);border-radius:7px;width:100%;padding:10px;
+  font:inherit;font-size:.88rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;}
+.more:hover{border-color:var(--ink-3);color:var(--ink);}
 .foot{padding:20px 18px 32px;border-top:1px solid var(--line);color:var(--ink-3);font-size:.8rem;background:var(--surface);}
 :focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
@@ -128,6 +147,11 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function lvlChip(k,l){ return '<span class="chip c-'+esc(k||'emt')+'">'+esc(l||'')+'</span>'; }
 function el(id){ return document.getElementById(id); }
+/* A name ends up inside onclick="...", so it has to survive two parsers: the
+   HTML attribute and the JavaScript string inside it. JSON.stringify handles
+   the quotes and backslashes; esc() handles the angle brackets and the
+   double quote that would end the attribute. */
+function jsStr(v){ return esc(JSON.stringify(String(v==null?'':v))); }
 
 function render(){
   el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging' : BOOT.mode;
@@ -148,6 +172,7 @@ function render(){
   if (S.screen === 'signoff')  return paintSignoff();
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
+  if (S.screen === 'record')   return paintRecord();
 
   switch (v.role) {
     case 'TRAINEE':            return paintTrainee(d);
@@ -194,10 +219,16 @@ function paintTrainee(d){
     }
   });
 
-  h += '<h2>Where things stand</h2><div class="panel">'+
+  h += '<h2>Where things stand</h2>';
+  h += freshRow(d.freshness);
+  h += '<div class="panel">'+
        kv('Training officer', d.fto || 'not assigned')+
        kv('Phase started', d.phaseStart || 'not set')+
        kv('Last evaluation', d.lastEval)+'</div>';
+  h += '<button class="card act" onclick="openRecord('+jsStr(d.name)+')">'+
+       '<span class="dot ok"></span><span class="bd"><span class="h">My whole record</span>'+
+       '<span class="m">Everything ever submitted about you, newest first.</span></span>'+
+       '<span class="go">&rsaquo;</span></button>';
 
   if (d.skills && d.skills.length){
     h += '<h2>Your skills</h2><div class="panel">';
@@ -298,9 +329,14 @@ function paintTraineeSheet(){
   var t = S.ctx || {};
   var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
     '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Last evaluation', esc(t.lastEval))+
        kv('Setup', t.setupComplete ? '<span class="chip c-ok">Complete</span>'
                                    : '<span class="chip c-warn">Incomplete</span>')+'</div>';
+  h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
+       '<span class="dot ok"></span><span class="bd"><span class="h">Their whole record</span>'+
+       '<span class="m">Every submission on file, most recent first.</span></span>'+
+       '<span class="go">&rsaquo;</span></button>';
   h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
@@ -352,6 +388,20 @@ function paintDivision(d){
     h += '<h2>Forms</h2>'+formCards(d.forms);
   }
 
+  if (d.duplicateSubs && d.duplicateSubs.length){
+    h += '<h2>Two submissions, one day</h2>';
+    h += '<div class="note n-warn"><b>Both are kept</b>Nothing has been removed. '+
+         'These are the places where two submissions of the same kind landed on the '+
+         'same day and somebody has to say which one stands.</div>';
+    d.duplicateSubs.forEach(function(x){
+      h += '<div class="card"><div class="h">'+esc(x.trainee)+'</div>'+
+        '<div class="m">'+esc(x.source)+(x.group?' &middot; '+esc(x.group):'')+
+        ' &middot; '+esc(x.when)+'</div>'+
+        '<div class="m">'+x.count+' submissions &middot; '+esc(x.tab)+
+        ' rows '+esc(x.rows.join(', '))+'</div></div>';
+    });
+  }
+
   (d.retiredForms||[]).forEach(function(f){
     h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
          ' is no longer offered anywhere in this portal. '+esc(f.why)+
@@ -386,8 +436,13 @@ function paintPersonSheet(){
   var t = S.ctx || {};
   var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
     '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
+  h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
+       '<span class="dot ok"></span><span class="bd"><span class="h">Their whole record</span>'+
+       '<span class="m">Every submission on file, most recent first.</span></span>'+
+       '<span class="go">&rsaquo;</span></button>';
   h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
@@ -439,13 +494,98 @@ function paintMedical(d){
     (d.cases.length===1?' case':' cases')+' for you. Nothing else.</p>';
   if (!d.cases.length) h += '<div class="note n-ok"><b>Nothing pending</b>No cases require your authority.</div>';
   d.cases.forEach(function(c){
-    h += '<div class="card" style="border-left:4px solid var(--pmd)">'+
-      '<div class="h">'+esc(c.trainee)+'</div>'+
-      '<div class="m">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+'</div>'+
-      '<div style="margin-top:9px;font-size:.92rem;color:var(--ink-2)">'+esc(c.what)+'</div></div>';
+    h += '<button class="card act" style="border-left:4px solid var(--pmd)" '+
+      'onclick="openRecord('+jsStr(c.trainee)+')">'+
+      '<span class="dot due"></span><span class="bd">'+
+      '<span class="h">'+esc(c.trainee)+'</span>'+
+      '<span class="m">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+'</span>'+
+      '<span class="m" style="color:var(--ink-2);margin-top:7px">'+esc(c.what)+'</span></span>'+
+      '<span class="go">&rsaquo;</span></button>';
   });
   h += '<div class="next"><b>Only your cases</b>You never see routine evaluations, reflections, or other trainees.</div>';
   paint(h);
+}
+
+/* ---------------- the record ---------------- */
+/* Current first, in full. Everything earlier below it, also in full. The
+   raw tabs are untouched; this is a reading of them, not a replacement. */
+
+function freshRow(list){
+  if (!list || !list.length) return '';
+  var h = '<div class="fresh">';
+  list.forEach(function(f){
+    var never = f.ago === 'never';
+    h += '<span class="'+(never?'never':'')+'">'+esc(f.title)+' <b>'+esc(f.ago)+'</b>'+
+         (f.count>1 ? ' <span style="color:var(--ink-3)">('+f.count+')</span>' : '')+'</span>';
+  });
+  return h + '</div>';
+}
+
+function openRecord(name){
+  S.ctx = { name: name, rec: null, from: S.screen, show: {} };
+  S.screen = 'record'; render();
+  google.script.run
+    .withSuccessHandler(function(r){ S.ctx.rec = r; render(); })
+    .withFailureHandler(function(e){ S.ctx.err = e.message || String(e); render(); })
+    .recordV1(name);
+}
+
+function paintRecord(){
+  var c = S.ctx || {};
+  var back = '<button class="back" onclick="S.screen=\''+(c.from||'main')+'\';render()">&larr; Back</button>';
+  if (c.err) return paint(back+'<h1>'+esc(c.name)+'</h1>'+
+    '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
+  if (!c.rec) return paint(back+'<h1>'+esc(c.name)+'</h1><p class="sub">Reading the record…</p>');
+
+  var r = c.rec;
+  var h = back + '<h1>'+esc(r.name)+'</h1><p class="sub">'+r.total+
+    (r.total===1?' submission on file':' submissions on file')+'. Nothing has been removed.</p>';
+
+  if (r.partial) h += '<div class="note n-info"><b>Part of the record</b>'+esc(r.scopeNote)+'</div>';
+  if (r.duplicates) h += '<div class="note n-warn"><b>'+r.duplicates+
+    ' possible duplicate'+(r.duplicates===1?'':'s')+'</b>Two submissions of the same kind on the '+
+    'same day. Both are kept and both are shown. Which one stands is your call.</div>';
+  if (!r.sections.length) h += '<div class="note n-info"><b>Nothing on file</b>No submissions '+
+    'have been recorded for this person yet.</div>';
+
+  r.sections.forEach(function(sec){
+    h += '<h2>'+esc(sec.title)+'</h2>';
+    h += '<p class="sub" style="margin-top:-6px">Most recent '+esc(sec.newestAgo)+
+         ' &middot; '+sec.count+' on file</p>';
+    sec.current.forEach(function(s){ h += recCard(s, true); });
+    if (sec.earlier.length){
+      var open = !!(S.ctx.show||{})[sec.key];
+      h += '<button class="more" onclick="toggleEarlier(\''+esc(sec.key)+'\')">'+
+           (open ? 'Hide' : 'Show')+' '+sec.earlier.length+' earlier '+
+           (sec.earlier.length===1?'submission':'submissions')+'</button>';
+      if (open) sec.earlier.forEach(function(s){ h += recCard(s, false); });
+    }
+  });
+
+  h += '<div class="next"><b>Where this comes from</b>Every row is read straight from the tab the '+
+       'form wrote it to. Nothing is edited, moved or deleted to build this screen.</div>';
+  paint(h);
+}
+
+function toggleEarlier(key){
+  S.ctx.show = S.ctx.show || {};
+  S.ctx.show[key] = !S.ctx.show[key];
+  render();
+}
+
+function recCard(s, isCurrent){
+  var cls = 'rec' + (s.possibleDuplicate ? ' dup' : (isCurrent ? ' cur' : ''));
+  var h = '<div class="'+cls+'"><div class="when"><span>'+esc(s.when)+
+    (s.by ? ' &middot; '+esc(s.by) : '')+'</span>'+
+    (isCurrent ? '<b>Current</b>' : '<span>'+esc(s.ago)+'</span>')+'</div>';
+  if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
+  if (s.possibleDuplicate) h += '<div class="m" style="color:var(--stop);margin-top:5px">'+
+    'Possible duplicate - another submission of this kind on the same day.</div>';
+  (s.fields||[]).forEach(function(f){
+    h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
+         '<div class="v">'+esc(f.value)+'</div></div>';
+  });
+  return h + '</div>';
 }
 
 function reload(){

@@ -71,7 +71,12 @@ function setUpStaging() {
        'Radio reports are still rushed. Practise the handover out loud before keying up.'],
       [d('2026-08-16'),'Dana Whitlock','Alex Bramble','EMT','Phase 3', d('2026-08-16'),4,3,4,3,3,4,
        'Applied a tourniquet quickly and correctly on a chaotic scene.',
-       'Slow down the primary survey. Say the findings out loud.']
+       'Slow down the primary survey. Say the findings out loud.'],
+      // Deliberately the same day as the row above. The portal flags the pair
+      // and keeps both, which is what it does with a real double submission.
+      [d('2026-08-16'),'Dana Whitlock','Alex Bramble','EMT','Phase 3', d('2026-08-16'),4,3,4,4,3,4,
+       'Second submission for the same shift. Documentation rating corrected after review.',
+       'Same as above. Filed again because the first had the wrong rating.']
     ]);
 
   tab(PORTAL.TAB.REFLECT, ['TIMESTAMP','TRAINEE','WHAT WENT WELL','WHAT WAS HARD','WHAT I WANT TO WORK ON'],
@@ -89,9 +94,28 @@ function setUpStaging() {
      [d('2026-08-16'),'Alex Bramble','Dana Whitlock',
       'Good tourniquet work. Slow the primary survey down.','YES']]);
 
+  tab(PORTAL.TAB.EVIDENCE,
+    ['EVENT DATE','TRAINEE','FTO','SKILL','SKILL ID','STAGE','OUTCOME','NOTE','SOURCE RESPONSE ID'],
+    [
+      [d('2026-08-17'),'Jamie Rivers','Dana Whitlock','Intubation','SK-2','Independent','Successful',
+       'First-pass success on a difficult airway. Called for the bougie himself.','STG-R-104'],
+      [d('2026-08-12'),'Jamie Rivers','Marcus Vane','Intubation','SK-2','Assisted','Successful',
+       'Second attempt after a failed first pass. Recognised the problem and corrected the angle.','STG-R-098'],
+      [d('2026-08-18'),'Jamie Rivers','Dana Whitlock','IV access','SK-1','Independent','Successful',
+       'Two attempts, both patent, on a dehydrated patient with poor veins.','STG-R-106'],
+      [d('2026-08-16'),'Alex Bramble','Dana Whitlock','Tourniquet','SK-6','Independent','Successful',
+       'Applied high and tight without prompting. Time to control under a minute.','STG-R-101']
+    ]);
+
+  tab(PORTAL.TAB.SIGNOFF,
+    ['SIGN-OFF DATE','TRAINEE','SKILL','SKILL ID','SIGNED OFF BY','RATIONALE'],
+    [[d('2026-08-18'),'Jamie Rivers','IV access','SK-1','chief@example.org',
+      'Five successful attempts across three separate shifts with two different FTOs. Watched the last one myself.']]);
+
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 
   var props = PropertiesService.getScriptProperties();
+  forgetTabsV1_();
   props.setProperty(PORTAL.PROPERTY_TARGET, book.getId());
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
   // Remembered so pointAtStaging() can bring you back from production
@@ -151,6 +175,7 @@ function switchRoleForTestingV1(role) {
   else throw new Error('Use TRAINEE, FTO, DIVISION, SUPERVISOR or MEDICAL.');
 
   PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
   var msg = 'You are now viewing as ' + r + '. Reload the portal.';
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}

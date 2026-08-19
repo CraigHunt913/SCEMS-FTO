@@ -47,6 +47,7 @@ function pointAtProductionReadOnly() {
   props.setProperty(PORTAL.PROPERTY_TARGET, id);
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_PRODUCTION);
   PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
 
   return noteV1_('POINTED AT PRODUCTION, READ ONLY\n\n' +
     'Spreadsheet : ' + name + '\n' +
@@ -70,6 +71,7 @@ function pointAtStaging() {
   props.setProperty(PORTAL.PROPERTY_TARGET, id);
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
   PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
   return noteV1_('Back on the staging sandbox. Writes are allowed again.');
 }
 
@@ -107,6 +109,7 @@ function productionReadinessCheck() {
   say('PEOPLE');
   try {
     PEOPLE_CACHE_V1 = null;
+    forgetTabsV1_();
     var p = portalPeopleV1_();
     say('  training division : ' + (p.division.length || 'none set'));
     say('  medical director  : ' + (p.medical.length || 'none set'));

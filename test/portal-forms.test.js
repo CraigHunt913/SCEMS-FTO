@@ -123,7 +123,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','90_Staging']
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','90_Staging']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -181,7 +181,7 @@ function buildForms() {
 }
 
 function world(mode) {
-  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null;
+  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
   OPENABLE = { 'STG-BOOK': 'STG_Sandbox', 'PROD-BOOK': 'SCEMS FTPD Tracker' };
   PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
   PROPS[PORTAL.PROPERTY_MODE] = mode || PORTAL.MODE_STAGING;
@@ -216,7 +216,7 @@ function world(mode) {
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'], []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
 function payloadFor(email) { as(email); const v = resolveViewerV1_(whoIsAskingV1_()); return payloadForV1_(v); }
 function keys(list) { return (list || []).map(f => f.key); }
 

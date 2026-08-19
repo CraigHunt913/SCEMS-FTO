@@ -1,4 +1,4 @@
-# SCEMS Field Training Portal — v1.1
+# SCEMS Field Training Portal — v1.2
 
 One front door for the whole programme. A separate Apps Script project that
 serves a different screen to each role, and hands each person the one form
@@ -38,6 +38,8 @@ write path refuses, by design and under test.
    | `30_WebApp.gs` | script |
    | `40_Forms.gs` | script |
    | `50_Production.gs` | script |
+   | `60_History.gs` | script |
+   | `70_Backfill.gs` | script |
    | `90_Staging.gs` | script |
    | `Index.html` | **HTML** |
 
@@ -111,6 +113,83 @@ actually go. It writes nothing.
 
 ---
 
+## The record: current first, nothing lost
+
+Every screen now opens onto the same thing — **the most recent submission of
+each kind, in full, with every earlier one kept underneath it.**
+
+Nothing is deleted, moved, merged, shortened, or rewritten to produce this.
+The raw tabs stay exactly as they are; they are the archive. This is a reading
+of them.
+
+- **Current** leads, marked as current, in full.
+- **Earlier** submissions sit behind one tap, in order, also in full. A
+  four-hundred-word account of a shift arrives whole — there is a test that
+  requires the last sentence to survive and that there is no ellipsis anywhere
+  in it.
+- **Every populated column comes through with its own label**, including
+  columns nobody thought to ask for. A question added to a form tomorrow shows
+  up in the record without this code changing.
+- **Skills are current per skill**, not one winner overall. A failed attempt
+  from June stays on the record next to the successful one from August.
+- **An undated row sorts last** rather than being dropped or accidentally
+  becoming the current one.
+
+### Two submissions on the same day
+
+When two submissions of the same kind land on the same day, **both are kept and
+both are shown**, and the pair is flagged. Which one stands is a judgement
+about a personnel record, so nothing here makes it.
+
+The Training Division screen lists every such pair with the tab and row
+numbers. `duplicateSubmissionsReport()` prints the same list in the script
+editor.
+
+### Who may open whose
+
+Decided on the server from the signed-in account, every time:
+
+| Role | May open |
+| --- | --- |
+| Trainee | Their own record only |
+| FTO | Trainees assigned to them |
+| Training Division | Anyone, in full |
+| Supervisor | Nobody — situational awareness, not a training record |
+| Medical Director | Urgent concerns only, for anyone |
+
+A trainee asking for someone else's record is refused, not handed a filtered
+version.
+
+---
+
+## Bringing in responses that never reached a tab
+
+A form with no submit trigger still holds every answer anyone gave it. The
+combined skills log is in that state and has sixteen.
+
+**`backfillPreview()`** shows exactly what would be imported. It writes
+nothing, in any mode, so it is safe to run against the live tracker.
+
+**`backfillIntoStaging()`** does the import — and refuses outside `STAGING`,
+so the sandbox proves it first.
+
+Three rules govern the import:
+
+- **Nothing is dropped to make the shape fit.** An answer whose question
+  matches no column goes into the notes column with its question attached. If
+  there is nowhere to put it, the whole response is **refused** rather than
+  written incomplete, and the report says which answers had nowhere to go.
+- **Re-running is safe.** Every row carries the form response id it came from.
+  A second run writes nothing.
+- **No response id column, no import.** Without one there is no way to tell a
+  re-run from a duplicate, so the plan stops rather than risk writing the same
+  evidence twice.
+
+Answers starting `=` `+` `-` `@` are neutralised on the way in without losing
+what they said.
+
+---
+
 ## Who is offered what
 
 | | Trainee | FTO | Division | Supervisor | Medical |
@@ -163,8 +242,9 @@ a form; run `warmFormCache()` to see what the registry can currently reach.
 **Real:** role resolution, record-level filtering, the trainee view, the FTO
 list and per-trainee sheet, the Division queue and roster, supervisor and
 Medical Director views, the form registry with level-aware routing and
-prefill, read-only production mode, the readiness check, the audit trail,
-formula-injection blocking.
+prefill, the full record with current-first ordering and duplicate flagging,
+the backfill of orphaned form responses, read-only production mode, the
+readiness check, the audit trail, formula-injection blocking.
 
 **Not built:** a single end-of-shift screen that files the evaluation, the
 skill evidence and the coaching note in one submission. That needs the forms
@@ -202,9 +282,15 @@ created, and it is the same way it was created last week.
 - The readiness check leaves the spreadsheet byte-identical
 - Sign-off requires a typed reason — there is no default wording
 - Submitted text starting `=` `+` `-` `@` is neutralised
+- Reading a record writes nothing — not even an audit row, against production
+- A trainee is refused another trainee's record rather than shown a subset
+- No submission is ever shortened, merged, or dropped to build a screen
+- An import cannot run twice, and refuses a response it cannot place in full
 - The page cannot be framed by another site
 
 ```
-node test/portal.test.js         73 assertions — role isolation and write safety
-node test/portal-forms.test.js  103 assertions — the registry, prefill, production mode
+node test/portal.test.js           73 assertions — role isolation and write safety
+node test/portal-forms.test.js    103 assertions — the registry, prefill, production mode
+node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
+node test/portal-backfill.test.js  52 assertions — importing responses that never reached a tab
 ```

@@ -92,8 +92,26 @@ function portalPeopleV1_() {
   return out;
 }
 
-/** Header-mapped read of one tab in the target book. */
+/** Header-mapped read of one tab in the target book.
+ *
+ *  Cached for the life of one execution. A record screen asks six tabs for one
+ *  person and the Division screen asks the same six for everyone on the
+ *  roster; without this that is six reads per person instead of six in total,
+ *  and a twenty-person roster would spend the whole page load on it.
+ *
+ *  The cache is dropped after any write, so nothing reads a value it has just
+ *  changed. */
+var TAB_CACHE_V1 = {};
+function forgetTabsV1_() { TAB_CACHE_V1 = {}; }
+
 function readTabV1_(tabName) {
+  if (Object.prototype.hasOwnProperty.call(TAB_CACHE_V1, tabName)) return TAB_CACHE_V1[tabName];
+  var out = readTabUncachedV1_(tabName);
+  TAB_CACHE_V1[tabName] = out;
+  return out;
+}
+
+function readTabUncachedV1_(tabName) {
   var sh;
   try { sh = targetBookV1_().getSheetByName(tabName); } catch (e) { sh = null; }
   if (!sh) return { ok: false, sheet: null, headers: [], col: {}, rows: [], firstDataRow: 0 };
