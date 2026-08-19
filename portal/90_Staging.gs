@@ -161,3 +161,17 @@ function portalStatusV1() {
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
   return msg;
 }
+
+/* ---------------------------------------------------------------- *
+ *  Role preview, one click each
+ *
+ *  The Run dropdown cannot pass arguments, so each role gets its own
+ *  no-argument function. Pick one, run it, reload the portal.
+ *  All of them refuse outside staging.
+ * ---------------------------------------------------------------- */
+
+function viewAsTrainee()    { return switchRoleForTestingV1('TRAINEE'); }
+function viewAsFTO()        { return switchRoleForTestingV1('FTO'); }
+function viewAsDivision()   { return switchRoleForTestingV1('DIVISION'); }
+function viewAsSupervisor() { return switchRoleForTestingV1('SUPERVISOR'); }
+function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }

@@ -41,14 +41,15 @@ refuses.
 ## Trying the other roles
 
 `setUpStaging` makes you Training Division so you land on the busiest screen.
-To see another:
+To see another, pick one of these from the Run dropdown and run it — no
+arguments to type, because the Run button cannot pass any:
 
 ```
-switchRoleForTestingV1("TRAINEE")
-switchRoleForTestingV1("FTO")
-switchRoleForTestingV1("SUPERVISOR")
-switchRoleForTestingV1("MEDICAL")
-switchRoleForTestingV1("DIVISION")
+viewAsTrainee
+viewAsFTO
+viewAsDivision
+viewAsSupervisor
+viewAsMedical
 ```
 
 Reload the portal after each. This function refuses outside staging, so it
