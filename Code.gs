@@ -3923,6 +3923,237 @@ function dailyChecks() {
 /* ---- ported from master (effective winner) ---- */
 
 
+
+/* ================================================================
+ *  Post-upgrade repair  (v20.2)
+ * ================================================================ */
+
+/** Re-opens sign-off requests that the old queue sweep cancelled by mistake.
+ *
+ *  v20.1's sweep cancelled every OPEN queue row whose skill was not on the
+ *  matrix. Because a matrix rebuild that produced nothing left the matrix
+ *  empty, one bad rebuild stamped "CANCELLED : CRITERIA CHANGED" across the
+ *  whole pending queue. v20.2 stops that happening again; this undoes what
+ *  already happened.
+ *
+ *  A row is re-opened only when the matrix NOW says the skill qualifies and
+ *  nothing else is already open for the same trainee and skill. Anything
+ *  else is left exactly as it is and reported. No row is deleted, and no
+ *  decision, rationale or date is touched. */
+function repairCancelledQueueRowsV20_2() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+
+  var t = queueTableV20_1_();
+  if (!t.ok) return 'Queue tab not found.';
+  var need = ['TRAINEE', 'SKILL ID', 'SKILL', 'RECORD STATUS'];
+  var missing = need.filter(function (h) { return t.col[h] === undefined; });
+  if (missing.length) {
+    return 'Refusing to touch the queue: missing header(s) ' + missing.join(', ') + '.';
+  }
+
+  var QUALIFY = ['READY FOR VALIDATION', 'SIGNED OFF - REVIEW REQUIRED',
+                 'LEGACY SIGN-OFF REVIEW REQUIRED'];
+
+  // Anything already open owns its (trainee, skill) — never create a second ask.
+  var openKeys = {};
+  t.rows.forEach(function (r) {
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    openKeys[normalizeNameV20_1_(cleanNameV20_1_(r[t.col['TRAINEE']])) + '||' +
+             String(r[t.col['SKILL ID']] || '').trim()] = true;
+  });
+
+  var reopened = [], leftAlone = [], scanned = 0;
+  t.rows.forEach(function (r, i) {
+    var status = String(r[t.col['RECORD STATUS']] || '').trim();
+    if (status.indexOf('CANCELLED : CRITERIA CHANGED') !== 0) return;
+    scanned++;
+    var row = t.firstDataRow + i;
+    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
+    var skillId = String(r[t.col['SKILL ID']] || '').trim();
+    var skill = String(r[t.col['SKILL']] || '').trim();
+    var key = normalizeNameV20_1_(trainee) + '||' + skillId;
+
+    if (openKeys[key]) {
+      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — already open elsewhere');
+      return;
+    }
+    var readiness = skillReadinessNowV20_2_(trainee, skillId);
+    if (QUALIFY.indexOf(readiness) < 0) {
+      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — matrix reads "' +
+        (readiness || 'not on the matrix') + '"');
+      return;
+    }
+    t.sheet.getRange(row, t.col['RECORD STATUS'] + 1).setValue('OPEN');
+    openKeys[key] = true;
+    reopened.push(trainee + ' / ' + skill + ' (row ' + row + ')');
+    systemLog_('WARN', 'QUEUE ROW RE-OPENED',
+      'row ' + row + ' | ' + trainee + ' / ' + skillId +
+      ' | was CANCELLED : CRITERIA CHANGED, matrix now reads ' + readiness);
+  });
+
+  var msg = 'CANCELLED QUEUE REPAIR\n\n' +
+    'Cancelled rows examined : ' + scanned + '\n' +
+    'Re-opened               : ' + reopened.length + '\n' +
+    'Left as they were       : ' + leftAlone.length + '\n' +
+    (reopened.length ? '\nBack in your queue:\n  ' + reopened.slice(0, 25).join('\n  ') +
+      (reopened.length > 25 ? '\n  …and ' + (reopened.length - 25) + ' more' : '') : '') +
+    (leftAlone.length ? '\n\nLeft alone (the matrix does not support re-opening these):\n  ' +
+      leftAlone.slice(0, 15).join('\n  ') +
+      (leftAlone.length > 15 ? '\n  …and ' + (leftAlone.length - 15) + ' more' : '') : '') +
+    '\n\nNothing was deleted. No decision, rationale or date was changed.';
+  systemLog_('WARN', 'CANCELLED QUEUE REPAIR',
+    scanned + ' examined, ' + reopened.length + ' re-opened');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Tab order and visibility  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** Left-to-right order: the things you use, then the things you consult,
+ *  then the machinery. Anything not listed keeps its place at the end. */
+function tabOrderV20_2_() {
+  return ['HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
+          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
+          TAB.ANALYTICS, TAB.ENGINE,
+          TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
+          TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
+          TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
+}
+
+/** The tabs a person actually opens. Everything else is machinery: still
+ *  live, still receiving data, just not in your way. */
+function dailyTabsV20_2_() {
+  return ['HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
+          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
+}
+
+/** Puts the tabs in a sensible order and hides the machinery.
+ *
+ *  Hiding is tidiness, not security — a hidden tab still receives data and
+ *  is one menu click from visible. Nothing is deleted or renamed.
+ *  showAllTabsV20_2() puts everything back. */
+function organizeTabsV20_2() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var S = ss();
+  var order = tabOrderV20_2_();
+  var daily = dailyTabsV20_2_();
+
+  var moved = 0, pos = 1;
+  order.forEach(function (name) {
+    var sh = S.getSheetByName(name);
+    if (!sh) return;
+    try {
+      if (sh.isSheetHidden()) sh.showSheet();   // cannot move a hidden sheet
+      S.setActiveSheet(sh);
+      S.moveActiveSheet(pos);
+      pos++; moved++;
+    } catch (e) {}
+  });
+
+  var visible = [], hidden = [];
+  S.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (daily.indexOf(name) >= 0) {
+      try { sh.showSheet(); visible.push(name); } catch (e) {}
+    } else {
+      try { sh.hideSheet(); hidden.push(name); } catch (e) { visible.push(name); }
+    }
+  });
+
+  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
+  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
+
+  var msg = 'TABS ORGANIZED\n\n' +
+    'Ordered : ' + moved + ' tab(s)\n' +
+    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
+    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
+    '\n  ' + hidden.join('\n  ') +
+    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
+  systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Unhides everything, for when you are working on the system itself. */
+function showAllTabsV20_2() {
+  var S = ss(), n = 0;
+  S.getSheets().forEach(function (sh) {
+    try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
+  });
+  var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
+    'Admin > Tidy up the tabs puts the machinery away.';
+  systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  One button for "my sheets look wrong"
+ * ---------------------------------------------------------------- */
+
+/** Rebuild, repair, re-tidy — in that order, because each depends on the
+ *  one before it. Reads and rewrites derived views; never touches a record.
+ *
+ *  Order matters:
+ *    1. matrix  — readiness must be current before anything reads it
+ *    2. repair  — re-open requests the old sweep cancelled by mistake
+ *    3. layout  — formatting, dropdowns, home panel
+ *    4. tabs    — order and hide the machinery
+ *    5. health  — what still needs you
+ */
+function FIX_MY_SHEETS() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SHEET REPAIR — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 5).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  step(1, 'Rebuild the skills matrix', function () {
+    rebuildSkillMatrixV19_(); return 'readiness recalculated from the evidence log';
+  });
+  step(2, 'Re-open wrongly cancelled requests', function () {
+    return repairCancelledQueueRowsV20_2();
+  });
+  step(3, 'Re-tidy the queue and home panel', function () {
+    var bits = [];
+    try { bits.push(String(makeQueueReadableV20_1())); } catch (e) { bits.push('queue formatting: ' + e); }
+    try { refreshHomeNowV20_1(); bits.push('home panel refreshed'); } catch (e) { bits.push('home: ' + e); }
+    return bits.join(' | ');
+  });
+  step(4, 'Order the tabs and hide the machinery', function () {
+    return organizeTabsV20_2();
+  });
+
+  L.push('');
+  L.push('Nothing was deleted. Records were not modified — only derived views,');
+  L.push('formatting, and the status of requests the old sweep cancelled by mistake.');
+  L.push('');
+  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SHEET REPAIR RUN', 'FIX_MY_SHEETS completed');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
 /* ================================================================
  *  START HERE
  * ================================================================ */
@@ -11403,6 +11634,11 @@ function onOpen(e) {
       .addSubMenu(ui.createMenu('Admin')
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+        .addSeparator()
+        .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
+        .addItem('Tidy up the tabs', 'organizeTabsV20_2')
+        .addItem('Show every tab', 'showAllTabsV20_2')
+        .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
         .addSeparator()
         .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
         .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')

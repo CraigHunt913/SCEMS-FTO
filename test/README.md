@@ -12,9 +12,10 @@ node test/governance-gate.test.js         # v20.2 authorization + evidence gates
 node test/ingestion-durability.test.js    # form bindings, retry safety, mail budget
 node test/queue-sweep.test.js             # stale-queue sweep + matrix rebuild guards
 node test/identity-tiers.test.js          # identity tiers + deployment checklist
+node test/sheet-repair.test.js            # cancelled-queue repair + tab tidy-up
 ```
 
-All six exit non-zero on failure. 215 assertions total.
+All seven exit non-zero on failure. 276 assertions total.
 
 | Harness | Covers | Guards against |
 | --- | --- | --- |
@@ -24,6 +25,7 @@ All six exit non-zero on failure. 215 assertions total.
 | `ingestion-durability.test.js` | `formBoundTriggerPlanV20_2_`, `evidenceExistsForResponseV20_2_`, `mailBudgetOkV20_2_` | submissions dropped by an unbound form, retries duplicating a written record, bulk mail starving safety alerts |
 | `queue-sweep.test.js` | `sweepStaleQueueRowsV20_2_`, the `rebuildSkillMatrixV19_` empty-output guard | one failed matrix read cancelling the entire pending sign-off queue |
 
+| `sheet-repair.test.js` | `repairCancelledQueueRowsV20_2`, `organizeTabsV20_2`, `FIX_MY_SHEETS` | the post-upgrade repair re-opening the wrong rows, or a tidy-up that cannot be undone |
 | `identity-tiers.test.js` | `identityV20_2_`, `identityStampV20_2_`, `setOperatorAccountV20_2`, `goLiveChecklistV20_2` | the gate locking out its own operator, and the typed-name hole returning under cover of the fix |
 
 `queue-sweep.test.js` drives the real sweep against a fake queue and reads the
