@@ -1,4 +1,4 @@
-# SCEMS Field Training Portal — v1.2
+# SCEMS Field Training Portal — v1.3
 
 One front door for the whole programme. A separate Apps Script project that
 serves a different screen to each role, and hands each person the one form
@@ -40,6 +40,7 @@ write path refuses, by design and under test.
    | `50_Production.gs` | script |
    | `60_History.gs` | script |
    | `70_Backfill.gs` | script |
+   | `80_Import.gs` | script |
    | `90_Staging.gs` | script |
    | `Index.html` | **HTML** |
 
@@ -188,6 +189,37 @@ Three rules govern the import:
 Answers starting `=` `+` `-` `@` are neutralised on the way in without losing
 what they said.
 
+### Doing it against the live tracker
+
+`80_Import.gs` is the one file in this project that can write to production,
+which is why it is its own file with its own gate.
+
+**`backfillBeforeAndAfter()`** — writes nothing, in any mode, against any book.
+It prints the row count before, every value of every row it would add, every
+response it would refuse and why, and the row count after. Run it first and
+keep the output.
+
+**`runBackfillForReal()`** — refuses unless the script property
+`PORTAL_BACKFILL_CONFIRM` holds the **id of the spreadsheet it is about to
+write to**. Not `YES`, not `true` — the id, typed by hand. A confirmation left
+over from the sandbox names the wrong book and cannot fire against production.
+
+It also refuses outright if any response has an answer with nowhere to go,
+because a half-imported record is worse than one still sitting in the form.
+
+What it does: appends. It never edits a cell that already has a value, never
+deletes a row, and never touches the trainee master, the validation queue, or
+any decision column.
+
+**`undoLastBackfill()`** — reads the manifest in `PORTAL BACKFILL LOG`,
+re-reads each row it recorded, checks it still carries the response id the
+manifest says, and removes only those, bottom-up. **One mismatch and nothing
+is deleted at all** — a shifted row means the manifest no longer describes the
+sheet, and guessing is how records get destroyed.
+
+**`lockBackfill()`** — clears the confirmation so the gate closes behind you.
+Both the import and the undo then refuse.
+
 ---
 
 ## Who is offered what
@@ -286,11 +318,14 @@ created, and it is the same way it was created last week.
 - A trainee is refused another trainee's record rather than shown a subset
 - No submission is ever shortened, merged, or dropped to build a screen
 - An import cannot run twice, and refuses a response it cannot place in full
+- The production import refuses unless the confirmation names that exact book
+- It appends only; no other file in the portal deletes a row at all
+- The undo verifies every row against its response id, or deletes nothing
 - The page cannot be framed by another site
 
 ```
 node test/portal.test.js           73 assertions — role isolation and write safety
 node test/portal-forms.test.js    103 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-backfill.test.js  52 assertions — importing responses that never reached a tab
+node test/portal-backfill.test.js  97 assertions — importing responses, the production gate, the rollback
 ```

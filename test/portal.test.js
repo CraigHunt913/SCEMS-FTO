@@ -71,7 +71,7 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 // with the registry in the picture. portal-forms.test.js proves the registry.
 global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
 
-eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','90_Staging']
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','90_Staging']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -320,7 +320,7 @@ function escapeLikeAppsScript(s){
                   .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 const realBoot = JSON.stringify({
-  version:'portal-1.2.0', mode:'STAGING',
+  version:'portal-1.3.0', mode:'STAGING',
   viewer:{ email:'chief@example.org', role:'TRAINING_DIVISION', name:"Dana O'Neill", ok:true, why:'' },
   data:{ queue:[{ trainee:'Jamie Rivers', skill:'IV access', evidence:'4 of 4 successful' }] },
   error:''

@@ -28,6 +28,7 @@ FakeSheet.prototype.getLastRow = function () { return this.g.length; };
 FakeSheet.prototype.getLastColumn = function () { return this.g.reduce((w, r) => Math.max(w, (r || []).length), 1); };
 FakeSheet.prototype.appendRow = function (r) { this.g.push(r.slice()); return this; };
 FakeSheet.prototype.setFrozenRows = function () { return this; };
+FakeSheet.prototype.deleteRow = function (n) { this.g.splice(n - 1, 1); return this; };
 FakeSheet.prototype.clear = function () { this.g = []; return this; };
 FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   const sh = this, R = r, C = c, NR = nr || 1, NC = nc || 1;
@@ -124,7 +125,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','90_Staging']
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','90_Staging']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -385,6 +386,157 @@ ok(ev.current.length === 1 && ev.current[0].group === 'Intubation',
 ok(ev.earlier.length === 7, 'and every earlier one is kept, in order');
 ok(JSON.stringify(rec).indexOf('Alex Bramble') < 0,
    'and Alex’s imported responses stay out of Jamie’s record');
+
+// ---------------------------------------------------------------- //
+section('The real import will not fire without naming its target');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+as('chief@example.org');
+let snap = snapshot();
+
+ok(/Set the script property/.test(threw(() => runBackfillForReal())),
+   'with no confirmation it refuses and says what to set');
+ok(snapshot() === snap, 'and writes nothing while refusing');
+
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'YES';
+ok(/names YES but this portal is pointed at PROD-BOOK/.test(threw(() => runBackfillForReal())),
+   '"YES" is not a confirmation, because it names no spreadsheet');
+
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'STG-BOOK';
+ok(/will not fire against another/.test(threw(() => runBackfillForReal())),
+   'a confirmation left over from the sandbox cannot fire against production');
+ok(snapshot() === snap, 'still nothing written');
+
+// ---------------------------------------------------------------- //
+section('It refuses rather than import half a record');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_PRODUCTION, ['EVENT DATE','TRAINEE','FTO','SKILL','SOURCE RESPONSE ID']);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+as('chief@example.org');
+snap = snapshot();
+const msg = threw(() => runBackfillForReal());
+ok(/have answers with nowhere to go/.test(msg), 'an answer with nowhere to go stops the whole run');
+ok(/half done/.test(msg), 'and says why it stops rather than importing the rest');
+ok(snapshot() === snap, 'nothing at all is written');
+
+// ---------------------------------------------------------------- //
+section('The before-and-after report writes nothing');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+as('chief@example.org');
+snap = snapshot();
+let rep = backfillBeforeAndAfter();
+ok(/BEFORE AND AFTER/.test(rep) && /nothing has been written/.test(rep), 'it reports');
+ok(/holds 2 rows/.test(rep), 'the before count is the real one');
+ok(/would hold 16 rows/.test(rep), 'and the after count is what it would become');
+ok(/WOULD BE ADDED  \(14 rows/.test(rep), 'with the number to be added');
+ok(/Response 3 as originally written by the FTO/.test(rep),
+   'and every value of every row it would write, so there is no surprise');
+ok(/PORTAL_BACKFILL_CONFIRM = PROD-BOOK/.test(rep), 'it names the exact confirmation to set');
+ok(snapshot() === snap, 'and the spreadsheet is byte-identical');
+
+// ---------------------------------------------------------------- //
+section('With the right confirmation it imports, additively');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+as('chief@example.org');
+const masterBefore = JSON.stringify(SHEETS[PORTAL.TAB.MASTER].g);
+const firstTwo = JSON.stringify(evid().slice(0, 2));
+
+rep = runBackfillForReal();
+ok(/BACKFILL COMPLETE/.test(rep), 'it runs');
+ok(/rows before    : 6/.test(rep), 'and reports the row count before');
+ok(/rows added     : 14/.test(rep), 'what it added');
+ok(/rows after     : 20/.test(rep), 'and the row count after');
+ok(/added at rows  : 7 to 20/.test(rep), 'naming the exact rows, so they can be found');
+ok(evid().length === 16, 'the evidence log holds all sixteen responses');
+ok(JSON.stringify(evid().slice(0, 2)) === firstTwo,
+   'the two rows that were already there are untouched');
+ok(JSON.stringify(SHEETS[PORTAL.TAB.MASTER].g) === masterBefore,
+   'and the trainee master was not touched at all');
+
+const log = SHEETS[PORTAL_BACKFILL_LOG];
+ok(!!log, 'a rollback manifest was written');
+ok(log.g.slice(HR).length === 14, 'with one line per row added');
+ok(log.g.slice(HR).every(r => r[1] === PORTAL.TAB.EVIDENCE && r[2] >= 7 && r[2] <= 20),
+   'each naming the tab and the row');
+
+rep = runBackfillForReal();
+ok(/Nothing to import/.test(rep), 'running it again imports nothing');
+ok(evid().length === 16, 'and the sheet is unchanged');
+
+// ---------------------------------------------------------------- //
+section('And it comes back out again exactly');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+as('chief@example.org');
+const pristine = JSON.stringify(SHEETS[PORTAL.TAB.EVIDENCE].g);
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+runBackfillForReal();
+ok(evid().length === 16, 'imported');
+
+rep = undoLastBackfill();
+ok(/REVERSED/.test(rep), 'the undo reports success');
+ok(/14 row\(s\) removed/.test(rep), 'and how many it removed');
+ok(evid().length === 2, 'the evidence log is back to two rows');
+ok(JSON.stringify(SHEETS[PORTAL.TAB.EVIDENCE].g) === pristine,
+   'and byte-identical to before the import');
+
+// a row that moved means the manifest no longer describes the sheet
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+as('chief@example.org');
+runBackfillForReal();
+SHEETS[PORTAL.TAB.EVIDENCE].g.splice(HR, 0, ['','someone else inserted a row','','','','','','','']);
+TAB_CACHE_V1 = {};
+const shifted = JSON.stringify(SHEETS[PORTAL.TAB.EVIDENCE].g);
+rep = undoLastBackfill();
+ok(/NOTHING WAS DELETED/.test(rep), 'the undo refuses when the rows have moved');
+ok(/the manifest says/.test(rep), 'and shows what it found instead');
+ok(JSON.stringify(SHEETS[PORTAL.TAB.EVIDENCE].g) === shifted,
+   'and it really does delete nothing');
+
+// the undo is behind the same gate as the import
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+as('chief@example.org');
+runBackfillForReal();
+lockBackfill();
+ok(PROPS[PORTAL_BACKFILL_CONFIRM] === undefined, 'lockBackfill clears the confirmation');
+ok(/Set the script property/.test(threw(() => undoLastBackfill())),
+   'and the undo then refuses too, so neither direction runs unattended');
+ok(/Set the script property/.test(threw(() => runBackfillForReal())),
+   'as does the import');
+
+// ---------------------------------------------------------------- //
+section('The gate is the only way through');
+// ---------------------------------------------------------------- //
+const importSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/80_Import.gs', 'utf8');
+const writers = importSrc.match(/function (runBackfillForReal|undoLastBackfill)\b/g) || [];
+ok(writers.length === 2, 'exactly two functions in this file can change a live sheet');
+ok(/function runBackfillForReal\(\) \{\s*var id = requireImportAuthorityV1_\(\);/.test(importSrc),
+   'the import asks the gate on its first line');
+ok(/function undoLastBackfill\(\) \{\s*requireImportAuthorityV1_\(\);/.test(importSrc),
+   'and so does the undo');
+ok(!/setValue\(|appendRow\(|deleteRow\(/.test(
+     importSrc.slice(0, importSrc.indexOf('function requireImportAuthorityV1_'))),
+   'nothing before the gate is defined writes anything');
+
+const otherPortalFiles = ['00_Config','10_Identity','20_Data','30_WebApp','40_Forms',
+  '50_Production','60_History','70_Backfill']
+  .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
+ok(otherPortalFiles.indexOf('deleteRow') < 0,
+   'no other file in the portal deletes a row at all');
+ok(otherPortalFiles.indexOf(PORTAL_BACKFILL_CONFIRM) < 0,
+   'and no other file can set or read the confirmation');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);
