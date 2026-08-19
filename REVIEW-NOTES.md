@@ -33,3 +33,25 @@ The file keeps its original logical sections as comment banners:
 | `99_config` | the single CONFIG object, tab names, form titles, schemas |
 
 Verified: parses cleanly (`node --check`), 277 top-level functions.
+
+## The badge (resolved, v20.5)
+
+When `Code.gs` was reconstructed from a chat paste, `BADGE_B64` was replaced
+with a 1×1 transparent PNG placeholder — 96 characters instead of 33,996.
+Nothing failed and nothing logged; the county shield simply rendered as an
+invisible pixel in emails, on HOME, and in the portal.
+
+That placeholder was then deployed, because the reconstructed file was pasted
+over the original script.
+
+Recovered from `PASTE_THIS_ONE_SCEMS_v20_1_0h.txt` in the user's Drive — the
+pre-v20.2 source, which still held the real constant. Verified as a 150×163
+PNG of the Sumter County EMS shield before restoring.
+
+Guards added so this cannot pass silently again:
+
+- `badgeIsRealV20_5_()` treats anything under 1000 base64 characters as absent
+- `badgeBlobV20_5_()` returns null rather than building an invisible image
+- `brandAllSheetsV20_5()` logs `BADGE MISSING` at WARN and alerts the operator
+- `test/branding.test.js` asserts the constant is 33,996 characters and that a
+  placeholder is correctly rejected

@@ -15,9 +15,10 @@ node test/identity-tiers.test.js          # identity tiers + deployment checklis
 node test/sheet-repair.test.js            # cancelled-queue repair + tab tidy-up
 node test/console-and-file.test.js        # trainee console, release file, readability
 node test/header-rename.test.js           # plain-English headers + the broken header row
+node test/branding.test.js                # the badge and the masthead
 ```
 
-All nine exit non-zero on failure. 407 assertions total.
+All ten exit non-zero on failure. 519 assertions total.
 
 | Harness | Covers | Guards against |
 | --- | --- | --- |
@@ -27,6 +28,7 @@ All nine exit non-zero on failure. 407 assertions total.
 | `ingestion-durability.test.js` | `formBoundTriggerPlanV20_2_`, `evidenceExistsForResponseV20_2_`, `mailBudgetOkV20_2_` | submissions dropped by an unbound form, retries duplicating a written record, bulk mail starving safety alerts |
 | `queue-sweep.test.js` | `sweepStaleQueueRowsV20_2_`, the `rebuildSkillMatrixV19_` empty-output guard | one failed matrix read cancelling the entire pending sign-off queue |
 
+| `branding.test.js` | `badgeIsRealV20_5_`, `brandSheetV20_5_`, `brandAllSheetsV20_5`, `sheetPurposeV20_5_` | the 1x1 placeholder badge shipping again unnoticed, duplicate badges stacking on re-runs, and the masthead writing below row 3 |
 | `header-rename.test.js` | `canonicalHeaderV20_4_`, `renameHeadersV20_4`, `repairDecisionQueueHeaderV20_4`, `auditEntryProfilesV20_4`, `groupPlumbingColumnsV20_4` | a rename silently breaking the 235 lookups by canonical name, a sheet-crossing alias collision, or the entry-profile audit guessing at a record |
 | `console-and-file.test.js` | `buildTraineeConsoleV20_3`, `buildTraineeFileV20_3`, `consoleEditV20_3_`, `readableWidthForV20_3_` | the console showing codes instead of words, a release file that truncates narratives or leaks another trainee's data, and narrative columns reverting to unreadable widths |
 | `sheet-repair.test.js` | `repairCancelledQueueRowsV20_2`, `organizeTabsV20_2`, `FIX_MY_SHEETS` | the post-upgrade repair re-opening the wrong rows, or a tidy-up that cannot be undone |
