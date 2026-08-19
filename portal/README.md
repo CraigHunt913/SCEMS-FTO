@@ -1,13 +1,25 @@
-# SCEMS Field Training Portal — v1
+# SCEMS Field Training Portal — v1.1
 
-The prototype, built for real. A separate Apps Script project that serves a
-different screen to each role.
+One front door for the whole programme. A separate Apps Script project that
+serves a different screen to each role, and hands each person the one form
+their situation calls for.
 
-**It cannot touch your live system.** There is no spreadsheet id in this code.
-`setUpStaging()` creates a brand new spreadsheet with invented people and
-points the portal at that. To aim it anywhere else you would have to change a
-script property by hand, and in any mode other than `STAGING` every write
-refuses.
+## How this fits the system you already have
+
+**The forms write. The portal reads.**
+
+Your nine Google Forms do not change. Not their questions, not their
+triggers, not their response destinations. They are still the only thing that
+puts a row in the tracker, and they still do it exactly the way they do now.
+
+What was missing was the front. Nine forms is nine decisions before anyone has
+done any work: which form, which level, whose name, which link did the Chief
+send in March. The portal takes all of that away. An FTO opens one link, taps
+the person they worked with, and gets the evaluation and the skills log for
+*that trainee's level*, with both names already filled in.
+
+Nothing in the portal writes to a live record. Against the real tracker every
+write path refuses, by design and under test.
 
 ---
 
@@ -24,17 +36,23 @@ refuses.
    | `10_Identity.gs` | script |
    | `20_Data.gs` | script |
    | `30_WebApp.gs` | script |
+   | `40_Forms.gs` | script |
+   | `50_Production.gs` | script |
    | `90_Staging.gs` | script |
    | `Index.html` | **HTML** |
 
    `Index.html` must be added with **File → New → HTML**, named `Index`.
 
-3. Run **`setUpStaging`**. It builds the sandbox and tells you where it is.
+3. Run **`setUpStaging`**. It builds a sandbox with invented people and points
+   the portal at it. Form links are **off** in the sandbox, on purpose: the
+   forms behind them are the real ones, and a test submission would be a live
+   write nobody approved.
 
 4. **Deploy → New deployment → Web app.**
    Execute as **Me**. Access: **Only myself** to begin with.
 
-5. Open the web app URL.
+5. Open the web app URL. Try each role (below), decide whether the layout is
+   right, and only then go on to the live data.
 
 ---
 
@@ -52,23 +70,105 @@ viewAsSupervisor
 viewAsMedical
 ```
 
-Reload the portal after each. This function refuses outside staging, so it
-can never become a way around authorisation in a live system.
+Reload the portal after each. These refuse outside staging, so they can never
+become a way around authorisation in a live system.
 
-`portalStatusV1()` says where the portal is pointed and whether it may write.
+---
+
+## Pointing it at the real tracker
+
+This is two deliberate steps, and neither happens by default.
+
+1. **Project Settings → Script Properties → Add script property**
+
+   | Property | Value |
+   | --- | --- |
+   | `PORTAL_PRODUCTION_SPREADSHEET_ID` | the live tracker's id |
+
+   The id is not in this code. A copy of this project cannot reach your
+   production data on its own.
+
+2. Run **`pointAtProductionReadOnly`**.
+
+The portal is now in `PRODUCTION` mode. That mode is read-only and it is
+enforced in code, not by convention:
+
+| Action | In `PRODUCTION` |
+| --- | --- |
+| Approving a sign-off | refuses |
+| Filing a reflection through the portal | refuses — the form does it instead |
+| Acknowledging coaching | refuses |
+| Switching role for testing | refuses |
+| Reading any tab | allowed |
+| Opening a form, prefilled | allowed |
+
+Run **`productionReadinessCheck`** next. It reads the tracker and every form
+and reports: which tabs it found, how many trainees have no email and
+therefore cannot sign in, who you resolve to, and where each form's responses
+actually go. It writes nothing.
+
+**`pointAtStaging`** puts you back on the sandbox.
+
+---
+
+## Who is offered what
+
+| | Trainee | FTO | Division | Supervisor | Medical |
+| --- | --- | --- | --- | --- | --- |
+| End-of-shift evaluation | | per trainee | | | |
+| Skills log (their level only) | | per trainee | | | |
+| Handover card | | per trainee | | | |
+| Self-reflection | yes | | | | |
+| Urgent concern | yes | yes | yes | yes | |
+| Training decision record | | | per trainee | | |
+
+The FTO never picks a form and never picks a level. They pick a person.
+
+---
+
+## The combined skills log
+
+`Skills Quick Log (all levels)` is in the registry and is offered to **nobody**.
+It has no submit trigger bound to it, so a response to it stays in the form and
+never reaches the tracker. Sixteen are sitting there now.
+
+The portal will not send anyone to it, and the Training Division screen says so
+until it is resolved. The form itself is untouched — deciding what happens to
+it, and to those sixteen responses, is not something this portal does on its
+own.
+
+---
+
+## Prefilling, and why it is careful
+
+The registry discovers each form's `entry.NNN` field ids by reading the form
+and building a response object in memory. That response is **never submitted**;
+there is a test that counts submissions and requires zero.
+
+Two rules keep a prefill from doing harm:
+
+- A **dropdown** is only prefilled with a value the form actually offers. If a
+  trainee's name is on the master but not in the form's list, that field is
+  left alone rather than filled with something the form will discard.
+- A form that cannot be read — moved, unshared, scope not granted — costs the
+  prefill and nothing else. The card still appears and still opens the form.
+
+Discovery is cached in script properties. Run `clearFormCache()` after editing
+a form; run `warmFormCache()` to see what the registry can currently reach.
 
 ---
 
 ## What is real and what is not
 
 **Real:** role resolution, record-level filtering, the trainee view, the FTO
-list, the Division queue, supervisor and Medical Director views, filing a
-reflection, acknowledging coaching, approving a sign-off with a typed reason,
-the audit trail, formula-injection blocking, frame denial.
+list and per-trainee sheet, the Division queue and roster, supervisor and
+Medical Director views, the form registry with level-aware routing and
+prefill, read-only production mode, the readiness check, the audit trail,
+formula-injection blocking.
 
-**Not built yet:** the FTO end-of-shift workflow (evaluation plus skill
-evidence plus coaching in one pass). It is the biggest piece and the one worth
-getting right after you have used the rest.
+**Not built:** a single end-of-shift screen that files the evaluation, the
+skill evidence and the coaching note in one submission. That needs the forms
+themselves to change, which is a production decision, not a portal one.
 
 ---
 
@@ -79,24 +179,32 @@ needs you, now.
 
 **Nobody sees another role's problem.** The filtering happens on the server
 *before* the payload is built, so there is no data in the page for a
-client-side mistake to expose. `test/portal.test.js` asserts that one
-trainee's payload cannot be made to contain another's name, coaching or
-concern.
+client-side mistake to expose.
 
 **Every action says what happens next.** Who received it, who can see it,
 what they will do.
+
+**The portal is not a second writer.** There is exactly one way a record is
+created, and it is the same way it was created last week.
 
 ---
 
 ## Safety properties, all tested
 
-- No spreadsheet id anywhere in the source
-- Refuses to start until pointed at a target
-- Every write checks `STAGING` first
+- No spreadsheet id anywhere in the source; refuses to start until pointed
+- Every form id lives in the registry only, and none reaches the browser
+- Every write checks `STAGING` first; `PRODUCTION` refuses all four write paths
 - Role checked server-side on every action; the browser's claim is ignored
-- A trainee cannot read, acknowledge or alter another trainee's record
+- A trainee cannot read, acknowledge or alter another trainee's record, and is
+  never handed a link carrying someone else's name
+- A dropdown is never prefilled with a value the form does not offer
+- Form discovery never submits a response
+- The readiness check leaves the spreadsheet byte-identical
 - Sign-off requires a typed reason — there is no default wording
 - Submitted text starting `=` `+` `-` `@` is neutralised
-- The page denies framing and embeds no ids or addresses
+- The page cannot be framed by another site
 
-Run `node test/portal.test.js` — 65 assertions.
+```
+node test/portal.test.js         73 assertions — role isolation and write safety
+node test/portal-forms.test.js  103 assertions — the registry, prefill, production mode
+```

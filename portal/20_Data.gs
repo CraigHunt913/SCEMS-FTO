@@ -142,7 +142,10 @@ function traineePayloadV1_(viewer) {
     coaching: coaching.filter(function (c) { return !c.acknowledged; })
       .map(function (c) { return { row: c.row, from: c.from, text: c.text,
                                    when: c.when ? c.when.toDateString() : '' }; }),
-    skills: skills.slice(0, 40)
+    skills: skills.slice(0, 40),
+    forms: safeFormsV1_(function () {
+      return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
+    })
   };
 }
 
@@ -151,10 +154,20 @@ function ftoPayloadV1_(viewer) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
   return {
     name: viewer.name,
+    // Each trainee carries the forms for THAT trainee, with the FTO's name,
+    // the trainee's name, and the skills log for their level already chosen.
+    // The FTO picks a person, not a form and not a level.
     trainees: mine.map(function (t) {
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
-               setupComplete: t.setupComplete };
+               setupComplete: t.setupComplete,
+               forms: safeFormsV1_(function () {
+                 return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
+                   { fto: viewer.name, trainee: t.name });
+               }) };
+    }),
+    forms: safeFormsV1_(function () {
+      return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
     })
   };
 }
@@ -189,6 +202,18 @@ function divisionPayloadV1_() {
     duplicates: dupes,
     releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
       .map(function (t) { return { name: t.name, level: t.level }; }),
+    people: active.map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+               fto: t.fto || '', shift: t.shift || '',
+               forms: safeFormsV1_(function () {
+                 return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
+               }) };
+    }),
+    forms: safeFormsV1_(function () {
+      return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
+    }),
+    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
+    formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_()
   };
 }
@@ -203,6 +228,9 @@ function supervisorPayloadV1_(viewer) {
       return { name: t.name, level: t.level, levelKey: t.levelKey,
                phase: t.phase, fto: t.fto,
                lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
+    }),
+    forms: safeFormsV1_(function () {
+      return generalFormsForV1_(PORTAL.ROLE.SUPERVISOR, { fto: viewer.name });
     })
   };
 }
@@ -224,4 +252,18 @@ function medicalPayloadV1_() {
     });
   }
   return { cases: cases.slice(0, 20) };
+}
+
+/* ---------------- forms, defensively ---------------- */
+/* The registry reads Google Forms to discover published URLs and prefill
+   ids. That is a network call against nine documents, and any one of them
+   can be moved, unshared, or simply slow. A portal that cannot show a
+   person their own record because a form link failed to resolve is worse
+   than a portal with no links, so every call goes through here and a
+   failure costs the links and nothing else. */
+function safeFormsV1_(fn) {
+  try { return fn() || []; } catch (e) { return []; }
+}
+function safeBoolV1_(fn) {
+  try { return !!fn(); } catch (e) { return false; }
 }

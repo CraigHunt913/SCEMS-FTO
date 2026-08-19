@@ -57,7 +57,7 @@ h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.8re
   text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;}
 h2:first-of-type{margin-top:4px;}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:14px 15px;margin-bottom:9px;}
-.card.act{display:flex;gap:13px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;}
+.card.act{display:flex;gap:13px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;text-decoration:none;}
 .card.act:hover,.card.act:focus-visible{border-color:var(--ink-3);}
 .dot{flex:none;width:9px;height:9px;border-radius:50%;margin-top:7px;background:var(--ink-3);}
 .dot.due{background:var(--stop);}.dot.soon{background:var(--warn);}.dot.ok{background:var(--ok);}
@@ -146,6 +146,8 @@ function render(){
   if (S.screen === 'reflect')  return paintReflect();
   if (S.screen === 'receipt')  return paintReceipt();
   if (S.screen === 'signoff')  return paintSignoff();
+  if (S.screen === 'trainee')  return paintTraineeSheet();
+  if (S.screen === 'person')   return paintPersonSheet();
 
   switch (v.role) {
     case 'TRAINEE':            return paintTrainee(d);
@@ -171,16 +173,25 @@ function paintTrainee(d){
        '</div></div>';
 
   h += '<h2>Waiting on you</h2>';
-  var any = false;
-  h += '<button class="card act" onclick="S.screen=\'reflect\';render()"><span class="dot due"></span>'+
-       '<span class="bd"><span class="h">Weekly reflection</span>'+
-       '<span class="m">Your own words. Takes about four minutes.</span></span><span class="go">&rsaquo;</span></button>';
-  any = true;
+  // In staging the reflection is filed in the portal so the flow can be
+  // tried end to end. Against the live tracker the existing self-reflection
+  // form is the one that files it, because that form already has a trigger
+  // and a destination and this portal must not become a second writer.
+  if (canWrite()){
+    h += '<button class="card act" onclick="S.screen=\'reflect\';render()"><span class="dot due"></span>'+
+         '<span class="bd"><span class="h">Weekly reflection</span>'+
+         '<span class="m">Your own words. Takes about four minutes.</span></span><span class="go">&rsaquo;</span></button>';
+  }
+  h += formCards(d.forms);
   (d.coaching||[]).forEach(function(c){
-    any = true;
-    h += '<button class="card act" onclick="ack('+c.row+')"><span class="dot soon"></span>'+
-         '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
-         '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
+    if (canWrite()){
+      h += '<button class="card act" onclick="ack('+c.row+')"><span class="dot soon"></span>'+
+           '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
+           '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
+    } else {
+      h += '<div class="card"><div class="h">Coaching from '+esc(c.from)+'</div>'+
+           '<div class="m">'+esc(c.text)+'</div></div>';
+    }
   });
 
   h += '<h2>Where things stand</h2><div class="panel">'+
@@ -202,6 +213,31 @@ function paintTrainee(d){
   paint(h);
 }
 function kv(k,v){ return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
+
+/* Writing is a staging-only capability. Against the live tracker this portal
+   reads and routes; the forms are what write, exactly as they always have.
+   So anything that would put a value in a live cell is not offered at all
+   rather than offered and then refused. */
+function canWrite(){ return BOOT.mode === 'STAGING'; }
+
+/* A form card. The person sees a task, not a form: the registry has already
+   picked which of the nine it is and filled in the names it knows. */
+function formCards(list){
+  var h = '';
+  (list||[]).forEach(function(f){
+    if (f.live && f.url){
+      h += '<a class="card act" href="'+esc(f.url)+'" target="_blank" rel="noopener">'+
+        dotFor(f)+'<span class="bd"><span class="h">'+esc(f.title)+'</span>'+
+        '<span class="m">'+esc(f.blurb)+'</span></span><span class="go">&rsaquo;</span></a>';
+    } else {
+      h += '<div class="card"><div class="h">'+esc(f.title)+'</div>'+
+        '<div class="m">'+esc(f.blurb)+'</div>'+
+        '<div class="m" style="color:var(--warn)">Form links are switched off in this mode.</div></div>';
+    }
+  });
+  return h;
+}
+function dotFor(f){ return '<span class="dot '+(f.urgent?'due':'soon')+'"></span>'; }
 
 function paintReflect(){
   paint('<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
@@ -239,15 +275,40 @@ function ack(row){
 function paintFto(d){
   var h = '<h1>Your trainees</h1><p class="sub">'+d.trainees.length+' assigned to you</p>';
   if (!d.trainees.length) h += '<div class="note n-info"><b>Nobody assigned</b>No trainees list you as their training officer.</div>';
-  d.trainees.forEach(function(t){
-    h += '<div class="card"><div class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</div>'+
-      '<div class="m">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.lastEval)+'</div>'+
-      (t.setupComplete ? '' : '<div class="m" style="color:var(--warn)">Setup incomplete - tell the Division</div>')+
-      '</div>';
+  d.trainees.forEach(function(t,i){
+    h += '<button class="card act" onclick="openTrainee('+i+')">'+
+      '<span class="dot '+(t.setupComplete?'ok':'soon')+'"></span>'+
+      '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
+      '<span class="m">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.lastEval)+'</span>'+
+      (t.setupComplete ? '' : '<span class="m" style="color:var(--warn)">Setup incomplete - tell the Division</span>')+
+      '</span><span class="go">&rsaquo;</span></button>';
   });
-  h += '<div class="next"><b>Coming next</b>The end-of-shift workflow files the evaluation, the skill evidence and the coaching note in one pass. Not built yet.</div>';
+  if (d.forms && d.forms.length){
+    h += '<h2>Anything else</h2>'+formCards(d.forms);
+  }
+  h += '<div class="next"><b>How this works</b>Pick the person, not the form. The skills log you get is already the one for their level, with both names filled in.</div>';
   paint(h);
 }
+function openTrainee(i){
+  var t = (BOOT.data.trainees||[])[i];
+  if (!t) return;
+  S.ctx = t; S.screen = 'trainee'; render();
+}
+function paintTraineeSheet(){
+  var t = S.ctx || {};
+  var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
+    '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  h += '<div class="panel">'+kv('Last evaluation', esc(t.lastEval))+
+       kv('Setup', t.setupComplete ? '<span class="chip c-ok">Complete</span>'
+                                   : '<span class="chip c-warn">Incomplete</span>')+'</div>';
+  h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
+  h += (t.forms && t.forms.length)
+    ? formCards(t.forms)
+    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  h += '<div class="next"><b>Where it goes</b>Straight into the tracker, the same way it always has. Nothing about your forms changed.</div>';
+  paint(h);
+}
+function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
 /* ---------------- division ---------------- */
 function paintDivision(d){
@@ -260,11 +321,41 @@ function paintDivision(d){
   h += '<h2>Sign-offs</h2>';
   if (!d.queue.length) h += '<div class="note n-ok"><b>Clear</b>No skills are waiting for a decision.</div>';
   d.queue.forEach(function(q){
-    h += '<button class="card act" onclick="openSignoff('+q.row+',\''+esc(q.trainee).replace(/\'/g,"")+'\',\''+
-      esc(q.skill).replace(/\'/g,"")+'\',\''+esc(q.evidence).replace(/\'/g,"")+'\')">'+
-      '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
-      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
-      '<span class="go">&rsaquo;</span></button>';
+    // Approving writes a decision into the queue. Against the live tracker
+    // this portal will not do that, so the item is shown and the decision is
+    // recorded where it has always been recorded.
+    if (canWrite()){
+      h += '<button class="card act" onclick="openSignoff('+q.row+',\''+esc(q.trainee).replace(/\'/g,"")+'\',\''+
+        esc(q.skill).replace(/\'/g,"")+'\',\''+esc(q.evidence).replace(/\'/g,"")+'\')">'+
+        '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
+        '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
+        '<span class="go">&rsaquo;</span></button>';
+    } else {
+      h += '<div class="card"><div class="h">'+esc(q.skill)+'</div>'+
+        '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
+        '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
+        '<div class="m" style="color:var(--warn);margin-top:7px">Record the decision in the tracker. This portal is read only.</div></div>';
+    }
+  });
+
+  if (d.people && d.people.length){
+    h += '<h2>Trainees</h2>';
+    d.people.forEach(function(t,i){
+      h += '<button class="card act" onclick="openPerson('+i+')"><span class="dot ok"></span>'+
+        '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
+        '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(t.fto||'no training officer')+'</span>'+
+        '</span><span class="go">&rsaquo;</span></button>';
+    });
+  }
+
+  if (d.forms && d.forms.length){
+    h += '<h2>Forms</h2>'+formCards(d.forms);
+  }
+
+  (d.retiredForms||[]).forEach(function(f){
+    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
+         ' is no longer offered anywhere in this portal. '+esc(f.why)+
+         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
   });
 
   if (d.incomplete.length){
@@ -281,7 +372,26 @@ function paintDivision(d){
   h += '<h2>System</h2><div class="panel">'+
     kv('Delivery mode','<span class="chip c-warn">'+esc(d.mode)+'</span>')+
     kv('Active trainees', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed, not counted</span>')+
+    kv('Form links', d.formLinks ? '<span class="chip c-ok">Live</span>'
+                                 : '<span class="chip c-warn">Off</span>')+
     '</div>';
+  paint(h);
+}
+function openPerson(i){
+  var t = (BOOT.data.people||[])[i];
+  if (!t) return;
+  S.ctx = t; S.screen = 'person'; render();
+}
+function paintPersonSheet(){
+  var t = S.ctx || {};
+  var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
+    '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
+       kv('Shift', esc(t.shift||'not set'))+'</div>';
+  h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
+  h += (t.forms && t.forms.length)
+    ? formCards(t.forms)
+    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
   paint(h);
 }
 function openSignoff(row,trainee,skill,evidence){
@@ -318,6 +428,9 @@ function paintSupervisor(d){
     h += '<div class="card"><div class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</div>'+
       '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last evaluation '+esc(t.lastEval)+'</div></div>';
   });
+  if (d.forms && d.forms.length){
+    h += '<h2>If something cannot wait</h2>'+formCards(d.forms);
+  }
   h += '<div class="next"><b>Deliberately thin</b>Supervisors get situational awareness, not personnel-development detail.</div>';
   paint(h);
 }

@@ -63,7 +63,15 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 
 // one eval at module scope: eval inside a callback would scope the
 // declarations into that callback and nothing would be visible here
-eval(['00_Config','10_Identity','20_Data','30_WebApp','90_Staging']
+// The forms layer is loaded too, so these isolation tests run against the
+// same code the deployed portal runs, not a version of it without links.
+// FormApp is deliberately absent: this stub throws the way the platform does
+// when the scope was never granted, which is the worst case the payload
+// builders have to survive. What is proved here is that role isolation holds
+// with the registry in the picture. portal-forms.test.js proves the registry.
+global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
+
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','90_Staging']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -312,7 +320,7 @@ function escapeLikeAppsScript(s){
                   .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 const realBoot = JSON.stringify({
-  version:'portal-1.0.0', mode:'STAGING',
+  version:'portal-1.1.0', mode:'STAGING',
   viewer:{ email:'chief@example.org', role:'TRAINING_DIVISION', name:"Dana O'Neill", ok:true, why:'' },
   data:{ queue:[{ trainee:'Jamie Rivers', skill:'IV access', evidence:'4 of 4 successful' }] },
   error:''

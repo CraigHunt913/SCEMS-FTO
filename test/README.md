@@ -16,9 +16,17 @@ node test/sheet-repair.test.js            # cancelled-queue repair + tab tidy-up
 node test/console-and-file.test.js        # trainee console, release file, readability
 node test/header-rename.test.js           # plain-English headers + the broken header row
 node test/branding.test.js                # the badge and the masthead
+node test/portal.test.js                 # portal role isolation and write safety
+node test/portal-forms.test.js           # the form registry, prefill, production mode
 ```
 
-All ten exit non-zero on failure. 519 assertions total.
+All twelve exit non-zero on failure. 695 assertions total.
+
+The last two cover `portal/`, which is a separate Apps Script project. They
+`eval` its real files with the same stub approach, including a `FormApp` that
+behaves the way the platform does: `toPrefilledUrl()` names the entry id
+belonging to the item responded to, and a choice item refuses a value it does
+not offer.
 
 | Harness | Covers | Guards against |
 | --- | --- | --- |
@@ -33,6 +41,8 @@ All ten exit non-zero on failure. 519 assertions total.
 | `console-and-file.test.js` | `buildTraineeConsoleV20_3`, `buildTraineeFileV20_3`, `consoleEditV20_3_`, `readableWidthForV20_3_` | the console showing codes instead of words, a release file that truncates narratives or leaks another trainee's data, and narrative columns reverting to unreadable widths |
 | `sheet-repair.test.js` | `repairCancelledQueueRowsV20_2`, `organizeTabsV20_2`, `FIX_MY_SHEETS` | the post-upgrade repair re-opening the wrong rows, or a tidy-up that cannot be undone |
 | `identity-tiers.test.js` | `identityV20_2_`, `identityStampV20_2_`, `setOperatorAccountV20_2`, `goLiveChecklistV20_2` | the gate locking out its own operator, and the typed-name hole returning under cover of the fix |
+| `portal.test.js` | `resolveViewerV1_`, the five role payloads, `doGet`, every portal action | one person's payload being made to contain another's record, a write reaching a spreadsheet the portal is not in staging against, and the two page-templating bugs that shipped |
+| `portal-forms.test.js` | `PORTAL_FORMS`, `prefilledUrlV1_`, `probeItemV1_`, `traineeFormsForV1_`, `pointAtProductionReadOnly`, `productionReadinessCheck` | the unbound combined form being offered to anyone, a form id escaping the registry into the page, a dropdown prefilled with a value the form does not offer, discovery submitting a response, and production mode permitting a write |
 
 `queue-sweep.test.js` drives the real sweep against a fake queue and reads the
 cells back afterwards, so it proves behaviour rather than the shape of the
@@ -48,3 +58,17 @@ return value — that is deliberate. Checks like "no longer writes to tab 02"
 and "deletes nothing" are claims about what a function *cannot* do, and a
 behavioural test can only ever show that one particular input did not
 trigger it.
+
+
+`portal-forms.test.js` counts form submissions across the whole run and
+requires zero. Prefill discovery builds a response object to learn an item's
+`entry.NNN` id; that object is one method call away from being submitted, and
+the count is the thing that proves the call is never made.
+
+It also renders the real page. It slices the `<script>` block out of
+`Index.html`, substitutes an actual payload where the templating scriptlet is,
+compiles it, runs it against a fake DOM, and reads the resulting HTML. That is
+how it can assert that an FTO's screen lists their three trainees and not the
+fourth, and that exactly one skills log appears rather than a choice of three.
+Two portal bugs shipped because a test matched source text while the code
+could not run; this one runs the code.

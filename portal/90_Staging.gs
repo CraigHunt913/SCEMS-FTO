@@ -94,6 +94,12 @@ function setUpStaging() {
   var props = PropertiesService.getScriptProperties();
   props.setProperty(PORTAL.PROPERTY_TARGET, book.getId());
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
+  // Remembered so pointAtStaging() can bring you back from production
+  // without rebuilding the sandbox and losing what you were looking at.
+  props.setProperty('PORTAL_STAGING_SPREADSHEET_ID', book.getId());
+  // Off in staging. A sandbox user tapping a form card would otherwise land
+  // on the real production form, and a submission there is a live write.
+  props.setProperty('PORTAL_FORM_LINKS', 'OFF');
 
   var me = whoIsAskingV1_();
   if (me) {
@@ -108,7 +114,10 @@ function setUpStaging() {
     'invented FTOs. Nothing here is a personnel record and nothing of yours\n' +
     'was opened to build it.\n\n' +
     (me ? 'You (' + me + ') are set as Training Division so you can see that view.\n' +
-          'To try another role, use switchRoleForTestingV1("TRAINEE") and back.\n\n' : '') +
+          'To try another role, run viewAsTrainee, viewAsFTO, viewAsDivision,\n' +
+          'viewAsSupervisor or viewAsMedical.\n\n' : '') +
+    'Form links are OFF here, so the cards show without opening the real\n' +
+    'production forms. Run enableFormLinks() if you want them live.\n\n' +
     'Next: Deploy > New deployment > Web app, then open the URL.';
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
