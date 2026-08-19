@@ -28,10 +28,14 @@ function doGet(e) {
 
   var t = HtmlService.createTemplateFromFile('Index');
   t.boot = JSON.stringify(boot);
+  // XFrameOptionsMode has exactly two members: DEFAULT and ALLOWALL. DEFAULT
+  // is the protective one - Google sends X-Frame-Options: SAMEORIGIN, so no
+  // other site can frame this page. There is no DENY; asking for one yields
+  // undefined and Apps Script rejects it as a null mode.
   return t.evaluate()
     .setTitle(PORTAL.TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DENY);
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 function safeModeV1_() { try { return modeV1_(); } catch (e) { return 'UNSET'; } }

@@ -51,9 +51,15 @@ global.PropertiesService = { getScriptProperties: () => ({
   setProperty: (k, v) => { PROPS[k] = v; }, deleteProperty: k => { delete PROPS[k]; } }) };
 global.Utilities = { formatDate: () => '2026-08-19 0200' };
 global.Logger = { log: () => {} };
+// The stub mirrors the REAL Apps Script enum, which has DEFAULT and ALLOWALL
+// and nothing else. setXFrameOptionsMode throws on a null mode exactly as the
+// platform does, so asking for a member that does not exist fails here too.
 global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
   setTitle: function () { return this; }, addMetaTag: function () { return this; },
-  setXFrameOptionsMode: function () { return this; } }) }), XFrameOptionsMode: { DENY: 1 } };
+  setXFrameOptionsMode: function (m) {
+    if (m === null || m === undefined) throw new Error('Argument cannot be null: mode');
+    return this; } }) }),
+  XFrameOptionsMode: { DEFAULT: 'DEFAULT', ALLOWALL: 'ALLOWALL' } };
 
 // one eval at module scope: eval inside a callback would scope the
 // declarations into that callback and nothing would be visible here
@@ -273,7 +279,14 @@ ok(clean_('Normal text') === 'Normal text', 'ordinary text is untouched');
 section('The page cannot be framed, and carries no secrets');
 // ---------------------------------------------------------------- //
 const web = fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs','utf8');
-ok(/XFrameOptionsMode\.DENY/.test(web), 'the web app denies framing');
+ok(/XFrameOptionsMode\.DEFAULT/.test(web), 'framing is set to DEFAULT, which sends SAMEORIGIN');
+// match the CALL, not the word - the comment above it explains ALLOWALL
+ok(!/setXFrameOptionsMode\([^)]*ALLOWALL/.test(web),
+   'and never ALLOWALL, which would let any site frame it');
+// prove it by running doGet against the stub, rather than trusting the text
+var rendered = false;
+try { as('chief@example.org'); doGet({}); rendered = true; } catch (e) { rendered = 'threw: ' + e.message; }
+ok(rendered === true, 'doGet actually renders without a null-mode error');
 const idx = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html','utf8');
 ok(!/AKfycb|1YL-9Er9|@gmail\.com|@sumtercountysc/.test(idx),
    'the page embeds no deployment id, spreadsheet id or real address');
