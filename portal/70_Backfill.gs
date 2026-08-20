@@ -236,7 +236,7 @@ function safeTargetNameV1_() {
  *  Idempotent: a response already carrying its id in the destination tab is
  *  skipped, so running this twice adds nothing the second time. */
 function backfillIntoStaging() {
-  requireWritableV1_('import historical form responses');
+  requireStagingV1_('import historical form responses');
 
   var plans = backfillPlanAllV1_();
   var lines = ['BACKFILL', '', 'Target : ' + safeTargetNameV1_(), ''];

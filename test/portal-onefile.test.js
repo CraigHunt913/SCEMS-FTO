@@ -206,7 +206,14 @@ if (loaded) {
   ok(mayWriteV1_() === false, 'production still refuses them');
   let refused = '';
   try { switchRoleForTestingV1('DIVISION'); } catch (e) { refused = String(e.message || e); }
-  ok(/read-only|read only/i.test(refused), 'and the role switcher still refuses there');
+  ok(/practice spreadsheet/i.test(refused), 'and the role switcher still refuses there');
+  PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+  ok(mayWriteV1_() === true, 'LIVE allows the portal its everyday actions');
+  ok(isPracticeV1_() === false, 'while still knowing the data is real');
+  refused = '';
+  try { switchRoleForTestingV1('DIVISION'); } catch (e) { refused = String(e.message || e); }
+  ok(/practice spreadsheet/i.test(refused), 'and the role switcher refuses in LIVE as well');
+  PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
   PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
 
   ok(typeof PORTAL_FORMS !== 'undefined' && PORTAL_FORMS.length === 9,

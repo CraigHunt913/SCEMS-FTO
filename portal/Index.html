@@ -165,7 +165,8 @@ function el(id){ return document.getElementById(id); }
 function jsStr(v){ return esc(JSON.stringify(String(v==null?'':v))); }
 
 function render(){
-  el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging' : BOOT.mode;
+  el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging'
+    : (BOOT.mode === 'LIVE' ? '' : BOOT.mode);
   el('foot').innerHTML = BOOT.mode === 'STAGING'
     ? 'Staging sandbox. Invented people. Nothing here is a personnel record.'
     : 'Signed in as ' + esc(BOOT.viewer.email || 'unknown') + ' &middot; ' + esc(BOOT.version);
@@ -258,11 +259,14 @@ function paintTrainee(d){
 }
 function kv(k,v){ return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
 
-/* Writing is a staging-only capability. Against the live tracker this portal
-   reads and routes; the forms are what write, exactly as they always have.
-   So anything that would put a value in a live cell is not offered at all
-   rather than offered and then refused. */
-function canWrite(){ return BOOT.mode === 'STAGING'; }
+/* Three modes, and only one of them means "you are looking at the real thing
+   and it does not work". STAGING is practice; LIVE is the real tracker doing
+   its job; PRODUCTION is the real tracker, read only.
+
+   Anything that would put a value in a cell the portal cannot write is not
+   offered at all rather than offered and then refused, because a button that
+   throws when you press it is worse than no button. */
+function canWrite(){ return BOOT.mode === 'STAGING' || BOOT.mode === 'LIVE'; }
 
 /* A form card. The person sees a task, not a form: the registry has already
    picked which of the nine it is and filled in the names it knows. */
@@ -364,8 +368,9 @@ function paintDivision(d){
   var h = '<h1>Waiting on you</h1><p class="sub">'+d.queueCount+' sign-offs &middot; '+
     d.incomplete.length+' setup gaps</p>';
 
-  if (d.mode !== 'STAGING')
-    h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+' mode. Nothing can be written from here.</div>';
+  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
+    h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
+         ' mode, so sign-offs cannot be approved from here yet.</div>';
 
   h += '<h2>Sign-offs</h2>';
   if (!d.queue.length) h += '<div class="note n-ok"><b>Clear</b>No skills are waiting for a decision.</div>';

@@ -151,7 +151,7 @@ function setUpStaging() {
 /** Lets one account preview another role while testing in staging.
  *  Refuses outside staging, so it can never become a production backdoor. */
 function switchRoleForTestingV1(role) {
-  requireWritableV1_('switch role');
+  requireStagingV1_('switch role');
   var r = String(role || '').toUpperCase();
   var props = PropertiesService.getScriptProperties();
   var me = whoIsAskingV1_();

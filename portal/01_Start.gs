@@ -47,10 +47,15 @@ function START() {
 
   var name = '(cannot open it)';
   try { name = targetBookV1_().getName(); } catch (e) {}
-  var live = safeModeV1_() === PORTAL.MODE_PRODUCTION;
+  var mode = safeModeV1_();
+  var live = mode === PORTAL.MODE_LIVE;
+  var real = live || mode === PORTAL.MODE_PRODUCTION;
+  var modeWords = live ? '   your real records, and the portal is doing its job'
+    : (real ? '   your real records, read only - nobody can do anything yet'
+            : '   practice data');
 
   say('READING   ' + name);
-  say('MODE      ' + safeModeV1_() + (live ? '   your real records, read only' : '   practice data'));
+  say('MODE      ' + mode + modeWords);
   say('YOU       ' + (whoIsAskingV1_() || 'Google is not naming this account'));
 
   var others = [];
@@ -231,8 +236,8 @@ function START() {
     }
   } catch (e) {}
 
-  // going live
-  if (!live) {
+  // going live, in two steps: point at the real tracker, then switch it on
+  if (!real) {
     var prodSet = '';
     try {
       prodSet = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
@@ -242,6 +247,14 @@ function START() {
       run: prodSet ? 'pointAtProductionReadOnly' : '(set PORTAL_PRODUCTION_SPREADSHEET_ID first)',
       why: prodSet ? 'It points the portal at your real tracker, read only.'
                    : 'Project Settings > Script Properties. Paste the whole address of your tracker.' });
+  } else if (!live) {
+    // PRODUCTION shows people their records and refuses every action. That is
+    // the right place to start and the wrong place to stop.
+    todo.push({ what: 'the portal is read only, so nobody can actually do anything in it',
+      run: 'goLive',
+      why: 'A trainee cannot tick off a coaching note or file a reflection, and ' +
+           'you cannot approve a sign-off - all three refuse in ' + mode + ' mode. ' +
+           'goLive opens those three and nothing else, and goReadOnly puts it back.' });
   }
 
   /* ---- what do I run next ---- */

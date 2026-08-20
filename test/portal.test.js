@@ -306,6 +306,69 @@ ok(mayWriteV1_() === false, 'PRODUCTION mode disallows writes');
   ok(blocked, fn + ' refuses outside staging');
 });
 
+// ---------------------------------------------------------------- //
+section('LIVE opens exactly three things, and role still decides each');
+// ---------------------------------------------------------------- //
+// PRODUCTION shows people their records and refuses every action, which is
+// the right place to start and the wrong place to stop - a portal nobody can
+// do anything in is a spreadsheet with a nicer font. LIVE is the real
+// tracker doing its job. What matters is that it opens the three everyday
+// actions and NOT the authorisation model around them.
+
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(mayWriteV1_() === true, 'LIVE allows the everyday actions');
+ok(isPracticeV1_() === false, 'and knows perfectly well the data is real');
+ok(isLiveV1_() === true, 'and says so');
+
+// the three that open
+as('jamie@example.org');
+ok(threwMsg(() => submitReflectionV1({ wentWell: 'Slowed the primary survey.' })) === '',
+   'a trainee can file their own reflection');
+ok(threwMsg(() => ackCoachingV1(HR + 1)) === '',
+   'and acknowledge their own coaching note');
+as('chief@example.org');
+ok(threwMsg(() => approveSignoffV1(HR + 1, 'Watched the last three in person.')) === '',
+   'and the Division can approve a sign-off with a typed reason');
+
+// everything the role model refuses is STILL refused
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+as('dana@example.org');
+ok(/Only a trainee/.test(threwMsg(() => submitReflectionV1({ wentWell: 'x' }))),
+   'an FTO still cannot file a reflection as a trainee');
+ok(/Only the Training Division/.test(threwMsg(() => approveSignoffV1(HR + 1, 'looks fine to me'))),
+   'and still cannot approve a sign-off');
+as('jamie@example.org');
+ok(/belongs to someone else/.test(threwMsg(() => ackCoachingV1(HR + 2))),
+   'a trainee still cannot acknowledge somebody else\'s coaching note');
+as('chief@example.org');
+ok(/Type why/.test(threwMsg(() => approveSignoffV1(HR + 1, 'ok'))),
+   'and a sign-off still needs a real reason, not a word');
+as('jamie@example.org');
+ok(/not recognised|not on the roster/.test(
+     threwMsg(() => { ACTIVE = EFFECTIVE = 'stranger@example.org';
+       PEOPLE_CACHE_V1 = null; recordV1('Jamie Rivers'); })),
+   'and somebody the data does not know still gets nothing');
+
+// the audit log, which PRODUCTION was silently throwing away
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+let auditRows = () => (SHEETS[PORTAL.TAB.AUDIT] ? SHEETS[PORTAL.TAB.AUDIT].g.length : 0);
+let auditBefore = auditRows();
+auditV1_('TEST', 'someone@example.org', 'detail');
+ok(auditRows() === auditBefore, 'PRODUCTION writes no audit entry, because it writes nothing');
+
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+auditBefore = auditRows();
+as('chief@example.org');
+approveSignoffV1(HR + 1, 'Watched the last three in person.');
+ok(auditRows() > auditBefore,
+   'LIVE records who approved it, which is the whole reason a decision is safe to allow');
+
+function threwMsg(fn) { try { fn(); return ''; } catch (e) { return String(e.message || e); } }
+
 world(); delete PROPS[PORTAL.PROPERTY_TARGET];
 threw = false;
 try { targetIdV1_(); } catch (e) { threw = /not pointed at a spreadsheet/.test(e.message); }

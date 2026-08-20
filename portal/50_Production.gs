@@ -68,6 +68,121 @@ function pointAtProductionReadOnly() {
     'cannot find before you send anyone the link.');
 }
 
+/** Switch the real tracker on.
+ *
+ *  PRODUCTION shows people their records and refuses every action. That is
+ *  the right place to start and the wrong place to stop: a portal nobody can
+ *  do anything in is a spreadsheet with a nicer font.
+ *
+ *  This opens exactly three things, and only for the person entitled to each:
+ *  a trainee acknowledging their own coaching note, a trainee filing their
+ *  own reflection, and the Training Division approving a sign-off with a
+ *  typed reason. Every one still checks the role, still refuses a row that
+ *  lives in another spreadsheet, and now writes to the audit log - which
+ *  PRODUCTION mode was silently discarding.
+ *
+ *  It refuses if going live would only mean a live empty portal. */
+function goLive() {
+  var props = PropertiesService.getScriptProperties();
+  var mode = safeModeV1_();
+
+  var id = '';
+  try { id = targetIdV1_(); } catch (e) {
+    throw new Error('This portal is not pointed at anything yet. Run START. ' +
+      'Nothing was changed.');
+  }
+  if (mode === PORTAL.MODE_STAGING) {
+    throw new Error('This portal is pointed at the practice spreadsheet, not ' +
+      'your tracker. Writes already work here. Run pointAtProductionReadOnly() ' +
+      'first, look at what it can see, then run goLive(). Nothing was changed.');
+  }
+  if (mode === PORTAL.MODE_LIVE) {
+    return noteV1_('Already live.\n\nSpreadsheet : ' + safeTargetNameV1_() +
+      '\n\nRun goReadOnly() to put it back to look-but-do-not-touch.');
+  }
+
+  // Refuse to go live into a portal nobody can use.
+  var stop = [];
+  var missing = [];
+  Object.keys(PORTAL.TAB).forEach(function (k) {
+    var tn = PORTAL.TAB[k];
+    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT) return;
+    if (!readTabV1_(tn).ok) missing.push(tn);
+  });
+  if (missing.length) {
+    stop.push(missing.length + ' tab(s) the portal reads are not in this ' +
+      'spreadsheet: ' + missing.join(', '));
+  }
+
+  var canSignIn = 0;
+  try {
+    rosterActivePeopleV1_().forEach(function (p) {
+      if (p.email.indexOf('@') > 0) canSignIn++; });
+  } catch (e) {}
+  if (!canSignIn) {
+    stop.push('nobody on the roster has an address, so no training officer ' +
+      'could be recognised');
+  }
+
+  if (stop.length) {
+    throw new Error('Not going live yet.\n\n  ' + stop.join('\n  ') +
+      '\n\nRun START; it names the one thing to do about it. Nothing was changed.');
+  }
+
+  props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
+  PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
+  auditV1_('MODE', whoIsAskingV1_(), 'PRODUCTION -> LIVE');
+
+  var trainees = 0;
+  try { trainees = traineesV1_().filter(function (t) { return !t.closed; }).length; } catch (e) {}
+
+  return noteV1_([
+    'LIVE.',
+    '',
+    'Spreadsheet : ' + safeTargetNameV1_(),
+    'Signed in   : ' + (whoIsAskingV1_() || 'Google is not naming this account'),
+    '',
+    canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
+    '',
+    'WHAT JUST BECAME POSSIBLE',
+    '  A trainee can acknowledge their own coaching note.',
+    '  A trainee can file their own reflection.',
+    '  The Training Division can approve a sign-off, with a typed reason.',
+    '  Every one of those is written to ' + PORTAL.TAB.AUDIT + ' under the name',
+    '  of whoever did it. PRODUCTION mode was throwing those entries away.',
+    '',
+    'WHAT DID NOT',
+    '  Importing, merging and switching role. Those only ever run against the',
+    '  practice spreadsheet, whatever mode this is in.',
+    '  Nothing bulk. Nothing structural. No row in another spreadsheet.',
+    '',
+    'NOW DEPLOY',
+    '  Deploy > Manage deployments > pencil > Version: New version > Deploy',
+    '  A deployment serves the code as it was when you deployed it, so this',
+    '  switch does not reach the people using the link until you do that.',
+    '',
+    'To step back at any time: goReadOnly()'
+  ].join('\n'));
+}
+
+/** Back to look-but-do-not-touch, on the same spreadsheet. */
+function goReadOnly() {
+  var props = PropertiesService.getScriptProperties();
+  if (safeModeV1_() === PORTAL.MODE_STAGING) {
+    return noteV1_('This portal is on the practice spreadsheet. Nothing here ' +
+      'is anybody\'s record, so there is nothing to protect. Run ' +
+      'pointAtProductionReadOnly() to look at the real one.');
+  }
+  props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_PRODUCTION);
+  PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
+  return noteV1_('READ ONLY again.\n\nSpreadsheet : ' + safeTargetNameV1_() +
+    '\n\nPeople can still see their records. Acknowledging coaching, filing a ' +
+    'reflection and approving a sign-off all refuse again.\n\nDeploy a new ' +
+    'version for this to reach the people using the link.');
+}
+
 /** Go back to the sandbox. */
 function pointAtStaging() {
   var props = PropertiesService.getScriptProperties();

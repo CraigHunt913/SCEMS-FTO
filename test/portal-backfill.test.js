@@ -318,8 +318,19 @@ section('Importing refuses outside staging');
 // ---------------------------------------------------------------- //
 world(PORTAL.MODE_PRODUCTION);
 before = snapshot();
-ok(/read.only/i.test(threw(() => backfillIntoStaging())),
+ok(/practice spreadsheet/i.test(threw(() => backfillIntoStaging())),
    'backfillIntoStaging refuses against the live tracker');
+
+// And it must keep refusing in LIVE. LIVE opens the portal's own everyday
+// actions - a trainee ticking off a coaching note - and a bulk import of
+// historical responses is not one of those. They must not share a gate.
+world(PORTAL.MODE_LIVE);
+const beforeLive = snapshot();
+ok(/practice spreadsheet/i.test(threw(() => backfillIntoStaging())),
+   'and refuses in LIVE too, where the everyday actions do work');
+ok(snapshot() === beforeLive, 'writing nothing there either');
+world(PORTAL.MODE_PRODUCTION);
+before = snapshot();
 ok(snapshot() === before, 'and writes nothing while refusing');
 
 // ---------------------------------------------------------------- //

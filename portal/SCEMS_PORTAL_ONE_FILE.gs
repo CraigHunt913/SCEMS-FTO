@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 5117f241
+ * Build ac245d37
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -39,6 +39,7 @@ var PORTAL = Object.freeze({
   /** STAGING writes freely. PRODUCTION refuses every write. */
   MODE_STAGING: 'STAGING',
   MODE_PRODUCTION: 'PRODUCTION',
+  MODE_LIVE: 'LIVE',
 
   TITLE: 'Sumter County EMS Field Training',
 
@@ -114,15 +115,66 @@ function modeV1_() {
     .getProperty(PORTAL.PROPERTY_MODE) || PORTAL.MODE_STAGING).toUpperCase();
 }
 
-/** True only in STAGING. Every write in this project checks this first. */
-function mayWriteV1_() { return modeV1_() === PORTAL.MODE_STAGING; }
+/* ---------------------------------------------------------------- *
+ *  The three modes.
+ *
+ *  There used to be two, and they were a false choice: practice data where
+ *  everything worked, or the real tracker where nothing did. There was no
+ *  mode in which the real thing did its job, so "going live" meant putting
+ *  a read-only display in front of people and calling it a portal.
+ *
+ *    STAGING      a practice spreadsheet with made-up people in it.
+ *                 Everything works. Nothing here is anybody's record.
+ *
+ *    PRODUCTION   the real tracker, read only. Look, do not touch. This is
+ *                 the right mode for checking what the portal can see before
+ *                 anybody is given the link, and it is where you start.
+ *
+ *    LIVE         the real tracker, doing its job. A trainee can acknowledge
+ *                 their own coaching note and file their own reflection; the
+ *                 Training Division can approve a sign-off with a typed
+ *                 reason. Nothing else opens up: every one of those is still
+ *                 checked against the person's role, still limited to a row
+ *                 in this spreadsheet, and still written to the audit log
+ *                 under their own name.
+ *
+ *  Importing, merging and switching role stay STAGING-only in every mode.
+ *  Those are bulk tools and a testing tool; the first two carry their own
+ *  authorisation on top, and the third lets you become anybody, which must
+ *  never be pointed at real records.
+ * ---------------------------------------------------------------- */
 
-/** Refuses, loudly, when a write is attempted outside staging. */
+/** May the portal's everyday actions write? True in STAGING and LIVE. */
+function mayWriteV1_() {
+  var m = modeV1_();
+  return m === PORTAL.MODE_STAGING || m === PORTAL.MODE_LIVE;
+}
+
+/** Is this made-up data? True only in STAGING. */
+function isPracticeV1_() { return modeV1_() === PORTAL.MODE_STAGING; }
+
+/** Is this the real tracker with its everyday actions switched on? */
+function isLiveV1_() { return modeV1_() === PORTAL.MODE_LIVE; }
+
+/** Refuses, loudly, when an everyday action is attempted in a read-only mode. */
 function requireWritableV1_(what) {
   if (mayWriteV1_()) return;
   throw new Error('Refusing to ' + what + '. This portal is in ' + modeV1_() +
-    ' mode, which is read-only. Writing to a live record from here has not ' +
-    'been approved.');
+    ' mode, which is read only. Run goLive() to switch the real tracker on, ' +
+    'or pointAtStaging() to practise first.');
+}
+
+/** Refuses anything that must only ever touch made-up data.
+ *
+ *  Separate from requireWritableV1_ on purpose. A bulk import and a trainee
+ *  ticking off a coaching note are not the same kind of write and must not
+ *  share a gate: one is the portal doing its job, the other rewrites history
+ *  in bulk. LIVE opens the first and never the second. */
+function requireStagingV1_(what) {
+  if (isPracticeV1_()) return;
+  throw new Error('Refusing to ' + what + '. That only ever runs against the ' +
+    'practice spreadsheet, and this portal is pointed at ' + modeV1_() +
+    '. Run pointAtStaging() first.');
 }
 
 
@@ -179,10 +231,15 @@ function START() {
 
   var name = '(cannot open it)';
   try { name = targetBookV1_().getName(); } catch (e) {}
-  var live = safeModeV1_() === PORTAL.MODE_PRODUCTION;
+  var mode = safeModeV1_();
+  var live = mode === PORTAL.MODE_LIVE;
+  var real = live || mode === PORTAL.MODE_PRODUCTION;
+  var modeWords = live ? '   your real records, and the portal is doing its job'
+    : (real ? '   your real records, read only - nobody can do anything yet'
+            : '   practice data');
 
   say('READING   ' + name);
-  say('MODE      ' + safeModeV1_() + (live ? '   your real records, read only' : '   practice data'));
+  say('MODE      ' + mode + modeWords);
   say('YOU       ' + (whoIsAskingV1_() || 'Google is not naming this account'));
 
   var others = [];
@@ -363,8 +420,8 @@ function START() {
     }
   } catch (e) {}
 
-  // going live
-  if (!live) {
+  // going live, in two steps: point at the real tracker, then switch it on
+  if (!real) {
     var prodSet = '';
     try {
       prodSet = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
@@ -374,6 +431,14 @@ function START() {
       run: prodSet ? 'pointAtProductionReadOnly' : '(set PORTAL_PRODUCTION_SPREADSHEET_ID first)',
       why: prodSet ? 'It points the portal at your real tracker, read only.'
                    : 'Project Settings > Script Properties. Paste the whole address of your tracker.' });
+  } else if (!live) {
+    // PRODUCTION shows people their records and refuses every action. That is
+    // the right place to start and the wrong place to stop.
+    todo.push({ what: 'the portal is read only, so nobody can actually do anything in it',
+      run: 'goLive',
+      why: 'A trainee cannot tick off a coaching note or file a reflection, and ' +
+           'you cannot approve a sign-off - all three refuse in ' + mode + ' mode. ' +
+           'goLive opens those three and nothing else, and goReadOnly puts it back.' });
   }
 
   /* ---- what do I run next ---- */
@@ -1780,6 +1845,121 @@ function pointAtProductionReadOnly() {
     'cannot find before you send anyone the link.');
 }
 
+/** Switch the real tracker on.
+ *
+ *  PRODUCTION shows people their records and refuses every action. That is
+ *  the right place to start and the wrong place to stop: a portal nobody can
+ *  do anything in is a spreadsheet with a nicer font.
+ *
+ *  This opens exactly three things, and only for the person entitled to each:
+ *  a trainee acknowledging their own coaching note, a trainee filing their
+ *  own reflection, and the Training Division approving a sign-off with a
+ *  typed reason. Every one still checks the role, still refuses a row that
+ *  lives in another spreadsheet, and now writes to the audit log - which
+ *  PRODUCTION mode was silently discarding.
+ *
+ *  It refuses if going live would only mean a live empty portal. */
+function goLive() {
+  var props = PropertiesService.getScriptProperties();
+  var mode = safeModeV1_();
+
+  var id = '';
+  try { id = targetIdV1_(); } catch (e) {
+    throw new Error('This portal is not pointed at anything yet. Run START. ' +
+      'Nothing was changed.');
+  }
+  if (mode === PORTAL.MODE_STAGING) {
+    throw new Error('This portal is pointed at the practice spreadsheet, not ' +
+      'your tracker. Writes already work here. Run pointAtProductionReadOnly() ' +
+      'first, look at what it can see, then run goLive(). Nothing was changed.');
+  }
+  if (mode === PORTAL.MODE_LIVE) {
+    return noteV1_('Already live.\n\nSpreadsheet : ' + safeTargetNameV1_() +
+      '\n\nRun goReadOnly() to put it back to look-but-do-not-touch.');
+  }
+
+  // Refuse to go live into a portal nobody can use.
+  var stop = [];
+  var missing = [];
+  Object.keys(PORTAL.TAB).forEach(function (k) {
+    var tn = PORTAL.TAB[k];
+    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT) return;
+    if (!readTabV1_(tn).ok) missing.push(tn);
+  });
+  if (missing.length) {
+    stop.push(missing.length + ' tab(s) the portal reads are not in this ' +
+      'spreadsheet: ' + missing.join(', '));
+  }
+
+  var canSignIn = 0;
+  try {
+    rosterActivePeopleV1_().forEach(function (p) {
+      if (p.email.indexOf('@') > 0) canSignIn++; });
+  } catch (e) {}
+  if (!canSignIn) {
+    stop.push('nobody on the roster has an address, so no training officer ' +
+      'could be recognised');
+  }
+
+  if (stop.length) {
+    throw new Error('Not going live yet.\n\n  ' + stop.join('\n  ') +
+      '\n\nRun START; it names the one thing to do about it. Nothing was changed.');
+  }
+
+  props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
+  PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
+  auditV1_('MODE', whoIsAskingV1_(), 'PRODUCTION -> LIVE');
+
+  var trainees = 0;
+  try { trainees = traineesV1_().filter(function (t) { return !t.closed; }).length; } catch (e) {}
+
+  return noteV1_([
+    'LIVE.',
+    '',
+    'Spreadsheet : ' + safeTargetNameV1_(),
+    'Signed in   : ' + (whoIsAskingV1_() || 'Google is not naming this account'),
+    '',
+    canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
+    '',
+    'WHAT JUST BECAME POSSIBLE',
+    '  A trainee can acknowledge their own coaching note.',
+    '  A trainee can file their own reflection.',
+    '  The Training Division can approve a sign-off, with a typed reason.',
+    '  Every one of those is written to ' + PORTAL.TAB.AUDIT + ' under the name',
+    '  of whoever did it. PRODUCTION mode was throwing those entries away.',
+    '',
+    'WHAT DID NOT',
+    '  Importing, merging and switching role. Those only ever run against the',
+    '  practice spreadsheet, whatever mode this is in.',
+    '  Nothing bulk. Nothing structural. No row in another spreadsheet.',
+    '',
+    'NOW DEPLOY',
+    '  Deploy > Manage deployments > pencil > Version: New version > Deploy',
+    '  A deployment serves the code as it was when you deployed it, so this',
+    '  switch does not reach the people using the link until you do that.',
+    '',
+    'To step back at any time: goReadOnly()'
+  ].join('\n'));
+}
+
+/** Back to look-but-do-not-touch, on the same spreadsheet. */
+function goReadOnly() {
+  var props = PropertiesService.getScriptProperties();
+  if (safeModeV1_() === PORTAL.MODE_STAGING) {
+    return noteV1_('This portal is on the practice spreadsheet. Nothing here ' +
+      'is anybody\'s record, so there is nothing to protect. Run ' +
+      'pointAtProductionReadOnly() to look at the real one.');
+  }
+  props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_PRODUCTION);
+  PEOPLE_CACHE_V1 = null;
+  forgetTabsV1_();
+  return noteV1_('READ ONLY again.\n\nSpreadsheet : ' + safeTargetNameV1_() +
+    '\n\nPeople can still see their records. Acknowledging coaching, filing a ' +
+    'reflection and approving a sign-off all refuse again.\n\nDeploy a new ' +
+    'version for this to reach the people using the link.');
+}
+
 /** Go back to the sandbox. */
 function pointAtStaging() {
   var props = PropertiesService.getScriptProperties();
@@ -2611,7 +2791,7 @@ function safeTargetNameV1_() {
  *  Idempotent: a response already carrying its id in the destination tab is
  *  skipped, so running this twice adds nothing the second time. */
 function backfillIntoStaging() {
-  requireWritableV1_('import historical form responses');
+  requireStagingV1_('import historical form responses');
 
   var plans = backfillPlanAllV1_();
   var lines = ['BACKFILL', '', 'Target : ' + safeTargetNameV1_(), ''];
@@ -3610,7 +3790,7 @@ function setUpStaging() {
 /** Lets one account preview another role while testing in staging.
  *  Refuses outside staging, so it can never become a production backdoor. */
 function switchRoleForTestingV1(role) {
-  requireWritableV1_('switch role');
+  requireStagingV1_('switch role');
   var r = String(role || '').toUpperCase();
   var props = PropertiesService.getScriptProperties();
   var me = whoIsAskingV1_();
@@ -5393,7 +5573,8 @@ var PORTAL_PAGE_HTML = [
   "function jsStr(v){ return esc(JSON.stringify(String(v==null?'':v))); }\n",
   "\n",
   "function render(){\n",
-  "  el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging' : BOOT.mode;\n",
+  "  el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging'\n",
+  "    : (BOOT.mode === 'LIVE' ? '' : BOOT.mode);\n",
   "  el('foot').innerHTML = BOOT.mode === 'STAGING'\n",
   "    ? 'Staging sandbox. Invented people. Nothing here is a personnel record.'\n",
   "    : 'Signed in as ' + esc(BOOT.viewer.email || 'unknown') + ' &middot; ' + esc(BOOT.vers",
@@ -5503,11 +5684,14 @@ var PORTAL_PAGE_HTML = [
   "function kv(k,v){ return '<div class=\"kv\"><span class=\"k\">'+esc(k)+'</span><span class=\"v\"",
   ">'+v+'</span></div>'; }\n",
   "\n",
-  "/* Writing is a staging-only capability. Against the live tracker this portal\n",
-  "   reads and routes; the forms are what write, exactly as they always have.\n",
-  "   So anything that would put a value in a live cell is not offered at all\n",
-  "   rather than offered and then refused. */\n",
-  "function canWrite(){ return BOOT.mode === 'STAGING'; }\n",
+  "/* Three modes, and only one of them means \"you are looking at the real thing\n",
+  "   and it does not work\". STAGING is practice; LIVE is the real tracker doing\n",
+  "   its job; PRODUCTION is the real tracker, read only.\n",
+  "\n",
+  "   Anything that would put a value in a cell the portal cannot write is not\n",
+  "   offered at all rather than offered and then refused, because a button that\n",
+  "   throws when you press it is worse than no button. */\n",
+  "function canWrite(){ return BOOT.mode === 'STAGING' || BOOT.mode === 'LIVE'; }\n",
   "\n",
   "/* A form card. The person sees a task, not a form: the registry has already\n",
   "   picked which of the nine it is and filled in the names it knows. */\n",
@@ -5632,9 +5816,9 @@ var PORTAL_PAGE_HTML = [
   "  var h = '<h1>Waiting on you</h1><p class=\"sub\">'+d.queueCount+' sign-offs &middot; '+\n",
   "    d.incomplete.length+' setup gaps</p>';\n",
   "\n",
-  "  if (d.mode !== 'STAGING')\n",
-  "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+' mode.",
-  " Nothing can be written from here.</div>';\n",
+  "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
+  "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
+  "         ' mode, so sign-offs cannot be approved from here yet.</div>';\n",
   "\n",
   "  h += '<h2>Sign-offs</h2>';\n",
   "  if (!d.queue.length) h += '<div class=\"note n-ok\"><b>Clear</b>No skills are waiting for ",
@@ -5934,7 +6118,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '5117f241';
+var PORTAL_BUILD = 'ac245d37';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

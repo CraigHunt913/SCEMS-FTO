@@ -485,8 +485,81 @@ ok(/read-only|read only/i.test(threw(() => submitReflectionV1({ wentWell: 'x' })
    'filing a reflection through the portal refuses');
 ok(/read-only|read only/i.test(threw(() => ackCoachingV1(5))),
    'acknowledging coaching refuses');
-ok(/read-only|read only/i.test(threw(() => switchRoleForTestingV1('DIVISION'))),
+ok(/practice spreadsheet/i.test(threw(() => switchRoleForTestingV1('DIVISION'))),
    'and the role switcher cannot become a production backdoor');
+
+// LIVE opens the three everyday actions and nothing else. The role switcher
+// is the one that matters most here: it lets whoever runs it become anybody,
+// which is fine against invented people and is a backdoor into every real
+// personnel record. It is gated on the data being fake, not on writability.
+PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(mayWriteV1_() === true, 'LIVE can write');
+ok(isPracticeV1_() === false, 'and knows the data is real');
+ok(/practice spreadsheet/i.test(threw(() => switchRoleForTestingV1('DIVISION'))),
+   'and the role switcher still refuses, because that gate is about the data');
+
+as('jamie@example.org');
+ok(threw(() => submitReflectionV1({ wentWell: 'Kept the primary survey slow.' })) === '',
+   'while a trainee filing their own reflection now works, which is the point');
+as('chief@example.org');
+ok(threw(() => switchRoleForTestingV1('TRAINEE')) !== '',
+   'and being the Division does not unlock it either');
+PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+
+// ---------------------------------------------------------------- //
+section('goLive, and what it refuses to go live into');
+// ---------------------------------------------------------------- //
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+as('chief@example.org');
+ok(/practice spreadsheet|pointAtProductionReadOnly/i.test(threw(() => goLive())),
+   'from staging it refuses and says to look at the real one first');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_STAGING, 'and changes nothing');
+
+// A portal nobody can be recognised in is not ready to be live, however
+// tidy the rest of it is. Going live into that means a live empty screen.
+pointAtProductionReadOnly();
+const rosterTab = readTabV1_(PORTAL.TAB.ROSTER);
+const emailCol = rosterTab.col['EMAIL'] !== undefined ? rosterTab.col['EMAIL']
+                                                      : rosterTab.col['FTO EMAIL'];
+SHEETS[PORTAL.TAB.ROSTER].g.slice(HR).forEach(r => { r[emailCol] = ''; });
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+ok(/nobody on the roster has an address/i.test(threw(() => goLive())),
+   'it refuses to go live into a portal nobody can sign in to');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'leaving it read only');
+
+// a missing tab stops it too, for the same reason: a screen that reads an
+// absent tab is an empty screen, and finding that out live is the wrong time
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+as('chief@example.org');
+pointAtProductionReadOnly();
+ok(/tab\(s\) the portal reads are not in this spreadsheet/i.test(threw(() => goLive())),
+   'a missing tab stops it, and it names which');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'still read only');
+
+// with everything present it goes
+tab(PORTAL.TAB.EVIDENCE, ['TRAINEE','SKILL','EVENT DATE','FTO','OUTCOME'], []);
+tab(PORTAL.TAB.SIGNOFF, ['TRAINEE','SKILL','DECIDED BY','DECISION DATE','RATIONALE'], []);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+let liveMsg = goLive();
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_LIVE, 'from PRODUCTION it goes live');
+ok(/Deploy/.test(liveMsg),
+   'and says to deploy, because a deployment serves the code as it was when deployed');
+ok(/goReadOnly/.test(liveMsg), 'and how to step back');
+ok(/acknowledge|reflection|sign-off/i.test(liveMsg), 'naming what just became possible');
+
+ok(/Already live/.test(goLive()), 'running it again is a no-op that says so');
+
+goReadOnly();
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'goReadOnly puts it back');
+ok(PROPS[PORTAL.PROPERTY_TARGET] === 'PROD-BOOK',
+   'on the same spreadsheet - it steps back from the mode, not the tracker');
+as('chief@example.org');
+ok(/read only/i.test(threw(() => approveSignoffV1(PORTAL.HEADER_ROW + 1, 'a good reason here'))),
+   'and the everyday actions refuse again');
 
 // ---------------------------------------------------------------- //
 section('Getting back to the sandbox');

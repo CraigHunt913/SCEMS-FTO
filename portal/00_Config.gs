@@ -18,6 +18,7 @@ var PORTAL = Object.freeze({
   /** STAGING writes freely. PRODUCTION refuses every write. */
   MODE_STAGING: 'STAGING',
   MODE_PRODUCTION: 'PRODUCTION',
+  MODE_LIVE: 'LIVE',
 
   TITLE: 'Sumter County EMS Field Training',
 
@@ -93,13 +94,64 @@ function modeV1_() {
     .getProperty(PORTAL.PROPERTY_MODE) || PORTAL.MODE_STAGING).toUpperCase();
 }
 
-/** True only in STAGING. Every write in this project checks this first. */
-function mayWriteV1_() { return modeV1_() === PORTAL.MODE_STAGING; }
+/* ---------------------------------------------------------------- *
+ *  The three modes.
+ *
+ *  There used to be two, and they were a false choice: practice data where
+ *  everything worked, or the real tracker where nothing did. There was no
+ *  mode in which the real thing did its job, so "going live" meant putting
+ *  a read-only display in front of people and calling it a portal.
+ *
+ *    STAGING      a practice spreadsheet with made-up people in it.
+ *                 Everything works. Nothing here is anybody's record.
+ *
+ *    PRODUCTION   the real tracker, read only. Look, do not touch. This is
+ *                 the right mode for checking what the portal can see before
+ *                 anybody is given the link, and it is where you start.
+ *
+ *    LIVE         the real tracker, doing its job. A trainee can acknowledge
+ *                 their own coaching note and file their own reflection; the
+ *                 Training Division can approve a sign-off with a typed
+ *                 reason. Nothing else opens up: every one of those is still
+ *                 checked against the person's role, still limited to a row
+ *                 in this spreadsheet, and still written to the audit log
+ *                 under their own name.
+ *
+ *  Importing, merging and switching role stay STAGING-only in every mode.
+ *  Those are bulk tools and a testing tool; the first two carry their own
+ *  authorisation on top, and the third lets you become anybody, which must
+ *  never be pointed at real records.
+ * ---------------------------------------------------------------- */
 
-/** Refuses, loudly, when a write is attempted outside staging. */
+/** May the portal's everyday actions write? True in STAGING and LIVE. */
+function mayWriteV1_() {
+  var m = modeV1_();
+  return m === PORTAL.MODE_STAGING || m === PORTAL.MODE_LIVE;
+}
+
+/** Is this made-up data? True only in STAGING. */
+function isPracticeV1_() { return modeV1_() === PORTAL.MODE_STAGING; }
+
+/** Is this the real tracker with its everyday actions switched on? */
+function isLiveV1_() { return modeV1_() === PORTAL.MODE_LIVE; }
+
+/** Refuses, loudly, when an everyday action is attempted in a read-only mode. */
 function requireWritableV1_(what) {
   if (mayWriteV1_()) return;
   throw new Error('Refusing to ' + what + '. This portal is in ' + modeV1_() +
-    ' mode, which is read-only. Writing to a live record from here has not ' +
-    'been approved.');
+    ' mode, which is read only. Run goLive() to switch the real tracker on, ' +
+    'or pointAtStaging() to practise first.');
+}
+
+/** Refuses anything that must only ever touch made-up data.
+ *
+ *  Separate from requireWritableV1_ on purpose. A bulk import and a trainee
+ *  ticking off a coaching note are not the same kind of write and must not
+ *  share a gate: one is the portal doing its job, the other rewrites history
+ *  in bulk. LIVE opens the first and never the second. */
+function requireStagingV1_(what) {
+  if (isPracticeV1_()) return;
+  throw new Error('Refusing to ' + what + '. That only ever runs against the ' +
+    'practice spreadsheet, and this portal is pointed at ' + modeV1_() +
+    '. Run pointAtStaging() first.');
 }
