@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 516f549b
+ * Build 5117f241
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -394,11 +394,34 @@ function START() {
 
   if (!todo.length) {
     rule();
-    say('NOTHING IS BLOCKING IT.');
+    say('NOTHING IS BLOCKING IT. GO LIVE.');
     say();
-    say('Open the web app and check you see the screen your role should see.');
-    say('If you changed the code, deploy first:');
-    say('  Deploy > Manage deployments > pencil > Version: New version > Deploy');
+    say('1. Deploy > Manage deployments > pencil > Version: New version > Deploy');
+    say();
+    say('2. Check these two settings on that same screen. They decide whether');
+    say('   this is safe, not just whether it loads:');
+    say();
+    say('   Execute as      Me (' + (whoIsAskingV1_() || 'you') + ')');
+    say('     So a trainee does not need edit access to the tracker to read');
+    say('     their own record. The portal decides what they see; the');
+    say('     spreadsheet stays shut.');
+    say();
+    say('   Who has access  Anyone with a Google Account');
+    say('     NOT "Anyone". "Anyone" lets people in without Google naming');
+    say('     them, and a portal that cannot name you cannot show you');
+    say('     anything - everyone would get an empty screen.');
+    say();
+    say('3. Copy the /exec address and open it yourself first. You should see');
+    say('   the Training Division screen.');
+    say();
+    say('4. Send it to one training officer and one trainee before anyone');
+    say('   else. Ask each of them what they see. The officer should see');
+    say('   their own trainees and nobody else\'s; the trainee should see');
+    say('   themselves and nothing else.');
+    say();
+    say('If somebody gets "Google is not telling this portal which account",');
+    say('they are signed into more than one Google account in that browser.');
+    say('A private window and the one address on the roster fixes it.');
     return noteV1_(L.join('\n'));
   }
 
@@ -449,6 +472,9 @@ function WHAT_IS_WAITING() { return unprocessedResponses(); }
 /** Somebody changed their name. Set PORTAL_RENAME first. */
 function FIX_A_NAME_EVERYWHERE() { return applyRename(); }
 
+/** The deployment settings, and how to check it actually worked. */
+function GO_LIVE() { return START(); }
+
 /** Somebody left the service. Set PORTAL_RETIRE first. Nothing is deleted. */
 function SOMEBODY_LEFT_THE_SERVICE() { return retireFto(); }
 
@@ -470,12 +496,51 @@ function UNDO_SOMEBODY_LEAVING() { return unretireFto(); }
 
 /** The signed-in account, or '' when Google will not say. */
 function whoIsAskingV1_() {
-  var e = '';
-  try { e = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (err) {}
+  var e = activeUserV1_();
+  // Only for something run from the Run dropdown, where the effective user IS
+  // the person running it. NEVER for a web request - see whoIsVisitingV1_.
   if (!e) {
     try { e = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (err) {}
   }
   return e;
+}
+
+function activeUserV1_() {
+  try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); }
+  catch (err) { return ''; }
+}
+
+/** Who is looking at the web page. The ONLY identity a web request may use.
+ *
+ *  There is no fallback here, and that is the whole point. A web app deployed
+ *  "Execute as: Me" runs every visitor's request under the owner's account,
+ *  so Session.getEffectiveUser() is the OWNER no matter who is looking. Google
+ *  also declines to name a visitor from outside the owner's Workspace domain,
+ *  and returns '' from getActiveUser() - which is most of this roster, since
+ *  most of them sign in with a personal address.
+ *
+ *  Put those two facts together with a fallback and every trainee who opened
+ *  the link would be resolved as the Training Division and handed everybody's
+ *  records. It would not look like a failure. It would look like the portal
+ *  working.
+ *
+ *  So: the active user or nobody. An empty answer grants nothing, and the
+ *  page says plainly what to change. */
+function whoIsVisitingV1_() {
+  return activeUserV1_();
+}
+
+/** Why Google might not be naming a visitor, in the words of the fix. */
+function notNamedV1_() {
+  return 'Google is not telling this portal which account you are signed in ' +
+    'with, so it cannot show you anything.\n\n' +
+    'Two things cause this:\n' +
+    '  You are signed into more than one Google account in this browser. ' +
+    'Open the link in a private window and sign in with the one address the ' +
+    'roster has for you.\n' +
+    '  Or the web app is deployed with "Who has access: Anyone", which lets ' +
+    'people in without naming them. It has to be "Anyone with a Google ' +
+    'Account" or narrower.';
 }
 
 function normNameV1_(s) {
@@ -491,7 +556,7 @@ function resolveViewerV1_(email) {
   var e = String(email || '').trim().toLowerCase();
   var out = { email: e, role: PORTAL.ROLE.NONE, name: '', traineeName: '',
               shift: '', ok: false, why: '' };
-  if (!e) { out.why = 'Google did not say which account is signed in.'; return out; }
+  if (!e) { out.why = notNamedV1_(); return out; }
 
   var cfg = portalPeopleV1_();
 
@@ -1083,7 +1148,7 @@ function safeBoolV1_(fn) {
 function doGet(e) {
   var viewer, payload, err = '';
   try {
-    viewer = resolveViewerV1_(whoIsAskingV1_());
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
     payload = viewer.ok ? payloadForV1_(viewer) : {};
   } catch (ex) {
     viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
@@ -1163,7 +1228,7 @@ function requireLocalRowV1_(t, row, what) {
 /** Trainee acknowledges a coaching note. */
 function ackCoachingV1(row) {
   requireWritableV1_('acknowledge a coaching note');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only the trainee may acknowledge their own coaching.');
   var t = readTabV1_(PORTAL.TAB.COACHING);
   if (!t.ok) throw new Error('No coaching log.');
@@ -1181,7 +1246,7 @@ function ackCoachingV1(row) {
 /** Trainee files a reflection. */
 function submitReflectionV1(answers) {
   requireWritableV1_('file a reflection');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only a trainee may file a reflection.');
   var a = answers || {};
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.REFLECT);
@@ -1198,7 +1263,7 @@ function submitReflectionV1(answers) {
  *  default wording, because a pre-filled reason is not a reason. */
 function approveSignoffV1(row, reason) {
   requireWritableV1_('approve a sign-off');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
   var why = String(reason || '').trim();
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
@@ -1225,7 +1290,7 @@ function approveSignoffV1(row, reason) {
  *  record is built. A trainee asking for someone else gets a refusal, not a
  *  filtered version of the answer. */
 function recordV1(traineeName) {
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
 
   var name = String(traineeName || '').trim();
@@ -1244,7 +1309,7 @@ function recordV1(traineeName) {
 
 /** Refreshes the current role's payload without a page reload. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
                      ok: viewer.ok, why: viewer.why },
            data: viewer.ok ? payloadForV1_(viewer) : {},
@@ -5869,7 +5934,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '516f549b';
+var PORTAL_BUILD = '5117f241';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

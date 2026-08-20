@@ -8,12 +8,51 @@
 
 /** The signed-in account, or '' when Google will not say. */
 function whoIsAskingV1_() {
-  var e = '';
-  try { e = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (err) {}
+  var e = activeUserV1_();
+  // Only for something run from the Run dropdown, where the effective user IS
+  // the person running it. NEVER for a web request - see whoIsVisitingV1_.
   if (!e) {
     try { e = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (err) {}
   }
   return e;
+}
+
+function activeUserV1_() {
+  try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); }
+  catch (err) { return ''; }
+}
+
+/** Who is looking at the web page. The ONLY identity a web request may use.
+ *
+ *  There is no fallback here, and that is the whole point. A web app deployed
+ *  "Execute as: Me" runs every visitor's request under the owner's account,
+ *  so Session.getEffectiveUser() is the OWNER no matter who is looking. Google
+ *  also declines to name a visitor from outside the owner's Workspace domain,
+ *  and returns '' from getActiveUser() - which is most of this roster, since
+ *  most of them sign in with a personal address.
+ *
+ *  Put those two facts together with a fallback and every trainee who opened
+ *  the link would be resolved as the Training Division and handed everybody's
+ *  records. It would not look like a failure. It would look like the portal
+ *  working.
+ *
+ *  So: the active user or nobody. An empty answer grants nothing, and the
+ *  page says plainly what to change. */
+function whoIsVisitingV1_() {
+  return activeUserV1_();
+}
+
+/** Why Google might not be naming a visitor, in the words of the fix. */
+function notNamedV1_() {
+  return 'Google is not telling this portal which account you are signed in ' +
+    'with, so it cannot show you anything.\n\n' +
+    'Two things cause this:\n' +
+    '  You are signed into more than one Google account in this browser. ' +
+    'Open the link in a private window and sign in with the one address the ' +
+    'roster has for you.\n' +
+    '  Or the web app is deployed with "Who has access: Anyone", which lets ' +
+    'people in without naming them. It has to be "Anyone with a Google ' +
+    'Account" or narrower.';
 }
 
 function normNameV1_(s) {
@@ -29,7 +68,7 @@ function resolveViewerV1_(email) {
   var e = String(email || '').trim().toLowerCase();
   var out = { email: e, role: PORTAL.ROLE.NONE, name: '', traineeName: '',
               shift: '', ok: false, why: '' };
-  if (!e) { out.why = 'Google did not say which account is signed in.'; return out; }
+  if (!e) { out.why = notNamedV1_(); return out; }
 
   var cfg = portalPeopleV1_();
 

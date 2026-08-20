@@ -427,5 +427,99 @@ ok(!parses(scriptBody.replace(/<\?!=\s*boot\s*\?>/, escapeLikeAppsScript(realBoo
 ok(!parses('var BOOT = ' + escapeLikeAppsScript(realBoot) + ';'),
    'and the ESCAPED payload does not parse - this is the bug that showed as "Loading" forever');
 
+// ---------------------------------------------------------------- //
+section('Deployed as the owner, a visitor is still a visitor');
+// ---------------------------------------------------------------- //
+// This is the one that would have happened on the very first live page load.
+//
+// A web app deployed "Execute as: Me" runs every request under the owner's
+// account, so Session.getEffectiveUser() is the OWNER whoever is looking.
+// Google also declines to name a visitor from outside the owner's Workspace
+// domain and hands back '' from getActiveUser() - which is most of this
+// roster, because most of them sign in with a personal address.
+//
+// Identity used to fall back from the first to the second. Put those three
+// facts together and every trainee who opened the link was resolved as the
+// Training Division and handed everybody's records. It would not have looked
+// like a failure. It would have looked like the portal working.
+
+world();
+PROPS['PORTAL_DIVISION_EMAILS'] = 'chief@example.org';
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+
+// A template stub that keeps what was assigned to it, so these tests can read
+// exactly what doGet put in front of the browser.
+function capturingTemplate() {
+  const t = { boot: '' };
+  t.evaluate = () => ({ _t: t,
+    setTitle: function () { return this; }, addMetaTag: function () { return this; },
+    setXFrameOptionsMode: function () { return this; } });
+  return t;
+}
+global.HtmlService = { createTemplate: capturingTemplate,
+  createTemplateFromFile: capturingTemplate,
+  XFrameOptionsMode: { DEFAULT: 'DEFAULT', ALLOWALL: 'ALLOWALL' } };
+
+/** Exactly what the platform does for an unnamed visitor to an owner-run
+ *  web app: no active user, and an effective user who is the owner. */
+function deployedAsOwner(ownerEmail) {
+  ACTIVE = '';
+  EFFECTIVE = ownerEmail;
+  PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+}
+
+deployedAsOwner('chief@example.org');
+ok(whoIsVisitingV1_() === '', 'a visitor Google will not name is nobody');
+ok(whoIsAskingV1_() === 'chief@example.org',
+   'while the editor still knows who is running things from the dropdown');
+
+let vis = resolveViewerV1_(whoIsVisitingV1_());
+ok(vis.role === PORTAL.ROLE.NONE, 'and resolves to no role at all');
+ok(!vis.ok, 'so nothing is authorised');
+ok(vis.role !== PORTAL.ROLE.DIVISION,
+   'NOT the Training Division, which is what the owner fallback made them');
+
+// the page itself
+let page = doGet({});
+let bootJson = JSON.parse(page._t.boot);
+ok(bootJson.viewer.role === PORTAL.ROLE.NONE, 'doGet hands the browser no role');
+ok(JSON.stringify(bootJson.data) === '{}', 'and an empty payload');
+ok(!/Jamie Rivers|Alex Bramble|Priya Okafor/.test(page._t.boot),
+   'no trainee name reaches the browser');
+ok(/signed in with/.test(bootJson.viewer.why) || /which account/.test(bootJson.viewer.why),
+   'the page says why, in terms of what to change');
+
+// and every action a browser can reach
+PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
+[['ackCoachingV1', () => ackCoachingV1(PORTAL.HEADER_ROW + 1)],
+ ['submitReflectionV1', () => submitReflectionV1({ wentWell: 'x' })],
+ ['approveSignoffV1', () => approveSignoffV1(PORTAL.HEADER_ROW + 1, 'because of reasons')],
+ ['recordV1', () => recordV1('Jamie Rivers')]
+].forEach(c => {
+  deployedAsOwner('chief@example.org');
+  let refused = false;
+  try { c[1](); } catch (e) { refused = true; }
+  ok(refused, c[0] + ' refuses an unnamed visitor');
+});
+
+deployedAsOwner('chief@example.org');
+const refreshed = refreshV1();
+ok(refreshed.viewer.role === PORTAL.ROLE.NONE, 'refreshV1 gives them nothing either');
+ok(JSON.stringify(refreshed.data) === '{}', 'with no data attached');
+
+// the same owner, actually signed in, is still the Division. The fix must not
+// lock the person the portal is for out of it.
+as('chief@example.org');
+ok(resolveViewerV1_(whoIsVisitingV1_()).role === PORTAL.ROLE.DIVISION,
+   'and when the owner really is the one looking, they are the Division');
+
+// a named trainee visiting an owner-run deployment is unaffected: Google named
+// them, so the fallback was never reached and nothing changes for them.
+ACTIVE = 'jamie@example.org'; EFFECTIVE = 'chief@example.org';
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+vis = resolveViewerV1_(whoIsVisitingV1_());
+ok(vis.role === PORTAL.ROLE.TRAINEE && vis.name === 'Jamie Rivers',
+   'a visitor Google DOES name is themselves, not the owner');
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

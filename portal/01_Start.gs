@@ -262,11 +262,34 @@ function START() {
 
   if (!todo.length) {
     rule();
-    say('NOTHING IS BLOCKING IT.');
+    say('NOTHING IS BLOCKING IT. GO LIVE.');
     say();
-    say('Open the web app and check you see the screen your role should see.');
-    say('If you changed the code, deploy first:');
-    say('  Deploy > Manage deployments > pencil > Version: New version > Deploy');
+    say('1. Deploy > Manage deployments > pencil > Version: New version > Deploy');
+    say();
+    say('2. Check these two settings on that same screen. They decide whether');
+    say('   this is safe, not just whether it loads:');
+    say();
+    say('   Execute as      Me (' + (whoIsAskingV1_() || 'you') + ')');
+    say('     So a trainee does not need edit access to the tracker to read');
+    say('     their own record. The portal decides what they see; the');
+    say('     spreadsheet stays shut.');
+    say();
+    say('   Who has access  Anyone with a Google Account');
+    say('     NOT "Anyone". "Anyone" lets people in without Google naming');
+    say('     them, and a portal that cannot name you cannot show you');
+    say('     anything - everyone would get an empty screen.');
+    say();
+    say('3. Copy the /exec address and open it yourself first. You should see');
+    say('   the Training Division screen.');
+    say();
+    say('4. Send it to one training officer and one trainee before anyone');
+    say('   else. Ask each of them what they see. The officer should see');
+    say('   their own trainees and nobody else\'s; the trainee should see');
+    say('   themselves and nothing else.');
+    say();
+    say('If somebody gets "Google is not telling this portal which account",');
+    say('they are signed into more than one Google account in that browser.');
+    say('A private window and the one address on the roster fixes it.');
     return noteV1_(L.join('\n'));
   }
 
@@ -316,6 +339,9 @@ function WHAT_IS_WAITING() { return unprocessedResponses(); }
 
 /** Somebody changed their name. Set PORTAL_RENAME first. */
 function FIX_A_NAME_EVERYWHERE() { return applyRename(); }
+
+/** The deployment settings, and how to check it actually worked. */
+function GO_LIVE() { return START(); }
 
 /** Somebody left the service. Set PORTAL_RETIRE first. Nothing is deleted. */
 function SOMEBODY_LEFT_THE_SERVICE() { return retireFto(); }

@@ -9,7 +9,7 @@
 function doGet(e) {
   var viewer, payload, err = '';
   try {
-    viewer = resolveViewerV1_(whoIsAskingV1_());
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
     payload = viewer.ok ? payloadForV1_(viewer) : {};
   } catch (ex) {
     viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
@@ -89,7 +89,7 @@ function requireLocalRowV1_(t, row, what) {
 /** Trainee acknowledges a coaching note. */
 function ackCoachingV1(row) {
   requireWritableV1_('acknowledge a coaching note');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only the trainee may acknowledge their own coaching.');
   var t = readTabV1_(PORTAL.TAB.COACHING);
   if (!t.ok) throw new Error('No coaching log.');
@@ -107,7 +107,7 @@ function ackCoachingV1(row) {
 /** Trainee files a reflection. */
 function submitReflectionV1(answers) {
   requireWritableV1_('file a reflection');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only a trainee may file a reflection.');
   var a = answers || {};
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.REFLECT);
@@ -124,7 +124,7 @@ function submitReflectionV1(answers) {
  *  default wording, because a pre-filled reason is not a reason. */
 function approveSignoffV1(row, reason) {
   requireWritableV1_('approve a sign-off');
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
   var why = String(reason || '').trim();
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
@@ -151,7 +151,7 @@ function approveSignoffV1(row, reason) {
  *  record is built. A trainee asking for someone else gets a refusal, not a
  *  filtered version of the answer. */
 function recordV1(traineeName) {
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
 
   var name = String(traineeName || '').trim();
@@ -170,7 +170,7 @@ function recordV1(traineeName) {
 
 /** Refreshes the current role's payload without a page reload. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsAskingV1_());
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
   return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
                      ok: viewer.ok, why: viewer.why },
            data: viewer.ok ? payloadForV1_(viewer) : {},
