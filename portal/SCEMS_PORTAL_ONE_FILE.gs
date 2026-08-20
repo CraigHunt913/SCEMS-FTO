@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 4658d2c3
+ * Build fd93ce8c
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -237,10 +237,39 @@ function START() {
         why: ready + ' address(es) are ready to go in. It fills only empty cells, ' +
              'matches by name, and undoRosterEmails puts it back.' });
     } else {
-      todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
-        run: 'suggestFtoEmails',
-        why: 'Their EMAIL column is blank, so the portal cannot recognise them. ' +
-             'This shows the accounts they have been submitting forms from.' });
+      // Sending someone to a report that will say "nothing to suggest" is a
+      // dead end, and dead ends are what made this exhausting. If the data
+      // holds nothing for the people left, say so and name them.
+      var haveHint = false;
+      try {
+        var sub = {};
+        formResponseTabsV1_().forEach(function (ft) {
+          var fi = responseColV1_(ft, [/^(fto|your name)/i]);
+          if (fi < 0) return;
+          ft.rows.forEach(function (r) { sub[normNameV1_(r[fi])] = true; });
+        });
+        var dir = directoryEntriesV1_().filter(function (d) { return !!d.name; });
+        haveHint = noAddress.some(function (n) {
+          if (sub[normNameV1_(n)]) return true;
+          return dir.some(function (d) { return directoryNameMatchV1_(n, d.name); });
+        });
+      } catch (e) { haveHint = true; }
+
+      if (haveHint) {
+        todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
+          run: 'suggestFtoEmails',
+          why: 'Their EMAIL column is blank. This shows the accounts they have ' +
+               'been submitting forms from.' });
+      } else {
+        todo.push({ what: noAddress.length + ' cannot sign in: ' +
+            noAddress.slice(0, 5).join(', ') +
+            (noAddress.length > 5 ? ' and ' + (noAddress.length - 5) + ' more' : ''),
+          run: '(nothing - this one needs a person)',
+          why: 'Nothing in the tracker, the form responses or the directory offers ' +
+               'an address for them. Either they have left, or they are on the roster ' +
+               'under a different name. Ask, then put it in the EMAIL column by hand ' +
+               'or use applyRename.' });
+      }
     }
   } else if (onRoster) {
     good.push('all ' + onRoster + ' training officers can sign in');
@@ -1819,12 +1848,15 @@ function showSettings() {
  *  is carried through as-is, so a column added to a form tomorrow appears in
  *  the record without this file changing. */
 var PORTAL_SOURCES = [
-  { key: 'EVAL', tab: PORTAL.TAB.EVAL, title: 'Shift evaluation',
+  // One evaluation per shift is the model, so two for one shift is worth
+  // raising even when they differ - the second is usually a correction and
+  // somebody has to say which stands.
+  { key: 'EVAL', tab: PORTAL.TAB.EVAL, title: 'Shift evaluation', oncePerDay: true,
     who:  { re: /^trainee/i,                    at: 2 },
     when: { re: /shift date|^timestamp|^date/i, at: 0 },
     by:   { re: /^(fto|evaluator|training officer)/i, at: 1 } },
 
-  { key: 'REFLECT', tab: PORTAL.TAB.REFLECT, title: 'Self-reflection',
+  { key: 'REFLECT', tab: PORTAL.TAB.REFLECT, title: 'Self-reflection', oncePerDay: true,
     who:  { re: /^trainee|^your name|^name/i,   at: 1 },
     when: { re: /^timestamp|^date/i,            at: 0 },
     by:   null },
@@ -1935,27 +1967,55 @@ function submissionsFromV1_(source, norm) {
   return out;
 }
 
+/** What makes two rows the SAME submission rather than two of them.
+ *
+ *  This used to be "same person, same day", and it was wrong enough to matter:
+ *  it called 119 things duplicates on a real tracker. An FTO logging three
+ *  reps of a skill across one shift produces three rows on one day, and that
+ *  is the system working. A number that large is not a warning, it is noise,
+ *  and noise is how a real duplicate gets ignored.
+ *
+ *  So: if the rows carry the id of the form response they came from, they are
+ *  the same submission only when that id matches. Two different submissions
+ *  are two different events however alike they look.
+ *
+ *  Only where there is no id to go on does it fall back to content: same
+ *  author, same day, every field identical. */
+function dupKeyV1_(s, oncePerDay) {
+  // Some things happen once. An evaluation covers a shift, so two of them for
+  // one shift is a correction and worth raising whatever they say. Skill
+  // evidence is the opposite: three reps across one shift is three events.
+  if (oncePerDay) {
+    return 'DAY:' + (s.group || '') + '|' + dayKeyV1_(s.when);
+  }
+  var id = '';
+  (s.fields || []).forEach(function (f) {
+    if (!id && /^(source\s+)?response\s+id$/i.test(String(f.label))) {
+      id = String(f.value == null ? '' : f.value).trim();
+    }
+  });
+  if (id) return 'ID:' + id;
+
+  var parts = (s.fields || []).map(function (f) {
+    return String(f.label).toLowerCase() + '=' +
+           String(f.value == null ? '' : f.value).trim().toLowerCase();
+  });
+  parts.sort();
+  return 'C:' + String(s.by || '').toLowerCase() + '|' + dayKeyV1_(s.when) + '|' + parts.join('|');
+}
+
 /** Marks the newest of each group as current, everything else as earlier, and
- *  same-day pairs as a possible duplicate. Nothing is removed. */
-function markCurrentV1_(list, grouped) {
-  var seen = {}, byDay = {};
+ *  true duplicates as duplicates. Nothing is removed. */
+function markCurrentV1_(list, grouped, oncePerDay) {
+  var seen = {}, byKey = {};
   list.forEach(function (s) {
     var g = grouped ? (s.group || '(unnamed)') : '*';
     s.current = !seen[g];
     seen[g] = true;
-
-    var dk = g + '|' + dayKeyV1_(s.when);
-    if (dayKeyV1_(s.when)) {
-      byDay[dk] = (byDay[dk] || 0) + 1;
-      s.sameDayIndex = byDay[dk];
-    } else {
-      s.sameDayIndex = 1;
-    }
+    s.dupKey = dupKeyV1_(s, oncePerDay);
+    byKey[s.dupKey] = (byKey[s.dupKey] || 0) + 1;
   });
-  list.forEach(function (s) {
-    var dk = (grouped ? (s.group || '(unnamed)') : '*') + '|' + dayKeyV1_(s.when);
-    s.possibleDuplicate = dayKeyV1_(s.when) ? byDay[dk] > 1 : false;
-  });
+  list.forEach(function (s) { s.possibleDuplicate = byKey[s.dupKey] > 1; });
   return list;
 }
 
@@ -1972,7 +2032,7 @@ function recordForV1_(name, only) {
 
   PORTAL_SOURCES.forEach(function (src) {
     if (only && only.indexOf(src.key) < 0) return;
-    var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy);
+    var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy, !!src.oncePerDay);
     if (!list.length) return;
     total += list.length;
 
@@ -2071,11 +2131,11 @@ function duplicateSubmissionsV1_() {
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
-      var list = markCurrentV1_(submissionsFromV1_(src, t.norm), !!src.groupBy);
+      var list = markCurrentV1_(submissionsFromV1_(src, t.norm), !!src.groupBy, !!src.oncePerDay);
       var byDay = {};
       list.forEach(function (s) {
         if (!s.possibleDuplicate) return;
-        var k = (s.group || '') + '|' + dayKeyV1_(s.when);
+        var k = s.dupKey;
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
@@ -2083,6 +2143,11 @@ function duplicateSubmissionsV1_() {
         out.push({
           trainee: t.name, source: src.title, tab: src.tab,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
+          why: String(k).indexOf('ID:') === 0
+            ? 'the SAME form response, written twice'
+            : (String(k).indexOf('DAY:') === 0
+                ? 'two of these for one day, and there should be one'
+                : 'identical in every field, same author, same day'),
           count: pair.length, rows: pair.map(function (s) { return s.row; })
         });
       });
@@ -2102,10 +2167,15 @@ function duplicateSubmissionsReport() {
   var lines = ['POSSIBLE DUPLICATE SUBMISSIONS  (read only, nothing was changed)', ''];
   dupes.forEach(function (d) {
     lines.push(d.trainee + '  —  ' + d.source + (d.group ? ' (' + d.group + ')' : ''));
-    lines.push('  ' + d.when + '   ' + d.count + ' submissions');
+    lines.push('  ' + d.when + '   ' + d.count + ' rows   ' +
+      d.why);
     lines.push('  ' + d.tab + ' rows ' + d.rows.join(', '));
     lines.push('');
   });
+  lines.push('An evaluation covers a shift, so two for one shift is raised whatever');
+  lines.push('they say. Skill evidence is the opposite: three reps across one shift');
+  lines.push('are three events, and only a response written twice is a duplicate.');
+  lines.push('');
   lines.push('Both halves of every pair are still on file and both are shown in');
   lines.push('the portal. Which one stands is a decision about a personnel');
   lines.push('record, so nothing here makes it for you.');
@@ -5280,7 +5350,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '4658d2c3';
+var PORTAL_BUILD = 'fd93ce8c';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

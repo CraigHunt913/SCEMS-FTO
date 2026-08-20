@@ -23,7 +23,7 @@ node test/portal-backfill.test.js        # importing responses, the production g
 node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All eighteen exit non-zero on failure. 1,284 assertions total.
+All eighteen exit non-zero on failure. 1,287 assertions total.
 
 The last two cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that

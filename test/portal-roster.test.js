@@ -425,12 +425,28 @@ ok(out.indexOf('DO THIS NEXT') < out.indexOf('AFTER THAT') || !/AFTER THAT/.test
    'the one thing comes before the rest');
 ok(snap() === before2, 'and START writes nothing');
 
-// with no list pasted yet it sends you to find the addresses first
+// With no list pasted yet, whether it is worth sending anybody to
+// suggestFtoEmails depends entirely on whether that report has anything to
+// say. Sending someone to a screen that answers "nothing to suggest" is a
+// dead end, and dead ends are the thing that made this exhausting.
+//
+// Something to go on: a directory line naming one of them.
 world({ list: '' });
+PROPS[PORTAL_DIRECTORY_PROPERTY] = 'Harlow, Kent, khharlow@example.org';
 as('chief@example.org');
 out = START();
 ok(/Run  suggestFtoEmails/.test(out),
-   'with nothing to apply it sends you to find the addresses');
+   'with a directory line naming somebody, it sends you to the report');
+
+// Nothing to go on: no list, no directory, no submissions. Naming the people
+// is the useful thing left, and it says plainly that no function fixes this.
+world({ list: '' });
+as('chief@example.org');
+out = START();
+ok(!/Run  suggestFtoEmails/.test(out),
+   'with nothing anywhere it does not send you to a report that has nothing');
+ok(/needs a person/.test(out), 'it says so instead of naming a function');
+ok(/Kent Harlow/.test(out), 'and names who is stuck, so the asking can start');
 
 // once the roster is done it stops mentioning it
 world({ roster: ROSTER.map(function (r) {

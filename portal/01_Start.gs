@@ -105,10 +105,39 @@ function START() {
         why: ready + ' address(es) are ready to go in. It fills only empty cells, ' +
              'matches by name, and undoRosterEmails puts it back.' });
     } else {
-      todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
-        run: 'suggestFtoEmails',
-        why: 'Their EMAIL column is blank, so the portal cannot recognise them. ' +
-             'This shows the accounts they have been submitting forms from.' });
+      // Sending someone to a report that will say "nothing to suggest" is a
+      // dead end, and dead ends are what made this exhausting. If the data
+      // holds nothing for the people left, say so and name them.
+      var haveHint = false;
+      try {
+        var sub = {};
+        formResponseTabsV1_().forEach(function (ft) {
+          var fi = responseColV1_(ft, [/^(fto|your name)/i]);
+          if (fi < 0) return;
+          ft.rows.forEach(function (r) { sub[normNameV1_(r[fi])] = true; });
+        });
+        var dir = directoryEntriesV1_().filter(function (d) { return !!d.name; });
+        haveHint = noAddress.some(function (n) {
+          if (sub[normNameV1_(n)]) return true;
+          return dir.some(function (d) { return directoryNameMatchV1_(n, d.name); });
+        });
+      } catch (e) { haveHint = true; }
+
+      if (haveHint) {
+        todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
+          run: 'suggestFtoEmails',
+          why: 'Their EMAIL column is blank. This shows the accounts they have ' +
+               'been submitting forms from.' });
+      } else {
+        todo.push({ what: noAddress.length + ' cannot sign in: ' +
+            noAddress.slice(0, 5).join(', ') +
+            (noAddress.length > 5 ? ' and ' + (noAddress.length - 5) + ' more' : ''),
+          run: '(nothing - this one needs a person)',
+          why: 'Nothing in the tracker, the form responses or the directory offers ' +
+               'an address for them. Either they have left, or they are on the roster ' +
+               'under a different name. Ask, then put it in the EMAIL column by hand ' +
+               'or use applyRename.' });
+      }
     }
   } else if (onRoster) {
     good.push('all ' + onRoster + ' training officers can sign in');

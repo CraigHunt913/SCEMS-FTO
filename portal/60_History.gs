@@ -26,12 +26,15 @@
  *  is carried through as-is, so a column added to a form tomorrow appears in
  *  the record without this file changing. */
 var PORTAL_SOURCES = [
-  { key: 'EVAL', tab: PORTAL.TAB.EVAL, title: 'Shift evaluation',
+  // One evaluation per shift is the model, so two for one shift is worth
+  // raising even when they differ - the second is usually a correction and
+  // somebody has to say which stands.
+  { key: 'EVAL', tab: PORTAL.TAB.EVAL, title: 'Shift evaluation', oncePerDay: true,
     who:  { re: /^trainee/i,                    at: 2 },
     when: { re: /shift date|^timestamp|^date/i, at: 0 },
     by:   { re: /^(fto|evaluator|training officer)/i, at: 1 } },
 
-  { key: 'REFLECT', tab: PORTAL.TAB.REFLECT, title: 'Self-reflection',
+  { key: 'REFLECT', tab: PORTAL.TAB.REFLECT, title: 'Self-reflection', oncePerDay: true,
     who:  { re: /^trainee|^your name|^name/i,   at: 1 },
     when: { re: /^timestamp|^date/i,            at: 0 },
     by:   null },
@@ -142,27 +145,55 @@ function submissionsFromV1_(source, norm) {
   return out;
 }
 
+/** What makes two rows the SAME submission rather than two of them.
+ *
+ *  This used to be "same person, same day", and it was wrong enough to matter:
+ *  it called 119 things duplicates on a real tracker. An FTO logging three
+ *  reps of a skill across one shift produces three rows on one day, and that
+ *  is the system working. A number that large is not a warning, it is noise,
+ *  and noise is how a real duplicate gets ignored.
+ *
+ *  So: if the rows carry the id of the form response they came from, they are
+ *  the same submission only when that id matches. Two different submissions
+ *  are two different events however alike they look.
+ *
+ *  Only where there is no id to go on does it fall back to content: same
+ *  author, same day, every field identical. */
+function dupKeyV1_(s, oncePerDay) {
+  // Some things happen once. An evaluation covers a shift, so two of them for
+  // one shift is a correction and worth raising whatever they say. Skill
+  // evidence is the opposite: three reps across one shift is three events.
+  if (oncePerDay) {
+    return 'DAY:' + (s.group || '') + '|' + dayKeyV1_(s.when);
+  }
+  var id = '';
+  (s.fields || []).forEach(function (f) {
+    if (!id && /^(source\s+)?response\s+id$/i.test(String(f.label))) {
+      id = String(f.value == null ? '' : f.value).trim();
+    }
+  });
+  if (id) return 'ID:' + id;
+
+  var parts = (s.fields || []).map(function (f) {
+    return String(f.label).toLowerCase() + '=' +
+           String(f.value == null ? '' : f.value).trim().toLowerCase();
+  });
+  parts.sort();
+  return 'C:' + String(s.by || '').toLowerCase() + '|' + dayKeyV1_(s.when) + '|' + parts.join('|');
+}
+
 /** Marks the newest of each group as current, everything else as earlier, and
- *  same-day pairs as a possible duplicate. Nothing is removed. */
-function markCurrentV1_(list, grouped) {
-  var seen = {}, byDay = {};
+ *  true duplicates as duplicates. Nothing is removed. */
+function markCurrentV1_(list, grouped, oncePerDay) {
+  var seen = {}, byKey = {};
   list.forEach(function (s) {
     var g = grouped ? (s.group || '(unnamed)') : '*';
     s.current = !seen[g];
     seen[g] = true;
-
-    var dk = g + '|' + dayKeyV1_(s.when);
-    if (dayKeyV1_(s.when)) {
-      byDay[dk] = (byDay[dk] || 0) + 1;
-      s.sameDayIndex = byDay[dk];
-    } else {
-      s.sameDayIndex = 1;
-    }
+    s.dupKey = dupKeyV1_(s, oncePerDay);
+    byKey[s.dupKey] = (byKey[s.dupKey] || 0) + 1;
   });
-  list.forEach(function (s) {
-    var dk = (grouped ? (s.group || '(unnamed)') : '*') + '|' + dayKeyV1_(s.when);
-    s.possibleDuplicate = dayKeyV1_(s.when) ? byDay[dk] > 1 : false;
-  });
+  list.forEach(function (s) { s.possibleDuplicate = byKey[s.dupKey] > 1; });
   return list;
 }
 
@@ -179,7 +210,7 @@ function recordForV1_(name, only) {
 
   PORTAL_SOURCES.forEach(function (src) {
     if (only && only.indexOf(src.key) < 0) return;
-    var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy);
+    var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy, !!src.oncePerDay);
     if (!list.length) return;
     total += list.length;
 
@@ -278,11 +309,11 @@ function duplicateSubmissionsV1_() {
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
-      var list = markCurrentV1_(submissionsFromV1_(src, t.norm), !!src.groupBy);
+      var list = markCurrentV1_(submissionsFromV1_(src, t.norm), !!src.groupBy, !!src.oncePerDay);
       var byDay = {};
       list.forEach(function (s) {
         if (!s.possibleDuplicate) return;
-        var k = (s.group || '') + '|' + dayKeyV1_(s.when);
+        var k = s.dupKey;
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
@@ -290,6 +321,11 @@ function duplicateSubmissionsV1_() {
         out.push({
           trainee: t.name, source: src.title, tab: src.tab,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
+          why: String(k).indexOf('ID:') === 0
+            ? 'the SAME form response, written twice'
+            : (String(k).indexOf('DAY:') === 0
+                ? 'two of these for one day, and there should be one'
+                : 'identical in every field, same author, same day'),
           count: pair.length, rows: pair.map(function (s) { return s.row; })
         });
       });
@@ -309,10 +345,15 @@ function duplicateSubmissionsReport() {
   var lines = ['POSSIBLE DUPLICATE SUBMISSIONS  (read only, nothing was changed)', ''];
   dupes.forEach(function (d) {
     lines.push(d.trainee + '  —  ' + d.source + (d.group ? ' (' + d.group + ')' : ''));
-    lines.push('  ' + d.when + '   ' + d.count + ' submissions');
+    lines.push('  ' + d.when + '   ' + d.count + ' rows   ' +
+      d.why);
     lines.push('  ' + d.tab + ' rows ' + d.rows.join(', '));
     lines.push('');
   });
+  lines.push('An evaluation covers a shift, so two for one shift is raised whatever');
+  lines.push('they say. Skill evidence is the opposite: three reps across one shift');
+  lines.push('are three events, and only a response written twice is a duplicate.');
+  lines.push('');
   lines.push('Both halves of every pair are still on file and both are shown in');
   lines.push('the portal. Which one stands is a decision about a personnel');
   lines.push('record, so nothing here makes it for you.');
