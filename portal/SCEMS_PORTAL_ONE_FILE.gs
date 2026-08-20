@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 6218c96d
+ * Build d041fcf4
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -1920,6 +1920,20 @@ function goLive() {
       '\n\nRun START; it names the one thing to do about it. Nothing was changed.');
   }
 
+  // Somewhere to record what people do. This is not decoration: allowing a
+  // decision and keeping no record of who made it is worse than not allowing
+  // it, and auditV1_ returns quietly when the tab is absent - so without this
+  // the mode would promise a log it was not writing.
+  var auditState = ensureAuditLogV1_();
+  if (auditState === 'failed') {
+    throw new Error('Not going live. There is nowhere to record what people ' +
+      'do: the tab ' + PORTAL.TAB.AUDIT + ' is not in this spreadsheet and ' +
+      'could not be created. Allowing a sign-off and keeping no record of who ' +
+      'approved it is worse than not allowing it. Nothing was changed.');
+  }
+
+  var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
+
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
   PEOPLE_CACHE_V1 = null;
   forgetTabsV1_();
@@ -1937,11 +1951,20 @@ function goLive() {
     canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
     '',
     'WHAT JUST BECAME POSSIBLE',
-    '  A trainee can acknowledge their own coaching note.',
     '  A trainee can file their own reflection.',
     '  The Training Division can approve a sign-off, with a typed reason.',
-    '  Every one of those is written to ' + PORTAL.TAB.AUDIT + ' under the name',
-    '  of whoever did it. PRODUCTION mode was throwing those entries away.',
+    (canCoach
+      ? '  A trainee can acknowledge their own coaching note.'
+      : '  Acknowledging a coaching note stays unavailable: there is no tab\n' +
+        '  called ' + PORTAL.TAB.COACHING + ' for those notes to live in. Nothing\n' +
+        '  else depends on it.'),
+    '',
+    (auditState === 'created'
+      ? 'A tab called ' + PORTAL.TAB.AUDIT + ' has been added to record who does\n' +
+        'what. It was not there, and without it those actions would have been\n' +
+        'allowed and never written down. No existing tab was touched.'
+      : 'Each of those is written to ' + PORTAL.TAB.AUDIT + ' under the name of\n' +
+        'whoever did it. PRODUCTION mode was discarding those entries.'),
     '',
     'WHAT DID NOT',
     '  Importing, merging and switching role. Those only ever run against the',
@@ -1955,6 +1978,28 @@ function goLive() {
     '',
     'To step back at any time: goReadOnly()'
   ].join('\n'));
+}
+
+/** Makes sure there is somewhere to record what people do.
+ *
+ *  Additive and nothing else: it adds one tab that belongs to the portal, and
+ *  it never touches a tab that is already there. Returns 'present', 'created'
+ *  or 'failed'. */
+function ensureAuditLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.AUDIT)) return 'present';
+    var sh = book.insertSheet(PORTAL.TAB.AUDIT);
+    sh.getRange(1, 1).setValue(
+      'Who did what in the portal. Written by the portal; do not edit or sort.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 5)
+      .setValues([['WHEN', 'WHAT', 'WHO', 'DETAIL', 'VERSION']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return 'created';
+  } catch (e) { return 'failed'; }
 }
 
 /** Back to look-but-do-not-touch, on the same spreadsheet. */
@@ -6132,7 +6177,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '6218c96d';
+var PORTAL_BUILD = 'd041fcf4';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

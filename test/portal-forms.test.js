@@ -543,6 +543,7 @@ ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'still read only');
 // with everything present it goes
 tab(PORTAL.TAB.EVIDENCE, ['TRAINEE','SKILL','EVENT DATE','FTO','OUTCOME'], []);
 tab(PORTAL.TAB.SIGNOFF, ['TRAINEE','SKILL','DECIDED BY','DECISION DATE','RATIONALE'], []);
+delete SHEETS[PORTAL.TAB.AUDIT];          // the live tracker has no such tab
 TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
 let liveMsg = goLive();
 ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_LIVE, 'from PRODUCTION it goes live');
@@ -552,6 +553,32 @@ ok(/goReadOnly/.test(liveMsg), 'and how to step back');
 ok(/acknowledge|reflection|sign-off/i.test(liveMsg), 'naming what just became possible');
 
 ok(/Already live/.test(goLive()), 'running it again is a no-op that says so');
+
+// Allowing a decision and keeping no record of who made it is worse than not
+// allowing it, and auditV1_ returns quietly when the tab is absent - so going
+// live without one would have promised a log it was not writing.
+ok(!!SHEETS[PORTAL.TAB.AUDIT], 'going live left somewhere to record what people do');
+ok(/PORTAL AUDIT/.test(liveMsg), 'and said so rather than adding a tab quietly');
+ok(/No existing tab was touched/.test(liveMsg), 'making clear it added and changed nothing');
+const auditHdr = readTabV1_(PORTAL.TAB.AUDIT);
+ok(auditHdr.ok && auditHdr.col['WHO'] !== undefined,
+   'with a WHO column, which is the entire point of it');
+ok(auditHdr.rows.length >= 1, 'and the switch itself is the first thing in it');
+
+// an existing audit tab is used, never replaced
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+as('chief@example.org');
+pointAtProductionReadOnly();
+tab(PORTAL.TAB.EVIDENCE, ['TRAINEE','SKILL','EVENT DATE'], []);
+tab(PORTAL.TAB.SIGNOFF, ['TRAINEE','SKILL','DECIDED BY'], []);
+tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'],
+    [[new Date(), 'OLD ENTRY', 'someone@example.org', 'from before', 'x']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+goLive();
+const after = readTabV1_(PORTAL.TAB.AUDIT);
+ok(after.rows.some(r => String(r[after.col['WHAT']]) === 'OLD ENTRY'),
+   'an audit log that already exists keeps everything in it');
 
 goReadOnly();
 ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'goReadOnly puts it back');
