@@ -563,5 +563,78 @@ ok(/No other spreadsheets are listed/.test(none),
    'no sources listed reads as no sources listed, not as an authorisation problem');
 ok(/PORTAL_OTHER_SPREADSHEET_IDS/.test(none), 'and names the property to set');
 
+// ---------------------------------------------------------------- //
+section('A stale copy must not contradict this book about a person');
+// ---------------------------------------------------------------- //
+// Reading a second spreadsheet exists so a row this book has never seen can
+// still be found. It must never let an OLD copy overrule this one about
+// somebody who is in both - because then every screen shows whichever copy
+// it reached first, and a closed trainee comes back to life.
+//
+// That happened. A four-month-old copy of the tracker was being read
+// alongside it. In that copy Amanda Carr was still open, Elizabeth McInville
+// still named an officer who has since resigned, and Harley had her old
+// name. All three came back from START as live problems needing a person,
+// and not one of them was real.
+
+world();
+tabIn('PROD-BOOK', PORTAL.TAB.MASTER, ['TRAINEE','LEVEL','ASSIGNED FTO','SET STATUS','TRAINEE EMAIL'], [
+  ['Amanda Carr','Advanced EMT','Alex White','Closed / Released','ac@example.org'],
+  ['Elizabeth McInville','EMT','Harley Simms','Active','em@example.org']
+]);
+// the old copy: same people, out of date, plus one this book never had
+tabIn('OLD-BOOK', PORTAL.TAB.MASTER, ['TRAINEE','LEVEL','ASSIGNED FTO','SET STATUS','TRAINEE EMAIL'], [
+  ['Amanda Carr','Advanced EMT','Alex White','Cleared to Independent Practice','ac@example.org'],
+  ['Elizabeth McInville','EMT','Harley Pack','Formal Remediation','em@example.org'],
+  ['Laken Atkinson','EMT','Craig Hunt','Active','la@example.org']
+]);
+OPENABLE['OLD-BOOK'] = 'SCEMS_Field_Training_Tracker_Master';
+PROPS[PORTAL_OTHER_IDS_PROPERTY] = 'OLD-BOOK';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+
+const all = traineesV1_();
+const carr = all.filter(t => t.name === 'Amanda Carr');
+ok(carr.length === 1, 'a person in both books appears once, not twice');
+ok(carr[0].closed === true,
+   'and closed, because THIS book says closed - the old copy does not get a vote');
+ok(carr[0].from === '', 'the surviving row is the one from this book');
+
+const liz = all.filter(t => t.name === 'Elizabeth McInville');
+ok(liz.length === 1, 'so does the one whose officer was renamed');
+ok(liz[0].fto === 'Harley Simms',
+   'naming the officer THIS book names, not the name the old copy still has');
+ok(liz[0].status === 'Active', 'with this book\'s status');
+
+const laken = all.filter(t => t.name === 'Laken Atkinson');
+ok(laken.length === 1,
+   'somebody only the other book has is still found - that is what it is for');
+ok(laken[0].from === 'SCEMS_Field_Training_Tracker_Master',
+   'and is marked as coming from there');
+ok(laken[0].row === -1, 'with no row here, so nothing can write to them by accident');
+
+// and none of it reaches START as a problem
+as('chief@example.org');
+const stOut = START();
+ok(!/Amanda Carr/.test(stOut),
+   'START stops reporting a closed trainee as stranded on somebody who left');
+ok(!/Harley Pack/.test(stOut), 'and stops resurrecting the old name');
+ok(/SCEMS_Field_Training_Tracker_Master/.test(stOut),
+   'while naming the other book it is reading, so this is never invisible');
+ok(/Rows here always win/.test(stOut), 'and saying which one wins');
+ok(new RegExp(PORTAL_OTHER_IDS_PROPERTY).test(stOut),
+   'and how to stop reading it if it is an old copy');
+
+// the roster obeys the same rule
+tabIn('PROD-BOOK', PORTAL.TAB.ROSTER, ['FTO NAME','EMAIL','ACTIVE'],
+    [['Harley Simms','hs@example.org','Y']]);
+tabIn('OLD-BOOK', PORTAL.TAB.ROSTER, ['FTO NAME','EMAIL','ACTIVE'],
+    [['Harley Simms','hs@example.org','Y'], ['Old Timer','ot@example.org','Y']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+const ros = rosterPeopleV1_(true);
+ok(ros.filter(p => p.name === 'Harley Simms').length === 1,
+   'an officer in both books appears once');
+ok(ros.filter(p => p.name === 'Old Timer').length === 1,
+   'and one only the other book has is still there');
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

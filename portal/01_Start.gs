@@ -62,7 +62,15 @@ function START() {
   try { others = otherBookIdsV1_(); } catch (e) {}
   if (others.length) {
     say('ALSO      ' + others.length + ' other spreadsheet' + (others.length === 1 ? '' : 's') +
-        ', read as well');
+        ', read as well:');
+    others.forEach(function (o) {
+      var on = o;
+      try { on = SpreadsheetApp.openById(o).getName(); } catch (e) {}
+      say('          ' + on);
+    });
+    say('          Rows here always win. Another book can only ADD somebody');
+    say('          this one has never heard of. If it is an old copy, clear');
+    say('          ' + PORTAL_OTHER_IDS_PROPERTY + ' - it has nothing to give.');
   }
   say();
 

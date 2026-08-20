@@ -28,6 +28,36 @@ function levelKeyV1_(level) {
 /** Every trainee on the master, normalized. Closed people are marked, never
  *  silently dropped, so a caller must decide rather than inherit a filter. */
 function traineesV1_() {
+  return onePersonOneRecordV1_(traineeRowsV1_());
+}
+
+/** One person, one record, and THIS spreadsheet is the record.
+ *
+ *  Another spreadsheet may hold a row the target does not have - that is the
+ *  whole reason for reading it. What it must never do is contradict the
+ *  target about somebody who is in both, because then every screen shows
+ *  whichever copy it happened to reach first.
+ *
+ *  That is not hypothetical. A four-month-old copy of this tracker was being
+ *  read alongside it, and in that copy a trainee who has been closed and
+ *  archived was still open, one who had been reassigned still named an
+ *  officer who has since resigned, and the officer renamed on the roster
+ *  still had her old name. Every one of those came back as a live problem
+ *  needing a person, and none of them was real.
+ *
+ *  So: rows from this book win, by name, every time. A row only survives
+ *  from elsewhere if nobody of that name is here at all. */
+function onePersonOneRecordV1_(list) {
+  var here = {}, out = [];
+  list.forEach(function (t) { if (!t.from) here[t.norm] = true; });
+  list.forEach(function (t) {
+    if (t.from && here[t.norm]) return;      // this book already has them
+    out.push(t);
+  });
+  return out;
+}
+
+function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {

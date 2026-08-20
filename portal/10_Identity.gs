@@ -149,6 +149,7 @@ function rosterPeopleV1_(includeOtherBooks) {
                             : readTabV1_(PORTAL.TAB.ROSTER);
   var out = [];
   if (!t.ok) return out;
+  var dedup = !!includeOtherBooks;
   t.rows.forEach(function (r, i) {
     var nm = String(pickV1_(t, r, ROSTER_NAME_HEADERS_V1)).trim();
     if (!nm) return;
@@ -163,12 +164,25 @@ function rosterPeopleV1_(includeOtherBooks) {
       from: rowSourceV1_(t, i)
     });
   });
-  return out;
+  return dedup ? rosterOneEachV1_(out) : out;
 }
 
 /** Just the ones who still work here. */
 function rosterActivePeopleV1_(includeOtherBooks) {
   return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return p.active; });
+}
+
+/** Same rule as the trainee master: one person, one row, and THIS book wins.
+ *  A stale copy still calling somebody by a name they no longer use must not
+ *  put that name back into circulation. */
+function rosterOneEachV1_(list) {
+  var here = {}, out = [];
+  list.forEach(function (p) { if (!p.from) here[p.norm] = true; });
+  list.forEach(function (p) {
+    if (p.from && here[p.norm]) return;
+    out.push(p);
+  });
+  return out;
 }
 
 /** The ones who have been retired off it. */

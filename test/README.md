@@ -27,7 +27,7 @@ node test/portal-retire.test.js          # somebody left, and what that breaks
 node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All nineteen exit non-zero on failure. 1,571 assertions total.
+All nineteen exit non-zero on failure. 1,590 assertions total.
 
 The portal suites cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that

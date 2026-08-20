@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build efdcf323
+ * Build a9235bee
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -246,7 +246,15 @@ function START() {
   try { others = otherBookIdsV1_(); } catch (e) {}
   if (others.length) {
     say('ALSO      ' + others.length + ' other spreadsheet' + (others.length === 1 ? '' : 's') +
-        ', read as well');
+        ', read as well:');
+    others.forEach(function (o) {
+      var on = o;
+      try { on = SpreadsheetApp.openById(o).getName(); } catch (e) {}
+      say('          ' + on);
+    });
+    say('          Rows here always win. Another book can only ADD somebody');
+    say('          this one has never heard of. If it is an old copy, clear');
+    say('          ' + PORTAL_OTHER_IDS_PROPERTY + ' - it has nothing to give.');
   }
   say();
 
@@ -737,6 +745,7 @@ function rosterPeopleV1_(includeOtherBooks) {
                             : readTabV1_(PORTAL.TAB.ROSTER);
   var out = [];
   if (!t.ok) return out;
+  var dedup = !!includeOtherBooks;
   t.rows.forEach(function (r, i) {
     var nm = String(pickV1_(t, r, ROSTER_NAME_HEADERS_V1)).trim();
     if (!nm) return;
@@ -751,12 +760,25 @@ function rosterPeopleV1_(includeOtherBooks) {
       from: rowSourceV1_(t, i)
     });
   });
-  return out;
+  return dedup ? rosterOneEachV1_(out) : out;
 }
 
 /** Just the ones who still work here. */
 function rosterActivePeopleV1_(includeOtherBooks) {
   return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return p.active; });
+}
+
+/** Same rule as the trainee master: one person, one row, and THIS book wins.
+ *  A stale copy still calling somebody by a name they no longer use must not
+ *  put that name back into circulation. */
+function rosterOneEachV1_(list) {
+  var here = {}, out = [];
+  list.forEach(function (p) { if (!p.from) here[p.norm] = true; });
+  list.forEach(function (p) {
+    if (p.from && here[p.norm]) return;
+    out.push(p);
+  });
+  return out;
 }
 
 /** The ones who have been retired off it. */
@@ -1033,6 +1055,36 @@ function levelKeyV1_(level) {
 /** Every trainee on the master, normalized. Closed people are marked, never
  *  silently dropped, so a caller must decide rather than inherit a filter. */
 function traineesV1_() {
+  return onePersonOneRecordV1_(traineeRowsV1_());
+}
+
+/** One person, one record, and THIS spreadsheet is the record.
+ *
+ *  Another spreadsheet may hold a row the target does not have - that is the
+ *  whole reason for reading it. What it must never do is contradict the
+ *  target about somebody who is in both, because then every screen shows
+ *  whichever copy it happened to reach first.
+ *
+ *  That is not hypothetical. A four-month-old copy of this tracker was being
+ *  read alongside it, and in that copy a trainee who has been closed and
+ *  archived was still open, one who had been reassigned still named an
+ *  officer who has since resigned, and the officer renamed on the roster
+ *  still had her old name. Every one of those came back as a live problem
+ *  needing a person, and none of them was real.
+ *
+ *  So: rows from this book win, by name, every time. A row only survives
+ *  from elsewhere if nobody of that name is here at all. */
+function onePersonOneRecordV1_(list) {
+  var here = {}, out = [];
+  list.forEach(function (t) { if (!t.from) here[t.norm] = true; });
+  list.forEach(function (t) {
+    if (t.from && here[t.norm]) return;      // this book already has them
+    out.push(t);
+  });
+  return out;
+}
+
+function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
@@ -7259,7 +7311,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'efdcf323';
+var PORTAL_BUILD = 'a9235bee';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
