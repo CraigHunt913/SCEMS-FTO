@@ -28,14 +28,17 @@ function doGet(e) {
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
-  // XFrameOptionsMode has exactly two members: DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one - Google sends X-Frame-Options: SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY; asking for one yields
-  // undefined and Apps Script rejects it as a null mode.
-  return t.evaluate()
-    .setTitle(PORTAL.TITLE)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+
+  var page = t.evaluate();
+  page.setTitle(PORTAL.TITLE);
+  page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+
+  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
+  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
+  // other site can frame this page. There is no DENY. Asking for one yields
+  // undefined, and Apps Script rejects it as a null mode.
+  page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+  return page;
 }
 
 function safeModeV1_() { try { return modeV1_(); } catch (e) { return 'UNSET'; } }

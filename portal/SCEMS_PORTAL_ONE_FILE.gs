@@ -1,5 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
+ * Build 70a21349
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -551,14 +552,17 @@ function doGet(e) {
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
-  // XFrameOptionsMode has exactly two members: DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one - Google sends X-Frame-Options: SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY; asking for one yields
-  // undefined and Apps Script rejects it as a null mode.
-  return t.evaluate()
-    .setTitle(PORTAL.TITLE)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+
+  var page = t.evaluate();
+  page.setTitle(PORTAL.TITLE);
+  page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+
+  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
+  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
+  // other site can frame this page. There is no DENY. Asking for one yields
+  // undefined, and Apps Script rejects it as a null mode.
+  page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+  return page;
 }
 
 function safeModeV1_() { try { return modeV1_(); } catch (e) { return 'UNSET'; } }
@@ -3108,10 +3112,12 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
+var PORTAL_BUILD = '70a21349';
+
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
-    ? 'The paste is complete. ' + PORTAL.VERSION + ', page is ' +
-      PORTAL_PAGE_HTML.length + ' characters.'
+    ? 'The paste is complete. ' + PORTAL.VERSION + ', build ' + PORTAL_BUILD +
+      ', page is ' + PORTAL_PAGE_HTML.length + ' characters.'
     : 'The paste is INCOMPLETE. Select everything in this file, delete it, ' +
       'and paste the whole file again.';
   Logger.log(msg);

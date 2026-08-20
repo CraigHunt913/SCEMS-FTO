@@ -32,6 +32,14 @@ ok(checkOk, 'rebuilding produces exactly the checked-in file' + (checkOk ? '' : 
 const one = fs.readFileSync(ONE, 'utf8');
 ok(/BUILT FILE\. Do not edit this/.test(one), 'and it says on its face not to edit it by hand');
 
+// A build fingerprint, so "which version is actually in my editor" has an
+// answer. Deterministic: it is a hash of the sources, not a timestamp, so an
+// unchanged tree rebuilds to an identical file.
+const stamp = (one.match(/^ \* Build ([0-9a-f]{8})$/m) || [])[1];
+ok(!!stamp, 'the file names its build at the top');
+ok(one.indexOf("var PORTAL_BUILD = '" + stamp + "';") >= 0,
+   'and carries the same build as a value you can read back out');
+
 // ---------------------------------------------------------------- //
 section('Nothing was left behind');
 // ---------------------------------------------------------------- //
@@ -222,6 +230,7 @@ ok(one.indexOf('function portalPasteCheck()') >= 0,
    'there is a one-click check for whether the paste arrived whole');
 if (typeof portalPasteCheck === 'function') {
   ok(/complete/i.test(portalPasteCheck()), 'and on a whole file it says so');
+  ok(portalPasteCheck().indexOf(stamp) >= 0, 'naming the build, so it can be compared');
   const keepPage = PORTAL_PAGE_HTML;
   PORTAL_PAGE_HTML = 'too short';
   ok(/INCOMPLETE/.test(portalPasteCheck()), 'on a truncated one it says that instead');

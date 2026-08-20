@@ -16,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'portal');
@@ -35,9 +36,17 @@ function build() {
   const version = (fs.readFileSync(path.join(SRC, '00_Config.gs'), 'utf8')
     .match(/VERSION:\s*'([^']+)'/) || [, 'unknown'])[1];
 
+  // A fingerprint of every source that goes into this file. Deterministic, so
+  // rebuilding an unchanged tree produces an identical file, and specific, so
+  // "which build is in my editor" is a question with an answer.
+  const stampSource = ORDER.map(n => fs.readFileSync(path.join(SRC, n + '.gs'), 'utf8'))
+    .concat([fs.readFileSync(path.join(SRC, 'Index.html'), 'utf8')]).join('\n');
+  const build = crypto.createHash('sha256').update(stampSource).digest('hex').slice(0, 8);
+
   const head = [
     '/**',
     ' * SCEMS FIELD TRAINING PORTAL — ' + version,
+    ' * Build ' + build,
     ' *',
     ' * The whole portal in one file. Paste it into a new Apps Script project',
     ' * and there is nothing else to add: the page is in here too, as a string',
@@ -93,10 +102,12 @@ function build() {
     ' * Or run portalPasteCheck from the Run dropdown; it says so either way.',
     ' * ' + '='.repeat(70) + ' */',
     '',
+    'var PORTAL_BUILD = \'' + build + '\';',
+    '',
     'function portalPasteCheck() {',
     '  var msg = (typeof PORTAL_PAGE_HTML === \'string\' && PORTAL_PAGE_HTML.length > 1000)',
-    '    ? \'The paste is complete. \' + PORTAL.VERSION + \', page is \' +',
-    '      PORTAL_PAGE_HTML.length + \' characters.\'',
+    '    ? \'The paste is complete. \' + PORTAL.VERSION + \', build \' + PORTAL_BUILD +',
+    '      \', page is \' + PORTAL_PAGE_HTML.length + \' characters.\'',
     '    : \'The paste is INCOMPLETE. Select everything in this file, delete it, \' +',
     '      \'and paste the whole file again.\';',
     '  Logger.log(msg);',
