@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build fd93ce8c
+ * Build 516f549b
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -213,20 +213,22 @@ function START() {
     good.push('every tab it reads is here');
   }
 
-  // the roster: this is what stops FTOs using it at all
-  var noAddress = [], onRoster = 0;
+  // the roster: this is what stops FTOs using it at all. Only the people who
+  // still work here - chasing an address for somebody who resigned is the
+  // kind of busywork that makes a report worth ignoring.
+  var noAddress = [], onRoster = 0, retired = [];
   try {
-    var ros = readTabV1_(PORTAL.TAB.ROSTER);
-    if (ros.ok) {
-      ros.rows.forEach(function (r) {
-        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-        if (!nm) return;
-        onRoster++;
-        if (em.indexOf('@') < 1) noAddress.push(nm);
-      });
-    }
+    rosterPeopleV1_().forEach(function (p) {
+      if (!p.active) { retired.push(p.name); return; }
+      onRoster++;
+      if (p.email.indexOf('@') < 1) noAddress.push(p.name);
+    });
   } catch (e) {}
+  if (retired.length) {
+    good.push(retired.length + ' retired off the roster, and not counted: ' +
+      retired.slice(0, 4).join(', ') +
+      (retired.length > 4 ? ' and ' + (retired.length - 4) + ' more' : ''));
+  }
 
   if (noAddress.length) {
     var ready = 0;
@@ -278,24 +280,54 @@ function START() {
   // a name on the roster that no trainee is assigned to. Usually a spelling
   // that drifted, or somebody's name changed in one place and not the others.
   try {
-    var ros2 = readTabV1_(PORTAL.TAB.ROSTER);
-    var assigned = {};
+    var roster2 = rosterPeopleV1_(true);
+    var onRosterAt = {}, retiredAt = {};
+    roster2.forEach(function (p) {
+      onRosterAt[p.norm] = p.name;
+      if (!p.active) retiredAt[p.norm] = p.name;
+    });
+    var assigned = {}, orphanFto = [], leftBehind = [];
     traineesV1_().forEach(function (t) {
-      if (!t.closed && t.fto) assigned[normNameV1_(t.fto)] = true; });
-    var orphanFto = [];
-    if (ros2.ok && Object.keys(assigned).length) {
-      Object.keys(assigned).forEach(function (a) {
-        var onRoster2 = ros2.rows.some(function (r) {
-          return normNameV1_(pickV1_(ros2, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])) === a;
-        });
-        if (!onRoster2) orphanFto.push(a);
-      });
+      if (t.closed || !t.fto) return;
+      var k = normNameV1_(t.fto);
+      (assigned[k] = assigned[k] || []).push(t.name);
+    });
+    Object.keys(assigned).forEach(function (a) {
+      if (retiredAt[a]) leftBehind.push({ fto: retiredAt[a], trainees: assigned[a] });
+      else if (!onRosterAt[a]) orphanFto.push(a);
+    });
+
+    // Somebody resigning leaves their trainees pointing at them. Nobody sees
+    // those trainees until they are reassigned, and nothing else in here will
+    // say so, because on paper the assignment is perfectly valid.
+    if (leftBehind.length) {
+      var stranded = leftBehind.reduce(function (n, l) { return n + l.trainees.length; }, 0);
+      todo.push({ what: stranded + ' active trainee(s) are still assigned to somebody who has left: ' +
+          leftBehind.map(function (l) {
+            return l.trainees.join(' and ') + ' -> ' + l.fto; }).join('; '),
+        run: '(nothing - this one needs a person)',
+        why: 'They will not appear on any training officer\'s list until the ' +
+             'ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' names somebody ' +
+             'who is still here. Who takes them on is not a decision this can make.' });
     }
     if (orphanFto.length) {
       todo.push({ what: orphanFto.length + ' trainee(s) name a training officer who is not on the roster',
         run: 'applyRename',
         why: 'Their trainees will not appear on anyone\'s list. If it is a name ' +
              'that changed, set PORTAL_RENAME to "Old Name -> New Name" and run it.' });
+    }
+  } catch (e) {}
+
+  // somebody waiting to be retired
+  try {
+    var rp = retirePlanV1_();
+    if (!rp.problem && rp.set.length) {
+      todo.push({ what: rp.set.length + ' person on ' + PORTAL.TAB.ROSTER +
+          ' is waiting to be marked as no longer here: ' +
+          rp.set.map(function (x) { return x.name; }).join(', '),
+        run: 'retireFto',
+        why: 'It writes N in the ' + rp.activeCol + ' column and nothing else. ' +
+             'Their history stays under their own name, and unretireFto puts it back.' });
     }
   } catch (e) {}
 
@@ -345,6 +377,14 @@ function START() {
   }
 
   /* ---- what do I run next ---- */
+
+  // Some of these have a function that fixes them and some need somebody to
+  // go and ask a question. Both belong in the list, but "DO THIS NEXT" has to
+  // be something that can actually be done next, so anything with no function
+  // behind it drops to the end. Order within each group is left alone.
+  var runnable = todo.filter(function (t) { return t.run.charAt(0) !== '('; });
+  var needsAPerson = todo.filter(function (t) { return t.run.charAt(0) === '('; });
+  todo = runnable.concat(needsAPerson);
 
   if (good.length) {
     say('WORKING');
@@ -408,6 +448,12 @@ function WHAT_IS_WAITING() { return unprocessedResponses(); }
 
 /** Somebody changed their name. Set PORTAL_RENAME first. */
 function FIX_A_NAME_EVERYWHERE() { return applyRename(); }
+
+/** Somebody left the service. Set PORTAL_RETIRE first. Nothing is deleted. */
+function SOMEBODY_LEFT_THE_SERVICE() { return retireFto(); }
+
+/** Undo the last thing SOMEBODY_LEFT_THE_SERVICE did. */
+function UNDO_SOMEBODY_LEAVING() { return unretireFto(); }
 
 
 /* ======================================================================
@@ -487,6 +533,78 @@ function pickV1_(t, row, headers) {
   return '';
 }
 
+/* ---------------------------------------------------------------- *
+ *  The roster, read one way.
+ *
+ *  Five different places used to reach into the roster and spell out the
+ *  header aliases themselves, and every one of them ignored the ACTIVE
+ *  column. That is how somebody who has left keeps a working sign-in and
+ *  keeps being counted among the people who cannot sign in: not because
+ *  anything decided they should, but because nothing ever read the column
+ *  that says otherwise.
+ * ---------------------------------------------------------------- */
+
+var ROSTER_NAME_HEADERS_V1   = ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'];
+var ROSTER_EMAIL_HEADERS_V1  = ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'];
+var ROSTER_ACTIVE_HEADERS_V1 = ['ACTIVE', 'CURRENT', 'ON ROSTER'];
+
+/** Is this roster row a person who still works here?
+ *
+ *  Blank means yes. It has to: the column is optional, and a roster that
+ *  never filled it in must not go dark. Only a value that actually says no
+ *  counts as no, and an unrecognised value is left alone rather than
+ *  guessed at - the cost of reading "Part-time" as "left" is twenty-odd
+ *  people locked out of their own portal with nothing on screen to say why,
+ *  and that is far worse than the thing it would be protecting against. */
+function rosterActiveV1_(v) {
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s) return true;
+  return !/^(n|no|non|not|nope|false|0|x|inactive|retired|resigned|resignation|terminated|term|left|former|removed|separated|quit|gone|deceased)\b/.test(s);
+}
+
+/** Everybody on the roster, with the ACTIVE column already read.
+ *
+ *  Pass true to include rows from the other spreadsheets as well; those come
+ *  back with row -1, because a row that is not in this book cannot be
+ *  written to and every write checks. */
+function rosterPeopleV1_(includeOtherBooks) {
+  var t = includeOtherBooks ? readTabAllV1_(PORTAL.TAB.ROSTER)
+                            : readTabV1_(PORTAL.TAB.ROSTER);
+  var out = [];
+  if (!t.ok) return out;
+  t.rows.forEach(function (r, i) {
+    var nm = String(pickV1_(t, r, ROSTER_NAME_HEADERS_V1)).trim();
+    if (!nm) return;
+    var raw = String(pickV1_(t, r, ROSTER_ACTIVE_HEADERS_V1) || '').trim();
+    out.push({
+      name: nm,
+      norm: normNameV1_(nm),
+      email: String(pickV1_(t, r, ROSTER_EMAIL_HEADERS_V1)).trim().toLowerCase(),
+      active: rosterActiveV1_(raw),
+      activeRaw: raw,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i)
+    });
+  });
+  return out;
+}
+
+/** Just the ones who still work here. */
+function rosterActivePeopleV1_(includeOtherBooks) {
+  return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return p.active; });
+}
+
+/** The ones who have been retired off it. */
+function rosterRetiredPeopleV1_(includeOtherBooks) {
+  return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return !p.active; });
+}
+
+/** Is this name on the roster as somebody who has left? */
+function rosterHasRetiredV1_(name) {
+  var n = normNameV1_(name);
+  return rosterRetiredPeopleV1_(true).some(function (p) { return p.norm === n; });
+}
+
 var PEOPLE_CACHE_V1 = null;
 function portalPeopleV1_() {
   if (PEOPLE_CACHE_V1) return PEOPLE_CACHE_V1;
@@ -504,14 +622,16 @@ function portalPeopleV1_() {
   try { sup = JSON.parse(props.getProperty('PORTAL_SUPERVISORS') || '{}'); } catch (e) {}
   Object.keys(sup).forEach(function (k) { out.supervisors[String(k).toLowerCase()] = sup[k]; });
 
-  var t = readTabAllV1_(PORTAL.TAB.ROSTER);
-  if (t.ok) {
-    t.rows.forEach(function (r) {
-      var em = String(pickV1_(t, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim().toLowerCase();
-      var nm = String(pickV1_(t, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-      if (em && nm) { out.ftos[em] = nm; out.names[em] = nm; }
-    });
-  }
+  // Somebody who has left the service does not keep the training officer
+  // screen. Their name is still on the roster and their history is still
+  // theirs, but the ACTIVE column saying no is the whole point of the
+  // column, and personnel-development records are not something a former
+  // employee should still be able to open.
+  rosterPeopleV1_(true).forEach(function (p) {
+    if (!p.email || !p.name) return;
+    out.names[p.email] = p.name;
+    if (p.active) out.ftos[p.email] = p.name;
+  });
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
@@ -1702,17 +1822,18 @@ function productionReadinessCheck() {
     say('  depends on them.');
   }
 
-  var noEmail = 0;
+  var noEmail = 0, retiredCount = 0;
   try {
-    var ros = readTabV1_(PORTAL.TAB.ROSTER);
-    if (ros.ok) {
-      ros.rows.forEach(function (r) {
-        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-        if (nm && em.indexOf('@') < 1) noEmail++;
-      });
-    }
+    rosterPeopleV1_().forEach(function (p) {
+      if (!p.active) { retiredCount++; return; }
+      if (p.email.indexOf('@') < 1) noEmail++;
+    });
   } catch (e) {}
+  if (retiredCount) {
+    say('  ' + retiredCount + ' on the roster are marked as no longer here. They keep ' +
+        'their');
+    say('  history, they are not counted below, and they cannot sign in.');
+  }
   if (noEmail) {
     say('  ' + noEmail + ' on the roster have no address, so none of them can sign');
     say('  in. Run suggestFtoEmails() to see the accounts they have actually');
@@ -3763,16 +3884,12 @@ function suggestFtoEmails() {
 
   // who on the roster is missing one
   var roster = readTabV1_(PORTAL.TAB.ROSTER);
-  var missing = [], haveAlready = 0;
-  if (roster.ok) {
-    roster.rows.forEach(function (r) {
-      var nm = String(pickV1_(roster, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-      var em = String(pickV1_(roster, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-      if (!nm) return;
-      if (em.indexOf('@') > 0) { haveAlready++; return; }
-      missing.push(nm);
-    });
-  }
+  var missing = [], haveAlready = 0, retiredNames = [];
+  rosterPeopleV1_().forEach(function (p) {
+    if (!p.active) { retiredNames.push(p.name); return; }
+    if (p.email.indexOf('@') > 0) { haveAlready++; return; }
+    missing.push(p.name);
+  });
 
   var lines = ['ADDRESSES FOR THE ROSTER  (read only, nothing was written)', '',
     'In : ' + safeTargetNameV1_(), ''];
@@ -3782,8 +3899,12 @@ function suggestFtoEmails() {
     return noteV1_(lines.join('\n'));
   }
 
-  lines.push(roster.rows.length + ' on the roster, ' + haveAlready + ' with an address, ' +
-             missing.length + ' without.');
+  lines.push((haveAlready + missing.length) + ' on the roster, ' + haveAlready +
+             ' with an address, ' + missing.length + ' without.');
+  if (retiredNames.length) {
+    lines.push(retiredNames.length + ' more are marked as no longer here and are not ' +
+               'looked for: ' + retiredNames.join(', ') + '.');
+  }
   lines.push('');
   if (!missing.length) {
     lines.push('Every one of them can sign in. Nothing to do.');
@@ -3978,7 +4099,7 @@ function rosterEmailLinesV1_() {
 /** What would change on the roster. Reads; writes nothing. */
 function rosterEmailPlanV1_() {
   var plan = { set: [], hasOne: [], notFound: [], twoRows: [], twoLines: [],
-               problem: '', emailCol: '', nameCol: '' };
+               retired: [], problem: '', emailCol: '', nameCol: '', activeCol: '' };
 
   var t = readTabV1_(PORTAL.TAB.ROSTER);
   if (!t.ok) { plan.problem = PORTAL.TAB.ROSTER + ' is not in this spreadsheet.'; return plan; }
@@ -3990,7 +4111,10 @@ function rosterEmailPlanV1_() {
     if (!nameCol && t.col[h] !== undefined) nameCol = h; });
   if (!nameCol) { plan.problem = PORTAL.TAB.ROSTER + ' has no name column.'; return plan; }
   if (!emailCol) { plan.problem = PORTAL.TAB.ROSTER + ' has no EMAIL column to write into.'; return plan; }
-  plan.emailCol = emailCol; plan.nameCol = nameCol;
+  var activeCol = '';
+  ROSTER_ACTIVE_HEADERS_V1.forEach(function (h) {
+    if (!activeCol && t.col[h] !== undefined) activeCol = h; });
+  plan.emailCol = emailCol; plan.nameCol = nameCol; plan.activeCol = activeCol;
 
   var lines = rosterEmailLinesV1_();
   if (!lines.length) {
@@ -4036,6 +4160,12 @@ function rosterEmailPlanV1_() {
       return;
     }
     var m = matches[0];
+    if (!rosterActiveV1_(t.rows[m.index][t.col[activeCol]])) {
+      // Writing a sign-in address for somebody who has left is the opposite
+      // of what this is for.
+      plan.retired.push({ name: m.name, row: m.row, email: email });
+      return;
+    }
     if (m.row < 0) {
       plan.notFound.push({ name: name, email: email,
         why: 'that row is in another spreadsheet, not this one' });
@@ -4097,6 +4227,14 @@ function rosterEmailsBeforeAndAfter() {
     p.notFound.forEach(function (n) {
       lines.push('  ' + n.name + '   ' + n.email + (n.why ? '   ' + n.why : ''));
     });
+  }
+  if (p.retired.length) {
+    lines.push('');
+    lines.push('NO LONGER HERE, so no address goes in  (' + p.retired.length + ')');
+    p.retired.forEach(function (r) {
+      lines.push('  ' + r.name + '   row ' + r.row + '   ' + r.email);
+    });
+    lines.push('  Their ' + (p.activeCol || 'ACTIVE') + ' column says they have left.');
   }
   if (p.twoRows.length) {
     lines.push('');
@@ -4534,6 +4672,387 @@ function undoRename() {
 /** Named for the job. */
 function FIX_A_NAME() { return applyRename(); }
 function UNDO_A_NAME() { return undoRename(); }
+
+
+/* ======================================================================
+ * 98_Retire.gs
+ * ====================================================================== */
+
+/**
+ * Somebody left.
+ *
+ * A resignation is not a deletion. Everything that person did is still true:
+ * the shifts they evaluated happened, the skills they signed off are signed
+ * off, and the trainee whose Phase 1 they supervised was supervised by them.
+ * Removing the row would not remove any of that - it would only remove the
+ * one place that says who the name belongs to, and leave every record that
+ * names them pointing at nobody.
+ *
+ * So this does not delete. It writes N in the ACTIVE column, which is what
+ * that column is for, and from then on the rest of the portal reads it:
+ *
+ *   they cannot sign in, so a former employee is not opening personnel
+ *   records
+ *   they are not counted among the people who still need an address
+ *   they are not offered as somebody to assign a trainee to
+ *   their history stays exactly where it is, under their own name
+ *
+ * The one thing a resignation actually breaks is their trainees. An active
+ * trainee whose ASSIGNED FTO has left appears on nobody's list, and nothing
+ * looks wrong - the assignment is a perfectly valid name. This names them,
+ * every time, and refuses to pretend that reassigning them is a decision it
+ * can make.
+ *
+ * unretireFto() puts the column back to whatever it held before.
+ */
+
+var PORTAL_RETIRE_PROPERTY = 'PORTAL_RETIRE';
+var PORTAL_RETIRE_LOG = 'PORTAL RETIRE LOG';
+
+/** Who to retire. One name per entry; a semicolon between them.
+ *
+ *  A reason can follow a colon - "Alex White : resigned 2026-08-16" - and it
+ *  is recorded, never guessed at. The property editor is a single-line field
+ *  that eats pasted line breaks, so semicolons are the reliable separator and
+ *  line breaks are accepted as well. */
+function retireRequestsV1_() {
+  var raw = String(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_RETIRE_PROPERTY) || '');
+  var out = [];
+  raw.split(/[;\n\r]+/).forEach(function (piece) {
+    var text = String(piece).replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    var reason = '';
+    var at = text.indexOf(':');
+    if (at > 0) { reason = text.slice(at + 1).trim(); text = text.slice(0, at).trim(); }
+    var name = text.replace(/[,|\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    out.push({ name: name, reason: reason });
+  });
+  return out;
+}
+
+/** What is still attached to a name, so retiring is never a silent goodbye. */
+function whatIsAttachedV1_(name) {
+  var n = normNameV1_(name);
+  var out = { activeTrainees: [], closedTrainees: [], rows: {} };
+
+  try {
+    traineesV1_().forEach(function (t) {
+      if (normNameV1_(t.fto) !== n) return;
+      (t.closed ? out.closedTrainees : out.activeTrainees).push(t.name);
+    });
+  } catch (e) {}
+
+  // Anywhere their name stands in a column that means "who did this".
+  [PORTAL.TAB.EVAL, PORTAL.TAB.EVIDENCE, PORTAL.TAB.SIGNOFF,
+   PORTAL.TAB.URGENT, PORTAL.TAB.SKILLS].forEach(function (tabName) {
+    var t;
+    try { t = readTabAllV1_(tabName); } catch (e) { return; }
+    if (!t || !t.ok) return;
+    var count = 0;
+    t.rows.forEach(function (r) {
+      var who = pickV1_(t, r, ['FTO', 'FTO NAME', 'EVALUATOR', 'SIGNED OFF BY',
+                               'SUBMITTED BY', 'YOUR NAME', 'VALIDATED BY']);
+      if (who && normNameV1_(who) === n) count++;
+    });
+    if (count) out.rows[tabName] = count;
+  });
+  return out;
+}
+
+/** Every cell that would change. Reads; writes nothing. */
+function retirePlanV1_() {
+  var plan = { requests: retireRequestsV1_(), set: [], already: [], notFound: [],
+               twoRows: [], problem: '', activeCol: '', nameCol: '' };
+
+  if (!plan.requests.length) {
+    plan.problem = 'Nothing is in ' + PORTAL_RETIRE_PROPERTY + '.\n\n' +
+      'Put the name exactly as it stands on the roster:\n' +
+      '  Alex White\n\n' +
+      'A reason after a colon is recorded:\n' +
+      '  Alex White : resigned 2026-08-16\n\n' +
+      'More than one? Put a semicolon between them.';
+    return plan;
+  }
+
+  var t = readTabV1_(PORTAL.TAB.ROSTER);
+  if (!t.ok) { plan.problem = PORTAL.TAB.ROSTER + ' is not in this spreadsheet.'; return plan; }
+
+  var nameCol = '', activeCol = '';
+  ROSTER_NAME_HEADERS_V1.forEach(function (h) {
+    if (!nameCol && t.col[h] !== undefined) nameCol = h; });
+  ROSTER_ACTIVE_HEADERS_V1.forEach(function (h) {
+    if (!activeCol && t.col[h] !== undefined) activeCol = h; });
+  if (!nameCol) { plan.problem = PORTAL.TAB.ROSTER + ' has no name column.'; return plan; }
+  if (!activeCol) {
+    plan.problem = PORTAL.TAB.ROSTER + ' has no ACTIVE column.\n\n' +
+      'That column is the whole mechanism: it is what the rest of the portal\n' +
+      'reads to know somebody has left. Add a column headed ACTIVE on row ' +
+      PORTAL.HEADER_ROW + '\nand run this again. Nothing was changed.';
+    return plan;
+  }
+  plan.nameCol = nameCol; plan.activeCol = activeCol;
+
+  plan.requests.forEach(function (req) {
+    var k = normNameV1_(req.name);
+
+    // Whole name, never a fragment. This roster has an Alex White and a
+    // Julieann White on it, and "White" matching both is exactly the kind of
+    // convenience that ends a career by accident.
+    var matches = [];
+    t.rows.forEach(function (r, i) {
+      var rn = String(r[t.col[nameCol]] || '').trim();
+      if (rn && normNameV1_(rn) === k) {
+        matches.push({ row: realRowV1_(t, i), name: rn,
+                       was: String(r[t.col[activeCol]] == null ? '' : r[t.col[activeCol]]).trim() });
+      }
+    });
+
+    if (!matches.length) { plan.notFound.push(req); return; }
+    if (matches.length > 1) {
+      plan.twoRows.push({ name: req.name, rows: matches.map(function (m) { return m.row; }) });
+      return;
+    }
+    var m = matches[0];
+    if (m.row < 0) {
+      plan.notFound.push({ name: req.name, reason: req.reason,
+        why: 'that row is in another spreadsheet, not this one' });
+      return;
+    }
+    if (!rosterActiveV1_(m.was)) {
+      plan.already.push({ name: m.name, row: m.row, was: m.was || '(blank)' });
+      return;
+    }
+    plan.set.push({ name: m.name, row: m.row, was: m.was, reason: req.reason,
+                    attached: whatIsAttachedV1_(m.name) });
+  });
+
+  plan.set.sort(function (a, b) { return a.row - b.row; });
+  return plan;
+}
+
+/** The before picture. Writes nothing. */
+function retireBeforeAndAfter() {
+  var p = retirePlanV1_();
+  var L = ['RETIRING SOMEBODY OFF THE ROSTER  (nothing has been written)', '',
+    'In   : ' + safeTargetNameV1_(),
+    'Mode : ' + safeModeV1_(), ''];
+  if (p.problem) { L.push(p.problem); return noteV1_(L.join('\n')); }
+  retireBodyV1_(p, L, false);
+  L.push('');
+  L.push('Nothing has been written. To do it: retireFto()');
+  return noteV1_(L.join('\n'));
+}
+
+/** The shared body of both reports. */
+function retireBodyV1_(p, L, done) {
+  p.set.forEach(function (s) {
+    L.push((done ? 'RETIRED   ' : 'WOULD RETIRE   ') + s.name + '   row ' + s.row);
+    L.push('  ' + p.activeCol + ' ' + (s.was ? '"' + s.was + '"' : '(blank)') + '  ->  N');
+    if (s.reason) L.push('  Reason recorded: ' + s.reason);
+
+    var a = s.attached;
+    var kept = [];
+    Object.keys(a.rows).forEach(function (tn) { kept.push(a.rows[tn] + ' in ' + tn); });
+    if (a.closedTrainees.length) {
+      kept.push(a.closedTrainees.length + ' closed trainee record(s): ' +
+                a.closedTrainees.join(', '));
+    }
+    if (kept.length) {
+      L.push('  Kept, untouched, under their own name:');
+      kept.forEach(function (k) { L.push('    ' + k); });
+    } else {
+      L.push('  Nothing in this tracker is filed under their name.');
+    }
+
+    if (a.activeTrainees.length) {
+      L.push('');
+      L.push('  *** ' + a.activeTrainees.length + ' ACTIVE TRAINEE(S) ARE ASSIGNED TO THEM ***');
+      a.activeTrainees.forEach(function (n) { L.push('      ' + n); });
+      L.push('  Until the ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' names');
+      L.push('  somebody who is still here, those trainees appear on nobody\'s list');
+      L.push('  and nothing looks wrong. Who takes them on is not a decision this');
+      L.push('  can make. It has to be somebody\'s.');
+    }
+    L.push('');
+  });
+
+  if (p.already.length) {
+    L.push('ALREADY MARKED AS GONE  (' + p.already.length + ')');
+    p.already.forEach(function (a) {
+      L.push('  ' + a.name + '   row ' + a.row + '   ' + p.activeCol + ' holds ' + a.was);
+    });
+    L.push('');
+  }
+  if (p.notFound.length) {
+    L.push('NOT ON THE ROSTER  (' + p.notFound.length + ')');
+    p.notFound.forEach(function (n) {
+      L.push('  ' + n.name + (n.why ? '   ' + n.why : ''));
+    });
+    L.push('  The name has to match a roster row exactly. Check the spelling');
+    L.push('  against ' + PORTAL.TAB.ROSTER + '.');
+    L.push('');
+  }
+  if (p.twoRows.length) {
+    L.push('MORE THAN ONE ROSTER ROW WITH THAT NAME  (' + p.twoRows.length + ')');
+    p.twoRows.forEach(function (d) {
+      L.push('  ' + d.name + '   rows ' + d.rows.join(', ') + '   left alone');
+    });
+    L.push('  Which one left is not something to guess at.');
+    L.push('');
+  }
+  return L;
+}
+
+/** Marks them as no longer here. One step. Undoable. */
+function retireFto() {
+  var p = retirePlanV1_();
+  if (p.problem) return noteV1_(p.problem);
+
+  var L = ['SOMEBODY HAS LEFT THE ROSTER', '',
+    'In     : ' + safeTargetNameV1_(),
+    'Run by : ' + (whoIsAskingV1_() || 'unidentified'), ''];
+
+  if (!p.set.length) {
+    L.push('Nothing was changed.');
+    L.push('');
+    retireBodyV1_(p, L, true);
+    return noteV1_(L.join('\n'));
+  }
+
+  var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
+  if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
+  var t = readTabV1_(PORTAL.TAB.ROSTER);
+  var nameIdx = t.col[p.nameCol], activeIdx = t.col[p.activeCol];
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  var manifest = [], written = [], refused = [];
+
+  p.set.forEach(function (s) {
+    // Read both cells again. The plan came from a cached read, and the row
+    // this is about to change is identified by a name that had better still
+    // be in it.
+    var nameNow = String(sh.getRange(s.row, nameIdx + 1).getValue() || '').trim();
+    if (normNameV1_(nameNow) !== normNameV1_(s.name)) {
+      refused.push({ s: s, why: 'that row now holds "' + (nameNow || '(empty)') + '"' });
+      return;
+    }
+    var activeNow = String(sh.getRange(s.row, activeIdx + 1).getValue() || '').trim();
+    if (!rosterActiveV1_(activeNow)) {
+      refused.push({ s: s, why: p.activeCol + ' already holds "' + activeNow + '"' });
+      return;
+    }
+    sh.getRange(s.row, activeIdx + 1).setValue('N');
+    manifest.push([stamp, PORTAL.TAB.ROSTER, s.row, p.activeCol, s.name,
+                   activeNow, 'N', s.reason || '',
+                   whoIsAskingV1_() || 'unidentified', PORTAL.VERSION]);
+    written.push(s);
+  });
+
+  writeRetireManifestV1_(manifest);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  L.push(written.length + ' marked as no longer here.');
+  L.push('');
+  retireBodyV1_({ set: written, already: p.already, notFound: p.notFound,
+                  twoRows: p.twoRows, activeCol: p.activeCol }, L, true);
+
+  if (refused.length) {
+    L.push('NOT CHANGED  (' + refused.length + ')');
+    refused.forEach(function (r) { L.push('  row ' + r.s.row + '   ' + r.why); });
+    L.push('  Somebody edited those, and that outranks this.');
+    L.push('');
+  }
+
+  if (written.length) {
+    L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
+    L.push('is exactly where it was, under the name that earned it.');
+    L.push('');
+    L.push('Run START to see what is left over.');
+    L.push('To put it back: unretireFto()');
+  }
+  return noteV1_(L.join('\n'));
+}
+
+function writeRetireManifestV1_(rows) {
+  if (!rows.length) return;
+  var book = targetBookV1_();
+  var sh = book.getSheetByName(PORTAL_RETIRE_LOG);
+  if (!sh) {
+    sh = book.insertSheet(PORTAL_RETIRE_LOG);
+    sh.getRange(1, 1).setValue(
+      'Who the portal marked as no longer here, and when. Do not edit or sort.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 10)
+      .setValues([['RUN', 'TAB', 'ROW', 'COLUMN', 'NAME', 'WAS', 'NOW', 'REASON',
+                   'BY', 'VERSION']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 10).setValues(rows);
+}
+
+/** Puts the ACTIVE column back to what it held, where nobody has touched it. */
+function unretireFto() {
+  var t = readTabV1_(PORTAL_RETIRE_LOG);
+  if (!t.ok || !t.rows.length) {
+    return noteV1_('Nobody has been retired off the roster by this portal.');
+  }
+
+  var runs = t.rows.map(function (r) { return String(r[t.col['RUN']] || ''); })
+    .filter(String).sort();
+  var last = runs[runs.length - 1];
+  var entries = t.rows.filter(function (r) { return String(r[t.col['RUN']] || '') === last; })
+    .map(function (r) {
+      return { tab: String(r[t.col['TAB']] || ''), row: Number(r[t.col['ROW']]),
+               col: String(r[t.col['COLUMN']] || ''), name: String(r[t.col['NAME']] || ''),
+               was: String(r[t.col['WAS']] || ''), now: String(r[t.col['NOW']] || '') };
+    });
+  if (!entries.length) return noteV1_('The log names nobody for the last run.');
+
+  var book = targetBookV1_();
+  var ros = readTabV1_(PORTAL.TAB.ROSTER);
+  var put = [], left = [];
+  entries.forEach(function (e) {
+    var ci = ros.col[e.col.toUpperCase()];
+    var sh = book.getSheetByName(e.tab);
+    if (ci === undefined || !sh) { left.push({ e: e, found: '(no such column)' }); return; }
+    var now = String(sh.getRange(e.row, ci + 1).getValue() || '').trim();
+    if (now.toUpperCase() !== String(e.now).toUpperCase()) {
+      left.push({ e: e, found: now || '(empty)' });
+      return;
+    }
+    sh.getRange(e.row, ci + 1).setValue(e.was);
+    put.push(e);
+  });
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var L = ['BACK ON THE ROSTER', '',
+    put.length + ' put back to what they were on ' + last, ''];
+  put.forEach(function (e) {
+    L.push('  row ' + e.row + '   ' + e.name + '   ' + e.col + ' -> ' +
+           (e.was || '(blank)'));
+  });
+  if (left.length) {
+    L.push('');
+    L.push('LEFT ALONE, changed since  (' + left.length + ')');
+    left.forEach(function (l) {
+      L.push('  row ' + l.e.row + '   ' + l.e.name + '   now holds ' + l.found);
+    });
+    L.push('  Somebody edited those by hand, and that outranks this.');
+  }
+  if (put.length) {
+    L.push('');
+    L.push('They can sign in again, and they are counted again.');
+  }
+  return noteV1_(L.join('\n'));
+}
+
+/** Named for the job. */
+function SOMEBODY_LEFT() { return retireFto(); }
+function UNDO_SOMEBODY_LEFT() { return unretireFto(); }
 
 
 /* ======================================================================
@@ -5350,7 +5869,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'fd93ce8c';
+var PORTAL_BUILD = '516f549b';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

@@ -273,16 +273,12 @@ function suggestFtoEmails() {
 
   // who on the roster is missing one
   var roster = readTabV1_(PORTAL.TAB.ROSTER);
-  var missing = [], haveAlready = 0;
-  if (roster.ok) {
-    roster.rows.forEach(function (r) {
-      var nm = String(pickV1_(roster, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-      var em = String(pickV1_(roster, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-      if (!nm) return;
-      if (em.indexOf('@') > 0) { haveAlready++; return; }
-      missing.push(nm);
-    });
-  }
+  var missing = [], haveAlready = 0, retiredNames = [];
+  rosterPeopleV1_().forEach(function (p) {
+    if (!p.active) { retiredNames.push(p.name); return; }
+    if (p.email.indexOf('@') > 0) { haveAlready++; return; }
+    missing.push(p.name);
+  });
 
   var lines = ['ADDRESSES FOR THE ROSTER  (read only, nothing was written)', '',
     'In : ' + safeTargetNameV1_(), ''];
@@ -292,8 +288,12 @@ function suggestFtoEmails() {
     return noteV1_(lines.join('\n'));
   }
 
-  lines.push(roster.rows.length + ' on the roster, ' + haveAlready + ' with an address, ' +
-             missing.length + ' without.');
+  lines.push((haveAlready + missing.length) + ' on the roster, ' + haveAlready +
+             ' with an address, ' + missing.length + ' without.');
+  if (retiredNames.length) {
+    lines.push(retiredNames.length + ' more are marked as no longer here and are not ' +
+               'looked for: ' + retiredNames.join(', ') + '.');
+  }
   lines.push('');
   if (!missing.length) {
     lines.push('Every one of them can sign in. Nothing to do.');

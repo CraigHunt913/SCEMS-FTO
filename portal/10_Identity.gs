@@ -71,6 +71,78 @@ function pickV1_(t, row, headers) {
   return '';
 }
 
+/* ---------------------------------------------------------------- *
+ *  The roster, read one way.
+ *
+ *  Five different places used to reach into the roster and spell out the
+ *  header aliases themselves, and every one of them ignored the ACTIVE
+ *  column. That is how somebody who has left keeps a working sign-in and
+ *  keeps being counted among the people who cannot sign in: not because
+ *  anything decided they should, but because nothing ever read the column
+ *  that says otherwise.
+ * ---------------------------------------------------------------- */
+
+var ROSTER_NAME_HEADERS_V1   = ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'];
+var ROSTER_EMAIL_HEADERS_V1  = ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'];
+var ROSTER_ACTIVE_HEADERS_V1 = ['ACTIVE', 'CURRENT', 'ON ROSTER'];
+
+/** Is this roster row a person who still works here?
+ *
+ *  Blank means yes. It has to: the column is optional, and a roster that
+ *  never filled it in must not go dark. Only a value that actually says no
+ *  counts as no, and an unrecognised value is left alone rather than
+ *  guessed at - the cost of reading "Part-time" as "left" is twenty-odd
+ *  people locked out of their own portal with nothing on screen to say why,
+ *  and that is far worse than the thing it would be protecting against. */
+function rosterActiveV1_(v) {
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s) return true;
+  return !/^(n|no|non|not|nope|false|0|x|inactive|retired|resigned|resignation|terminated|term|left|former|removed|separated|quit|gone|deceased)\b/.test(s);
+}
+
+/** Everybody on the roster, with the ACTIVE column already read.
+ *
+ *  Pass true to include rows from the other spreadsheets as well; those come
+ *  back with row -1, because a row that is not in this book cannot be
+ *  written to and every write checks. */
+function rosterPeopleV1_(includeOtherBooks) {
+  var t = includeOtherBooks ? readTabAllV1_(PORTAL.TAB.ROSTER)
+                            : readTabV1_(PORTAL.TAB.ROSTER);
+  var out = [];
+  if (!t.ok) return out;
+  t.rows.forEach(function (r, i) {
+    var nm = String(pickV1_(t, r, ROSTER_NAME_HEADERS_V1)).trim();
+    if (!nm) return;
+    var raw = String(pickV1_(t, r, ROSTER_ACTIVE_HEADERS_V1) || '').trim();
+    out.push({
+      name: nm,
+      norm: normNameV1_(nm),
+      email: String(pickV1_(t, r, ROSTER_EMAIL_HEADERS_V1)).trim().toLowerCase(),
+      active: rosterActiveV1_(raw),
+      activeRaw: raw,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i)
+    });
+  });
+  return out;
+}
+
+/** Just the ones who still work here. */
+function rosterActivePeopleV1_(includeOtherBooks) {
+  return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return p.active; });
+}
+
+/** The ones who have been retired off it. */
+function rosterRetiredPeopleV1_(includeOtherBooks) {
+  return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return !p.active; });
+}
+
+/** Is this name on the roster as somebody who has left? */
+function rosterHasRetiredV1_(name) {
+  var n = normNameV1_(name);
+  return rosterRetiredPeopleV1_(true).some(function (p) { return p.norm === n; });
+}
+
 var PEOPLE_CACHE_V1 = null;
 function portalPeopleV1_() {
   if (PEOPLE_CACHE_V1) return PEOPLE_CACHE_V1;
@@ -88,14 +160,16 @@ function portalPeopleV1_() {
   try { sup = JSON.parse(props.getProperty('PORTAL_SUPERVISORS') || '{}'); } catch (e) {}
   Object.keys(sup).forEach(function (k) { out.supervisors[String(k).toLowerCase()] = sup[k]; });
 
-  var t = readTabAllV1_(PORTAL.TAB.ROSTER);
-  if (t.ok) {
-    t.rows.forEach(function (r) {
-      var em = String(pickV1_(t, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim().toLowerCase();
-      var nm = String(pickV1_(t, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-      if (em && nm) { out.ftos[em] = nm; out.names[em] = nm; }
-    });
-  }
+  // Somebody who has left the service does not keep the training officer
+  // screen. Their name is still on the roster and their history is still
+  // theirs, but the ACTIVE column saying no is the whole point of the
+  // column, and personnel-development records are not something a former
+  // employee should still be able to open.
+  rosterPeopleV1_(true).forEach(function (p) {
+    if (!p.email || !p.name) return;
+    out.names[p.email] = p.name;
+    if (p.active) out.ftos[p.email] = p.name;
+  });
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {

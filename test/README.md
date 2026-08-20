@@ -20,12 +20,16 @@ node test/portal.test.js                 # portal role isolation and write safet
 node test/portal-forms.test.js           # the form registry, prefill, production mode
 node test/portal-history.test.js         # current-first records, nothing lost
 node test/portal-backfill.test.js        # importing responses, the production gate, the rollback
+node test/portal-merge.test.js           # reading two spreadsheets without merging them
+node test/portal-unprocessed.test.js     # responses that arrived and were never read
+node test/portal-roster.test.js          # writing sign-in addresses onto the roster
+node test/portal-retire.test.js          # somebody left, and what that breaks
 node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All eighteen exit non-zero on failure. 1,287 assertions total.
+All nineteen exit non-zero on failure. 1,383 assertions total.
 
-The last two cover `portal/`, which is a separate Apps Script project. They
+The portal suites cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that
 behaves the way the platform does: `toPrefilledUrl()` names the entry id
 belonging to the item responded to, and a choice item refuses a value it does
@@ -49,6 +53,7 @@ not offer.
 | `portal-history.test.js` | `recordForV1_`, `submissionsFromV1_`, `markCurrentV1_`, `recordScopeV1_`, `recordV1`, `duplicateSubmissionsV1_`, `readTabV1_` caching | a submission being dropped, shortened, merged or reordered on its way to the screen; an undated row becoming current; a duplicate being resolved silently; one person opening another's record; and the six-tabs-per-person read that would make the Division screen unusable |
 | `portal-onefile.test.js` | `tools/build-one-file.js`, `SCEMS_PORTAL_ONE_FILE.gs`, `portalTemplateV1_` | the pasted file drifting from the sources it was built from, a function being lost in the concatenation, the embedded page differing by a byte from `Index.html`, `doGet` asking for an HTML file the single-file project does not have, and any line long enough to be mangled by a code editor on paste |
 | `portal-roster.test.js` | `rosterEmailPlanV1_`, `applyRosterEmails`, `undoRosterEmails`, `rosterConfirmCodeV1_` | an address landing on the wrong row because the roster is sorted and the list is not, an existing address being overwritten, a name that resolves to two rows being guessed at, a cell that stopped being empty between the plan and the write, and the Apps Script property editor collapsing a pasted block onto one line |
+| `portal-retire.test.js` | `retirePlanV1_`, `retireFto`, `unretireFto`, `rosterActiveV1_`, `rosterPeopleV1_`, `resolveViewerV1_` | a surname matching two people and ending the wrong career, a resignation being handled by deleting the row and orphaning every record that names them, a former employee keeping the training officer screen, an active trainee silently falling off every list because the person they are assigned to has left, and an unrecognised value in the ACTIVE column locking the whole service out |
 | `portal-unprocessed.test.js` | `formResponseTabsV1_`, `unprocessedResponses`, `suggestFtoEmails`, the readiness check's tab classification | a real tab being mistaken for a form-response tab, a response being called unprocessed when an evidence row already covers it, an address being chosen for someone when the data offers two, and a name that merely looks like an address being reported with the same confidence as one someone actually submitted from |
 | `portal-merge.test.js` | `otherBookIdsV1_`, `surveyBookV1_`, `mergePlanV1_`, `matchHeaderV1_`, `rowFingerprintV1_`, `runMergeForReal` | a row being duplicated because it arrived without a matching id, a value landing under the wrong column when the two books order them differently, a column with no home here being dropped, and the other spreadsheet being written to at all |
 | `portal-backfill.test.js` | `backfillPlanV1_`, `columnForAnswerV1_`, `backfillPreview`, `backfillIntoStaging`, `requireImportAuthorityV1_`, `runBackfillForReal`, `undoLastBackfill` | an answer being lost because its question matched no column, the same response being imported twice, a stale sandbox confirmation firing against production, a half-imported record, and an undo deleting rows that had moved |

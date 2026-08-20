@@ -69,7 +69,7 @@ function rosterEmailLinesV1_() {
 /** What would change on the roster. Reads; writes nothing. */
 function rosterEmailPlanV1_() {
   var plan = { set: [], hasOne: [], notFound: [], twoRows: [], twoLines: [],
-               problem: '', emailCol: '', nameCol: '' };
+               retired: [], problem: '', emailCol: '', nameCol: '', activeCol: '' };
 
   var t = readTabV1_(PORTAL.TAB.ROSTER);
   if (!t.ok) { plan.problem = PORTAL.TAB.ROSTER + ' is not in this spreadsheet.'; return plan; }
@@ -81,7 +81,10 @@ function rosterEmailPlanV1_() {
     if (!nameCol && t.col[h] !== undefined) nameCol = h; });
   if (!nameCol) { plan.problem = PORTAL.TAB.ROSTER + ' has no name column.'; return plan; }
   if (!emailCol) { plan.problem = PORTAL.TAB.ROSTER + ' has no EMAIL column to write into.'; return plan; }
-  plan.emailCol = emailCol; plan.nameCol = nameCol;
+  var activeCol = '';
+  ROSTER_ACTIVE_HEADERS_V1.forEach(function (h) {
+    if (!activeCol && t.col[h] !== undefined) activeCol = h; });
+  plan.emailCol = emailCol; plan.nameCol = nameCol; plan.activeCol = activeCol;
 
   var lines = rosterEmailLinesV1_();
   if (!lines.length) {
@@ -127,6 +130,12 @@ function rosterEmailPlanV1_() {
       return;
     }
     var m = matches[0];
+    if (!rosterActiveV1_(t.rows[m.index][t.col[activeCol]])) {
+      // Writing a sign-in address for somebody who has left is the opposite
+      // of what this is for.
+      plan.retired.push({ name: m.name, row: m.row, email: email });
+      return;
+    }
     if (m.row < 0) {
       plan.notFound.push({ name: name, email: email,
         why: 'that row is in another spreadsheet, not this one' });
@@ -188,6 +197,14 @@ function rosterEmailsBeforeAndAfter() {
     p.notFound.forEach(function (n) {
       lines.push('  ' + n.name + '   ' + n.email + (n.why ? '   ' + n.why : ''));
     });
+  }
+  if (p.retired.length) {
+    lines.push('');
+    lines.push('NO LONGER HERE, so no address goes in  (' + p.retired.length + ')');
+    p.retired.forEach(function (r) {
+      lines.push('  ' + r.name + '   row ' + r.row + '   ' + r.email);
+    });
+    lines.push('  Their ' + (p.activeCol || 'ACTIVE') + ' column says they have left.');
   }
   if (p.twoRows.length) {
     lines.push('');

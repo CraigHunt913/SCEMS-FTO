@@ -81,20 +81,22 @@ function START() {
     good.push('every tab it reads is here');
   }
 
-  // the roster: this is what stops FTOs using it at all
-  var noAddress = [], onRoster = 0;
+  // the roster: this is what stops FTOs using it at all. Only the people who
+  // still work here - chasing an address for somebody who resigned is the
+  // kind of busywork that makes a report worth ignoring.
+  var noAddress = [], onRoster = 0, retired = [];
   try {
-    var ros = readTabV1_(PORTAL.TAB.ROSTER);
-    if (ros.ok) {
-      ros.rows.forEach(function (r) {
-        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-        if (!nm) return;
-        onRoster++;
-        if (em.indexOf('@') < 1) noAddress.push(nm);
-      });
-    }
+    rosterPeopleV1_().forEach(function (p) {
+      if (!p.active) { retired.push(p.name); return; }
+      onRoster++;
+      if (p.email.indexOf('@') < 1) noAddress.push(p.name);
+    });
   } catch (e) {}
+  if (retired.length) {
+    good.push(retired.length + ' retired off the roster, and not counted: ' +
+      retired.slice(0, 4).join(', ') +
+      (retired.length > 4 ? ' and ' + (retired.length - 4) + ' more' : ''));
+  }
 
   if (noAddress.length) {
     var ready = 0;
@@ -146,24 +148,54 @@ function START() {
   // a name on the roster that no trainee is assigned to. Usually a spelling
   // that drifted, or somebody's name changed in one place and not the others.
   try {
-    var ros2 = readTabV1_(PORTAL.TAB.ROSTER);
-    var assigned = {};
+    var roster2 = rosterPeopleV1_(true);
+    var onRosterAt = {}, retiredAt = {};
+    roster2.forEach(function (p) {
+      onRosterAt[p.norm] = p.name;
+      if (!p.active) retiredAt[p.norm] = p.name;
+    });
+    var assigned = {}, orphanFto = [], leftBehind = [];
     traineesV1_().forEach(function (t) {
-      if (!t.closed && t.fto) assigned[normNameV1_(t.fto)] = true; });
-    var orphanFto = [];
-    if (ros2.ok && Object.keys(assigned).length) {
-      Object.keys(assigned).forEach(function (a) {
-        var onRoster2 = ros2.rows.some(function (r) {
-          return normNameV1_(pickV1_(ros2, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])) === a;
-        });
-        if (!onRoster2) orphanFto.push(a);
-      });
+      if (t.closed || !t.fto) return;
+      var k = normNameV1_(t.fto);
+      (assigned[k] = assigned[k] || []).push(t.name);
+    });
+    Object.keys(assigned).forEach(function (a) {
+      if (retiredAt[a]) leftBehind.push({ fto: retiredAt[a], trainees: assigned[a] });
+      else if (!onRosterAt[a]) orphanFto.push(a);
+    });
+
+    // Somebody resigning leaves their trainees pointing at them. Nobody sees
+    // those trainees until they are reassigned, and nothing else in here will
+    // say so, because on paper the assignment is perfectly valid.
+    if (leftBehind.length) {
+      var stranded = leftBehind.reduce(function (n, l) { return n + l.trainees.length; }, 0);
+      todo.push({ what: stranded + ' active trainee(s) are still assigned to somebody who has left: ' +
+          leftBehind.map(function (l) {
+            return l.trainees.join(' and ') + ' -> ' + l.fto; }).join('; '),
+        run: '(nothing - this one needs a person)',
+        why: 'They will not appear on any training officer\'s list until the ' +
+             'ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' names somebody ' +
+             'who is still here. Who takes them on is not a decision this can make.' });
     }
     if (orphanFto.length) {
       todo.push({ what: orphanFto.length + ' trainee(s) name a training officer who is not on the roster',
         run: 'applyRename',
         why: 'Their trainees will not appear on anyone\'s list. If it is a name ' +
              'that changed, set PORTAL_RENAME to "Old Name -> New Name" and run it.' });
+    }
+  } catch (e) {}
+
+  // somebody waiting to be retired
+  try {
+    var rp = retirePlanV1_();
+    if (!rp.problem && rp.set.length) {
+      todo.push({ what: rp.set.length + ' person on ' + PORTAL.TAB.ROSTER +
+          ' is waiting to be marked as no longer here: ' +
+          rp.set.map(function (x) { return x.name; }).join(', '),
+        run: 'retireFto',
+        why: 'It writes N in the ' + rp.activeCol + ' column and nothing else. ' +
+             'Their history stays under their own name, and unretireFto puts it back.' });
     }
   } catch (e) {}
 
@@ -213,6 +245,14 @@ function START() {
   }
 
   /* ---- what do I run next ---- */
+
+  // Some of these have a function that fixes them and some need somebody to
+  // go and ask a question. Both belong in the list, but "DO THIS NEXT" has to
+  // be something that can actually be done next, so anything with no function
+  // behind it drops to the end. Order within each group is left alone.
+  var runnable = todo.filter(function (t) { return t.run.charAt(0) !== '('; });
+  var needsAPerson = todo.filter(function (t) { return t.run.charAt(0) === '('; });
+  todo = runnable.concat(needsAPerson);
 
   if (good.length) {
     say('WORKING');
@@ -276,3 +316,9 @@ function WHAT_IS_WAITING() { return unprocessedResponses(); }
 
 /** Somebody changed their name. Set PORTAL_RENAME first. */
 function FIX_A_NAME_EVERYWHERE() { return applyRename(); }
+
+/** Somebody left the service. Set PORTAL_RETIRE first. Nothing is deleted. */
+function SOMEBODY_LEFT_THE_SERVICE() { return retireFto(); }
+
+/** Undo the last thing SOMEBODY_LEFT_THE_SERVICE did. */
+function UNDO_SOMEBODY_LEAVING() { return unretireFto(); }

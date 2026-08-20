@@ -25,7 +25,7 @@ const OUT = path.join(SRC, 'SCEMS_PORTAL_ONE_FILE.gs');
 const MAX_CHUNK = 90;
 
 const ORDER = ['00_Config', '01_Start', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
-               '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster', '97_Rename'];
+               '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster', '97_Rename', '98_Retire'];
 
 function rule(title) {
   const bar = '='.repeat(70);

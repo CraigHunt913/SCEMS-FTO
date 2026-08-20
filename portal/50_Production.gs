@@ -175,17 +175,18 @@ function productionReadinessCheck() {
     say('  depends on them.');
   }
 
-  var noEmail = 0;
+  var noEmail = 0, retiredCount = 0;
   try {
-    var ros = readTabV1_(PORTAL.TAB.ROSTER);
-    if (ros.ok) {
-      ros.rows.forEach(function (r) {
-        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
-        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
-        if (nm && em.indexOf('@') < 1) noEmail++;
-      });
-    }
+    rosterPeopleV1_().forEach(function (p) {
+      if (!p.active) { retiredCount++; return; }
+      if (p.email.indexOf('@') < 1) noEmail++;
+    });
   } catch (e) {}
+  if (retiredCount) {
+    say('  ' + retiredCount + ' on the roster are marked as no longer here. They keep ' +
+        'their');
+    say('  history, they are not counted below, and they cannot sign in.');
+  }
   if (noEmail) {
     say('  ' + noEmail + ' on the roster have no address, so none of them can sign');
     say('  in. Run suggestFtoEmails() to see the accounts they have actually');
