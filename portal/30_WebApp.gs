@@ -18,7 +18,12 @@ function doGet(e) {
   }
 
   var boot = {
-    version: PORTAL.VERSION,
+    // The build, not just the version. A deployment serves the code as it was
+    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
+    // deploy again - and until now nothing on the page said which one it was.
+    // "Is the fix live?" is a question the page should answer by itself.
+    version: PORTAL.VERSION +
+      (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
     viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
               ok: viewer.ok, why: viewer.why },

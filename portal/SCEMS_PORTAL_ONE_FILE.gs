@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build e868e7ff
+ * Build 374e9187
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -1421,7 +1421,12 @@ function doGet(e) {
   }
 
   var boot = {
-    version: PORTAL.VERSION,
+    // The build, not just the version. A deployment serves the code as it was
+    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
+    // deploy again - and until now nothing on the page said which one it was.
+    // "Is the fix live?" is a question the page should answer by itself.
+    version: PORTAL.VERSION +
+      (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
     viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
               ok: viewer.ok, why: viewer.why },
@@ -7336,7 +7341,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'e868e7ff';
+var PORTAL_BUILD = '374e9187';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
