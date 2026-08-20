@@ -159,10 +159,11 @@ function START() {
       onRosterAt[p.norm] = p.name;
       if (!p.active) retiredAt[p.norm] = p.name;
     });
-    var assigned = {}, orphanFto = [], leftBehind = [];
+    var assigned = {}, asWritten = {}, orphanFto = [], leftBehind = [];
     traineesV1_().forEach(function (t) {
       if (t.closed || !t.fto) return;
       var k = normNameV1_(t.fto);
+      asWritten[k] = t.fto;                 // their name as somebody typed it
       (assigned[k] = assigned[k] || []).push(t.name);
     });
     Object.keys(assigned).forEach(function (a) {
@@ -184,10 +185,13 @@ function START() {
              'who is still here. Who takes them on is not a decision this can make.' });
     }
     if (orphanFto.length) {
-      todo.push({ what: orphanFto.length + ' trainee(s) name a training officer who is not on the roster',
-        run: 'applyRename',
-        why: 'Their trainees will not appear on anyone\'s list. If it is a name ' +
-             'that changed, set PORTAL_RENAME to "Old Name -> New Name" and run it.' });
+      todo.push({ what: orphanFto.length + ' trainee(s) name a training officer who is not on the roster: ' +
+          orphanFto.map(function (a) {
+            return assigned[a].join(' and ') + ' -> ' + (asWritten[a] || a); }).join('; '),
+        run: 'addFto',
+        why: 'Those trainees are on nobody\'s list. If that officer is new, set ' +
+             PORTAL_ADD_FTO_PROPERTY + ' to their name and address and run addFto. ' +
+             'If it is a name that changed, use PORTAL_RENAME and applyRename instead.' });
     }
   } catch (e) {}
 

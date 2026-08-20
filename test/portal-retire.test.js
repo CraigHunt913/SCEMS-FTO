@@ -149,7 +149,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename','98_Retire']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -600,6 +600,146 @@ ok(typeof SOMEBODY_LEFT_THE_SERVICE === 'function', 'and the one on the START me
 beforeStart = snap();
 ok(threw(() => retireBeforeAndAfter()) === '', 'the preview runs');
 ok(snap() === beforeStart, 'and writes nothing');
+
+// ---------------------------------------------------------------- //
+section('Somebody joined, which is not a one-cell edit');
+// ---------------------------------------------------------------- //
+// "Chyna Gray is Latavia's FTO" looks like typing a name into one cell. It is
+// not: ASSIGNED FTO is a dropdown fed by the roster, so a name the roster has
+// never heard of is rejected outright; the portal pairs a trainee to their
+// officer by name, so the assignment would put that trainee on nobody's list;
+// and an officer with no row has no EMAIL cell, so they cannot sign in.
+
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org, C, Advanced EMT';
+as('chief@example.org');
+
+let ap = addFtoPlanV1_();
+ok(ap.add.length === 1, 'one person is planned');
+ok(ap.add[0].name === 'Chyna Gray', 'the name is read');
+ok(ap.add[0].email === 'cgray@example.org', 'and the address');
+ok(ap.add[0].shift === 'C' && ap.add[0].level === 'Advanced EMT',
+   'and the shift and level, wherever they sat in the line');
+
+// order must not matter; the property editor eats line breaks and people type
+// what they remember first
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, Advanced EMT, cgray@example.org, C';
+ok(JSON.stringify(addFtoPlanV1_().add[0]) ===
+   JSON.stringify({ name: 'Chyna Gray', email: 'cgray@example.org',
+                    shift: 'C', level: 'Advanced EMT' }),
+   'the parts after the name may come in any order');
+
+// the name alone is enough to make an assignment possible
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray';
+out = addFto();
+ok(rosterPeopleV1_().some(x => x.name === 'Chyna Gray'), 'a name on its own puts them on');
+ok(/cannot sign in until an address/.test(out), 'and says plainly what that costs');
+ok(/can be assigned trainees either way/.test(out), 'and what it does not');
+
+// the whole point: the roster row exists before the assignment does
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org, C, Advanced EMT';
+as('chief@example.org');
+const rosterWas = BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g.length;
+out = addFto();
+const chyna = rosterPeopleV1_().filter(x => x.name === 'Chyna Gray')[0];
+ok(!!chyna, 'she is on the roster');
+ok(chyna.active === true, 'as somebody who works here');
+ok(chyna.email === 'cgray@example.org', 'with an address, so she can sign in');
+ok(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g.length === rosterWas + 1,
+   'exactly one row was added');
+ok(resolveViewerV1_('cgray@example.org').role === PORTAL.ROLE.FTO,
+   'and she resolves as a training officer immediately');
+ok(/Left blank for a person/.test(out), 'the columns it will not guess at are named');
+ok(/qualification, not/.test(out),
+   'because what somebody may train is a qualification, not a default');
+
+// no existing row is touched
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+const untouched = JSON.stringify(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g.slice(0, HR + 5));
+addFto();
+ok(JSON.stringify(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g.slice(0, HR + 5)) === untouched,
+   'every row that was already there is byte-identical');
+
+// somebody coming back gets their row back, not a second one
+rWorld({ retire: 'Alex White' });
+as('chief@example.org');
+retireFto();
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Alex White, awhite@example.org';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+as('chief@example.org');
+out = addFto();
+ok(rosterPeopleV1_().filter(x => x.name === 'Alex White').length === 1,
+   'a returning officer does not get a duplicate row');
+ok(/unretireFto/.test(out), 'it points at the function that actually brings them back');
+ok(/how a roster starts lying/.test(out), 'and says why two rows would be wrong');
+
+// already there and active
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Brandon Lee, someone@example.org';
+as('chief@example.org');
+out = addFto();
+ok(/ALREADY ON THE ROSTER/.test(out), 'somebody already on it is a no-op');
+ok(rosterPeopleV1_().filter(x => x.name === 'Brandon Lee').length === 1, 'with no second row');
+
+// an address that belongs to somebody else decides whose trainees you open
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, blee@example.org';
+as('chief@example.org');
+out = addFto();
+ok(/BELONGS TO SOMEBODY ELSE/.test(out), 'a shared address is refused');
+ok(/Brandon Lee/.test(out), 'naming who already has it');
+ok(!rosterPeopleV1_().some(x => x.name === 'Chyna Gray'), 'and she is not added');
+
+// empty property
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = '';
+ok(/Nothing is in PORTAL_ADD_FTO/.test(addFto()), 'an empty property says how to set it');
+
+// the preview writes nothing
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+let beforeAdd = snap();
+ok(/WOULD ADD/.test(addFtoBeforeAndAfter()), 'the preview says what it would do');
+ok(snap() === beforeAdd, 'and writes nothing');
+
+// undo removes the row, but only while it is still the blank slate written
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+const pristineRoster = JSON.stringify(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g);
+addFto();
+out = undoAddFto();
+ok(!rosterPeopleV1_().some(x => x.name === 'Chyna Gray'), 'the undo removes her row');
+ok(JSON.stringify(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g) === pristineRoster,
+   'and the roster is byte-identical to before');
+
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+addFto();
+const her = rosterPeopleV1_().filter(x => x.name === 'Chyna Gray')[0];
+BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g[her.row - 1][4] = 'Cleared to precept AEMT 8/21';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+out = undoAddFto();
+ok(rosterPeopleV1_().some(x => x.name === 'Chyna Gray'),
+   'a row somebody has put their own work into is not deleted');
+ok(/KEPT/.test(out) && /NOTES/.test(out), 'and the undo says which column stopped it');
+
+// START points at addFto when a trainee names somebody not on the roster
+rWorld({ retire: '',
+         master: [['Latavia Cole', 'EMT', 'Chyna Gray', 'Active', 'lc@example.org']] });
+as('chief@example.org');
+out = START();
+ok(/not on the roster/.test(out), 'START sees the assignment pointing nowhere');
+ok(/Latavia Cole -> Chyna Gray/.test(out), 'and says which trainee, to whom');
+ok(/Run  addFto/.test(out), 'and offers the function that fixes it');
+ok(/PORTAL_ADD_FTO/.test(out), 'naming the property to set');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);
