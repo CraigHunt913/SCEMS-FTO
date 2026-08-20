@@ -369,6 +369,64 @@ ok(auditRows() > auditBefore,
 
 function threwMsg(fn) { try { fn(); return ''; } catch (e) { return String(e.message || e); } }
 
+// ---------------------------------------------------------------- //
+section('Nobody active is invisible, whatever the tracker says');
+// ---------------------------------------------------------------- //
+// An officer's screen is built by matching their name. So anything in
+// ASSIGNED FTO that is not an active officer's name puts that trainee on no
+// list at all - and nothing looks wrong, because the cell is filled in. Four
+// ways that has actually happened here, and all four must surface.
+
+world();
+tab(PORTAL.TAB.ROSTER, ['FTO','EMAIL','LEVEL','ACTIVE'],
+  [['Dana Whitlock','dana@example.org','Paramedic','Yes'],
+   ['Marcus Vane','marcus@example.org','Paramedic','Yes'],
+   ['Rhona Vale','rhona@example.org','EMT','N']]);
+tab(PORTAL.TAB.MASTER,
+  ['TRAINEE','EMPLOYEE ID','LEVEL','SHIFT','ASSIGNED FTO','START DATE','CURRENT PHASE',
+   'SET STATUS','TRAINEE EMAIL','PHASE START DATE','ENTRY PROFILE'],
+  [['Jamie Rivers','S1','Paramedic','A','Dana Whitlock',new Date('2026-01-05'),'Phase 2','Active','jamie@example.org','','A'],
+   ['Nell Ashby','S9','EMT','B','',new Date('2026-02-01'),'Phase 1','Active','nell@example.org','','A'],
+   ['Tom Prewitt','S8','EMT','B','Dana Whitlocke',new Date('2026-02-01'),'Phase 1','Active','tom@example.org','','A'],
+   ['Rae Sunder','S7','EMT','C','Rhona Vale',new Date('2026-02-01'),'Phase 1','Active','rae@example.org','','A'],
+   ['Otis Kemp','S6','EMT','C','Now on the tab called 22 FTO ROSTER. Add or retire an FTO there, then run Refresh form dropdowns.',
+     new Date('2026-02-01'),'Phase 1','Active','otis@example.org','','A'],
+   ['Gone Person','S5','EMT','A','Dana Whitlock',new Date('2026-01-01'),'Phase 4','Closed / Released','gp@example.org','','A']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+
+const dpay = payloadFor('chief@example.org').d;
+const strandedNames = (dpay.stranded || []).map(s => s.name).sort();
+ok(strandedNames.join('|') === 'Nell Ashby|Otis Kemp|Rae Sunder|Tom Prewitt',
+   'all four kinds of broken assignment surface, and only those');
+ok(!strandedNames.some(n => n === 'Jamie Rivers'), 'a good assignment is not flagged');
+ok(!strandedNames.some(n => n === 'Gone Person'), 'and a released trainee is not stranded');
+
+const whyOf = n => (dpay.stranded.filter(s => s.name === n)[0] || {}).why || '';
+ok(/no training officer is named/.test(whyOf('Nell Ashby')), 'a blank cell says so');
+ok(/no one on the roster is called that/.test(whyOf('Tom Prewitt')),
+   'a misspelling says the roster has nobody by that name');
+ok(/has left/.test(whyOf('Rae Sunder')), 'a retired officer is named as having left');
+ok(/sentence, not a name/.test(whyOf('Otis Kemp')), 'and a sentence in the cell is called what it is');
+
+ok(dpay.stranded.filter(s => s.name === 'Otis Kemp')[0].fto.length > 20,
+   'the actual contents are carried through, so it can be read and fixed');
+
+// and every one of them is counted as not set up, whatever else is filled in
+const incompleteNames = dpay.incomplete.map(t => t.name);
+['Nell Ashby','Tom Prewitt','Rae Sunder','Otis Kemp'].forEach(n =>
+  ok(incompleteNames.indexOf(n) >= 0, n + ' counts as setup incomplete'));
+
+// the guarantee: everyone active is either on an officer's list or on this one
+as('dana@example.org');
+const danaSees = payloadFor('dana@example.org').d.trainees.map(t => t.name);
+as('marcus@example.org');
+const marcusSees = payloadFor('marcus@example.org').d.trainees.map(t => t.name);
+const onSomeList = danaSees.concat(marcusSees).concat(strandedNames);
+const activeNow = (() => { as('chief@example.org');
+  return traineesV1_().filter(t => !t.closed).map(t => t.name); })();
+ok(activeNow.every(n => onSomeList.indexOf(n) >= 0),
+   'every active trainee appears somewhere - on an officer\'s list or on this one');
+
 world(); delete PROPS[PORTAL.PROPERTY_TARGET];
 threw = false;
 try { targetIdV1_(); } catch (e) { threw = /not pointed at a spreadsheet/.test(e.message); }

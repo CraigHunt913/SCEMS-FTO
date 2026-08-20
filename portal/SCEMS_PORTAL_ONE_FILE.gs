@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 4032e6e9
+ * Build 3bfd9a46
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -1167,11 +1167,52 @@ function ftoPayloadV1_(viewer) {
   };
 }
 
+/** Why a trainee's ASSIGNED FTO does not reach anybody, or '' if it does.
+ *
+ *  This is the difference between a system that loses people and one that
+ *  does not. An officer's list is built by matching their name, so anything
+ *  in that cell which is not an active officer's name means the trainee is on
+ *  no list at all - and nothing looks wrong, because the cell is filled in.
+ *
+ *  Every one of these has actually happened here: a blank cell, a name that
+ *  changed on the roster and not on the trainee, an officer who resigned, and
+ *  the dropdown's own help text pasted in as a whole sentence. */
+function ftoProblemV1_(t) {
+  var v = String(t.fto == null ? '' : t.fto).trim();
+  if (!v) return 'no training officer is named';
+  if (!looksLikeANameV1_(v)) return 'that cell holds a sentence, not a name';
+  var n = normNameV1_(v);
+  var hit = null;
+  rosterPeopleV1_(true).forEach(function (p) { if (p.norm === n) hit = p; });
+  if (!hit) return 'no one on the roster is called that';
+  if (!hit.active) return hit.name + ' has left';
+  return '';
+}
+
+/** Every active trainee who is on nobody's list, and why. */
+function strandedTraineesV1_() {
+  return traineesV1_().filter(function (t) { return !t.closed; })
+    .map(function (t) { return { t: t, why: ftoProblemV1_(t) }; })
+    .filter(function (x) { return !!x.why; })
+    .map(function (x) {
+      return { name: x.t.name, level: x.t.level, phase: x.t.phase,
+               fto: String(x.t.fto || ''), why: x.why,
+               lastEval: daysAgoTextV1_(lastEvalForV1_(x.t.norm)) };
+    });
+}
+
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
   var queue = openQueueV1_();
-  var incomplete = active.filter(function (t) { return !t.setupComplete; });
+
+  // A trainee whose officer does not resolve is not "set up", whatever else
+  // is filled in. Counting them as complete is how they went missing.
+  var stranded = safeFormsV1_(function () { return strandedTraineesV1_(); }) || [];
+  var strandedBy = {};
+  stranded.forEach(function (s) { strandedBy[normNameV1_(s.name)] = true; });
+  var incomplete = active.filter(function (t) {
+    return !t.setupComplete || strandedBy[t.norm]; });
 
   var seen = {}, dupes = [];
   active.forEach(function (t) {
@@ -1191,10 +1232,14 @@ function divisionPayloadV1_() {
       var missing = [];
       if (!t.level) missing.push('level');
       if (!t.phase) missing.push('phase');
-      if (!t.fto) missing.push('training officer');
       if (!t.started) missing.push('start date');
+      var f = ftoProblemV1_(t);
+      if (f) missing.push(f);
       return { name: t.name, missing: missing.join(', ') };
     }),
+    // Whatever the tracker says, nobody active is invisible. This is the list
+    // of people no officer's screen will show, with the reason for each.
+    stranded: stranded,
     duplicates: dupes,
     releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
       .map(function (t) { return { name: t.name, level: t.level }; }),
@@ -6496,6 +6541,30 @@ var PORTAL_PAGE_HTML = [
   "iv>';\n",
   "  });\n",
   "\n",
+  "  /* People on nobody's list. An officer's screen is built by matching their\n",
+  "     name, so anything in ASSIGNED FTO that is not an active officer's name\n",
+  "     means that trainee appears nowhere and nothing looks wrong. This is the\n",
+  "     one screen that shows them, so being lost is impossible rather than\n",
+  "     merely unlikely. */\n",
+  "  if ((d.stranded||[]).length){\n",
+  "    h += '<h2>On nobody\\'s list</h2>'+\n",
+  "         '<div class=\"note n-stop\"><b>'+d.stranded.length+' active '+\n",
+  "         (d.stranded.length===1?'trainee is':'trainees are')+' not on any officer\\'s scree",
+  "n</b>'+\n",
+  "         'Their ASSIGNED FTO does not reach anybody on the roster, so no one is '+\n",
+  "         'being asked about them. Only you can see this.</div>';\n",
+  "    d.stranded.forEach(function(s){\n",
+  "      h += '<div class=\"card\"><div class=\"h\">'+esc(s.name)+'</div>'+\n",
+  "           '<div class=\"m\">'+esc(s.why)+'</div>'+\n",
+  "           '<div class=\"m\">Assigned FTO holds: '+\n",
+  "             (s.fto ? '&ldquo;'+esc(s.fto.length>70?s.fto.slice(0,70)+'…':s.fto)+'&rdquo;'",
+  "\n",
+  "                    : '<i>nothing</i>')+'</div>'+\n",
+  "           '<div class=\"m\">'+esc(s.level||'')+(s.phase?' &middot; '+esc(s.phase):'')+\n",
+  "           ' &middot; last evaluation '+esc(s.lastEval)+'</div></div>';\n",
+  "    });\n",
+  "  }\n",
+  "\n",
   "  if (d.incomplete.length){\n",
   "    h += '<h2>Setup incomplete</h2>';\n",
   "    d.incomplete.forEach(function(t){\n",
@@ -6728,7 +6797,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '4032e6e9';
+var PORTAL_BUILD = '3bfd9a46';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

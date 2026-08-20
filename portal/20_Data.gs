@@ -181,11 +181,52 @@ function ftoPayloadV1_(viewer) {
   };
 }
 
+/** Why a trainee's ASSIGNED FTO does not reach anybody, or '' if it does.
+ *
+ *  This is the difference between a system that loses people and one that
+ *  does not. An officer's list is built by matching their name, so anything
+ *  in that cell which is not an active officer's name means the trainee is on
+ *  no list at all - and nothing looks wrong, because the cell is filled in.
+ *
+ *  Every one of these has actually happened here: a blank cell, a name that
+ *  changed on the roster and not on the trainee, an officer who resigned, and
+ *  the dropdown's own help text pasted in as a whole sentence. */
+function ftoProblemV1_(t) {
+  var v = String(t.fto == null ? '' : t.fto).trim();
+  if (!v) return 'no training officer is named';
+  if (!looksLikeANameV1_(v)) return 'that cell holds a sentence, not a name';
+  var n = normNameV1_(v);
+  var hit = null;
+  rosterPeopleV1_(true).forEach(function (p) { if (p.norm === n) hit = p; });
+  if (!hit) return 'no one on the roster is called that';
+  if (!hit.active) return hit.name + ' has left';
+  return '';
+}
+
+/** Every active trainee who is on nobody's list, and why. */
+function strandedTraineesV1_() {
+  return traineesV1_().filter(function (t) { return !t.closed; })
+    .map(function (t) { return { t: t, why: ftoProblemV1_(t) }; })
+    .filter(function (x) { return !!x.why; })
+    .map(function (x) {
+      return { name: x.t.name, level: x.t.level, phase: x.t.phase,
+               fto: String(x.t.fto || ''), why: x.why,
+               lastEval: daysAgoTextV1_(lastEvalForV1_(x.t.norm)) };
+    });
+}
+
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
   var queue = openQueueV1_();
-  var incomplete = active.filter(function (t) { return !t.setupComplete; });
+
+  // A trainee whose officer does not resolve is not "set up", whatever else
+  // is filled in. Counting them as complete is how they went missing.
+  var stranded = safeFormsV1_(function () { return strandedTraineesV1_(); }) || [];
+  var strandedBy = {};
+  stranded.forEach(function (s) { strandedBy[normNameV1_(s.name)] = true; });
+  var incomplete = active.filter(function (t) {
+    return !t.setupComplete || strandedBy[t.norm]; });
 
   var seen = {}, dupes = [];
   active.forEach(function (t) {
@@ -205,10 +246,14 @@ function divisionPayloadV1_() {
       var missing = [];
       if (!t.level) missing.push('level');
       if (!t.phase) missing.push('phase');
-      if (!t.fto) missing.push('training officer');
       if (!t.started) missing.push('start date');
+      var f = ftoProblemV1_(t);
+      if (f) missing.push(f);
       return { name: t.name, missing: missing.join(', ') };
     }),
+    // Whatever the tracker says, nobody active is invisible. This is the list
+    // of people no officer's screen will show, with the reason for each.
+    stranded: stranded,
     duplicates: dupes,
     releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
       .map(function (t) { return { name: t.name, level: t.level }; }),

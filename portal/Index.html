@@ -428,6 +428,28 @@ function paintDivision(d){
          ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
   });
 
+  /* People on nobody's list. An officer's screen is built by matching their
+     name, so anything in ASSIGNED FTO that is not an active officer's name
+     means that trainee appears nowhere and nothing looks wrong. This is the
+     one screen that shows them, so being lost is impossible rather than
+     merely unlikely. */
+  if ((d.stranded||[]).length){
+    h += '<h2>On nobody\'s list</h2>'+
+         '<div class="note n-stop"><b>'+d.stranded.length+' active '+
+         (d.stranded.length===1?'trainee is':'trainees are')+' not on any officer\'s screen</b>'+
+         'Their ASSIGNED FTO does not reach anybody on the roster, so no one is '+
+         'being asked about them. Only you can see this.</div>';
+    d.stranded.forEach(function(s){
+      h += '<div class="card"><div class="h">'+esc(s.name)+'</div>'+
+           '<div class="m">'+esc(s.why)+'</div>'+
+           '<div class="m">Assigned FTO holds: '+
+             (s.fto ? '&ldquo;'+esc(s.fto.length>70?s.fto.slice(0,70)+'…':s.fto)+'&rdquo;'
+                    : '<i>nothing</i>')+'</div>'+
+           '<div class="m">'+esc(s.level||'')+(s.phase?' &middot; '+esc(s.phase):'')+
+           ' &middot; last evaluation '+esc(s.lastEval)+'</div></div>';
+    });
+  }
+
   if (d.incomplete.length){
     h += '<h2>Setup incomplete</h2>';
     d.incomplete.forEach(function(t){
