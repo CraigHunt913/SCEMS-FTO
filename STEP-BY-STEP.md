@@ -78,7 +78,7 @@ commercial review. This is your own script, in your own account, that you
 have been running for months.
 
 1. **Authorization required** → click **Review permissions**.
-2. Choose `craighunt913@gmail.com`.
+2. Choose `dalewhitlock913@example.org`.
 3. **Google hasn't verified this app** → click **Advanced** (bottom left).
 4. Click **Go to SCEMS… (unsafe)**.
 5. Scroll down, click **Allow**.

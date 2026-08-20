@@ -75,7 +75,7 @@ build();
 captured = SHEET.g.slice(4).map((r, i) => ({ row: 5 + i, who: r[1], requestId: r[13] }));
 captured.forEach((c, n) => {
   const live = queueRowByRequestIdV20_1_(c.requestId);
-  writeQueueDecisionV20_1_(live, 'Approve sign-off', 'chief@example.gov', new Date(), 'Thresholds met');
+  writeQueueDecisionV20_1_(live, 'Approve sign-off', 'chief@example.org', new Date(), 'Thresholds met');
   if (n === 0) recordAndResort(live);
 });
 check('Alvarez approved', decisionOf('Alvarez'), 'Approve sign-off');
@@ -86,13 +86,13 @@ check('captured row for Boyd was stale', captured[1].row !== queueRowByRequestId
 console.log('\nwriteQueueDecisionV20_1_ guards');
 build();
 check('rationale starting with = is neutralised',
-  (writeQueueDecisionV20_1_(5, 'Approve sign-off', 'x@y.gov', new Date(),
+  (writeQueueDecisionV20_1_(5, 'Approve sign-off', 'x@example.org', new Date(),
      '=IMPORTRANGE("evil","A1")'), SHEET.g[4][10]),
   "'=IMPORTRANGE(\"evil\",\"A1\")");
 build();
 SHEET.g[3][6] = 'DECISION RENAMED';   // break a header the writer needs
 let threw = '';
-try { writeQueueDecisionV20_1_(5, 'Approve sign-off', 'x@y.gov', new Date(), 'ok'); }
+try { writeQueueDecisionV20_1_(5, 'Approve sign-off', 'x@example.org', new Date(), 'ok'); }
 catch (e) { threw = String(e.message || e); }
 check('refuses to write when DECISION header is missing',
   /missing header\(s\) DECISION/.test(threw), true);

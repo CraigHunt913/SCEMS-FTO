@@ -219,8 +219,36 @@ ok(!/1YL-9Er9Gk458tR0jpRO680DVtvswNGSLVTlugmclsRI/.test(one),
    'the live tracker id is not in it');
 ok(/TARGET_SPREADSHEET_ID is deliberately empty|not pointed at a spreadsheet yet/.test(one),
    'it still refuses to run until it is pointed somewhere');
-ok(!/@(gmail|sumter)/i.test(one.replace(/example\.org/g, '')),
-   'no real address is in it');
+// Every address anywhere in portal/ or test/ must be on a reserved example
+// domain. This is not tidiness. Real staff addresses got into a test fixture
+// on this branch because I put the county's actual directory in it, and a
+// test that only checked the built file would not have caught the fixture.
+// RFC 2606 reserves these domains precisely so nobody's real address has to
+// stand in for one.
+const OK_DOMAINS = /@(example\.(org|com|net)|example\.invalid|test|localhost)\b/i;
+const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+function everyFile(dir) {
+  return fs.readdirSync(path.join(ROOT, dir))
+    .filter(f => /\.(gs|js|html|md)$/.test(f))
+    .map(f => path.join(dir, f));
+}
+const scanned = everyFile('portal').concat(everyFile('test'));
+const offenders = [];
+scanned.forEach(rel => {
+  const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  (text.match(ADDRESS) || []).forEach(a => {
+    // a Google Fonts or schema URL is not an address
+    if (/\.(png|jpg|svg|css|js)$/i.test(a)) return;
+    if (OK_DOMAINS.test(a)) return;
+    offenders.push(rel + ': ' + a);
+  });
+});
+ok(offenders.length === 0,
+   'every address in portal/ and test/ is on a reserved example domain' +
+   (offenders.length ? ' — found ' + offenders.slice(0, 8).join(', ') +
+    (offenders.length > 8 ? ' and ' + (offenders.length - 8) + ' more' : '') : ''));
+ok(scanned.length > 20, 'and that check actually looked at ' + scanned.length + ' files');
 
 // ---------------------------------------------------------------- //
 section('A short paste announces itself');

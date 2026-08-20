@@ -66,8 +66,8 @@ global.SpreadsheetApp = {
   newDataValidation: () => { const o = {}; ['requireValueInList','requireDate','setAllowInvalid','setHelpText'].forEach(m => o[m] = () => o); o.build = () => ({}); return o; },
   ProtectionType: { SHEET: 'SHEET' }, flush: () => {}
 };
-global.Session = { getActiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
-                   getEffectiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
+global.Session = { getActiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
+                   getEffectiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
                    getScriptTimeZone: () => 'America/New_York' };
 global.Utilities = { getUuid: () => 'stub', formatDate: () => '2026-08-19' };
 global.Logger = { log: () => {} };
@@ -115,9 +115,9 @@ function world() {
   const MH = ['TRAINEE','EMPLOYEE ID','LEVEL','ENTRY PROFILE','ASSIGNED FTO','START DATE',
               'CURRENT PHASE','SET STATUS','TRAINEE EMAIL','PHASE START DATE'];
   sheet(TAB.MASTER, MH, [
-    ['Jamie More','E-1','Paramedic','New hire','K. Stuckey', new Date('2026-06-01'),'Phase 2','Active','j@x.com', new Date('2026-07-15')],
-    ['Alex Reed','E-2','EMT','Transfer','C. Hunt', new Date('2026-05-01'),'Phase 3','Active','a@x.com', new Date('2026-07-01')],
-    ['Old Timer','E-9','EMT','New hire','C. Hunt', new Date('2026-01-01'),'Phase 4','Closed / released','o@x.com', new Date('2026-02-01')]
+    ['Jamie More','E-1','Paramedic','New hire','K. Stuckey', new Date('2026-06-01'),'Phase 2','Active','j@example.org', new Date('2026-07-15')],
+    ['Alex Reed','E-2','EMT','Transfer','C. Hunt', new Date('2026-05-01'),'Phase 3','Active','a@example.org', new Date('2026-07-01')],
+    ['Old Timer','E-9','EMT','New hire','C. Hunt', new Date('2026-01-01'),'Phase 4','Closed / released','o@example.org', new Date('2026-02-01')]
   ]);
   sheet(TAB.EVAL, ['TIMESTAMP','FTO name','Trainee','Assessment','Documented Situation narrative','One clear strength'], [
     [new Date('2026-08-10'),'K. Stuckey','Jamie More', 4, 'Ran a cardiac arrest with minimal prompting and kept the team calm throughout a long resuscitation.', 'Stayed composed'],
@@ -148,7 +148,7 @@ function world() {
   ]);
   sheet(TAB.SKILL_SIGNOFF, ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION','DECIDED BY',
     'DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW','STANDARD / CATALOG VERSION'], [
-    ['SD-1', new Date(),'Jamie More','SK-1','IV access','Approve sign-off','craighunt913@gmail.com', new Date('2026-08-13'),'','Directly observed and verified.', 5,'v1']
+    ['SD-1', new Date(),'Jamie More','SK-1','IV access','Approve sign-off','dalewhitlock913@example.org', new Date('2026-08-13'),'','Directly observed and verified.', 5,'v1']
   ]);
   sheet(TAB.DECISIONS, ['TIMESTAMP','Filed by','Trainee','Item type','Decision','Rationale'], [
     [new Date('2026-07-15'),'C. Hunt','Jamie More','Advancement','Advance to Phase 2','Thresholds met.']

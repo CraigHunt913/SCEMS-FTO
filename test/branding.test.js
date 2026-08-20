@@ -80,8 +80,8 @@ global.SpreadsheetApp = {
   newDataValidation: () => { const o = {}; ['requireValueInList','requireDate','setAllowInvalid','setHelpText'].forEach(m => o[m] = () => o); o.build = () => ({}); return o; },
   ProtectionType: { SHEET: 'SHEET' }, flush: () => {}
 };
-global.Session = { getActiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
-  getEffectiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }), getScriptTimeZone: () => 'America/New_York' };
+global.Session = { getActiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
+  getEffectiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }), getScriptTimeZone: () => 'America/New_York' };
 let DECODED = null;
 global.Utilities = { getUuid: () => 'stub', formatDate: () => '2026-08-19',
   base64Decode: b => { DECODED = b; return new Array(Math.floor(b.length * 0.75)); },

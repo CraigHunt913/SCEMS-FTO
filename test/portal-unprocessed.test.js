@@ -187,27 +187,27 @@ function world(opts) {
   tab(PORTAL.TAB.ROSTER,
     ['FTO NAME','SHIFT','CERT LEVEL','ACTIVE','NOTES','EMAIL','EMPLOYEE ID'],
     opts.roster || [
-      ['Stephen Porter','A','Advanced EMT','Y','','','EMS 10'],
-      ['Ali Robinson','B','EMT','Y','','','EMS 18'],
-      ['Makayla Hall','C','EMT','Y','','','EMS 14'],
-      ['Hanna Byrd','A','EMT','Y','','','EMS 23']
+      ['Stephen Porth','A','Advanced EMT','Y','','','EMS 10'],
+      ['Ada Robins','B','EMT','Y','','','EMS 18'],
+      ['Makayla Harlow','C','EMT','Y','','','EMS 14'],
+      ['Hanna Byrne','A','EMT','Y','','','EMS 23']
     ]);
 
   tab(PORTAL.TAB.EVIDENCE,
     ['EVENT DATE','TRAINEE','FTO','SKILL','NOTE','SOURCE RESPONSE ID'],
-    [[D('2026-08-12'),'Anicia Scipp','Stephen Porter','Intubation','','R-1']]);
+    [[D('2026-08-12'),'Annika Skye','Stephen Porth','Intubation','','R-1']]);
 
   tab(PORTAL.TAB.EVAL, ['TIMESTAMP','EMAIL ADDRESS','FTO','TRAINEE','PHASE'],
-    [[D('2026-08-14'),'hanna.byrd@example.org','Hanna Byrd','Kaylie Vaughn','Phase 3']]);
+    [[D('2026-08-14'),'hanna.byrne@example.org','Hanna Byrne','Kayla Voss','Phase 3']]);
 
   tab(PORTAL.TAB.MASTER, ['TRAINEE','LEVEL','ASSIGNED FTO','SET STATUS','TRAINEE EMAIL'],
-    [['Anicia Scipp','Advanced EMT','Stephen Porter','Active','anicia@example.org']]);
+    [['Annika Skye','Advanced EMT','Stephen Porth','Active','annika.skye@example.org']]);
 
   // the response tabs, exactly as Google makes them
   responseTab('Form Responses 1', RESP_HEADERS, opts.responses || [
-    [D('2026-08-13'),'mudduck00064@example.org','Stephen Porter','Anicia Scipp',D('2026-08-12'),'Yes',''],
-    [D('2026-08-06'),'','Makayla Hall','Elizabeth McInville',D('2026-08-04'),'Yes','No prompting.'],
-    [D('2026-08-17'),'hastyadem76@example.org','Ali Robinson','Kaylie Vaughn',D('2026-08-01'),'Yes','']
+    [D('2026-08-13'),'oddhandle00064@example.org','Stephen Porth','Annika Skye',D('2026-08-12'),'Yes',''],
+    [D('2026-08-06'),'','Makayla Harlow','Elena Marchetti',D('2026-08-04'),'Yes','No prompting.'],
+    [D('2026-08-17'),'otherperson76@example.org','Ada Robins','Kayla Voss',D('2026-08-01'),'Yes','']
   ]);
   responseTab('Form Responses 2', RESP_HEADERS, []);
 }
@@ -248,9 +248,9 @@ let before = snap();
 let rep = unprocessedResponses();
 ok(/UNPROCESSED FORM RESPONSES/.test(rep), 'it reports');
 ok(/Form Responses 1/.test(rep) && /3 responses/.test(rep), 'naming each tab and its count');
-ok(/in the log .*Anicia Scipp/.test(rep),
+ok(/in the log .*Annika Skye/.test(rep),
    'a response with an evidence row on the same day and trainee is marked as in the log');
-ok(/WAITING    .*Elizabeth McInville/.test(rep), 'and one without is marked WAITING');
+ok(/WAITING    .*Elena Marchetti/.test(rep), 'and one without is marked WAITING');
 ok(/2 with nothing matching them/.test(rep), 'with a total that counts only the waiting ones');
 ok(/These are NOT lost/.test(rep), 'it says outright that the answers are present');
 ok(/strong hint, not a proof/.test(rep),
@@ -269,12 +269,12 @@ before = snap();
 rep = suggestFtoEmails();
 ok(/4 on the roster, 0 with an address, 4 without/.test(rep),
    'it counts who can and cannot sign in');
-ok(/Stephen Porter\n      mudduck00064@example\.org/.test(rep),
+ok(/Stephen Porth\n      oddhandle00064@example\.org/.test(rep),
    'and pairs a name with the account they submitted from');
-ok(/Ali Robinson\n      hastyadem76@example\.org/.test(rep), 'for each of them');
-ok(/Hanna Byrd\n      hanna\.byrd@example\.org/.test(rep),
+ok(/Ada Robins\n      otherperson76@example\.org/.test(rep), 'for each of them');
+ok(/Hanna Byrne\n      hanna\.byrne@example\.org/.test(rep),
    'including one found in the processed evaluation log rather than a response tab');
-ok(/No submission on file for these/.test(rep) && /Makayla Hall/.test(rep),
+ok(/No submission on file for these/.test(rep) && /Makayla Harlow/.test(rep),
    'someone who submitted without an address recorded is listed as having none');
 ok(/is not proof of identity/.test(rep),
    'and it says plainly that a typed name is not proof of who someone is');
@@ -283,9 +283,9 @@ ok(snap() === before, 'and the spreadsheet proves it');
 
 // two accounts for one name is a decision, not a guess
 world({ responses: [
-  [D('2026-08-13'),'one@example.org','Stephen Porter','Anicia Scipp',D('2026-08-12'),'Yes',''],
-  [D('2026-08-14'),'two@example.org','Stephen Porter','Anicia Scipp',D('2026-08-13'),'Yes',''],
-  [D('2026-08-15'),'two@example.org','Stephen Porter','Anicia Scipp',D('2026-08-14'),'Yes','']
+  [D('2026-08-13'),'one@example.org','Stephen Porth','Annika Skye',D('2026-08-12'),'Yes',''],
+  [D('2026-08-14'),'two@example.org','Stephen Porth','Annika Skye',D('2026-08-13'),'Yes',''],
+  [D('2026-08-15'),'two@example.org','Stephen Porth','Annika Skye',D('2026-08-14'),'Yes','']
 ] });
 rep = suggestFtoEmails();
 ok(/MORE THAN ONE ACCOUNT, pick one/.test(rep), 'two accounts for one name is flagged');
@@ -294,14 +294,14 @@ ok(rep.indexOf('two@example.org') < rep.indexOf('one@example.org'),
 
 // somebody who already has one is left alone
 world({ roster: [
-  ['Stephen Porter','A','Advanced EMT','Y','','sporter@example.org','EMS 10'],
-  ['Ali Robinson','B','EMT','Y','','','EMS 18']
+  ['Stephen Porth','A','Advanced EMT','Y','','sporter@example.org','EMS 10'],
+  ['Ada Robins','B','EMT','Y','','','EMS 18']
 ] });
 rep = suggestFtoEmails();
 ok(/2 on the roster, 1 with an address, 1 without/.test(rep), 'the counts are right');
 ok(rep.indexOf('sporter@example.org') < 0, 'and an address already on the roster is not touched');
 
-world({ roster: [['Stephen Porter','A','Advanced EMT','Y','','sporter@example.org','EMS 10']] });
+world({ roster: [['Stephen Porth','A','Advanced EMT','Y','','sporter@example.org','EMS 10']] });
 ok(/Every one of them can sign in. Nothing to do./.test(suggestFtoEmails()),
    'a complete roster says there is nothing to do');
 
@@ -311,66 +311,147 @@ section('Matching a name to an address is a guess, and says so');
 // These are the real shapes from the county's own directory. What matters is
 // not that every one matches - it is that the confident ones and the guesses
 // end up in different piles, because this decides who can open whose record.
-[['Craig Hunt', 'craighunt913@gmail.com', 92],
- ['Macie Morse', 'morsemacie9@gmail.com', 92],
- ['Harley Pack', 'packharley4@gmail.com', 92],
- ['Malcolm Armstrong', 'malcolmarmstrongj@gmail.com', 92],
- ['Justin Head', 'jhead@sumtercountysc.gov', 86],
- ['Kent Hall', 'kehall@sumtercountysc.gov', 84],
- ['Brandon Lee', 'bglee.contact@gmail.com', 84],
- ['Mallori Huggins', 'malhuggins02@gmail.com', 76]
+[['Dale Whitlock', 'dalewhitlock913@example.org', 92],
+ ['Glenda Vane', 'vaneglenda9@example.org', 92],
+ ['Rosa Quill', 'quillrosa4@example.org', 92],
+ ['Marcus Bramble', 'marcusbramblej@example.org', 92],
+ ['Justin Hale', 'jhale@example.org', 86],
+ ['Kent Harlow', 'khharlow@example.org', 84],
+ ['Brandon Lisk', 'bglisk.contact@example.org', 84],
+ ['Mallori Hobbs', 'malhobbs02@example.org', 76]
 ].forEach(function (t) {
   const got = nameShapeScoreV1_(t[0], t[1]);
   ok(got.score >= t[2], t[0] + ' matches ' + t[1] + '  (' + got.score + ', ' + got.why + ')');
 });
 
-[['Kinley Atkinson', 'kinleylaken@gmail.com'],
- ['Hanna Byrd', 'hannahuff0129@gmail.com'],
- ['Courtney Dean', 'courtneytgumm1@gmail.com'],
- ['Julieann White', 'julieannmefford@gmail.com']
+[['Kinley Ashby', 'kinleymarsh@example.org'],
+ ['Hanna Byrne', 'hannawilde0129@example.org'],
+ ['Courtney Deane', 'courtneygumbel1@example.org'],
+ ['Julieann Ward', 'julieannmoreau@example.org']
 ].forEach(function (t) {
   const got = nameShapeScoreV1_(t[0], t[1]);
   ok(got.score > 0 && got.score < 70,
      t[0] + ' against ' + t[1] + ' scores as a guess, not a match  (' + got.score + ')');
 });
 
-ok(nameShapeScoreV1_('Stephen Porter', 'mudduck00064@gmail.com').score === 0,
+ok(nameShapeScoreV1_('Stephen Porth', 'oddhandle00064@example.org').score === 0,
    'an address with nothing of the name in it scores nothing at all');
-ok(nameShapeScoreV1_('Alex White', 'awise@sumtercountysc.gov').score === 0,
+ok(nameShapeScoreV1_('Alex Wray', 'awise@example.org').score === 0,
    'and a near miss on the surname is not a match');
 ok(nameShapeScoreV1_('Hanna', 'hanna@example.org').score === 0,
    'one name is not enough to match on');
 
 // the same address must not look equally like two people, silently
-const a = nameShapeScoreV1_('Justin Head', 'jhead@sumtercountysc.gov');
-const b = nameShapeScoreV1_('Jane Head', 'jhead@sumtercountysc.gov');
+const a = nameShapeScoreV1_('Justin Hale', 'jhale@example.org');
+const b = nameShapeScoreV1_('Jane Hale', 'jhale@example.org');
 ok(a.score === b.score,
-   'jhead scores the same for Justin Head and Jane Head, which is exactly why '
+   'jhead scores the same for Justin Hale and Jane Hale, which is exactly why '
    + 'the report calls it probable rather than certain');
 
 // ---------------------------------------------------------------- //
 section('The directory is offered, never applied');
 // ---------------------------------------------------------------- //
 world({ roster: [
-  ['Craig Hunt','A','Paramedic','Y','','','EMS 1'],
-  ['Justin Head','A','Paramedic','Y','','','EMS 9'],
-  ['Kinley Atkinson','A','Advanced EMT','Y','','','EMS 8']
+  ['Dale Whitlock','A','Paramedic','Y','','','EMS 1'],
+  ['Justin Hale','A','Paramedic','Y','','','EMS 9'],
+  ['Kinley Ashby','A','Advanced EMT','Y','','','EMS 8']
 ], responses: [] });
 as('chief@example.org');
 PROPS[PORTAL_DIRECTORY_PROPERTY] =
-  'craighunt913@gmail.com\njhead@sumtercountysc.gov\nkinleylaken@gmail.com\nnobody@example.org';
+  'dalewhitlock913@example.org\njhale@example.org\nkinleymarsh@example.org\nsomeone@example.org';
 before = snap();
 rep = suggestFtoEmails();
 ok(/FROM THE DIRECTORY  \(4 addresses\)/.test(rep), 'the directory is read');
-ok(/MATCHED WITH CONFIDENCE[\s\S]*Craig Hunt/.test(rep), 'a whole name is confident');
-ok(/PROBABLE, check each one[\s\S]*Justin Head/.test(rep), 'an initial and surname is probable');
-ok(/GUESSWORK, ask the person[\s\S]*Kinley Atkinson/.test(rep), 'a given name alone is guesswork');
+ok(/MATCHED WITH CONFIDENCE[\s\S]*Dale Whitlock/.test(rep), 'a whole name is confident');
+ok(/PROBABLE, check each one[\s\S]*Justin Hale/.test(rep), 'an initial and surname is probable');
+ok(/GUESSWORK, ask the person[\s\S]*Kinley Ashby/.test(rep), 'a given name alone is guesswork');
 ok(/a good-looking guess is still a guess/.test(rep), 'and it says so before the list');
 ok(snap() === before, 'nothing was written to the roster or anywhere else');
 
-world({ roster: [['Craig Hunt','A','Paramedic','Y','','','EMS 1']], responses: [] });
-ok(/paste it into the script/.test(suggestFtoEmails()),
+world({ roster: [['Dale Whitlock','A','Paramedic','Y','','','EMS 1']], responses: [] });
+ok(/paste it into the script property/.test(suggestFtoEmails()),
    'with no directory set it says how to give it one');
+
+// ---------------------------------------------------------------- //
+section('A directory line with a name on it settles what a shape cannot');
+// ---------------------------------------------------------------- //
+// The county's staff list is surname first, with a shift column between the
+// name and the address. Two of these are people whose surname on the list is
+// not the surname on the roster, and one is an address that looks like a
+// different person entirely. A name on the line settles all three.
+world({ roster: [
+  ['Rosa Quill','B','EMT','Y','','','EMS 11'],
+  ['Courtney Deane','A','EMT','Y','','','EMS 24'],
+  ['Stephen Porth','B','Advanced EMT','Y','','','EMS 10']
+], responses: [] });
+as('chief@example.org');
+PROPS[PORTAL_DIRECTORY_PROPERTY] = [
+  'Ledger, Rosa, B, quillrosa4@example.org',
+  'Deane, Courtney, A, crd91011@example.org',
+  'Gumbel, Courtney, A, courtneygumbel1@example.org',
+  'Porth, Stephen, B, oddhandle00064@example.org'
+].join('\n');
+
+const entries = directoryEntriesV1_();
+ok(entries.length === 4, 'four lines, four entries');
+ok(entries[0].name === 'Ledger Rosa', 'the name comes off the line');
+ok(entries[0].email === 'quillrosa4@example.org', 'and so does the address');
+ok(entries[1].name.split(' ').every(function (w) { return w.length > 1; }),
+   'a single-letter shift column is not taken for part of a name');
+
+ok(directoryNameMatchV1_('Courtney Deane', 'Deane Courtney'),
+   'a surname-first list still matches the roster');
+ok(!directoryNameMatchV1_('Courtney Deane', 'Gumbel Courtney'),
+   'and a different Courtney does not');
+
+before = snap();
+rep = suggestFtoEmails();
+ok(/NAMED IN THE DIRECTORY, not guessed at/.test(rep), 'named matches get their own section');
+ok(/Courtney Deane\n         crd91011@example\.org/.test(rep),
+   'Courtney Deane gets her own address, not the other Courtney\'s');
+ok(rep.indexOf('courtneygumbel1') < 0,
+   'and the other Courtney is not offered at all - a shape match would have offered her');
+ok(/Stephen Porth\n         oddhandle00064@example\.org/.test(rep),
+   'an address with nothing of the name in it is still matched, because the line names them');
+// The staff list calls Rosa Quill "Ledger, Rosa", so no line NAMES her and the
+// name match cannot fire. The shape match still finds her, because the address
+// carries the surname the roster uses - and it lands under MATCHED WITH
+// CONFIDENCE rather than NAMED, which is the honest distinction: the list and
+// the roster disagree about her surname and a person has to say why.
+ok(/MATCHED WITH CONFIDENCE\n  Rosa Quill\n         quillrosa4@example\.org/.test(rep),
+   'a surname that changed is found by shape, and labelled as a shape match');
+ok(!/NAMED IN THE DIRECTORY[\s\S]*?Rosa Quill[\s\S]*?MATCHED WITH/.test(rep),
+   'and is not claimed to have been named, because no line names her');
+ok(/the directory names them/.test(rep), 'the ones it did match say they were named');
+ok(snap() === before, 'and nothing was written');
+
+// Hanna Byrne has a submission in the fixture, and submission evidence outranks
+// the directory - so she never reaches the directory section at all.
+world({ roster: [['Hanna Byrne','D','EMT','Y','','','EMS 23']], responses: [] });
+PROPS[PORTAL_DIRECTORY_PROPERTY] = 'Byrne, Hanna, D, hannawilde0129@example.org';
+rep = suggestFtoEmails();
+ok(/hanna\.byrne@example\.org   \(1 submission\)/.test(rep),
+   'an address someone actually submitted from wins over one a list offers');
+ok(rep.indexOf('hannahuff0129') < 0, 'and the directory is not consulted for her at all');
+
+// two lines naming the same person is a question, not an answer
+world({ roster: [['Kinley Ashby','A','Advanced EMT','Y','','','EMS 8']], responses: [] });
+PROPS[PORTAL_DIRECTORY_PROPERTY] = [
+  'Ashby, Kinley, A, kinleymarsh@example.org',
+  'Ashby, Kinley, A, kashby@example.org'
+].join('\n');
+rep = suggestFtoEmails();
+ok(/MORE THAN ONE line names them/.test(rep), 'two lines for one name are flagged, not resolved');
+ok(/kinleymarsh/.test(rep) && /kashby@/.test(rep), 'and both are shown');
+
+// a bare list of addresses still works the old way
+world({ roster: [['Dale Whitlock','A','Paramedic','Y','','','EMS 1']], responses: [] });
+PROPS[PORTAL_DIRECTORY_PROPERTY] = 'dalewhitlock913@example.org\nnobody@example.org';
+rep = suggestFtoEmails();
+ok(/MATCHED WITH CONFIDENCE[\s\S]*Dale Whitlock/.test(rep),
+   'a directory with no names on it still matches by shape');
+ok(!/NAMED IN THE DIRECTORY[\s\S]*Dale Whitlock/.test(rep.split('MATCHED WITH CONFIDENCE')[0]),
+   'and does not claim to have been named');
 
 // ---------------------------------------------------------------- //
 section('The readiness check tells the two kinds of missing tab apart');

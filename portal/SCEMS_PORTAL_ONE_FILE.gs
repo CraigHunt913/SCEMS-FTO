@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build be55176b
+ * Build feb31349
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -3279,25 +3279,68 @@ function unprocessedResponses() {
 
 var PORTAL_DIRECTORY_PROPERTY = 'PORTAL_DIRECTORY_EMAILS';
 
-/** Every address pasted into the directory property. One per line, or
- *  separated by commas. Anything without an @ in it is ignored. */
-function directoryEmailsV1_() {
+/** The directory, however it was pasted in.
+ *
+ *  A bare list of addresses is one line each. A staff list is a line with a
+ *  name on it as well - "Robins, Ada, C, ada.robins248@example.org" or
+ *  "Ada Robins <ada.robins248@example.org>" or a tab-separated row out of a
+ *  report. Anything on the line that is not the address is taken as the name.
+ *
+ *  A name is worth far more than an address on its own: matching Ada Robins
+ *  to her row is a fact, and matching ali.robinson248@ to her by its shape is
+ *  a guess that happens to be right. */
+function directoryEntriesV1_() {
   var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL_DIRECTORY_PROPERTY) || '');
   var seen = {}, out = [];
-  raw.split(/[\s,;]+/).forEach(function (piece) {
-    var e = String(piece || '').trim().toLowerCase();
-    if (e.indexOf('@') < 1 || seen[e]) return;
-    seen[e] = true;
-    out.push(e);
+
+  raw.split(/[\n\r]+/).forEach(function (line) {
+    // Deliberately not "anything up to whitespace". Two addresses run together
+    // with no separator would come out as one token, and then neither of them
+    // is an address any more.
+    var found = String(line || '')
+      .match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g);
+    if (!found) return;
+    found.forEach(function (raw2) {
+      var email = raw2.trim().toLowerCase().replace(/[.,;]+$/, '');
+      if (email.indexOf('@') < 1) return;
+      var name = String(line).split(raw2).join(' ')
+        .replace(/[,;<>()"'\t|]+/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      // a lone letter is a shift column, not part of anyone's name
+      name = name.split(' ').filter(function (w) { return w.length > 1; }).join(' ');
+      if (seen[email]) return;
+      seen[email] = true;
+      out.push({ email: email, name: name });
+    });
   });
   return out;
 }
 
+/** Just the addresses, for the shape matching. */
+function directoryEmailsV1_() {
+  return directoryEntriesV1_().map(function (e) { return e.email; });
+}
+
+/** Does a directory line name this person? Tries the name as written and
+ *  reversed, because a staff list is usually surname first. */
+function directoryNameMatchV1_(name, entryName) {
+  var a = normNameV1_(name);
+  var b = normNameV1_(entryName);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  var bp = b.split(' ');
+  if (bp.length >= 2) {
+    if (bp.slice(1).join(' ') + ' ' + bp[0] === a) return true;   // "Robinson Ali"
+    if (bp[bp.length - 1] + ' ' + bp.slice(0, -1).join(' ') === a) return true;
+  }
+  return false;
+}
+
 /** How much an address LOOKS like it belongs to a name, and why.
  *
- *  This is shape, not evidence. jhead@ looks like Justin Head and probably is,
- *  but it looks exactly as much like Jane Head. The score exists so the report
+ *  This is shape, not evidence. jhead@ looks like Justin Hale and probably is,
+ *  but it looks exactly as much like Jane Hale. The score exists so the report
  *  can separate what it is confident about from what it is guessing at, and
  *  the "why" exists so a person can judge it rather than trust it. */
 function nameShapeScoreV1_(name, address) {
@@ -3447,8 +3490,28 @@ function suggestFtoEmails() {
     lines.push('and a good-looking guess is still a guess.');
     lines.push('=======================================================');
 
-    var tiers = { sure: [], likely: [], weak: [] };
+    var entries = directoryEntriesV1_();
+    var named = entries.filter(function (e) { return e.name; }).length;
+    if (named) {
+      lines.push(named + ' of them have a name on the line, which is worth more');
+      lines.push('than any amount of guessing at an address.');
+    }
+
+    var tiers = { named: [], sure: [], likely: [], weak: [] };
     none.forEach(function (nm) {
+      // a line that NAMES this person settles it, whatever the address looks like
+      var byName = entries.filter(function (e) {
+        return e.name && directoryNameMatchV1_(nm, e.name); });
+      if (byName.length === 1) {
+        tiers.named.push({ name: nm, hits: [{ email: byName[0].email,
+          why: 'the directory names them', score: 100 }] });
+        return;
+      }
+      if (byName.length > 1) {
+        tiers.named.push({ name: nm, hits: byName.map(function (e) {
+          return { email: e.email, why: 'MORE THAN ONE line names them', score: 100 }; }) });
+        return;
+      }
       var hits = [];
       dir.forEach(function (a) {
         var sc = nameShapeScoreV1_(nm, a);
@@ -3460,7 +3523,8 @@ function suggestFtoEmails() {
       tiers[t].push({ name: nm, hits: hits.slice(0, 3) });
     });
 
-    [['MATCHED WITH CONFIDENCE', tiers.sure],
+    [['NAMED IN THE DIRECTORY, not guessed at', tiers.named],
+     ['MATCHED WITH CONFIDENCE', tiers.sure],
      ['PROBABLE, check each one', tiers.likely],
      ['GUESSWORK, ask the person', tiers.weak]].forEach(function (pair) {
       lines.push('');
@@ -3476,9 +3540,11 @@ function suggestFtoEmails() {
     });
   } else if (!dir.length) {
     lines.push('');
-    lines.push('If you have a list of everyone\'s address, paste it into the script');
-    lines.push('property ' + PORTAL_DIRECTORY_PROPERTY + ' and run this again. It will');
-    lines.push('match names against it and say how sure it is about each one.');
+    lines.push('If you have a staff list, paste it into the script property');
+    lines.push(PORTAL_DIRECTORY_PROPERTY + ' and run this again. One line each.');
+    lines.push('A line with a NAME as well as an address is worth far more than');
+    lines.push('the address alone, because then nothing has to be guessed:');
+    lines.push('  Robins, Ada, C, ada.robins248@example.org');
   }
 
   lines.push('');
@@ -4308,7 +4374,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'be55176b';
+var PORTAL_BUILD = 'feb31349';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

@@ -60,23 +60,23 @@ function reset(active, effective, props) {
 // ---------------------------------------------------------------- //
 section('The tiers, strongest first');
 // ---------------------------------------------------------------- //
-reset('boss@county.gov', 'script@county.gov', { SCEMS_OPERATOR_EMAIL: 'other@x.com' });
+reset('boss@example.org', 'script@example.org', { SCEMS_OPERATOR_EMAIL: 'other@example.org' });
 let id = identityV20_2_();
-ok(id.tier === 'ACTIVE' && id.email === 'boss@county.gov',
+ok(id.tier === 'ACTIVE' && id.email === 'boss@example.org',
    'getActiveUser wins outright when the platform answers');
 ok(id.verified === true, 'and it is the only tier that counts as verified');
 ok(identityStampV20_2_(id) === '', 'a verified record carries no stamp — clean records stay clean');
 
-reset('', 'owner@gmail.com', { SCEMS_OPERATOR_EMAIL: 'other@x.com' });
+reset('', 'owner@example.org', { SCEMS_OPERATOR_EMAIL: 'other@example.org' });
 id = identityV20_2_();
-ok(id.tier === 'EFFECTIVE' && id.email === 'owner@gmail.com',
+ok(id.tier === 'EFFECTIVE' && id.email === 'owner@example.org',
    'getEffectiveUser is next: the account the script actually runs as');
 ok(id.verified === false, 'attested, not verified — inside a trigger it is the owner, not the editor');
 ok(identityStampV20_2_(id) === ' [IDENTITY EFFECTIVE, ATTESTED]', 'and the record says exactly that');
 
-reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@gmail.com' });
+reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@example.org' });
 id = identityV20_2_();
-ok(id.tier === 'OPERATOR' && id.email === 'operator@gmail.com',
+ok(id.tier === 'OPERATOR' && id.email === 'operator@example.org',
    'the configured operator account is the last resort');
 ok(id.verified === false, 'also attested');
 ok(identityStampV20_2_(id) === ' [IDENTITY OPERATOR, ATTESTED]', 'stamped distinctly');
@@ -91,7 +91,7 @@ ok(IDENTITY_TIERS_V20_2.length === 3, 'there are exactly three tiers, all named'
 section('A typed name is still worth nothing');
 // ---------------------------------------------------------------- //
 reset('', '', {});
-['Medical Director', 'Division Chief of Training', 'C. Hunt', 'operator@gmail.com'].forEach(t => {
+['Medical Director', 'Division Chief of Training', 'C. Hunt', 'operator@example.org'].forEach(t => {
   ok(deciderAuthorityV20_1_(t).allowed === false,
      'typing "' + t + '" into DECIDED BY still grants nothing');
 });
@@ -101,13 +101,13 @@ ok(!/decidedByText/.test(deciderAuthorityV20_1_.toString().replace(/\/\/[^\n]*/g
 ok(!/leaders/.test(deciderAuthorityV20_1_.toString()), 'the old name allowlist is still gone');
 
 // An operator account is set — but a typed name STILL does not decide who acted.
-reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@gmail.com' });
+reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@example.org' });
 resolveAuthorizedActorV20_1_ = function (e) {
-  return { ok: true, roles: e === 'operator@gmail.com' ? ['PROGRAM_DIRECTOR'] : [], person: null };
+  return { ok: true, roles: e === 'operator@example.org' ? ['PROGRAM_DIRECTOR'] : [], person: null };
 };
 let a = deciderAuthorityV20_1_('Somebody Else Entirely');
 ok(a.allowed === true, 'authority comes from the configured account...');
-ok(a.email === 'operator@gmail.com', '...and the record gets THAT address');
+ok(a.email === 'operator@example.org', '...and the record gets THAT address');
 ok(a.verified === false && a.tier === 'OPERATOR', 'marked attested, with the tier recorded');
 
 // ---------------------------------------------------------------- //
@@ -120,7 +120,7 @@ ok(/setOperatorAccountV20_2/.test(g.message), 'but now the refusal names the one
 ok(/not coming back/.test(g.message), 'while saying the typed-name hole is not returning');
 ok(ACCESS.length === 1 && ACCESS[0]['AUTHORIZED'] === 'NO', 'the denial is still logged');
 
-reset('', 'owner@gmail.com', {});
+reset('', 'owner@example.org', {});
 resolveAuthorizedActorV20_1_ = function () { return { ok: true, roles: ['PROGRAM_DIRECTOR'], person: null }; };
 g = requireActorV20_2_('WORK QUEUE');
 ok(g.ok === true, 'a consumer account CAN work the queue — the system is deployable');
@@ -128,12 +128,12 @@ ok(g.identity.tier === 'EFFECTIVE', 'via the effective-user tier');
 ok(/identity EFFECTIVE \(attested/.test(ACCESS[0]['DETAIL']),
    'and the access log records which tier granted it, every time');
 
-reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@gmail.com' });
+reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@example.org' });
 g = requireActorV20_2_('WORK QUEUE');
 ok(g.ok === true, 'so can a configured operator account');
 ok(/identity OPERATOR/.test(ACCESS[0]['DETAIL']), 'logged as such');
 
-reset('', 'nobody@gmail.com', {});
+reset('', 'nobody@example.org', {});
 resolveAuthorizedActorV20_1_ = function () { return { ok: true, roles: ['FTO'], person: null }; };
 g = requireActorV20_2_('WORK QUEUE');
 ok(g.ok === false, 'an identified account without the role is still refused');
@@ -143,15 +143,15 @@ ok(/\[EFFECTIVE, attested\]/.test(g.message), 'and the refusal shows how it was 
 section('Setting the operator account is deliberate and narrow');
 // ---------------------------------------------------------------- //
 reset('', '', {});
-setOperatorAccountV20_2('operator@gmail.com');
-ok(PROPS.SCEMS_OPERATOR_EMAIL === 'operator@gmail.com', 'the address is stored');
+setOperatorAccountV20_2('operator@example.org');
+ok(PROPS.SCEMS_OPERATOR_EMAIL === 'operator@example.org', 'the address is stored');
 ok(SYSLOG.some(e => e.k === 'OPERATOR ACCOUNT SET'), 'and setting it is logged');
 
 reset('', '', {});
 let r = setOperatorAccountV20_2('not an email');
 ok(/Refused/.test(r) && PROPS.SCEMS_OPERATOR_EMAIL === undefined, 'garbage is refused, nothing stored');
 
-reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@gmail.com' });
+reset('', '', { SCEMS_OPERATOR_EMAIL: 'operator@example.org' });
 setOperatorAccountV20_2('CLEAR');
 ok(PROPS.SCEMS_OPERATOR_EMAIL === undefined, 'it can be cleared');
 ok(identityV20_2_().email === '', 'after which the gate locks down again');

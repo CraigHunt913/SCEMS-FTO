@@ -56,8 +56,8 @@ global.SpreadsheetApp = {
   newDataValidation: () => { const o = {}; ['requireValueInList','requireDate','setAllowInvalid','setHelpText'].forEach(m => o[m] = () => o); o.build = () => ({}); return o; },
   ProtectionType: { SHEET: 'SHEET' }, flush: () => {}
 };
-global.Session = { getActiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
-  getEffectiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }), getScriptTimeZone: () => 'America/New_York' };
+global.Session = { getActiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
+  getEffectiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }), getScriptTimeZone: () => 'America/New_York' };
 global.Utilities = { getUuid: () => 'stub', formatDate: () => '2026-08-19' };
 global.Logger = { log: () => {} };
 global.PropertiesService = { getScriptProperties: () => ({ getProperty: () => '', setProperty: () => {}, deleteProperty: () => {} }) };
@@ -108,10 +108,10 @@ section('Renaming a header does not break the lookups');
 SHEETS = {};
 sheet(TAB.MASTER, ['Trainee','Employee ID','Level','Entry Profile','Assigned FTO','Start Date',
   'Current Phase','Set Status','Trainee Email','PHASE START DATE','NRT Date','ENTRY PROFILE KEY','Clearance Date','Notes'],
-  [['Cassidy Bacci','EMS 70','EMT','A','Julieann White','2026-08-02','Phase 3','Closed / Released',
-    'c@x.com','8/2/2026','','C : Experienced transfer','','Accelerated'],
-   ['Christian Szretter','EMS 71','EMT','A','Justin Head','2026-07-06','Phase 4','Cleared to Independent Practice',
-    's@x.com','7/6/2026','','A : New to the level','','']]);
+  [['Cassidy Bacci','EMS 70','EMT','A','Julieann Ward','2026-08-02','Phase 3','Closed / Released',
+    'c@example.org','8/2/2026','','C : Experienced transfer','','Accelerated'],
+   ['Christian Szretter','EMS 71','EMT','A','Justin Hale','2026-07-06','Phase 4','Cleared to Independent Practice',
+    's@example.org','7/6/2026','','A : New to the level','','']]);
 
 let before = readTableV20_1_(TAB.MASTER, 4);
 const idxSetStatus = before.col['SET STATUS'];
@@ -174,10 +174,10 @@ section('Entry profiles: report the contradiction, never guess it');
 SHEETS = {};
 sheet(TAB.MASTER, ['Trainee','Employee ID','Level','Entry Profile','Assigned FTO','Start Date',
   'Current Phase','Set Status','Trainee Email','PHASE START DATE','NRT Date','ENTRY PROFILE KEY','Clearance Date','Notes'],
-  [['Cassidy Bacci','EMS 70','EMT','A','J','2026-08-02','Phase 3','Active','c@x.com','','','C : Experienced transfer','',''],
-   ['Christian Szretter','EMS 71','EMT','A','J','2026-07-06','Phase 4','Active','s@x.com','','','A : New to the level','',''],
-   ['Anicia Scipp','EMS 30','AEMT','B','S','2026-07-31','Phase 4','Active','a@x.com','','','','',''],
-   ['No Profile','EMS 40','EMT','','S','2026-07-31','Phase 1','Active','n@x.com','','','','','']]);
+  [['Cassidy Bacci','EMS 70','EMT','A','J','2026-08-02','Phase 3','Active','c@example.org','','','C : Experienced transfer','',''],
+   ['Christian Szretter','EMS 71','EMT','A','J','2026-07-06','Phase 4','Active','s@example.org','','','A : New to the level','',''],
+   ['Annika Skye','EMS 30','AEMT','B','S','2026-07-31','Phase 4','Active','a@example.org','','','','',''],
+   ['No Profile','EMS 40','EMT','','S','2026-07-31','Phase 1','Active','n@example.org','','','','','']]);
 
 const audit = auditEntryProfilesV20_4();
 ok(/Cassidy Bacci/.test(audit), 'the contradicting row is named');

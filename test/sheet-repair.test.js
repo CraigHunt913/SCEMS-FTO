@@ -67,8 +67,8 @@ global.SpreadsheetApp = {
     setAllowInvalid: function () { return this; }, setHelpText: function () { return this; }, build: function () { return {}; } }),
   ProtectionType: { SHEET: 'SHEET' }, flush: () => {}
 };
-global.Session = { getActiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
-                   getEffectiveUser: () => ({ getEmail: () => 'craighunt913@gmail.com' }),
+global.Session = { getActiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
+                   getEffectiveUser: () => ({ getEmail: () => 'dalewhitlock913@example.org' }),
                    getScriptTimeZone: () => 'America/New_York' };
 global.Utilities = { getUuid: () => 'stub', formatDate: () => '2026-08-19' };
 global.Logger = { log: () => {} };

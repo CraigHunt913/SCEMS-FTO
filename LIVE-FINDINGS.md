@@ -122,7 +122,7 @@ live.
 
 1. Paste v20.2 into the script bound to `1YL-9Er9…` and reload the sheet.
 
-2. `goLiveChecklistV20_2("craighunt913@gmail.com")`
+2. `goLiveChecklistV20_2("dalewhitlock913@example.org")`
    Step 3 binds the combined form, so nothing further can be lost if it is
    ever reopened.
 
