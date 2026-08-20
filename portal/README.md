@@ -355,6 +355,39 @@ looks right is not.
 It writes nothing to the roster. Filling that column decides who can open whose
 personnel record.
 
+### Actually putting them on
+
+Paste one line per person into `PORTAL_ROSTER_EMAILS`:
+
+```
+Dana Whitlock, dana@example.org
+Marcus Vane, marcus@example.org
+```
+
+**`rosterEmailsBeforeAndAfter()`** shows every cell that would be filled, every
+one left alone and why, and prints the code. Writes nothing.
+
+**`applyRosterEmails()`** fills them in, behind the same gate.
+**`undoRosterEmails()`** empties exactly what it filled.
+
+It matches **by name, never by row order.** Pasting a column into a roster
+sorted by shift is how addresses end up one row out, and one row out here means
+a person opening somebody else's trainees with nothing to show anything went
+wrong.
+
+Three refusals, all tested:
+
+- **It never overwrites.** A row that already has an address is skipped and
+  reported, including when a different one was offered. Changing an address
+  changes who can open a record, and that is not a batch job.
+- **A name it cannot resolve to exactly one roster row is left alone** —
+  no match, two matches, or two lines naming the same person.
+- **It re-reads each cell immediately before writing it.** A cell that stopped
+  being empty between the plan and the write is left as somebody typed it.
+
+The undo leaves alone any cell edited by hand since, and says so. A person
+editing it outranks anything here.
+
 ---
 
 ## Prefilling, and why it is careful
@@ -434,7 +467,8 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           85 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-unprocessed.test.js 59 assertions — response tabs, waiting rows, roster addresses
+node test/portal-roster.test.js    47 assertions — writing addresses onto the roster, by name
+node test/portal-unprocessed.test.js 79 assertions — response tabs, waiting rows, roster addresses
 node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
 node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback
 node test/portal-onefile.test.js   61 assertions — the pasted file matches its sources and runs alone

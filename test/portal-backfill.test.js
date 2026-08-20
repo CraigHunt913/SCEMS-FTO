@@ -125,7 +125,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed']
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -544,12 +544,35 @@ section('The gate is the only way through');
 const importSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/80_Import.gs', 'utf8');
 const writers = importSrc.match(/function (runBackfillForReal|undoLastBackfill)\b/g) || [];
 ok(writers.length === 2, 'exactly two functions in this file can change a live sheet');
-ok(/var id = requireImportAuthorityV1_\(confirmCodeForV1_\(/.test(importSrc),
+// What matters is not which line asks the gate. It is that nothing is
+// WRITTEN before the gate has answered. Both of these read first now - the
+// import works out its plan, the undo reads its manifest - and reading is
+// not the thing the gate exists to stop.
+function bodyOf(src, fn) {
+  const at = src.indexOf('function ' + fn + '(');
+  if (at < 0) return '';
+  let depth = 0, i = src.indexOf('{', at);
+  for (let j = i; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}') { depth--; if (!depth) return src.slice(i, j + 1); }
+  }
+  return '';
+}
+const WRITES = /\.(setValue|setValues|appendRow|deleteRow|insertSheet)\s*\(/;
+['runBackfillForReal', 'undoLastBackfill'].forEach(fn => {
+  const body = bodyOf(importSrc, fn);
+  ok(!!body, fn + ' is in this file');
+  const gate = body.indexOf('requireImportAuthorityV1_(');
+  ok(gate > 0, fn + ' asks the gate');
+  const beforeGate = body.slice(0, gate);
+  const w = beforeGate.match(WRITES);
+  ok(!w, fn + ' writes nothing before the gate answers' +
+     (w ? ' — found ' + w[0] : ''));
+});
+ok(/requireImportAuthorityV1_\(code\)/.test(importSrc),
    'the import asks the gate with the code for the plan it just built');
-ok(importSrc.indexOf('sh.appendRow') > importSrc.indexOf('requireImportAuthorityV1_(confirmCodeForV1_('),
-   'and does not write a single row before that gate has answered');
-ok(/function undoLastBackfill\(\) \{\s*requireImportAuthorityV1_\(\);/.test(importSrc),
-   'and so does the undo');
+ok(/CODE/.test(importSrc) && /wroteWith/.test(importSrc),
+   'and the code that authorised a run is recorded, so the undo can use the same one');
 ok(!/setValue\(|appendRow\(|deleteRow\(/.test(
      importSrc.slice(0, importSrc.indexOf('function requireImportAuthorityV1_'))),
    'nothing before the gate is defined writes anything');
@@ -565,7 +588,7 @@ ok(otherPortalFiles.indexOf('deleteRow') < 0,
 ok(!/requireImportAuthorityV1_\s*\(\)\s*\{/.test(otherPortalFiles),
    'the gate is defined in exactly one file');
 const allPortal = ['00_Config','10_Identity','20_Data','30_WebApp','40_Forms',
-  '50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed']
+  '50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(!new RegExp('setProperty\\(\\s*' + PORTAL_BACKFILL_CONFIRM).test(allPortal) &&
    allPortal.indexOf("setProperty('" + PORTAL_BACKFILL_CONFIRM + "'") < 0,

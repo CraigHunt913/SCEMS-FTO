@@ -1,8 +1,9 @@
 /**
- * The one production write in this project, and the way back out of it.
+ * A production write, and the way back out of it.
  *
- * Everything else here refuses to touch the live tracker. This does not, and
- * that is the whole reason it lives in its own file with its own gate.
+ * Almost everything else here refuses to touch the live tracker. This does
+ * not, and that is the whole reason it lives in its own file with its own
+ * gate. 96_Roster.gs is the only other one, and it uses this same gate.
  *
  * WHAT IT DOES
  *   Appends form responses that never reached a tab. Additive only. It never
@@ -199,7 +200,8 @@ function runBackfillForReal() {
     return noteV1_('Nothing to import. Every response is already in the tracker.');
   }
 
-  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
+  var code = confirmCodeForV1_(safeTargetIdV1_(), plans);
+  var id = requireImportAuthorityV1_(code);
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -223,7 +225,7 @@ function runBackfillForReal() {
     p.missing.forEach(function (m) {
       sh.appendRow(m.row);
       manifest.push([stamp, p.dest, sh.getLastRow(), m.id, p.key,
-                     whoIsAskingV1_() || 'unidentified', PORTAL.VERSION]);
+                     whoIsAskingV1_() || 'unidentified', PORTAL.VERSION, code]);
     });
     var afterRows = sh.getLastRow();
 
@@ -259,12 +261,12 @@ function writeManifestV1_(rows) {
     sh.getRange(1, 1).setValue(
       'Rollback manifest for imported form responses. Do not edit or sort this tab.')
       .setFontWeight('bold');
-    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 7)
-      .setValues([['RUN', 'TAB', 'ROW', 'RESPONSE ID', 'FORM', 'BY', 'VERSION']])
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
+      .setValues([['RUN', 'TAB', 'ROW', 'RESPONSE ID', 'FORM', 'BY', 'VERSION', 'CODE']])
       .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
     sh.setFrozenRows(PORTAL.HEADER_ROW);
   }
-  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 7).setValues(rows);
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
 }
 
 /** Removes exactly the rows the last run added, and only if every one of them
@@ -272,13 +274,21 @@ function writeManifestV1_(rows) {
  *  nothing is deleted, because a shifted row means the manifest no longer
  *  describes the sheet and guessing is how records get destroyed. */
 function undoLastBackfill() {
-  requireImportAuthorityV1_();
   var t = readTabV1_(PORTAL_BACKFILL_LOG);
   if (!t.ok || !t.rows.length) return noteV1_('No import has been run against this spreadsheet.');
 
   var runs = t.rows.map(function (r) { return String(r[t.col['RUN']] || ''); })
     .filter(String).sort();
   var last = runs[runs.length - 1];
+
+  // The code that authorised the run authorises undoing it.
+  var wroteWith = '';
+  t.rows.forEach(function (r) {
+    if (String(r[t.col['RUN']] || '') === last && t.col['CODE'] !== undefined) {
+      wroteWith = String(r[t.col['CODE']] || '') || wroteWith;
+    }
+  });
+  requireImportAuthorityV1_(wroteWith);
 
   var entries = t.rows.filter(function (r) {
     return String(r[t.col['RUN']] || '') === last; })

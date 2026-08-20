@@ -44,7 +44,7 @@ ok(one.indexOf("var PORTAL_BUILD = '" + stamp + "';") >= 0,
 section('Nothing was left behind');
 // ---------------------------------------------------------------- //
 const SOURCES = ['00_Config', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
-                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed'];
+                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster'];
 
 let missing = [];
 SOURCES.forEach(name => {
@@ -64,6 +64,7 @@ ok(missing.length === 0, 'every function from all ten script files is present' +
  'disableFormLinks', 'backfillPreview', 'backfillIntoStaging', 'backfillBeforeAndAfter',
  'runBackfillForReal', 'undoLastBackfill', 'lockBackfill', 'duplicateSubmissionsReport',
  'whatElseIsOutThere', 'mergeBeforeAndAfter', 'runMergeForReal', 'showSettings', 'unprocessedResponses', 'suggestFtoEmails',
+ 'rosterEmailsBeforeAndAfter', 'applyRosterEmails', 'undoRosterEmails',
  'doGet'].forEach(fn => {
   ok(one.indexOf('function ' + fn + '(') >= 0, 'the Run dropdown will show ' + fn);
 });

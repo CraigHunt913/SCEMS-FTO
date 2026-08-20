@@ -398,7 +398,8 @@ function runMergeForReal() {
       'spreadsheets is already here.');
   }
 
-  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
+  var code = confirmCodeForV1_(safeTargetIdV1_(), plans);
+  var id = requireImportAuthorityV1_(code);
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -423,7 +424,7 @@ function runMergeForReal() {
       sh.appendRow(m.row);
       manifest.push([stamp, p.tab, sh.getLastRow(), m.key,
                      PORTAL_MERGE_PREFIX + ' ' + p.source,
-                     whoIsAskingV1_() || 'unidentified', PORTAL.VERSION]);
+                     whoIsAskingV1_() || 'unidentified', PORTAL.VERSION, code]);
     });
     var afterRows = sh.getLastRow();
 
