@@ -26,26 +26,40 @@
 var PORTAL_ROSTER_EMAILS_PROPERTY = 'PORTAL_ROSTER_EMAILS';
 var PORTAL_ROSTER_LOG = 'PORTAL ROSTER LOG';
 
-/** The name-and-address lines pasted into the property.
+/** The name-and-address pairs pasted into the property.
  *
- *  "Dana Whitlock, dana@example.org" or "Whitlock, Dana <dana@example.org>"
- *  or a tab-separated row. Whatever is not the address is the name. */
-function rosterEmailLinesV1_() {
-  var raw = String(PropertiesService.getScriptProperties()
-    .getProperty(PORTAL_ROSTER_EMAILS_PROPERTY) || '');
-  var out = [];
-  raw.split(/[\n\r]+/).forEach(function (line) {
-    var found = String(line || '')
-      .match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g);
-    if (!found || !found.length) return;
-    var email = found[0].toLowerCase();
-    var name = String(line).split(found[0]).join(' ')
-      .replace(/[,;<>()"'\t|]+/g, ' ').replace(/\s+/g, ' ').trim();
-    name = name.split(' ').filter(function (w) { return w.length > 1; }).join(' ');
-    if (!name) return;
-    out.push({ name: name, email: email, extra: found.slice(1) });
+ *  "Dana Whitlock, dana@example.org", one per line - EXCEPT that the Apps
+ *  Script property editor is a single-line field and quietly turns a pasted
+ *  block into one long line. So this does not depend on line breaks at all.
+ *
+ *  It walks the whole value word by word. When it reaches an address, the
+ *  name is whatever words came since the last one. That reads the same
+ *  whether the newlines survived or not, and it is why the name has to come
+ *  BEFORE the address on each line. */
+function nameEmailPairsV1_(raw) {
+  var text = String(raw == null ? '' : raw);
+  var isEmail = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+  var words = text.replace(/[,;<>()"'|]+/g, ' ').split(/\s+/).filter(Boolean);
+
+  var out = [], pending = [];
+  words.forEach(function (w) {
+    var bare = w.replace(/[.,;]+$/, '');
+    if (isEmail.test(bare)) {
+      // a lone letter between the name and the address is a shift or a
+      // column marker, not a middle initial anyone would want kept
+      var name = pending.filter(function (x) { return x.length > 1; }).join(' ');
+      pending = [];
+      if (name) out.push({ name: name, email: bare.toLowerCase() });
+      return;
+    }
+    pending.push(w);
   });
   return out;
+}
+
+function rosterEmailLinesV1_() {
+  return nameEmailPairsV1_(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_ROSTER_EMAILS_PROPERTY));
 }
 
 /** What would change on the roster. Reads; writes nothing. */
@@ -67,8 +81,11 @@ function rosterEmailPlanV1_() {
 
   var lines = rosterEmailLinesV1_();
   if (!lines.length) {
-    plan.problem = 'Nothing is in ' + PORTAL_ROSTER_EMAILS_PROPERTY + '. One line ' +
-      'per person, a name and an address on each:\n  Dana Whitlock, dana@example.org';
+    plan.problem = 'No name-and-address pairs are in ' + PORTAL_ROSTER_EMAILS_PROPERTY +
+      '.\n\nOne per person, the NAME first and then the address:\n' +
+      '  Dana Whitlock, dana@example.org\n\n' +
+      'Line breaks are welcome but not needed - the property editor drops them\n' +
+      'and this reads it either way. The name must come before the address.';
     return plan;
   }
 

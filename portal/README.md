@@ -357,12 +357,18 @@ personnel record.
 
 ### Actually putting them on
 
-Paste one line per person into `PORTAL_ROSTER_EMAILS`:
+Paste one per person into `PORTAL_ROSTER_EMAILS`, **name first**:
 
 ```
 Dana Whitlock, dana@example.org
 Marcus Vane, marcus@example.org
 ```
+
+The Apps Script property editor is a single-line field and drops the line
+breaks out of a pasted block. That is fine — nothing here depends on them. The
+value is read word by word, and each address takes the words in front of it as
+its name. It is why the **name has to come before the address**, and why a
+three-word name still holds together.
 
 **`rosterEmailsBeforeAndAfter()`** shows every cell that would be filled, every
 one left alone and why, and prints the code. Writes nothing.
@@ -467,7 +473,7 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           85 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-roster.test.js    47 assertions — writing addresses onto the roster, by name
+node test/portal-roster.test.js    60 assertions — writing addresses onto the roster, by name
 node test/portal-unprocessed.test.js 79 assertions — response tabs, waiting rows, roster addresses
 node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
 node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback

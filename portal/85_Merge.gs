@@ -38,11 +38,22 @@ function otherBookIdsV1_() {
   // split turns "the other one in my drive" into six candidates, and each
   // single word is a valid-looking bare id.
   var seen = {}, out = [];
-  raw.split(/[\n\r,;]+/).forEach(function (piece) {
-    var id = spreadsheetIdFromV1_(piece);
+  function take(id) {
     if (!id || id === here || seen[id]) return;
     seen[id] = true;
     out.push(id);
+  }
+  raw.split(/[\n\r,;]+/).forEach(function (piece) {
+    var id = spreadsheetIdFromV1_(piece);
+    if (id) { take(id); return; }
+    // Nothing came out of it whole. The property editor is a single line and
+    // turns a pasted block into space-separated text, so try the words.
+    if (/\s/.test(piece)) {
+      piece.split(/\s+/).forEach(function (w) {
+        var wid = spreadsheetIdFromV1_(w);
+        if (wid && (w.indexOf('/d/') >= 0 || wid.length >= 20)) take(wid);
+      });
+    }
   });
   return out;
 }

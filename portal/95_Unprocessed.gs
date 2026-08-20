@@ -149,27 +149,23 @@ var PORTAL_DIRECTORY_PROPERTY = 'PORTAL_DIRECTORY_EMAILS';
 function directoryEntriesV1_() {
   var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL_DIRECTORY_PROPERTY) || '');
-  var seen = {}, out = [];
 
-  raw.split(/[\n\r]+/).forEach(function (line) {
-    // Deliberately not "anything up to whitespace". Two addresses run together
-    // with no separator would come out as one token, and then neither of them
-    // is an address any more.
-    var found = String(line || '')
-      .match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g);
-    if (!found) return;
-    found.forEach(function (raw2) {
-      var email = raw2.trim().toLowerCase().replace(/[.,;]+$/, '');
-      if (email.indexOf('@') < 1) return;
-      var name = String(line).split(raw2).join(' ')
-        .replace(/[,;<>()"'\t|]+/g, ' ')
-        .replace(/\s+/g, ' ').trim();
-      // a lone letter is a shift column, not part of anyone's name
-      name = name.split(' ').filter(function (w) { return w.length > 1; }).join(' ');
-      if (seen[email]) return;
-      seen[email] = true;
-      out.push({ email: email, name: name });
-    });
+  // Names first, by the same word walk the roster list uses - the property
+  // editor is one line and eats the line breaks out of a pasted block.
+  var seen = {}, out = [];
+  nameEmailPairsV1_(raw).forEach(function (e) {
+    if (seen[e.email]) return;
+    seen[e.email] = true;
+    out.push({ email: e.email, name: e.name });
+  });
+
+  // then any address that had no name in front of it
+  var all = raw.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g) || [];
+  all.forEach(function (a) {
+    var email = a.toLowerCase().replace(/[.,;]+$/, '');
+    if (seen[email]) return;
+    seen[email] = true;
+    out.push({ email: email, name: '' });
   });
   return out;
 }

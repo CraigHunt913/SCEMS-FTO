@@ -221,6 +221,64 @@ rosterEmailsBeforeAndAfter();
 ok(snap() === before, 'the preview writes nothing');
 
 // ---------------------------------------------------------------- //
+section('The line breaks do not survive, and it does not need them');
+// ---------------------------------------------------------------- //
+// The Apps Script property editor is a single-line field. Paste a block into
+// it and the newlines are gone. The first version of this read line by line,
+// so the whole list arrived as one entry: one address, and everybody's name
+// and everybody else's address jammed together as the "name".
+const BLOCK = [
+  'Dale Whitlock, dalewhitlock913@example.org',
+  'Glenda Vane, vaneglenda9@example.org',
+  'Rosa Quill, quillrosa4@example.org',
+  'Marcus Bramble, marcusbramblej@example.org',
+  'Kent Harlow, khharlow@example.org'
+];
+const COLLAPSED = BLOCK.join(' ');          // exactly what the editor stores
+
+world({ list: COLLAPSED });
+as('chief@example.org');
+let pairs = rosterEmailLinesV1_();
+ok(pairs.length === 5, 'five pairs come out of one long line, not one');
+ok(pairs[0].name === 'Dale Whitlock' && pairs[0].email === 'dalewhitlock913@example.org',
+   'the first pair is right');
+ok(pairs[4].name === 'Kent Harlow' && pairs[4].email === 'khharlow@example.org',
+   'and so is the last');
+ok(!pairs.some(x => x.name.indexOf('@') >= 0),
+   'no name has an address in it, which is what went wrong before');
+
+p = rosterEmailPlanV1_();
+ok(p.set.length === 5, 'and the plan fills in all five');
+ok(!p.notFound.length, 'with nobody reported as not on the roster');
+
+world({ list: BLOCK.join('\n') });
+const withBreaks = rosterEmailPlanV1_();
+world({ list: COLLAPSED });
+const without = rosterEmailPlanV1_();
+ok(JSON.stringify(withBreaks.set) === JSON.stringify(without.set),
+   'line breaks or no line breaks, the plan is identical');
+
+// a three-word name still holds together
+world({ roster: ROSTER.concat([['Tamsin Boone Waller','D','EMT','Y','','','EMS 30']]),
+        list: 'Tamsin Boone Waller, tboonewaller@example.org Kent Harlow, khharlow@example.org' });
+pairs = rosterEmailLinesV1_();
+ok(pairs.length === 2 && pairs[0].name === 'Tamsin Boone Waller',
+   'a three-word name is not cut short by the walk');
+ok(rosterEmailPlanV1_().set.length === 2, 'and both are matched');
+
+// a shift column between the name and the address is not part of the name
+world({ list: 'Kent Harlow A khharlow@example.org' });
+pairs = rosterEmailLinesV1_();
+ok(pairs.length === 1 && pairs[0].name === 'Kent Harlow',
+   'a lone letter between name and address is dropped');
+
+// an address with no name in front of it is not a pair
+world({ list: 'orphan@example.org Kent Harlow, khharlow@example.org' });
+pairs = rosterEmailLinesV1_();
+ok(pairs.length === 1 && pairs[0].email === 'khharlow@example.org',
+   'an address with nothing before it is skipped rather than given the next name');
+
+// ---------------------------------------------------------------- //
 section('Nothing is written without the code for this exact plan');
 // ---------------------------------------------------------------- //
 world();
@@ -311,8 +369,13 @@ ok(!p.set.length, 'and adds nobody - this fills a roster, it does not build one'
 
 world({ list: '' });
 as('chief@example.org');
-ok(/Nothing is in PORTAL_ROSTER_EMAILS/.test(rosterEmailsBeforeAndAfter()),
+const empty = rosterEmailsBeforeAndAfter();
+ok(/No name-and-address pairs are in PORTAL_ROSTER_EMAILS/.test(empty),
    'an empty list says how to give it one');
+ok(/the NAME first and then the address/.test(empty),
+   'and says which way round each pair goes, since that is what the walk depends on');
+ok(/property editor drops them/.test(empty),
+   'and that the missing line breaks are expected');
 
 // ---------------------------------------------------------------- //
 section('And it comes back out again');
