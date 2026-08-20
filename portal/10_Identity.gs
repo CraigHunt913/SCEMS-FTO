@@ -55,6 +55,22 @@ function resolveViewerV1_(email) {
 }
 
 /** People the portal knows, read from the target book. Cached per execution. */
+/** The first of these headers this tab actually has, or ''.
+ *
+ *  The live roster names its column FTO NAME. The code looked for FTO, found
+ *  no such column, read undefined, and every FTO on it resolved to nobody -
+ *  silently, because an empty name simply skips the row. A header this layer
+ *  depends on is worth naming several ways rather than one. */
+function pickV1_(t, row, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var ci = t.col[headers[i]];
+    if (ci !== undefined && row[ci] !== undefined && row[ci] !== null && row[ci] !== '') {
+      return row[ci];
+    }
+  }
+  return '';
+}
+
 var PEOPLE_CACHE_V1 = null;
 function portalPeopleV1_() {
   if (PEOPLE_CACHE_V1) return PEOPLE_CACHE_V1;
@@ -75,16 +91,16 @@ function portalPeopleV1_() {
   var t = readTabAllV1_(PORTAL.TAB.ROSTER);
   if (t.ok) {
     t.rows.forEach(function (r) {
-      var em = String(r[t.col['EMAIL']] || '').trim().toLowerCase();
-      var nm = String(r[t.col['FTO']] || r[t.col['NAME']] || '').trim();
+      var em = String(pickV1_(t, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim().toLowerCase();
+      var nm = String(pickV1_(t, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
       if (em && nm) { out.ftos[em] = nm; out.names[em] = nm; }
     });
   }
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
-      var em = String(r[m.col['TRAINEE EMAIL']] || '').trim().toLowerCase();
-      var nm = String(r[m.col['TRAINEE']] || '').trim();
+      var em = String(pickV1_(m, r, ['TRAINEE EMAIL', 'EMAIL', 'PERSONAL EMAIL'])).trim().toLowerCase();
+      var nm = String(pickV1_(m, r, ['TRAINEE', 'TRAINEE NAME', 'NAME'])).trim();
       if (em && nm) { out.trainees[em] = nm; out.names[em] = nm; }
     });
   }

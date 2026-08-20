@@ -128,6 +128,43 @@ function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; 
 function payloadFor(email) { as(email); const v = resolveViewerV1_(whoIsAskingV1_()); return { v, d: payloadForV1_(v) }; }
 
 // ---------------------------------------------------------------- //
+section('The roster is found however its columns are named');
+// ---------------------------------------------------------------- //
+// The live roster calls its column FTO NAME. The code looked only for FTO,
+// read undefined, and every FTO on it resolved to nobody - silently, because
+// an empty name just skips the row. Nobody would have seen an error; they
+// would only have seen "you are not set up yet".
+world();
+tab(PORTAL.TAB.ROSTER,
+  ['FTO NAME','SHIFT','CERT LEVEL','TRAINS EMT','TRAINS AEMT','TRAINS PARAMEDIC',
+   'ACTIVE','NOTES','EMAIL','EMPLOYEE ID'],
+  [['Dana Whitlock','A','Paramedic','Y','Y','Y','Y','','dana@example.org','EMS 5']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.FTO,
+   'a roster headed FTO NAME still resolves its people');
+ok(resolveViewerV1_('dana@example.org').name === 'Dana Whitlock',
+   'and gets their name, which is what their trainees are matched against');
+
+world();
+tab(PORTAL.TAB.ROSTER, ['NAME','EMAIL'], [['Dana Whitlock','dana@example.org']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('dana@example.org').name === 'Dana Whitlock',
+   'a roster headed just NAME works too');
+
+world();
+tab(PORTAL.TAB.ROSTER, ['FTO NAME','EMAIL'], [['','dana@example.org']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.NONE,
+   'a row with an address and no name is still not a person');
+
+world();
+tab(PORTAL.TAB.ROSTER, ['FTO NAME','EMAIL'], [['Dana Whitlock','']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.NONE,
+   'and an FTO with no address cannot be signed in as - which is the whole '
+   + 'reason the live roster needs its EMAIL column filled');
+
+// ---------------------------------------------------------------- //
 section('Roles resolve from the data, not from what the browser claims');
 // ---------------------------------------------------------------- //
 world();
