@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build aa71019a
+ * Build 571c2cd1
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -1269,6 +1269,87 @@ function productionReadinessCheck() {
 /** Where is this portal pointed and what can it do. Safe to run any time. */
 function whereAmI() { return portalStatusV1(); }
 
+/** Every setting this portal reads, what it holds, and what it means.
+ *
+ *  There are several properties now and two of them take a spreadsheet
+ *  address, pointing in opposite directions - one is read from, one is
+ *  written to. This is the screen that makes that visible instead of leaving
+ *  it to be remembered. Read only. */
+function showSettings() {
+  var props = PropertiesService.getScriptProperties();
+  function get(k) { return String(props.getProperty(k) || ''); }
+  function nameOf(id) {
+    if (!id) return '';
+    try { return SpreadsheetApp.openById(id).getName(); } catch (e) { return '(cannot open)'; }
+  }
+
+  var target = '';
+  try { target = targetIdV1_(); } catch (e) { target = ''; }
+
+  var lines = ['PORTAL SETTINGS  (read only)', '',
+    'Version : ' + PORTAL.VERSION +
+      (typeof PORTAL_BUILD === 'string' ? '   build ' + PORTAL_BUILD : ''),
+    'Signed in : ' + (whoIsAskingV1_() || 'Google is not naming this account'),
+    '', '--- WHERE IT IS POINTED ---', ''];
+
+  lines.push('Reads and writes : ' + (target || 'NOT SET'));
+  lines.push('                   ' + (target ? nameOf(target) : ''));
+  lines.push('Mode             : ' + safeModeV1_() +
+    (mayWriteV1_() ? '   writes allowed' : '   READ ONLY'));
+  lines.push('');
+
+  var prod = spreadsheetIdFromV1_(get(PORTAL_PROD_ID_PROPERTY));
+  lines.push(PORTAL_PROD_ID_PROPERTY);
+  lines.push('  ' + (prod || '(not set)') + (prod ? '   ' + nameOf(prod) : ''));
+  lines.push('  The live tracker. pointAtProductionReadOnly() points here.');
+  lines.push('');
+
+  var stg = spreadsheetIdFromV1_(get('PORTAL_STAGING_SPREADSHEET_ID'));
+  lines.push('PORTAL_STAGING_SPREADSHEET_ID');
+  lines.push('  ' + (stg || '(not set)') + (stg ? '   ' + nameOf(stg) : ''));
+  lines.push('  The practice sandbox. pointAtStaging() goes back to it.');
+  lines.push('');
+
+  lines.push('--- THE OTHER SPREADSHEETS, READ FROM ---');
+  lines.push('');
+  lines.push(PORTAL_OTHER_IDS_PROPERTY);
+  var others = [];
+  try { others = otherBookIdsV1_(); } catch (e) { others = []; }
+  if (!others.length) lines.push('  (none listed)');
+  others.forEach(function (id) { lines.push('  ' + id + '   ' + nameOf(id)); });
+  lines.push('  Opened read only. Never written to.');
+  lines.push('');
+
+  lines.push('--- THE WRITE GATE ---');
+  lines.push('');
+  var confirm = spreadsheetIdFromV1_(get(PORTAL_BACKFILL_CONFIRM));
+  lines.push(PORTAL_BACKFILL_CONFIRM);
+  if (!confirm) {
+    lines.push('  (not set)   nothing can be written');
+  } else if (confirm === target) {
+    lines.push('  ' + confirm + '   ' + nameOf(confirm));
+    lines.push('  MATCHES the spreadsheet above. Writing is unlocked.');
+  } else {
+    lines.push('  ' + confirm + '   ' + nameOf(confirm));
+    lines.push('  DOES NOT MATCH. This names ' +
+      (others.indexOf(confirm) >= 0 ? 'a spreadsheet being read from' : 'a different spreadsheet') +
+      ',');
+    lines.push('  and the gate wants the one being written to: ' + (target || 'NOT SET'));
+  }
+  lines.push('');
+
+  lines.push('--- PEOPLE AND LINKS ---');
+  lines.push('');
+  lines.push('Training division : ' + (get('PORTAL_DIVISION_EMAILS') || '(none set)'));
+  lines.push('Medical director  : ' + (get('PORTAL_MEDICAL_EMAILS') || '(none set)'));
+  lines.push('Supervisors       : ' + (get('PORTAL_SUPERVISORS') || '(none set)'));
+  var live = false;
+  try { live = formLinksLiveV1_(); } catch (e) {}
+  lines.push('Form links        : ' + (live ? 'LIVE' : 'OFF'));
+
+  return noteV1_(lines.join('\n'));
+}
+
 
 /* ======================================================================
  * 60_History.gs
@@ -1984,9 +2065,24 @@ function requireImportAuthorityV1_() {
       'backfillBeforeAndAfter() to see exactly what this would do.');
   }
   if (confirm !== id) {
-    throw new Error('Refusing to write. ' + PORTAL_BACKFILL_CONFIRM + ' names ' +
-      confirm + ' but this portal is pointed at ' + id + '. A confirmation for ' +
-      'one spreadsheet will not fire against another.');
+    // The confirmation names the spreadsheet being WRITTEN TO. Naming the one
+    // being read from is the obvious way to get this backwards, so when that
+    // is what happened, say so rather than just reporting a mismatch.
+    var others = [];
+    try { others = otherBookIdsV1_(); } catch (e) { others = []; }
+    var isASource = others.indexOf(confirm) >= 0;
+
+    throw new Error('Refusing to write.\n\n' +
+      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + confirm + '\n' +
+      'but this portal writes to\n  ' + id + '\n\n' +
+      (isASource
+        ? 'That is one of the spreadsheets listed in ' + PORTAL_OTHER_IDS_PROPERTY +
+          ', which is the one being READ FROM. The confirmation names the one ' +
+          'being WRITTEN TO.\n\n'
+        : '') +
+      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + id + '\n' +
+      'which is ' + safeTargetNameV1_() + ', the spreadsheet this portal is ' +
+      'pointed at. Then run this again.');
   }
   return id;
 }
@@ -3589,7 +3685,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'aa71019a';
+var PORTAL_BUILD = '571c2cd1';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

@@ -400,11 +400,15 @@ ok(/Set the script property/.test(threw(() => runBackfillForReal())),
 ok(snapshot() === snap, 'and writes nothing while refusing');
 
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'YES';
-ok(/names YES but this portal is pointed at PROD-BOOK/.test(threw(() => runBackfillForReal())),
+const notAnId = threw(() => runBackfillForReal());
+ok(/holds\n  YES/.test(notAnId) && /writes to\n  PROD-BOOK/.test(notAnId),
    '"YES" is not a confirmation, because it names no spreadsheet');
+ok(notAnId.indexOf('Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  PROD-BOOK') >= 0,
+   'and the refusal prints the exact value to set instead');
 
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'STG-BOOK';
-ok(/will not fire against another/.test(threw(() => runBackfillForReal())),
+const stale = threw(() => runBackfillForReal());
+ok(/Refusing to write/.test(stale) && /holds\n  STG-BOOK/.test(stale),
    'a confirmation left over from the sandbox cannot fire against production');
 ok(snapshot() === snap, 'still nothing written');
 
@@ -416,7 +420,7 @@ ok(threw(() => runBackfillForReal()) === '',
 world(PORTAL.MODE_PRODUCTION);
 PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
 PROPS[PORTAL_BACKFILL_CONFIRM] = '/d/STG-BOOK/edit';
-ok(/will not fire against another/.test(threw(() => runBackfillForReal())),
+ok(/Refusing to write/.test(threw(() => runBackfillForReal())),
    'and a pasted address for the WRONG book is still refused');
 
 // ---------------------------------------------------------------- //
@@ -546,8 +550,17 @@ const otherPortalFiles = ['00_Config','10_Identity','20_Data','30_WebApp','40_Fo
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(otherPortalFiles.indexOf('deleteRow') < 0,
    'no other file in the portal deletes a row at all');
-ok(otherPortalFiles.indexOf(PORTAL_BACKFILL_CONFIRM) < 0,
-   'and no other file can set or read the confirmation');
+// Other files may READ the confirmation - the settings screen shows it, and
+// the merge goes through the same gate. What must stay true is that only this
+// file decides, and nothing anywhere quietly SETS it.
+ok(!/requireImportAuthorityV1_\s*\(\)\s*\{/.test(otherPortalFiles),
+   'the gate is defined in exactly one file');
+const allPortal = ['00_Config','10_Identity','20_Data','30_WebApp','40_Forms',
+  '50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging']
+  .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
+ok(!new RegExp('setProperty\\(\\s*' + PORTAL_BACKFILL_CONFIRM).test(allPortal) &&
+   allPortal.indexOf("setProperty('" + PORTAL_BACKFILL_CONFIRM + "'") < 0,
+   'and nothing in the portal ever sets it - only a person does, by hand');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

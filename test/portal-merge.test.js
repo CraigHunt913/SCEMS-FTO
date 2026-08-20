@@ -317,9 +317,54 @@ here = snapOf('PROD-BOOK'); there = snapOf('STRAY-BOOK');
 ok(/Set the script property/.test(threw(() => runMergeForReal())),
    'with no confirmation it refuses');
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'STRAY-BOOK';
-ok(/will not fire against another/.test(threw(() => runMergeForReal())),
+const backwards = threw(() => runMergeForReal());
+ok(/Refusing to write/.test(backwards),
    'a confirmation naming the OTHER book does not authorise writing to this one');
+// Naming the source instead of the destination is the obvious way to get this
+// backwards. The refusal has to say which way round it goes, not just report
+// a mismatch and leave you to work it out.
+ok(/READ FROM/.test(backwards) && /WRITTEN TO/.test(backwards),
+   'and says which direction the confirmation points');
+ok(/PORTAL_OTHER_SPREADSHEET_IDS/.test(backwards),
+   'naming the property that holds the one being read from');
+ok(backwards.indexOf('PROD-BOOK') >= 0,
+   'and printing the exact id to set instead');
+ok(/SCEMS FTPD Tracker/.test(backwards),
+   'with the name of that spreadsheet, so it can be recognised');
 ok(snapOf('PROD-BOOK') === here && snapOf('STRAY-BOOK') === there, 'nothing written either time');
+
+// a confirmation naming some unrelated book gets the mismatch without the
+// read-from wording, because that is not what happened
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'SOMETHING-ELSE-ENTIRELY';
+const unrelated = threw(() => runMergeForReal());
+ok(/Refusing to write/.test(unrelated), 'an unrelated id is refused too');
+ok(!/READ FROM/.test(unrelated), 'without claiming it is one of the sources');
+
+// ---------------------------------------------------------------- //
+section('The settings screen shows both directions at once');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'STRAY-BOOK';
+const before2 = snapOf('PROD-BOOK'), beforeStray = snapOf('STRAY-BOOK');
+let settings = showSettings();
+ok(/PORTAL SETTINGS/.test(settings), 'it reports');
+ok(/Reads and writes : PROD-BOOK/.test(settings), 'naming what it is pointed at');
+ok(/THE OTHER SPREADSHEETS, READ FROM/.test(settings), 'and the ones read from');
+ok(/STRAY-BOOK   SCEMS FTPD Tracker \(copy\)/.test(settings),
+   'with the name of each, so a wrong one is obvious');
+ok(/DOES NOT MATCH/.test(settings), 'it flags a confirmation pointing the wrong way');
+ok(/a spreadsheet being read from/.test(settings), 'and says what it is pointing at instead');
+ok(snapOf('PROD-BOOK') === before2 && snapOf('STRAY-BOOK') === beforeStray,
+   'and writes nothing to either book');
+
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+settings = showSettings();
+ok(/MATCHES the spreadsheet above. Writing is unlocked./.test(settings),
+   'set the right way round, it says writing is unlocked');
+delete PROPS[PORTAL_BACKFILL_CONFIRM];
+ok(/nothing can be written/.test(showSettings()), 'unset, it says nothing can be written');
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
 
 const hereRecord = JSON.stringify(Object.keys(BOOKS['PROD-BOOK'])
   .filter(n => n !== PORTAL_BACKFILL_LOG && n !== PORTAL.TAB.AUDIT)

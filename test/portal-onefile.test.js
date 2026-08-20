@@ -63,7 +63,7 @@ ok(missing.length === 0, 'every function from all ten script files is present' +
  'productionReadinessCheck', 'warmFormCache', 'clearFormCache', 'enableFormLinks',
  'disableFormLinks', 'backfillPreview', 'backfillIntoStaging', 'backfillBeforeAndAfter',
  'runBackfillForReal', 'undoLastBackfill', 'lockBackfill', 'duplicateSubmissionsReport',
- 'whatElseIsOutThere', 'mergeBeforeAndAfter', 'runMergeForReal',
+ 'whatElseIsOutThere', 'mergeBeforeAndAfter', 'runMergeForReal', 'showSettings',
  'doGet'].forEach(fn => {
   ok(one.indexOf('function ' + fn + '(') >= 0, 'the Run dropdown will show ' + fn);
 });

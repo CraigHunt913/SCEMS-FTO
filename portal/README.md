@@ -225,6 +225,21 @@ sheet, and guessing is how records get destroyed.
 **`lockBackfill()`** — clears the confirmation so the gate closes behind you.
 Both the import and the undo then refuse.
 
+### Two properties, pointing opposite ways
+
+This is the one thing here that is easy to get backwards:
+
+| Property | Names the spreadsheet that is | |
+| --- | --- | --- |
+| `PORTAL_OTHER_SPREADSHEET_IDS` | **read from** | never written to |
+| `PORTAL_BACKFILL_CONFIRM` | **written to** | must equal the current target |
+
+Put the source in the confirmation and it refuses, says which way round it
+goes, and prints the exact id to use instead.
+
+**`showSettings()`** lays out every setting with the name of each spreadsheet
+and whether the gate is open. Read only. Run it whenever you are unsure.
+
 ---
 
 ## When some of the record went to another spreadsheet
@@ -370,9 +385,9 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           73 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-merge.test.js     58 assertions — the other spreadsheets, read only then across
-node test/portal-backfill.test.js  99 assertions — importing responses, the production gate, the rollback
-node test/portal-onefile.test.js   58 assertions — the pasted file matches its sources and runs alone
+node test/portal-merge.test.js     73 assertions — the other spreadsheets, read only then across
+node test/portal-backfill.test.js 101 assertions — importing responses, the production gate, the rollback
+node test/portal-onefile.test.js   59 assertions — the pasted file matches its sources and runs alone
 ```
 
 `SCEMS_PORTAL_ONE_FILE.gs` is **built**, not written. Edit the files in this

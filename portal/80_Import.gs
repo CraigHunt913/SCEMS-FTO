@@ -108,9 +108,24 @@ function requireImportAuthorityV1_() {
       'backfillBeforeAndAfter() to see exactly what this would do.');
   }
   if (confirm !== id) {
-    throw new Error('Refusing to write. ' + PORTAL_BACKFILL_CONFIRM + ' names ' +
-      confirm + ' but this portal is pointed at ' + id + '. A confirmation for ' +
-      'one spreadsheet will not fire against another.');
+    // The confirmation names the spreadsheet being WRITTEN TO. Naming the one
+    // being read from is the obvious way to get this backwards, so when that
+    // is what happened, say so rather than just reporting a mismatch.
+    var others = [];
+    try { others = otherBookIdsV1_(); } catch (e) { others = []; }
+    var isASource = others.indexOf(confirm) >= 0;
+
+    throw new Error('Refusing to write.\n\n' +
+      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + confirm + '\n' +
+      'but this portal writes to\n  ' + id + '\n\n' +
+      (isASource
+        ? 'That is one of the spreadsheets listed in ' + PORTAL_OTHER_IDS_PROPERTY +
+          ', which is the one being READ FROM. The confirmation names the one ' +
+          'being WRITTEN TO.\n\n'
+        : '') +
+      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + id + '\n' +
+      'which is ' + safeTargetNameV1_() + ', the spreadsheet this portal is ' +
+      'pointed at. Then run this again.');
   }
   return id;
 }
