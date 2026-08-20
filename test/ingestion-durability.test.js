@@ -175,5 +175,102 @@ ok(!/mailBudgetOkV20_2_/.test(sendMail.toString()),
 ok(/getRemainingDailyQuota/.test(healthCheckV20_2.toString()),
    'and the health check surfaces the remaining quota before it bites');
 
+// ---------------------------------------------------------------- //
+section('Catching up the responses that arrived while nothing listened');
+// ---------------------------------------------------------------- //
+// A form with no submit trigger does not lose its answers - they land in the
+// response tab and sit there. Twelve did. Everything needed to turn one into
+// evidence rows already existed; nothing ever walked the list and called it.
+
+let REPLAYED = [], FAIL_ON = {};
+const realReplay = replayResponseV20_1;
+replayResponseV20_1 = function (formId, rid) {
+  if (FAIL_ON[rid]) throw new Error(FAIL_ON[rid]);
+  REPLAYED.push(rid);
+  return 'ok';
+};
+
+function FakeResponse(id) { this.id = id; }
+FakeResponse.prototype.getId = function () { return this.id; };
+function FakeF(title, ids) { this.title = title; this.ids = ids; }
+FakeF.prototype.getTitle = function () { return this.title; };
+FakeF.prototype.getResponses = function () {
+  return this.ids.map(i => new FakeResponse(i)); };
+
+let FORMS_BY_ID = {};
+global.FormApp = { openById: id => {
+  if (!FORMS_BY_ID[id]) throw new Error('No item with the given ID could be found');
+  return FORMS_BY_ID[id];
+} };
+
+const ownedTitle = formTitlesOwnedByFormTriggersV20_1_()[0];
+storedFormIdsV20_1_ = function () { return ['F1']; };
+FORMS_BY_ID = { F1: new FakeF(ownedTitle, ['r1', 'r2', 'r3']) };
+
+// the ledger knows about r1 only
+readTableV20_1_ = function (name) {
+  if (name === TAB.LEDGER) {
+    return { ok: true, col: { 'RESPONSE ID': 0 }, rows: [['r1']] };
+  }
+  return { ok: false, col: {}, rows: [] };
+};
+
+// preview writes nothing
+REPLAYED = [];
+let prev = catchUpUnprocessedPreview();
+ok(REPLAYED.length === 0, 'the preview replays nothing at all');
+ok(/PREVIEW, nothing written/.test(prev), 'and says so at the top');
+ok(/2 response\(s\) would be replayed/.test(prev), 'while counting what is waiting');
+ok(/catchUpUnprocessed\(\)/.test(prev), 'and naming the function that does it');
+
+// the real thing replays only what the ledger has never seen
+REPLAYED = [];
+let out = catchUpUnprocessed();
+ok(REPLAYED.length === 2, 'it replays only the responses the ledger has not seen');
+ok(REPLAYED.indexOf('r1') < 0, 'never one that has already been through');
+ok(REPLAYED.indexOf('r2') >= 0 && REPLAYED.indexOf('r3') >= 0, 'and both of the ones waiting');
+ok(/2 of 2 replayed/.test(out), 'the report says how many of how many');
+
+// running it again does nothing, because now they are all in the ledger
+readTableV20_1_ = function (name) {
+  if (name === TAB.LEDGER) {
+    return { ok: true, col: { 'RESPONSE ID': 0 }, rows: [['r1'], ['r2'], ['r3']] };
+  }
+  return { ok: false, col: {}, rows: [] };
+};
+REPLAYED = [];
+out = catchUpUnprocessed();
+ok(REPLAYED.length === 0, 'a second run replays nothing');
+ok(/Nothing is waiting/.test(out), 'and says everything has been through');
+
+// one bad response must not stop the others
+readTableV20_1_ = function (name) {
+  if (name === TAB.LEDGER) return { ok: true, col: { 'RESPONSE ID': 0 }, rows: [] };
+  return { ok: false, col: {}, rows: [] };
+};
+REPLAYED = []; FAIL_ON = { r2: 'that trainee is not on the master' };
+out = catchUpUnprocessed();
+ok(REPLAYED.length === 2 && REPLAYED.indexOf('r2') < 0,
+   'the two good ones go through and the bad one does not stop them');
+ok(/NOT REPLAYED  \(1\)/.test(out), 'the failure is reported');
+ok(/not on the master/.test(out), 'with the reason the handler gave');
+ok(/still in their response tab/.test(out), 'and says the response is not lost');
+ok(/retries only these/.test(out), 'and that running it again picks up just those');
+FAIL_ON = {};
+
+// a form nobody owns is left alone: those are somebody else's ingestion
+FORMS_BY_ID = { F1: new FakeF('Some Form Nothing Owns', ['x1']) };
+REPLAYED = [];
+out = catchUpUnprocessed();
+ok(REPLAYED.length === 0, 'a form not owned by a trigger is not replayed through this');
+
+// an unreadable form is named, not swallowed
+storedFormIdsV20_1_ = function () { return ['GONE']; };
+FORMS_BY_ID = {};
+out = catchUpUnprocessed();
+ok(/UNREADABLE form GONE/.test(out), 'a form it cannot open is named in the report');
+
+replayResponseV20_1 = realReplay;
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

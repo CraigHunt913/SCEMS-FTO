@@ -12962,3 +12962,115 @@ function onOpen(e) {
     Logger.log('onOpen menu skipped: ' + err);
   }
 }
+
+/* ================================================================
+ *  Catching up the responses that arrived while nothing was listening
+ * ================================================================ */
+
+/** Replays every form response that never reached the ledger.
+ *
+ *  A form with no submit trigger does not lose its answers: they land in the
+ *  response tab and sit there. Twelve of them did. Everything needed to turn
+ *  one into evidence rows already existed - replayResponseV20_1 does exactly
+ *  that, and onSkillsGridSubmitV20 refuses to expand a response twice - but
+ *  nothing ever walked the list and called it.
+ *
+ *  Safe to run as often as you like. Three separate guards make a second run
+ *  a no-op: the ledger key, the SOURCE RESPONSE ID already on the evidence
+ *  rows, and the per-response try/catch below.
+ *
+ *  One response failing does not stop the rest. Each is reported by name.
+ *
+ *  catchUpUnprocessedPreview() shows what it would do and writes nothing. */
+function catchUpUnprocessed() { return catchUpUnprocessedV20_2_(false); }
+function catchUpUnprocessedPreview() { return catchUpUnprocessedV20_2_(true); }
+
+function catchUpUnprocessedV20_2_(previewOnly) {
+  var L = ['CATCHING UP UNPROCESSED RESPONSES' + (previewOnly ? '  — PREVIEW, nothing written' : ''), ''];
+
+  var ledger = readTableV20_1_(TAB.LEDGER, 4);
+  var inLedger = {};
+  if (ledger.ok && ledger.col['RESPONSE ID'] !== undefined) {
+    ledger.rows.forEach(function (r) {
+      var rid = String(r[ledger.col['RESPONSE ID']] || '').trim();
+      if (rid) inLedger[rid] = true;
+    });
+  } else {
+    L.push('The ingestion ledger is not readable, so every response looks new.');
+    L.push('Replaying is still safe - the evidence rows carry their own response');
+    L.push('id and will not be written twice - but stop and check first.');
+    L.push('');
+  }
+
+  var owned = formTitlesOwnedByFormTriggersV20_1_();
+  var todo = [];
+  storedFormIdsV20_1_().forEach(function (id) {
+    var f, title = '';
+    try { f = FormApp.openById(id); title = String(f.getTitle() || '').trim(); }
+    catch (e) { L.push('  UNREADABLE form ' + id + ' : ' + e); return; }
+    if (owned.indexOf(title) < 0) return;
+    var responses;
+    try { responses = f.getResponses(); } catch (e2) {
+      L.push('  ' + title + ' : could not list responses — ' + e2); return;
+    }
+    var mine = [];
+    responses.forEach(function (resp) {
+      var rid = resp.getId();
+      if (!inLedger[rid]) mine.push(rid);
+    });
+    L.push('  ' + title + ' : ' + responses.length + ' response(s), ' +
+           mine.length + ' never processed');
+    mine.forEach(function (rid) { todo.push({ formId: id, title: title, rid: rid }); });
+  });
+
+  L.push('');
+  if (!todo.length) {
+    L.push('Nothing is waiting. Every response has been through the ledger.');
+    var msg0 = L.join('\n');
+    Logger.log(msg0);
+    return msg0;
+  }
+
+  if (previewOnly) {
+    L.push(todo.length + ' response(s) would be replayed through their own handler,');
+    L.push('which is the same path a live submission takes. Nothing has been written.');
+    L.push('');
+    L.push('To do it: catchUpUnprocessed()');
+    var msg1 = L.join('\n');
+    Logger.log(msg1);
+    return msg1;
+  }
+
+  var done = 0, failed = [];
+  todo.forEach(function (item) {
+    try {
+      replayResponseV20_1(item.formId, item.rid);
+      done++;
+    } catch (e) {
+      failed.push({ item: item, why: String(e.message || e) });
+    }
+  });
+
+  L.push(done + ' of ' + todo.length + ' replayed.');
+  if (failed.length) {
+    L.push('');
+    L.push('NOT REPLAYED  (' + failed.length + ')');
+    failed.forEach(function (f) {
+      L.push('  ' + f.item.title + '  ' + f.item.rid);
+      L.push('      ' + f.why);
+    });
+    L.push('  Those responses are untouched and still in their response tab.');
+    L.push('  Nothing is lost. Running this again retries only these.');
+  }
+  L.push('');
+  L.push('Check it with reconcileIngestionV20_1(), which reads and writes nothing.');
+  L.push('Anything accepted is now on ' + TAB.SKILL_EVIDENCE + ', and anything that');
+  L.push('crossed its threshold is on ' + TAB.SKILL_VALIDATION + ' waiting for a decision.');
+
+  systemLog_('INFO', 'CATCH-UP REPLAY',
+    done + ' replayed, ' + failed.length + ' failed, of ' + todo.length + ' waiting');
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
