@@ -259,6 +259,17 @@ function START() {
     }
   } catch (e) {}
 
+  // the forms, which are the only thing that writes a record
+  try {
+    if (!isPracticeV1_() && !formLinksLiveV1_()) {
+      todo.push({ what: 'the form links are switched off, so nobody can reach a form from the portal',
+        run: 'enableFormLinks',
+        why: 'Every screen shows "Form links are switched off in this mode" instead ' +
+             'of the form cards. setUpStaging turns them off so a practice user ' +
+             'cannot submit to a real form, and that switch outlived its reason.' });
+    }
+  } catch (e) {}
+
   // responses sitting unread
   try {
     var stray = formResponseTabsV1_().reduce(function (n, t) { return n + t.rows.length; }, 0);

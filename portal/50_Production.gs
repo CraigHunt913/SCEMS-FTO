@@ -54,6 +54,15 @@ function pointAtProductionReadOnly() {
   var previous = props.getProperty(PORTAL.PROPERTY_TARGET) || '(none)';
   props.setProperty(PORTAL.PROPERTY_TARGET, id);
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_PRODUCTION);
+
+  // setUpStaging switches the form links OFF, because a sandbox user tapping
+  // a form card would land on the REAL form and submit a live row. That reason
+  // dies the moment this portal is pointed at the real tracker - but the
+  // property does not, and a hard OFF beats the mode. Left alone it means
+  // every screen shows "Form links are switched off in this mode" and nobody
+  // can reach a form from the portal at all. So leaving staging clears it.
+  var linksWere = String(props.getProperty('PORTAL_FORM_LINKS') || '').toUpperCase();
+  if (linksWere === 'OFF') props.deleteProperty('PORTAL_FORM_LINKS');
   PEOPLE_CACHE_V1 = null;
   forgetTabsV1_();
 
@@ -64,6 +73,11 @@ function pointAtProductionReadOnly() {
     '  approving a sign-off, filing a reflection, acknowledging coaching,\n' +
     '  switching role for testing.\n' +
     'The forms are unaffected and remain the way anything gets written.\n\n' +
+    (linksWere === 'OFF'
+      ? 'The form links were switched off for the sandbox and are back on now.\n' +
+        'That switch exists so a practice user cannot submit to a real form,\n' +
+        'and it has no reason to survive the move here.\n\n'
+      : '') +
     'Run productionReadinessCheck() next to see what the portal can and\n' +
     'cannot find before you send anyone the link.');
 }

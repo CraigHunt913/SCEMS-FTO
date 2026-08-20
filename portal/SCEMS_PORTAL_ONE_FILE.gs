@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build a9235bee
+ * Build e868e7ff
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -440,6 +440,17 @@ function START() {
         why: 'Their ASSIGNED FTO on ' + PORTAL.TAB.MASTER + ' is blank, so they are ' +
              'on nobody\'s list and nobody is being asked about them. Put a name ' +
              'in that column. Who it is is not a decision this can make.' });
+    }
+  } catch (e) {}
+
+  // the forms, which are the only thing that writes a record
+  try {
+    if (!isPracticeV1_() && !formLinksLiveV1_()) {
+      todo.push({ what: 'the form links are switched off, so nobody can reach a form from the portal',
+        run: 'enableFormLinks',
+        why: 'Every screen shows "Form links are switched off in this mode" instead ' +
+             'of the form cards. setUpStaging turns them off so a practice user ' +
+             'cannot submit to a real form, and that switch outlived its reason.' });
     }
   } catch (e) {}
 
@@ -2019,6 +2030,15 @@ function pointAtProductionReadOnly() {
   var previous = props.getProperty(PORTAL.PROPERTY_TARGET) || '(none)';
   props.setProperty(PORTAL.PROPERTY_TARGET, id);
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_PRODUCTION);
+
+  // setUpStaging switches the form links OFF, because a sandbox user tapping
+  // a form card would land on the REAL form and submit a live row. That reason
+  // dies the moment this portal is pointed at the real tracker - but the
+  // property does not, and a hard OFF beats the mode. Left alone it means
+  // every screen shows "Form links are switched off in this mode" and nobody
+  // can reach a form from the portal at all. So leaving staging clears it.
+  var linksWere = String(props.getProperty('PORTAL_FORM_LINKS') || '').toUpperCase();
+  if (linksWere === 'OFF') props.deleteProperty('PORTAL_FORM_LINKS');
   PEOPLE_CACHE_V1 = null;
   forgetTabsV1_();
 
@@ -2029,6 +2049,11 @@ function pointAtProductionReadOnly() {
     '  approving a sign-off, filing a reflection, acknowledging coaching,\n' +
     '  switching role for testing.\n' +
     'The forms are unaffected and remain the way anything gets written.\n\n' +
+    (linksWere === 'OFF'
+      ? 'The form links were switched off for the sandbox and are back on now.\n' +
+        'That switch exists so a practice user cannot submit to a real form,\n' +
+        'and it has no reason to survive the move here.\n\n'
+      : '') +
     'Run productionReadinessCheck() next to see what the portal can and\n' +
     'cannot find before you send anyone the link.');
 }
@@ -7311,7 +7336,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'a9235bee';
+var PORTAL_BUILD = 'e868e7ff';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

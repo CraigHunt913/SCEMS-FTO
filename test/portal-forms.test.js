@@ -509,6 +509,42 @@ PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
 PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 
 // ---------------------------------------------------------------- //
+section('The sandbox switch that outlived its reason');
+// ---------------------------------------------------------------- //
+// setUpStaging turns the form links OFF so a practice user tapping a form
+// card cannot land on the REAL form and submit a live row. Good reason - and
+// it dies the moment the portal is pointed at the real tracker. The property
+// does not. A hard OFF beats the mode, so left alone it means every screen
+// says "Form links are switched off in this mode" and nobody can reach a
+// form from the portal at all. Going live into that is a portal with no
+// forms in it, which is a portal with no point.
+
+world();
+setUpStaging();
+ok(PROPS['PORTAL_FORM_LINKS'] === 'OFF', 'staging switches the links off');
+ok(formLinksLiveV1_() === false, 'and they are off');
+
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+let ptOut = pointAtProductionReadOnly();
+ok(formLinksLiveV1_() === true, 'leaving staging turns them back on');
+ok(PROPS['PORTAL_FORM_LINKS'] === undefined || PROPS['PORTAL_FORM_LINKS'] === null,
+   'by clearing the switch, not by setting a second one over it');
+ok(/back on now/.test(ptOut), 'and it says so rather than doing it quietly');
+
+// somebody who deliberately turned them off keeps them off
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+pointAtProductionReadOnly();
+disableFormLinks();
+ok(formLinksLiveV1_() === false, 'a deliberate off is still off');
+as('chief@example.org');
+ok(/form links are switched off/i.test(START()),
+   'and START raises it, because a portal with no forms in it has no point');
+ok(/Run  enableFormLinks/.test(START()), 'naming the one function that fixes it');
+enableFormLinks();
+ok(!/form links are switched off/i.test(START()), 'and stops once they are on');
+
+// ---------------------------------------------------------------- //
 section('goLive, and what it refuses to go live into');
 // ---------------------------------------------------------------- //
 world();
