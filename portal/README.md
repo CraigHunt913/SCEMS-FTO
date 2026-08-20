@@ -36,6 +36,17 @@ at the bottom. There is nothing else to add.
 2. Select everything in `Code.gs`, delete it, and paste
    `SCEMS_PORTAL_ONE_FILE.gs` in its place. Save.
 
+   Copy it from the **raw** view — that is plain text, and a browser copies it
+   whole. Then scroll to the bottom of `Code.gs` and check you can see the
+   `END OF FILE` block. If you cannot, the paste was cut short; select all,
+   delete, paste again. `portalPasteCheck` says the same thing out loud.
+
+   No line in that file is longer than about 200 characters, deliberately. The
+   first version embedded the county badge as a single 49,000-character line,
+   which is exactly what a code editor mangles on paste and what a file viewer
+   refuses to render — and either one gives you a syntax error nowhere near
+   the real cause. The badge is now sized for where it is actually shown.
+
 3. Run **`setUpStaging`**. It builds a sandbox with invented people and points
    the portal at it. Form links are **off** in the sandbox, on purpose: the
    forms behind them are the real ones, and a test submission would be a live
@@ -318,7 +329,7 @@ node test/portal.test.js           73 assertions — role isolation and write sa
 node test/portal-forms.test.js    103 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
 node test/portal-backfill.test.js  97 assertions — importing responses, the production gate, the rollback
-node test/portal-onefile.test.js   43 assertions — the pasted file matches its sources and runs alone
+node test/portal-onefile.test.js   52 assertions — the pasted file matches its sources and runs alone
 ```
 
 `SCEMS_PORTAL_ONE_FILE.gs` is **built**, not written. Edit the files in this

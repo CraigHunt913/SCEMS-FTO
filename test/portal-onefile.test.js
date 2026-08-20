@@ -63,16 +63,31 @@ ok(missing.length === 0, 'every function from all ten script files is present' +
 section('The page inside it is the page');
 // ---------------------------------------------------------------- //
 const html = fs.readFileSync(path.join(ROOT, 'portal', 'Index.html'), 'utf8');
-const m = one.match(/var PORTAL_PAGE_HTML = \[([\s\S]*?)\]\.join\('\\n'\);/);
-ok(!!m, 'the page is embedded as a joined array of lines');
+const m = one.match(/var PORTAL_PAGE_HTML = \[([\s\S]*?)\]\.join\(''\);/);
+ok(!!m, 'the page is embedded as a joined array of chunks');
 let embedded = null;
 if (m) {
-  try { embedded = JSON.parse('[' + m[1] + ']').join('\n'); } catch (e) { embedded = null; }
+  try { embedded = JSON.parse('[' + m[1] + ']').join(''); } catch (e) { embedded = null; }
 }
-ok(embedded !== null, 'and every one of those lines is a valid string literal');
+ok(embedded !== null, 'and every one of those chunks is a valid string literal');
 ok(embedded === html, 'the embedded page is byte for byte portal/Index.html');
 ok(/var BOOT = <\?!= boot \?>;/.test(embedded || ''),
    'including the templating scriptlet, unescaped, which is what it must stay');
+
+// ---------------------------------------------------------------- //
+section('Nothing in it is a long line');
+// ---------------------------------------------------------------- //
+// A 49,000-character line is what broke this the first time. A code editor
+// mangles one on paste and a file viewer refuses to render it, and either way
+// you get a syntax error nowhere near the real cause. So: a hard ceiling.
+const longest = one.split('\n').reduce((w, l) => Math.max(w, l.length), 0);
+ok(longest <= 300, 'the longest line in the whole file is ' + longest + ' characters');
+ok(one.split('\n').filter(l => l.length > 200).length < 10,
+   'and barely any come close to that');
+
+const pageLines = fs.readFileSync(path.join(ROOT, 'portal', 'Index.html'), 'utf8').split('\n');
+ok(pageLines.reduce((w, l) => Math.max(w, l.length), 0) <= 5000,
+   'the page it is built from has no enormous line either');
 
 // ---------------------------------------------------------------- //
 section('It runs on its own, with nothing else loaded');
@@ -197,6 +212,22 @@ ok(/TARGET_SPREADSHEET_ID is deliberately empty|not pointed at a spreadsheet yet
    'it still refuses to run until it is pointed somewhere');
 ok(!/@(gmail|sumter)/i.test(one.replace(/example\.org/g, '')),
    'no real address is in it');
+
+// ---------------------------------------------------------------- //
+section('A short paste announces itself');
+// ---------------------------------------------------------------- //
+ok(/END OF FILE/.test(one), 'the file ends with a marker you can look for');
+ok(one.trimEnd().endsWith('}'), 'and the marker is not the last thing, the function is');
+ok(one.indexOf('function portalPasteCheck()') >= 0,
+   'there is a one-click check for whether the paste arrived whole');
+if (typeof portalPasteCheck === 'function') {
+  ok(/complete/i.test(portalPasteCheck()), 'and on a whole file it says so');
+  const keepPage = PORTAL_PAGE_HTML;
+  PORTAL_PAGE_HTML = 'too short';
+  ok(/INCOMPLETE/.test(portalPasteCheck()), 'on a truncated one it says that instead');
+  ok(/paste the whole file again/.test(portalPasteCheck()), 'and says what to do about it');
+  PORTAL_PAGE_HTML = keepPage;
+}
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);
