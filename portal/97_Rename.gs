@@ -259,6 +259,8 @@ function applyRename() {
   }
 
   say();
+  refreshDropdownsNoteV1_(L);
+  say();
   say('The portal matches trainees to their training officer by name, so this');
   say('had to change everywhere at once or her trainees would have dropped off');
   say('her list. Run START to check nothing is left over.');

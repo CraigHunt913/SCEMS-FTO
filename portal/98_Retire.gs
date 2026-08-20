@@ -296,6 +296,8 @@ function retireFto() {
   }
 
   if (written.length) {
+    refreshDropdownsNoteV1_(L);
+    L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
     L.push('is exactly where it was, under the name that earned it.');
     L.push('');

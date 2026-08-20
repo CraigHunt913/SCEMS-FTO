@@ -731,6 +731,41 @@ ok(rosterPeopleV1_().some(x => x.name === 'Chyna Gray'),
    'a row somebody has put their own work into is not deleted');
 ok(/KEPT/.test(out) && /NOTES/.test(out), 'and the undo says which column stopped it');
 
+// Every roster change has to be followed by the tracker's own refreshDropdowns,
+// or the nine forms keep offering the old roster and nothing says why.
+rWorld({ retire: '' });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+ok(/refreshDropdowns/.test(addFto()), 'addFto says to refresh the form dropdowns');
+rWorld({ retire: 'Alex White' });
+as('chief@example.org');
+const retiredOut = retireFto();
+ok(/refreshDropdowns/.test(retiredOut), 'retireFto says so too');
+ok(/separate script and cannot run it/.test(retiredOut),
+   'and says why this portal cannot do it for you');
+
+// Something that is not a name at all. Latavia Cole's ASSIGNED FTO ended up
+// holding the dropdown's own help text, pasted in - a whole sentence. To every
+// name-matching lookup that is just an officer nobody has heard of, and the
+// cell reads as filled in, so nothing anywhere flagged it.
+ok(looksLikeANameV1_('Chyna Gray') === true, 'a name is a name');
+ok(looksLikeANameV1_('Tameisha Boone Williams') === true, 'a long one still is');
+ok(looksLikeANameV1_('') === false, 'empty is not');
+ok(looksLikeANameV1_('Now on the tab called 22 FTO ROSTER. Add or retire an FTO there, ' +
+   'then run Refresh form dropdowns.') === false, 'a sentence of help text is not');
+
+rWorld({ retire: '',
+         master: [['Latavia Cole', 'EMT',
+                   'Now on the tab called 22 FTO ROSTER. Add or retire an FTO there, ' +
+                   'then run Refresh form dropdowns.', 'Active', 'lc@example.org']] });
+as('chief@example.org');
+out = START();
+ok(/something other than a name/.test(out), 'START catches a cell holding a sentence');
+ok(/Latavia Cole/.test(out), 'and names whose it is');
+ok(/reads as filled in/.test(out), 'and says why nothing else caught it');
+ok(!/no training officer at all/.test(out),
+   'and does not also report it as blank, which it is not');
+
 // START points at addFto when a trainee names somebody not on the roster
 rWorld({ retire: '',
          master: [['Latavia Cole', 'EMT', 'Chyna Gray', 'Active', 'lc@example.org']] });

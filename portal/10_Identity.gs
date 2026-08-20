@@ -176,6 +176,43 @@ function rosterRetiredPeopleV1_(includeOtherBooks) {
   return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return !p.active; });
 }
 
+/** Does this look like a person's name, or like something that fell into the
+ *  cell by accident?
+ *
+ *  Latavia Cole's ASSIGNED FTO ended up holding the sentence "Now on the tab
+ *  called 22 FTO ROSTER. Add or retire an FTO there, then run Refresh form
+ *  dropdowns." - the dropdown's own help text, pasted in. Nothing noticed,
+ *  because to every name-matching lookup in this system that is simply an
+ *  officer nobody has heard of, which is indistinguishable from a typo.
+ *
+ *  A person's name is short and has few words. Anything else is not one. */
+function looksLikeANameV1_(s) {
+  var v = String(s == null ? '' : s).trim();
+  if (!v) return false;
+  if (v.length > 48) return false;
+  if (v.split(/\s+/).length > 5) return false;
+  if (/[.!?]\s+[A-Z]/.test(v)) return false;      // more than one sentence
+  return true;
+}
+
+/** What has to happen in the TRACKER's own script after the roster changes.
+ *
+ *  The tracker rebuilds the nine forms' "FTO name" dropdowns from the active
+ *  roster, and it only does that when refreshDropdowns() is run. This portal
+ *  is a separate Apps Script project and cannot call it. So every tool here
+ *  that changes a name, or who is active, has to say so - otherwise the forms
+ *  keep offering somebody who has left, or fail to offer somebody who just
+ *  joined, and nothing anywhere says why. */
+function refreshDropdownsNoteV1_(L) {
+  L.push('NOW DO THIS IN THE TRACKER\'S OWN SCRIPT');
+  L.push('  Run  refreshDropdowns');
+  L.push('  It rebuilds the "FTO name" list on all nine forms from the active');
+  L.push('  roster. Until it runs, the forms still offer the old roster: a name');
+  L.push('  that changed, somebody who has left, and not somebody who just');
+  L.push('  joined. This portal is a separate script and cannot run it for you.');
+  return L;
+}
+
 /** Is this name on the roster as somebody who has left? */
 function rosterHasRetiredV1_(name) {
   var n = normNameV1_(name);

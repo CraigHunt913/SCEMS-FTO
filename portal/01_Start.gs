@@ -223,6 +223,23 @@ function START() {
     // FTO's list is built by matching their name, so a trainee with a blank
     // ASSIGNED FTO is not on anybody's list and does not appear as missing
     // from one either. They simply are not there, and nothing says so.
+    // A cell holding something that is not a name at all. Every lookup in this
+    // system matches by name, so a sentence in ASSIGNED FTO is simply an
+    // officer nobody has heard of - indistinguishable from a typo, and it
+    // reads as filled in.
+    var notAName = traineesV1_().filter(function (t) {
+      return !t.closed && t.fto && !looksLikeANameV1_(t.fto); });
+    if (notAName.length) {
+      todo.push({ what: notAName.length + ' trainee(s) have something other than a name ' +
+          'in ASSIGNED FTO: ' + notAName.map(function (t) {
+            return t.name + ' -> "' + String(t.fto).slice(0, 40) +
+                   (String(t.fto).length > 40 ? '...' : '') + '"'; }).join('; '),
+        run: '(nothing - this one needs a person)',
+        why: 'That cell reads as filled in and matches nobody, so they are on ' +
+             'no list and nothing else flags them. Clear it and pick a name ' +
+             'from the dropdown.' });
+    }
+
     var noFto = traineesV1_().filter(function (t) { return !t.closed && !t.fto; });
     if (noFto.length) {
       todo.push({ what: noFto.length + ' active trainee(s) have no training officer at all: ' +

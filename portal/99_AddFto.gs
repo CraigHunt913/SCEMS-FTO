@@ -270,6 +270,8 @@ function addFto() {
   if (added.length) {
     L.push('No row already on the roster was read, moved or changed.');
     L.push('');
+    refreshDropdownsNoteV1_(L);
+    L.push('');
     L.push('NOW YOU CAN ASSIGN THEM');
     L.push('  The ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' is a dropdown');
     L.push('  fed by this roster, which is why the name had to go here first.');

@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build c1f9412f
+ * Build 4032e6e9
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -407,6 +407,23 @@ function START() {
     // FTO's list is built by matching their name, so a trainee with a blank
     // ASSIGNED FTO is not on anybody's list and does not appear as missing
     // from one either. They simply are not there, and nothing says so.
+    // A cell holding something that is not a name at all. Every lookup in this
+    // system matches by name, so a sentence in ASSIGNED FTO is simply an
+    // officer nobody has heard of - indistinguishable from a typo, and it
+    // reads as filled in.
+    var notAName = traineesV1_().filter(function (t) {
+      return !t.closed && t.fto && !looksLikeANameV1_(t.fto); });
+    if (notAName.length) {
+      todo.push({ what: notAName.length + ' trainee(s) have something other than a name ' +
+          'in ASSIGNED FTO: ' + notAName.map(function (t) {
+            return t.name + ' -> "' + String(t.fto).slice(0, 40) +
+                   (String(t.fto).length > 40 ? '...' : '') + '"'; }).join('; '),
+        run: '(nothing - this one needs a person)',
+        why: 'That cell reads as filled in and matches nobody, so they are on ' +
+             'no list and nothing else flags them. Clear it and pick a name ' +
+             'from the dropdown.' });
+    }
+
     var noFto = traineesV1_().filter(function (t) { return !t.closed && !t.fto; });
     if (noFto.length) {
       todo.push({ what: noFto.length + ' active trainee(s) have no training officer at all: ' +
@@ -745,6 +762,43 @@ function rosterActivePeopleV1_(includeOtherBooks) {
 /** The ones who have been retired off it. */
 function rosterRetiredPeopleV1_(includeOtherBooks) {
   return rosterPeopleV1_(includeOtherBooks).filter(function (p) { return !p.active; });
+}
+
+/** Does this look like a person's name, or like something that fell into the
+ *  cell by accident?
+ *
+ *  Latavia Cole's ASSIGNED FTO ended up holding the sentence "Now on the tab
+ *  called 22 FTO ROSTER. Add or retire an FTO there, then run Refresh form
+ *  dropdowns." - the dropdown's own help text, pasted in. Nothing noticed,
+ *  because to every name-matching lookup in this system that is simply an
+ *  officer nobody has heard of, which is indistinguishable from a typo.
+ *
+ *  A person's name is short and has few words. Anything else is not one. */
+function looksLikeANameV1_(s) {
+  var v = String(s == null ? '' : s).trim();
+  if (!v) return false;
+  if (v.length > 48) return false;
+  if (v.split(/\s+/).length > 5) return false;
+  if (/[.!?]\s+[A-Z]/.test(v)) return false;      // more than one sentence
+  return true;
+}
+
+/** What has to happen in the TRACKER's own script after the roster changes.
+ *
+ *  The tracker rebuilds the nine forms' "FTO name" dropdowns from the active
+ *  roster, and it only does that when refreshDropdowns() is run. This portal
+ *  is a separate Apps Script project and cannot call it. So every tool here
+ *  that changes a name, or who is active, has to say so - otherwise the forms
+ *  keep offering somebody who has left, or fail to offer somebody who just
+ *  joined, and nothing anywhere says why. */
+function refreshDropdownsNoteV1_(L) {
+  L.push('NOW DO THIS IN THE TRACKER\'S OWN SCRIPT');
+  L.push('  Run  refreshDropdowns');
+  L.push('  It rebuilds the "FTO name" list on all nine forms from the active');
+  L.push('  roster. Until it runs, the forms still offer the old roster: a name');
+  L.push('  that changed, somebody who has left, and not somebody who just');
+  L.push('  joined. This portal is a separate script and cannot run it for you.');
+  return L;
 }
 
 /** Is this name on the roster as somebody who has left? */
@@ -5000,6 +5054,8 @@ function applyRename() {
   }
 
   say();
+  refreshDropdownsNoteV1_(L);
+  say();
   say('The portal matches trainees to their training officer by name, so this');
   say('had to change everywhere at once or her trainees would have dropped off');
   say('her list. Run START to check nothing is left over.');
@@ -5370,6 +5426,8 @@ function retireFto() {
   }
 
   if (written.length) {
+    refreshDropdownsNoteV1_(L);
+    L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
     L.push('is exactly where it was, under the name that earned it.');
     L.push('');
@@ -5734,6 +5792,8 @@ function addFto() {
 
   if (added.length) {
     L.push('No row already on the roster was read, moved or changed.');
+    L.push('');
+    refreshDropdownsNoteV1_(L);
     L.push('');
     L.push('NOW YOU CAN ASSIGN THEM');
     L.push('  The ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' is a dropdown');
@@ -6668,7 +6728,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'c1f9412f';
+var PORTAL_BUILD = '4032e6e9';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
