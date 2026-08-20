@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 571c2cd1
+ * Build 4b7d1cbc
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -204,7 +204,7 @@ function portalPeopleV1_() {
   try { sup = JSON.parse(props.getProperty('PORTAL_SUPERVISORS') || '{}'); } catch (e) {}
   Object.keys(sup).forEach(function (k) { out.supervisors[String(k).toLowerCase()] = sup[k]; });
 
-  var t = readTabV1_(PORTAL.TAB.ROSTER);
+  var t = readTabAllV1_(PORTAL.TAB.ROSTER);
   if (t.ok) {
     t.rows.forEach(function (r) {
       var em = String(r[t.col['EMAIL']] || '').trim().toLowerCase();
@@ -212,7 +212,7 @@ function portalPeopleV1_() {
       if (em && nm) { out.ftos[em] = nm; out.names[em] = nm; }
     });
   }
-  var m = readTabV1_(PORTAL.TAB.MASTER);
+  var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
       var em = String(r[m.col['TRAINEE EMAIL']] || '').trim().toLowerCase();
@@ -234,13 +234,112 @@ function portalPeopleV1_() {
  *  The cache is dropped after any write, so nothing reads a value it has just
  *  changed. */
 var TAB_CACHE_V1 = {};
-function forgetTabsV1_() { TAB_CACHE_V1 = {}; }
+function forgetTabsV1_() { TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 
 function readTabV1_(tabName) {
   if (Object.prototype.hasOwnProperty.call(TAB_CACHE_V1, tabName)) return TAB_CACHE_V1[tabName];
   var out = readTabUncachedV1_(tabName);
   TAB_CACHE_V1[tabName] = out;
   return out;
+}
+
+/** The same tab, across THIS spreadsheet and every other one listed.
+ *
+ *  This is what every screen reads. Rows from the target come first and carry
+ *  their real row numbers. Rows from another book are mapped into this book's
+ *  column order, deduplicated against everything already seen, and carry
+ *  row -1 and the name of the book they came from.
+ *
+ *  Row -1 is not decoration. A row that is not in this spreadsheet has no row
+ *  in this spreadsheet, and every write checks for that before it touches a
+ *  cell. Writing to a row number that came from somewhere else is exactly the
+ *  kind of mistake that corrupts a record silently.
+ *
+ *  Nothing here writes to anything. The other books are opened read only. */
+var ALL_CACHE_V1 = {};
+
+function readTabAllV1_(tabName) {
+  if (Object.prototype.hasOwnProperty.call(ALL_CACHE_V1, tabName)) return ALL_CACHE_V1[tabName];
+
+  var here = readTabV1_(tabName);
+  var others = [];
+  try { others = otherBookIdsV1_(); } catch (e) { others = []; }
+  if (!here.ok || !others.length) { ALL_CACHE_V1[tabName] = here; return here; }
+
+  var idCol = '', noteCol = '';
+  try { idCol = responseIdColumnV1_(here); noteCol = notesColumnV1_(here); } catch (e) {}
+
+  var seen = {}, rows = [], froms = [];
+  here.rows.forEach(function (r) {
+    rows.push(r);
+    froms.push('');
+    var byHeader = {};
+    here.headers.forEach(function (h, ci) { if (h) byHeader[h] = r[ci]; });
+    try { seen[sharedFingerprintV1_(here.headers, idCol, noteCol, byHeader)] = true; } catch (e) {}
+    if (idCol) {
+      var v = String(r[here.col[idCol.toUpperCase()]] || '').trim();
+      if (v) seen[v] = true;
+    }
+  });
+
+  others.forEach(function (bookId) {
+    var name = bookId;
+    try { name = SpreadsheetApp.openById(bookId).getName(); } catch (e) {}
+    var src;
+    try { src = readTabInV1_(bookId, tabName); } catch (e) { return; }
+    if (!src || !src.ok) return;
+    var srcIdCol = '';
+    try { srcIdCol = responseIdColumnV1_(src); } catch (e) {}
+
+    src.rows.forEach(function (r) {
+      var empty = r.every(function (v) { return v === '' || v === null || v === undefined; });
+      if (empty) return;
+
+      var byHeader = {};
+      src.headers.forEach(function (h, ci) {
+        if (!h) return;
+        var v = r[ci];
+        if (v === '' || v === null || v === undefined) return;
+        var target;
+        try { target = matchHeaderV1_(h, here.headers); } catch (e) { target = ''; }
+        if (!target) return;
+        if (target === noteCol && byHeader[noteCol]) byHeader[noteCol] += '\n' + v;
+        else byHeader[target] = v;
+      });
+
+      var own = (srcIdCol && src.col[srcIdCol.toUpperCase()] !== undefined)
+        ? String(r[src.col[srcIdCol.toUpperCase()]] || '').trim() : '';
+      var fp = '';
+      try { fp = sharedFingerprintV1_(here.headers, idCol, noteCol, byHeader); } catch (e) {}
+      if ((own && seen[own]) || (fp && seen[fp])) return;
+      if (own) seen[own] = true;
+      if (fp) seen[fp] = true;
+
+      rows.push(here.headers.map(function (h) {
+        return (h && byHeader[h] !== undefined) ? byHeader[h] : '';
+      }));
+      froms.push(name);
+    });
+  });
+
+  var out = { ok: true, sheet: here.sheet, headers: here.headers, col: here.col,
+              rows: rows, firstDataRow: here.firstDataRow, froms: froms,
+              combined: true };
+  ALL_CACHE_V1[tabName] = out;
+  return out;
+}
+
+/** The row number in THIS spreadsheet, or -1 for a row that came from another
+ *  one. Every write asks this before it touches a cell. */
+function realRowV1_(t, index) {
+  if (!t || !t.ok) return -1;
+  if (t.froms && t.froms[index]) return -1;
+  return t.firstDataRow + index;
+}
+
+/** Which book a row came from. '' means this one. */
+function rowSourceV1_(t, index) {
+  return (t && t.froms && t.froms[index]) ? t.froms[index] : '';
 }
 
 function readTabUncachedV1_(tabName) {
@@ -293,14 +392,15 @@ function levelKeyV1_(level) {
 /** Every trainee on the master, normalized. Closed people are marked, never
  *  silently dropped, so a caller must decide rather than inherit a filter. */
 function traineesV1_() {
-  var t = readTabV1_(PORTAL.TAB.MASTER);
+  var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
     var name = String(r[t.col['TRAINEE']] || '').trim();
     if (!name) return null;
     var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
     return {
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
       level: String(r[t.col['LEVEL']] || '').trim(),
@@ -322,7 +422,7 @@ function traineesV1_() {
 }
 
 function skillsForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.SKILLS);
+  var t = readTabAllV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r) {
@@ -340,13 +440,14 @@ function skillsForV1_(norm) {
 }
 
 function openQueueV1_() {
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  var t = readTabAllV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
     out.push({
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i),
       trainee: String(r[t.col['TRAINEE']] || '').trim(),
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
@@ -360,7 +461,7 @@ function openQueueV1_() {
 }
 
 function lastEvalForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.EVAL);
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
   if (!t.ok) return null;
   var latest = null;
   t.rows.forEach(function (r) {
@@ -372,13 +473,14 @@ function lastEvalForV1_(norm) {
 }
 
 function coachingForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.COACHING);
+  var t = readTabAllV1_(PORTAL.TAB.COACHING);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r, i) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
     out.push({
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
       when: asDateV1_(r[t.col['DATE']]),
       from: String(r[t.col['FROM']] || '').trim(),
       text: String(r[t.col['NOTE']] || '').trim(),
@@ -406,6 +508,7 @@ function traineePayloadV1_(viewer) {
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
     coaching: coaching.filter(function (c) { return !c.acknowledged; })
       .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+                                   book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
@@ -458,7 +561,8 @@ function divisionPayloadV1_() {
     closedCount: all.length - active.length,
     queue: queue.slice(0, 25).map(function (q) {
       return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId, row: q.row };
+               since: daysAgoTextV1_(q.since), requestId: q.requestId,
+               row: q.row, from: q.from };
     }),
     queueCount: queue.length,
     incomplete: incomplete.map(function (t) {
@@ -510,14 +614,15 @@ function supervisorPayloadV1_(viewer) {
 }
 
 function medicalPayloadV1_() {
-  var t = readTabV1_(PORTAL.TAB.URGENT);
+  var t = readTabAllV1_(PORTAL.TAB.URGENT);
   var cases = [];
   if (t.ok) {
     t.rows.forEach(function (r, i) {
       var who = String(r[3] || '').trim();
       if (!who) return;
       cases.push({
-        row: t.firstDataRow + i,
+        row: realRowV1_(t, i),
+        from: rowSourceV1_(t, i),
         trainee: who,
         when: asDateV1_(r[0]) ? asDateV1_(r[0]).toDateString() : '',
         from: String(r[2] || '').trim(),
@@ -619,6 +724,22 @@ function payloadForV1_(viewer) {
 /* Each re-resolves the viewer server-side. A client cannot act as someone
    else by sending a different name, because the name it sends is ignored. */
 
+/** A row this portal can actually write to.
+ *
+ *  Screens read across every listed spreadsheet, so a row on screen may live
+ *  in another book entirely and carry no row number here. Writing to a number
+ *  that came from somewhere else would put a value in an unrelated record, so
+ *  every write asks for this first. */
+function requireLocalRowV1_(t, row, what) {
+  var r = Number(row);
+  if (!r || r < t.firstDataRow || r > t.firstDataRow + t.rows.length - 1) {
+    throw new Error('Cannot ' + what + '. That row is not in this spreadsheet - ' +
+      'it was read from another one. Bring it across first, or make the change ' +
+      'where the row actually lives.');
+  }
+  return r;
+}
+
 /** Trainee acknowledges a coaching note. */
 function ackCoachingV1(row) {
   requireWritableV1_('acknowledge a coaching note');
@@ -626,9 +747,8 @@ function ackCoachingV1(row) {
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only the trainee may acknowledge their own coaching.');
   var t = readTabV1_(PORTAL.TAB.COACHING);
   if (!t.ok) throw new Error('No coaching log.');
-  var r = Number(row);
+  var r = requireLocalRowV1_(t, row, 'acknowledge that coaching note');
   var idx = r - t.firstDataRow;
-  if (idx < 0 || idx >= t.rows.length) throw new Error('That coaching note does not exist.');
   if (normNameV1_(t.rows[idx][t.col['TRAINEE']]) !== normNameV1_(viewer.traineeName)) {
     throw new Error('That coaching note belongs to someone else.');
   }
@@ -664,7 +784,7 @@ function approveSignoffV1(row, reason) {
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
-  var r = Number(row);
+  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
   if (t.col['DECISION'] === undefined) throw new Error('Queue is missing its DECISION column.');
   t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
@@ -1457,7 +1577,7 @@ function dayKeyV1_(d) {
 /** Every submission in one tab belonging to one person, newest first.
  *  Undated rows sort last rather than being dropped. */
 function submissionsFromV1_(source, norm) {
-  var t = readTabV1_(source.tab);
+  var t = readTabAllV1_(source.tab);
   if (!t.ok) return [];
 
   var whoIdx  = colIndexV1_(t, source.who);
@@ -1481,7 +1601,8 @@ function submissionsFromV1_(source, norm) {
       key: source.key,
       source: source.title,
       tab: source.tab,
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
       when: whenIdx >= 0 ? asDateV1_(r[whenIdx]) : null,
       by: byIdx >= 0 ? String(r[byIdx] || '').trim() : '',
       group: grpIdx >= 0 ? String(r[grpIdx] || '').trim() : '',
@@ -1576,7 +1697,7 @@ function recordForV1_(name, only) {
 
 function shapeV1_(s) {
   return {
-    key: s.key, source: s.source, tab: s.tab, row: s.row,
+    key: s.key, source: s.source, tab: s.tab, row: s.row, book: s.book || '',
     when: whenTextV1_(s.when), ago: daysAgoTextV1_(s.when),
     at: s.when instanceof Date && !isNaN(s.when.getTime()) ? s.when.getTime() : 0,
     by: s.by, group: s.group,
@@ -2044,45 +2165,99 @@ function backfillBeforeAndAfter() {
 
   lines.push('=======================================================');
   lines.push('To do it, set the script property');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + safeTargetIdV1_());
-  lines.push('and run runBackfillForReal(). Anything else and it refuses.');
+  lines.push('');
+  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' +
+             confirmCodeForV1_(safeTargetIdV1_(), plans));
+  lines.push('');
+  lines.push('and run runBackfillForReal().');
+  lines.push('');
+  lines.push('That code authorises exactly the changes above and nothing else.');
+  lines.push('If anything about them changes, so does the code.');
   return noteV1_(lines.join('\n'));
 }
 
 function safeTargetIdV1_() { try { return targetIdV1_(); } catch (e) { return '(not set)'; } }
 
-/** The gate. The confirmation must name the book about to be written to. */
-function requireImportAuthorityV1_() {
-  var id = targetIdV1_();
-  // Normalised the same way the target is, so pasting the spreadsheet's
-  // address here works exactly as well as pasting its id.
-  var confirm = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
-    .getProperty(PORTAL_BACKFILL_CONFIRM));
+/** Letters and digits with nothing ambiguous in them: no O against 0, no I
+ *  against 1. A code someone reads off one screen and types into another. */
+var PORTAL_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
-  if (!confirm) {
-    throw new Error('Refusing to write. Set the script property ' +
-      PORTAL_BACKFILL_CONFIRM + ' to ' + id + ' first. Run ' +
-      'backfillBeforeAndAfter() to see exactly what this would do.');
+function shortCodeV1_(text) {
+  var s = String(text), h = 0x811c9dc5;
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  var out = '', n = h;
+  for (var j = 0; j < 6; j++) {
+    out += PORTAL_CODE_ALPHABET.charAt(n % PORTAL_CODE_ALPHABET.length);
+    n = Math.floor(n / PORTAL_CODE_ALPHABET.length);
+    if (!n) n = h >>> (j + 1);
+  }
+  return out.slice(0, 4) + '-' + out.slice(4);
+}
+
+/** The code that authorises ONE set of changes to ONE spreadsheet.
+ *
+ *  It is derived from the target and from what is about to be written, so it
+ *  cannot be confused with a spreadsheet address, cannot be left over from
+ *  another book, and cannot approve a different set of changes than the one
+ *  you were shown. Change the plan and the code changes with it. */
+function confirmCodeForV1_(id, plans) {
+  var parts = [id];
+  (plans || []).forEach(function (p) {
+    parts.push(String(p.tab || p.dest || ''));
+    parts.push(String(p.source || p.key || ''));
+    parts.push(String((p.missing || []).length));
+    (p.missing || []).forEach(function (m) { parts.push(String(m.id || m.key || '')); });
+  });
+  return shortCodeV1_(parts.join('|'));
+}
+
+/** The gate.
+ *
+ *  Accepts the code from the preview, which is what the preview tells you to
+ *  use. Also still accepts the id of the spreadsheet being written to, so a
+ *  confirmation set before codes existed keeps working. Nothing else. */
+function requireImportAuthorityV1_(expectedCode) {
+  var id = targetIdV1_();
+  var raw = String(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_BACKFILL_CONFIRM) || '').trim();
+  var asCode = raw.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (expectedCode && asCode === expectedCode) return id;
+
+  var confirm = spreadsheetIdFromV1_(raw);
+
+  if (!raw) {
+    throw new Error('Refusing to write.\n\n' +
+      'Set the script property ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' +
+      (expectedCode || id) + '\n\n' +
+      (expectedCode
+        ? 'That is the code for exactly the changes you were just shown. Run\n' +
+          'the preview again if you have lost it.'
+        : 'Run the preview first to see what this would do.'));
   }
   if (confirm !== id) {
-    // The confirmation names the spreadsheet being WRITTEN TO. Naming the one
-    // being read from is the obvious way to get this backwards, so when that
-    // is what happened, say so rather than just reporting a mismatch.
     var others = [];
     try { others = otherBookIdsV1_(); } catch (e) { others = []; }
     var isASource = others.indexOf(confirm) >= 0;
+    var looksLikeAnId = confirm && confirm.length > 12;
 
     throw new Error('Refusing to write.\n\n' +
-      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + confirm + '\n' +
-      'but this portal writes to\n  ' + id + '\n\n' +
+      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + raw + '\n\n' +
       (isASource
-        ? 'That is one of the spreadsheets listed in ' + PORTAL_OTHER_IDS_PROPERTY +
-          ', which is the one being READ FROM. The confirmation names the one ' +
-          'being WRITTEN TO.\n\n'
-        : '') +
-      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + id + '\n' +
-      'which is ' + safeTargetNameV1_() + ', the spreadsheet this portal is ' +
-      'pointed at. Then run this again.');
+        ? 'That is one of the spreadsheets in ' + PORTAL_OTHER_IDS_PROPERTY + ', which\n' +
+          'is READ FROM. This confirmation is for what gets WRITTEN TO.\n\n'
+        : looksLikeAnId
+          ? 'That is not the spreadsheet this portal writes to, which is\n  ' + id +
+            '\n  ' + safeTargetNameV1_() + '\n\n'
+          : 'That is not a code this portal issued.\n\n') +
+      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + (expectedCode || id) + '\n\n' +
+      (expectedCode
+        ? 'That is the code for exactly the changes you were just shown, and it\n' +
+          'authorises those and nothing else. Run the preview again if you have\n' +
+          'lost it.'
+        : 'Run the preview first to see what this would do.'));
   }
   return id;
 }
@@ -2093,8 +2268,16 @@ function requireImportAuthorityV1_() {
  *  any response cannot be placed in full, because a half-imported record is
  *  worse than one still sitting in the form. */
 function runBackfillForReal() {
-  var id = requireImportAuthorityV1_();
+  // What would happen is worked out FIRST. It writes nothing, and it means
+  // "there is nothing to do" never arrives dressed up as a problem with the
+  // confirmation.
   var plans = backfillPlanAllV1_();
+  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
+  if (!due && !plans.some(function (p) { return p.blocked.length; })) {
+    return noteV1_('Nothing to import. Every response is already in the tracker.');
+  }
+
+  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -2103,9 +2286,6 @@ function runBackfillForReal() {
       'half done. Run backfillBeforeAndAfter() to see which, add the column ' +
       'they need, then run this again.');
   }
-  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
-  if (!due) return noteV1_('Nothing to import. Every response is already in the tracker.');
-
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
   var manifest = [], report = ['BACKFILL COMPLETE', '',
     'Target : ' + safeTargetNameV1_(), 'Id     : ' + id,
@@ -2598,17 +2778,39 @@ function mergeBeforeAndAfter() {
   lines.push('=======================================================');
   lines.push(totalMissing + ' row(s) would be added, ' + totalBlocked + ' refused.');
   lines.push('');
-  lines.push('To do it, set the script property');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + safeTargetIdV1_());
-  lines.push('and run runMergeForReal(). Anything else and it refuses.');
+  lines.push('You do not have to do this. The portal reads the other spreadsheets');
+  lines.push('already, so everything above is visible on screen without moving it.');
+  lines.push('Bring it across only if you want it to live in one book.');
+  lines.push('');
+  lines.push('To do that, set the script property');
+  lines.push('');
+  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' +
+             confirmCodeForV1_(safeTargetIdV1_(), plans));
+  lines.push('');
+  lines.push('and run runMergeForReal().');
+  lines.push('');
+  lines.push('That code authorises exactly the rows above and nothing else.');
   return noteV1_(lines.join('\n'));
 }
 
 /** Brings them across, for real. Same gate as the form import, same manifest,
  *  and undoLastBackfill reverses it the same way. */
 function runMergeForReal() {
-  var id = requireImportAuthorityV1_();
+  // Worked out first, so "nothing to do" and "no spreadsheets listed" never
+  // arrive dressed up as a problem with the confirmation.
+  if (!otherBookIdsV1_().length) {
+    return noteV1_('No other spreadsheets are listed, so there is nothing to ' +
+      'bring across.\n\nProject Settings > Script Properties:\n  ' +
+      PORTAL_OTHER_IDS_PROPERTY + '\nOne address per line, or separated by commas.');
+  }
   var plans = mergePlanAllV1_();
+  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
+  if (!due && !plans.some(function (p) { return p.blocked.length; })) {
+    return noteV1_('Nothing to bring across. Everything in the other ' +
+      'spreadsheets is already here.');
+  }
+
+  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -2617,10 +2819,6 @@ function runMergeForReal() {
       'done. Run mergeBeforeAndAfter() to see which, add the column they need, ' +
       'then run this again.');
   }
-  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
-  if (!due) return noteV1_('Nothing to bring across. Everything in the other ' +
-    'spreadsheets is already here.');
-
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
   var manifest = [], report = ['MERGE COMPLETE', '',
     'Into   : ' + safeTargetNameV1_(), 'Id     : ' + id,
@@ -3215,7 +3413,7 @@ var PORTAL_PAGE_HTML = [
   "  }\n",
   "  h += formCards(d.forms);\n",
   "  (d.coaching||[]).forEach(function(c){\n",
-  "    if (canWrite()){\n",
+  "    if (canWrite() && !c.book){\n",
   "      h += '<button class=\"card act\" onclick=\"ack('+c.row+')\"><span class=\"dot soon\"></spa",
   "n>'+\n",
   "           '<span class=\"bd\"><span class=\"h\">Coaching from '+esc(c.from)+'</span>'+\n",
@@ -3223,7 +3421,10 @@ var PORTAL_PAGE_HTML = [
   "/button>';\n",
   "    } else {\n",
   "      h += '<div class=\"card\"><div class=\"h\">Coaching from '+esc(c.from)+'</div>'+\n",
-  "           '<div class=\"m\">'+esc(c.text)+'</div></div>';\n",
+  "           '<div class=\"m\">'+esc(c.text)+'</div>'+\n",
+  "           (c.book ? '<div class=\"m\" style=\"color:var(--ink-3)\">from '+esc(c.book)+'</div>",
+  "' : '')+\n",
+  "           '</div>';\n",
   "    }\n",
   "  });\n",
   "\n",
@@ -3398,7 +3599,7 @@ var PORTAL_PAGE_HTML = [
   "    // Approving writes a decision into the queue. Against the live tracker\n",
   "    // this portal will not do that, so the item is shown and the decision is\n",
   "    // recorded where it has always been recorded.\n",
-  "    if (canWrite()){\n",
+  "    if (canWrite() && !q.from){\n",
   "      h += '<button class=\"card act\" onclick=\"openSignoff('+q.row+',\\''+esc(q.trainee).rep",
   "lace(/\\'/g,\"\")+'\\',\\''+\n",
   "        esc(q.skill).replace(/\\'/g,\"\")+'\\',\\''+esc(q.evidence).replace(/\\'/g,\"\")+'\\')\">'+\n",
@@ -3411,8 +3612,11 @@ var PORTAL_PAGE_HTML = [
   "      h += '<div class=\"card\"><div class=\"h\">'+esc(q.skill)+'</div>'+\n",
   "        '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+\n",
   "        '<div class=\"m\" style=\"margin-top:7px\">'+esc(q.evidence)+'</div>'+\n",
-  "        '<div class=\"m\" style=\"color:var(--warn);margin-top:7px\">Record the decision in th",
-  "e tracker. This portal is read only.</div></div>';\n",
+  "        '<div class=\"m\" style=\"color:var(--warn);margin-top:7px\">'+\n",
+  "        (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision t",
+  "here.'\n",
+  "                : 'Record the decision in the tracker. This portal is read only.')+'</div>",
+  "</div>';\n",
   "    }\n",
   "  });\n",
   "\n",
@@ -3649,7 +3853,8 @@ var PORTAL_PAGE_HTML = [
   "function recCard(s, isCurrent){\n",
   "  var cls = 'rec' + (s.possibleDuplicate ? ' dup' : (isCurrent ? ' cur' : ''));\n",
   "  var h = '<div class=\"'+cls+'\"><div class=\"when\"><span>'+esc(s.when)+\n",
-  "    (s.by ? ' &middot; '+esc(s.by) : '')+'</span>'+\n",
+  "    (s.by ? ' &middot; '+esc(s.by) : '')+\n",
+  "    (s.book ? ' &middot; in '+esc(s.book) : '')+'</span>'+\n",
   "    (isCurrent ? '<b>Current</b>' : '<span>'+esc(s.ago)+'</span>')+'</div>';\n",
   "  if (s.group) h += '<div class=\"h\" style=\"margin-top:5px\">'+esc(s.group)+'</div>';\n",
   "  if (s.possibleDuplicate) h += '<div class=\"m\" style=\"color:var(--stop);margin-top:5px\">'",
@@ -3685,7 +3890,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '571c2cd1';
+var PORTAL_BUILD = '4b7d1cbc';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

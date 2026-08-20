@@ -183,7 +183,7 @@ function combinedResponses(n) {
 }
 
 function world(mode, evidenceHeaders) {
-  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
   OPENABLE = { 'STG-BOOK': 'STG_Sandbox', 'PROD-BOOK': 'SCEMS FTPD Tracker' };
   PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
   PROPS[PORTAL.PROPERTY_MODE] = mode || PORTAL.MODE_STAGING;
@@ -210,7 +210,7 @@ function world(mode, evidenceHeaders) {
     FORMS[f.id] = new FakeForm(f.id, [], 'STG-BOOK').setResponses([]);
   });
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 function evid() { return SHEETS[PORTAL.TAB.EVIDENCE].g.slice(HR); }
 function plan() { return backfillPlanV1_(formByKeyV1_('SKILLS_COMBINED')); }
 
@@ -401,10 +401,11 @@ ok(snapshot() === snap, 'and writes nothing while refusing');
 
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'YES';
 const notAnId = threw(() => runBackfillForReal());
-ok(/holds\n  YES/.test(notAnId) && /writes to\n  PROD-BOOK/.test(notAnId),
-   '"YES" is not a confirmation, because it names no spreadsheet');
-ok(notAnId.indexOf('Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  PROD-BOOK') >= 0,
-   'and the refusal prints the exact value to set instead');
+ok(/holds\n  YES/.test(notAnId) && /not a code this portal issued/.test(notAnId),
+   '"YES" is not a confirmation, because it is neither a code nor this spreadsheet');
+ok(/Set PORTAL_BACKFILL_CONFIRM to\n  [23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{2}/
+     .test(notAnId),
+   'and the refusal prints the exact code to use instead');
 
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'STG-BOOK';
 const stale = threw(() => runBackfillForReal());
@@ -450,7 +451,10 @@ ok(/would hold 16 rows/.test(rep), 'and the after count is what it would become'
 ok(/WOULD BE ADDED  \(14 rows/.test(rep), 'with the number to be added');
 ok(/Response 3 as originally written by the FTO/.test(rep),
    'and every value of every row it would write, so there is no surprise');
-ok(/PORTAL_BACKFILL_CONFIRM = PROD-BOOK/.test(rep), 'it names the exact confirmation to set');
+ok(/PORTAL_BACKFILL_CONFIRM = [23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{2}/.test(rep),
+   'it names the exact confirmation code to set');
+ok(/authorises exactly the changes above and nothing else/.test(rep),
+   'and says that code is good for these changes only');
 ok(snapshot() === snap, 'and the spreadsheet is byte-identical');
 
 // ---------------------------------------------------------------- //
@@ -510,7 +514,7 @@ PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
 as('chief@example.org');
 runBackfillForReal();
 SHEETS[PORTAL.TAB.EVIDENCE].g.splice(HR, 0, ['','someone else inserted a row','','','','','','','']);
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 const shifted = JSON.stringify(SHEETS[PORTAL.TAB.EVIDENCE].g);
 rep = undoLastBackfill();
 ok(/NOTHING WAS DELETED/.test(rep), 'the undo refuses when the rows have moved');
@@ -528,8 +532,11 @@ lockBackfill();
 ok(PROPS[PORTAL_BACKFILL_CONFIRM] === undefined, 'lockBackfill clears the confirmation');
 ok(/Set the script property/.test(threw(() => undoLastBackfill())),
    'and the undo then refuses too, so neither direction runs unattended');
-ok(/Set the script property/.test(threw(() => runBackfillForReal())),
-   'as does the import');
+// The import now works out what it would do BEFORE asking for authority, so
+// with everything already imported it reports that rather than complaining
+// about a confirmation for work that does not exist.
+ok(/Nothing to import/.test(runBackfillForReal()),
+   'and the import, with nothing left to do, says so instead of demanding one');
 
 // ---------------------------------------------------------------- //
 section('The gate is the only way through');
@@ -537,8 +544,10 @@ section('The gate is the only way through');
 const importSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/80_Import.gs', 'utf8');
 const writers = importSrc.match(/function (runBackfillForReal|undoLastBackfill)\b/g) || [];
 ok(writers.length === 2, 'exactly two functions in this file can change a live sheet');
-ok(/function runBackfillForReal\(\) \{\s*var id = requireImportAuthorityV1_\(\);/.test(importSrc),
-   'the import asks the gate on its first line');
+ok(/var id = requireImportAuthorityV1_\(confirmCodeForV1_\(/.test(importSrc),
+   'the import asks the gate with the code for the plan it just built');
+ok(importSrc.indexOf('sh.appendRow') > importSrc.indexOf('requireImportAuthorityV1_(confirmCodeForV1_('),
+   'and does not write a single row before that gate has answered');
 ok(/function undoLastBackfill\(\) \{\s*requireImportAuthorityV1_\(\);/.test(importSrc),
    'and so does the undo');
 ok(!/setValue\(|appendRow\(|deleteRow\(/.test(

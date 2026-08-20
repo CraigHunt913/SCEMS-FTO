@@ -181,7 +181,7 @@ function buildForms() {
 }
 
 function world(mode) {
-  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
   OPENABLE = { 'STG-BOOK': 'STG_Sandbox', 'PROD-BOOK': 'SCEMS FTPD Tracker' };
   PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
   PROPS[PORTAL.PROPERTY_MODE] = mode || PORTAL.MODE_STAGING;
@@ -216,7 +216,7 @@ function world(mode) {
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'], []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 function payloadFor(email) { as(email); const v = resolveViewerV1_(whoIsAskingV1_()); return payloadForV1_(v); }
 function keys(list) { return (list || []).map(f => f.key); }
 

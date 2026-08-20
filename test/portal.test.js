@@ -84,7 +84,7 @@ function tab(name, headers, rows) {
   SHEETS[name] = new FakeSheet(name, g);
 }
 function world() {
-  PROPS = {}; SHEETS = {}; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  PROPS = {}; SHEETS = {}; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
   PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
   PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
   PROPS['PORTAL_DIVISION_EMAILS'] = 'chief@example.org';
@@ -124,7 +124,7 @@ function world() {
      [new Date(),'Alex Bramble','Dana Whitlock','Slow the primary survey down.','']]);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 function payloadFor(email) { as(email); const v = resolveViewerV1_(whoIsAskingV1_()); return { v, d: payloadForV1_(v) }; }
 
 // ---------------------------------------------------------------- //

@@ -220,13 +220,15 @@ function paintTrainee(d){
   }
   h += formCards(d.forms);
   (d.coaching||[]).forEach(function(c){
-    if (canWrite()){
+    if (canWrite() && !c.book){
       h += '<button class="card act" onclick="ack('+c.row+')"><span class="dot soon"></span>'+
            '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
            '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
     } else {
       h += '<div class="card"><div class="h">Coaching from '+esc(c.from)+'</div>'+
-           '<div class="m">'+esc(c.text)+'</div></div>';
+           '<div class="m">'+esc(c.text)+'</div>'+
+           (c.book ? '<div class="m" style="color:var(--ink-3)">from '+esc(c.book)+'</div>' : '')+
+           '</div>';
     }
   });
 
@@ -371,7 +373,7 @@ function paintDivision(d){
     // Approving writes a decision into the queue. Against the live tracker
     // this portal will not do that, so the item is shown and the decision is
     // recorded where it has always been recorded.
-    if (canWrite()){
+    if (canWrite() && !q.from){
       h += '<button class="card act" onclick="openSignoff('+q.row+',\''+esc(q.trainee).replace(/\'/g,"")+'\',\''+
         esc(q.skill).replace(/\'/g,"")+'\',\''+esc(q.evidence).replace(/\'/g,"")+'\')">'+
         '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
@@ -381,7 +383,9 @@ function paintDivision(d){
       h += '<div class="card"><div class="h">'+esc(q.skill)+'</div>'+
         '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
         '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
-        '<div class="m" style="color:var(--warn);margin-top:7px">Record the decision in the tracker. This portal is read only.</div></div>';
+        '<div class="m" style="color:var(--warn);margin-top:7px">'+
+        (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
+                : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
     }
   });
 
@@ -587,7 +591,8 @@ function toggleEarlier(key){
 function recCard(s, isCurrent){
   var cls = 'rec' + (s.possibleDuplicate ? ' dup' : (isCurrent ? ' cur' : ''));
   var h = '<div class="'+cls+'"><div class="when"><span>'+esc(s.when)+
-    (s.by ? ' &middot; '+esc(s.by) : '')+'</span>'+
+    (s.by ? ' &middot; '+esc(s.by) : '')+
+    (s.book ? ' &middot; in '+esc(s.book) : '')+'</span>'+
     (isCurrent ? '<b>Current</b>' : '<span>'+esc(s.ago)+'</span>')+'</div>';
   if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
   if (s.possibleDuplicate) h += '<div class="m" style="color:var(--stop);margin-top:5px">'+

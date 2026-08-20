@@ -72,7 +72,7 @@ function portalPeopleV1_() {
   try { sup = JSON.parse(props.getProperty('PORTAL_SUPERVISORS') || '{}'); } catch (e) {}
   Object.keys(sup).forEach(function (k) { out.supervisors[String(k).toLowerCase()] = sup[k]; });
 
-  var t = readTabV1_(PORTAL.TAB.ROSTER);
+  var t = readTabAllV1_(PORTAL.TAB.ROSTER);
   if (t.ok) {
     t.rows.forEach(function (r) {
       var em = String(r[t.col['EMAIL']] || '').trim().toLowerCase();
@@ -80,7 +80,7 @@ function portalPeopleV1_() {
       if (em && nm) { out.ftos[em] = nm; out.names[em] = nm; }
     });
   }
-  var m = readTabV1_(PORTAL.TAB.MASTER);
+  var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
       var em = String(r[m.col['TRAINEE EMAIL']] || '').trim().toLowerCase();
@@ -102,13 +102,112 @@ function portalPeopleV1_() {
  *  The cache is dropped after any write, so nothing reads a value it has just
  *  changed. */
 var TAB_CACHE_V1 = {};
-function forgetTabsV1_() { TAB_CACHE_V1 = {}; }
+function forgetTabsV1_() { TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 
 function readTabV1_(tabName) {
   if (Object.prototype.hasOwnProperty.call(TAB_CACHE_V1, tabName)) return TAB_CACHE_V1[tabName];
   var out = readTabUncachedV1_(tabName);
   TAB_CACHE_V1[tabName] = out;
   return out;
+}
+
+/** The same tab, across THIS spreadsheet and every other one listed.
+ *
+ *  This is what every screen reads. Rows from the target come first and carry
+ *  their real row numbers. Rows from another book are mapped into this book's
+ *  column order, deduplicated against everything already seen, and carry
+ *  row -1 and the name of the book they came from.
+ *
+ *  Row -1 is not decoration. A row that is not in this spreadsheet has no row
+ *  in this spreadsheet, and every write checks for that before it touches a
+ *  cell. Writing to a row number that came from somewhere else is exactly the
+ *  kind of mistake that corrupts a record silently.
+ *
+ *  Nothing here writes to anything. The other books are opened read only. */
+var ALL_CACHE_V1 = {};
+
+function readTabAllV1_(tabName) {
+  if (Object.prototype.hasOwnProperty.call(ALL_CACHE_V1, tabName)) return ALL_CACHE_V1[tabName];
+
+  var here = readTabV1_(tabName);
+  var others = [];
+  try { others = otherBookIdsV1_(); } catch (e) { others = []; }
+  if (!here.ok || !others.length) { ALL_CACHE_V1[tabName] = here; return here; }
+
+  var idCol = '', noteCol = '';
+  try { idCol = responseIdColumnV1_(here); noteCol = notesColumnV1_(here); } catch (e) {}
+
+  var seen = {}, rows = [], froms = [];
+  here.rows.forEach(function (r) {
+    rows.push(r);
+    froms.push('');
+    var byHeader = {};
+    here.headers.forEach(function (h, ci) { if (h) byHeader[h] = r[ci]; });
+    try { seen[sharedFingerprintV1_(here.headers, idCol, noteCol, byHeader)] = true; } catch (e) {}
+    if (idCol) {
+      var v = String(r[here.col[idCol.toUpperCase()]] || '').trim();
+      if (v) seen[v] = true;
+    }
+  });
+
+  others.forEach(function (bookId) {
+    var name = bookId;
+    try { name = SpreadsheetApp.openById(bookId).getName(); } catch (e) {}
+    var src;
+    try { src = readTabInV1_(bookId, tabName); } catch (e) { return; }
+    if (!src || !src.ok) return;
+    var srcIdCol = '';
+    try { srcIdCol = responseIdColumnV1_(src); } catch (e) {}
+
+    src.rows.forEach(function (r) {
+      var empty = r.every(function (v) { return v === '' || v === null || v === undefined; });
+      if (empty) return;
+
+      var byHeader = {};
+      src.headers.forEach(function (h, ci) {
+        if (!h) return;
+        var v = r[ci];
+        if (v === '' || v === null || v === undefined) return;
+        var target;
+        try { target = matchHeaderV1_(h, here.headers); } catch (e) { target = ''; }
+        if (!target) return;
+        if (target === noteCol && byHeader[noteCol]) byHeader[noteCol] += '\n' + v;
+        else byHeader[target] = v;
+      });
+
+      var own = (srcIdCol && src.col[srcIdCol.toUpperCase()] !== undefined)
+        ? String(r[src.col[srcIdCol.toUpperCase()]] || '').trim() : '';
+      var fp = '';
+      try { fp = sharedFingerprintV1_(here.headers, idCol, noteCol, byHeader); } catch (e) {}
+      if ((own && seen[own]) || (fp && seen[fp])) return;
+      if (own) seen[own] = true;
+      if (fp) seen[fp] = true;
+
+      rows.push(here.headers.map(function (h) {
+        return (h && byHeader[h] !== undefined) ? byHeader[h] : '';
+      }));
+      froms.push(name);
+    });
+  });
+
+  var out = { ok: true, sheet: here.sheet, headers: here.headers, col: here.col,
+              rows: rows, firstDataRow: here.firstDataRow, froms: froms,
+              combined: true };
+  ALL_CACHE_V1[tabName] = out;
+  return out;
+}
+
+/** The row number in THIS spreadsheet, or -1 for a row that came from another
+ *  one. Every write asks this before it touches a cell. */
+function realRowV1_(t, index) {
+  if (!t || !t.ok) return -1;
+  if (t.froms && t.froms[index]) return -1;
+  return t.firstDataRow + index;
+}
+
+/** Which book a row came from. '' means this one. */
+function rowSourceV1_(t, index) {
+  return (t && t.froms && t.froms[index]) ? t.froms[index] : '';
 }
 
 function readTabUncachedV1_(tabName) {

@@ -70,6 +70,22 @@ function payloadForV1_(viewer) {
 /* Each re-resolves the viewer server-side. A client cannot act as someone
    else by sending a different name, because the name it sends is ignored. */
 
+/** A row this portal can actually write to.
+ *
+ *  Screens read across every listed spreadsheet, so a row on screen may live
+ *  in another book entirely and carry no row number here. Writing to a number
+ *  that came from somewhere else would put a value in an unrelated record, so
+ *  every write asks for this first. */
+function requireLocalRowV1_(t, row, what) {
+  var r = Number(row);
+  if (!r || r < t.firstDataRow || r > t.firstDataRow + t.rows.length - 1) {
+    throw new Error('Cannot ' + what + '. That row is not in this spreadsheet - ' +
+      'it was read from another one. Bring it across first, or make the change ' +
+      'where the row actually lives.');
+  }
+  return r;
+}
+
 /** Trainee acknowledges a coaching note. */
 function ackCoachingV1(row) {
   requireWritableV1_('acknowledge a coaching note');
@@ -77,9 +93,8 @@ function ackCoachingV1(row) {
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only the trainee may acknowledge their own coaching.');
   var t = readTabV1_(PORTAL.TAB.COACHING);
   if (!t.ok) throw new Error('No coaching log.');
-  var r = Number(row);
+  var r = requireLocalRowV1_(t, row, 'acknowledge that coaching note');
   var idx = r - t.firstDataRow;
-  if (idx < 0 || idx >= t.rows.length) throw new Error('That coaching note does not exist.');
   if (normNameV1_(t.rows[idx][t.col['TRAINEE']]) !== normNameV1_(viewer.traineeName)) {
     throw new Error('That coaching note belongs to someone else.');
   }
@@ -115,7 +130,7 @@ function approveSignoffV1(row, reason) {
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
-  var r = Number(row);
+  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
   if (t.col['DECISION'] === undefined) throw new Error('Queue is missing its DECISION column.');
   t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);

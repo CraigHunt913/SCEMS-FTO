@@ -225,17 +225,19 @@ sheet, and guessing is how records get destroyed.
 **`lockBackfill()`** — clears the confirmation so the gate closes behind you.
 Both the import and the undo then refuse.
 
-### Two properties, pointing opposite ways
+### The confirmation is a code, not an address
 
-This is the one thing here that is easy to get backwards:
+`PORTAL_BACKFILL_CONFIRM` takes a short code that the preview prints, like
+`K7QM-3F`. It is derived from the target **and from what is about to be
+written**, which means three things at once:
 
-| Property | Names the spreadsheet that is | |
-| --- | --- | --- |
-| `PORTAL_OTHER_SPREADSHEET_IDS` | **read from** | never written to |
-| `PORTAL_BACKFILL_CONFIRM` | **written to** | must equal the current target |
+- It cannot be confused with a spreadsheet address, because it is not one.
+- It cannot be left over from another book.
+- **It cannot approve a different set of changes than the one you were shown.**
+  If anything about the plan changes, so does the code.
 
-Put the source in the confirmation and it refuses, says which way round it
-goes, and prints the exact id to use instead.
+The id of the target spreadsheet is still accepted, so a confirmation set
+before codes existed keeps working. Nothing else is.
 
 **`showSettings()`** lays out every setting with the name of each spreadsheet
 and whether the gate is open. Read only. Run it whenever you are unsure.
@@ -252,6 +254,22 @@ someone started and abandoned. Add it in Project Settings:
 | `PORTAL_OTHER_SPREADSHEET_IDS` | one address per line, or comma separated |
 
 Paste whole addresses; the ids are picked out.
+
+**That is all that is needed.** Every screen then reads across all of them —
+the trainee's record, the FTO's list, the Division's queue, the whole history.
+Nothing is moved and nothing is written. A row that lives in another book is
+shown with the name of the book it is in.
+
+Two rules keep that honest:
+
+- **A row that appears in both books is shown once.** Both sides are
+  fingerprinted over the columns they share.
+- **A row from another book carries no row number here, and every write checks
+  for that.** Approving a sign-off on a borrowed row is refused, saying where
+  the row actually lives. Writing to a row number that came from a different
+  spreadsheet is how a record gets corrupted silently, and it cannot happen.
+
+### If you would rather it all lived in one book
 
 **`whatElseIsOutThere()`** opens each one **read only** and reports every tab,
 how many rows it holds, which tabs this portal understands, and — for those —
@@ -385,8 +403,8 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           73 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-merge.test.js     73 assertions — the other spreadsheets, read only then across
-node test/portal-backfill.test.js 101 assertions — importing responses, the production gate, the rollback
+node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
+node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback
 node test/portal-onefile.test.js   59 assertions — the pasted file matches its sources and runs alone
 ```
 

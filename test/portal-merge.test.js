@@ -178,7 +178,7 @@ const STRAY    = ['TRAINEE','EVENT DATE','SKILL','FTO','OUTCOME','STAGE','NOTE']
 
 function world(mode, opts) {
   opts = opts || {};
-  PROPS = {}; LOGS = []; BOOKS = {}; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  PROPS = {}; LOGS = []; BOOKS = {}; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
   OPENABLE = { 'PROD-BOOK': 'SCEMS FTPD Tracker', 'STRAY-BOOK': 'SCEMS FTPD Tracker (copy)',
                'STG-BOOK': 'STG_Sandbox' };
   PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
@@ -208,7 +208,7 @@ function world(mode, opts) {
   ]);
   tabIn('STRAY-BOOK', 'Sheet1', ['SOMETHING','ELSE'], [['a','b']]);
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 function evid(bookId) { return BOOKS[bookId][PORTAL.TAB.EVIDENCE].g.slice(HR); }
 function snapOf(bookId) {
   return JSON.stringify(BOOKS[bookId], (k, v) => (v instanceof Date ? v.toISOString() : v));
@@ -282,7 +282,7 @@ world(null, { strayRows: [
 ] });
 BOOKS['STRAY-BOOK'][PORTAL.TAB.EVIDENCE].g[HR - 1].push('SUPERVISOR PRESENT');
 BOOKS['STRAY-BOOK'][PORTAL.TAB.EVIDENCE].g[HR].push('Yes, Captain Reyes');
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 const carried = mergePlanV1_('STRAY-BOOK', PORTAL.TAB.EVIDENCE);
 ok(carried.missing.length === 1, 'the row still comes across');
 const note = String(cell(carried.missing[0].row, 'NOTE'));
@@ -327,10 +327,11 @@ ok(/READ FROM/.test(backwards) && /WRITTEN TO/.test(backwards),
    'and says which direction the confirmation points');
 ok(/PORTAL_OTHER_SPREADSHEET_IDS/.test(backwards),
    'naming the property that holds the one being read from');
-ok(backwards.indexOf('PROD-BOOK') >= 0,
-   'and printing the exact id to set instead');
-ok(/SCEMS FTPD Tracker/.test(backwards),
-   'with the name of that spreadsheet, so it can be recognised');
+ok(/^[\s\S]*Set PORTAL_BACKFILL_CONFIRM to\n  [23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{2}/
+     .test(backwards),
+   'and printing the exact code to use instead');
+ok(/the code for exactly the changes you were just shown/.test(backwards),
+   'saying what that code is good for, so it is clearly not a spreadsheet address');
 ok(snapOf('PROD-BOOK') === here && snapOf('STRAY-BOOK') === there, 'nothing written either time');
 
 // a confirmation naming some unrelated book gets the mismatch without the
@@ -444,6 +445,123 @@ ok(/1 already here, 3 not/.test(rep), 'and the one it can read is still surveyed
 PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
 rep = runMergeForReal();
 ok(evid('PROD-BOOK').length === 4, 'and the reachable book still comes across');
+
+// ---------------------------------------------------------------- //
+section('The portal reads BOTH spreadsheets without moving anything');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+const untouched = snapOf('STRAY-BOOK'), untouchedHere = snapOf('PROD-BOOK');
+
+const combined = readTabAllV1_(PORTAL.TAB.EVIDENCE);
+ok(combined.combined === true, 'the combined read is in use');
+ok(combined.rows.length === 4,
+   'one row from the tracker plus the three only the other book has');
+ok(readTabV1_(PORTAL.TAB.EVIDENCE).rows.length === 1,
+   'while the plain read still sees only this spreadsheet, which is what writes use');
+ok(snapOf('STRAY-BOOK') === untouched && snapOf('PROD-BOOK') === untouchedHere,
+   'and neither spreadsheet was written to');
+
+// the row present in both is not shown twice
+const skills = combined.rows.map(r => r[combined.headers.indexOf('SKILL')]);
+ok(skills.filter(x => x === 'IV access').length === 1,
+   'a row that exists in both books appears once, not twice');
+ok(skills.filter(x => x === 'Intubation').length === 2, 'and both intubation events arrive');
+
+// values land under the right heading despite the different column order
+const trainees = combined.rows.map(r => r[combined.headers.indexOf('TRAINEE')]);
+ok(trainees.filter(x => x === 'Alex Bramble').length === 1,
+   'a trainee only in the other book is there');
+const ftos = combined.rows.map(r => r[combined.headers.indexOf('FTO')]);
+ok(ftos.indexOf('Marcus Vane') >= 0, 'and the FTO column holds FTOs, not something else');
+
+// every foreign row is labelled and has no row number here
+combined.rows.forEach((r, i) => {
+  const from = rowSourceV1_(combined, i);
+  const row = realRowV1_(combined, i);
+  if (i === 0) {
+    ok(from === '' && row === combined.firstDataRow,
+       'the row from this spreadsheet keeps its real row number');
+  } else {
+    ok(from === 'SCEMS FTPD Tracker (copy)', 'a row from elsewhere names its book');
+    ok(row === -1, 'and carries no row number here, so nothing can write to it');
+  }
+});
+
+// ---------------------------------------------------------------- //
+section('Nothing writes to a row it only borrowed');
+// ---------------------------------------------------------------- //
+world(PORTAL.MODE_STAGING);
+tabIn('PROD-BOOK', PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL','EVIDENCE SUMMARY','DECISION','DECIDED BY',
+   'DECISION DATE','RATIONALE','RECORD STATUS'],
+  [[D('2026-08-17'),'Jamie Rivers','Intubation','4 of 4','','','','','OPEN']]);
+tabIn('STRAY-BOOK', PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL','EVIDENCE SUMMARY','DECISION','DECIDED BY',
+   'DECISION DATE','RATIONALE','RECORD STATUS'],
+  [[D('2026-08-16'),'Alex Bramble','Tourniquet','3 of 3','','','','','OPEN']]);
+tabIn('PROD-BOOK', PORTAL.TAB.ROSTER, ['FTO','EMAIL'], [['Dana Whitlock','dana@example.org']]);
+PROPS['PORTAL_DIVISION_EMAILS'] = 'chief@example.org';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+as('chief@example.org');
+
+const queue = openQueueV1_();
+ok(queue.length === 2, 'the Division sees the open items from both books');
+const mine = queue.filter(q => !q.from)[0];
+const borrowed = queue.filter(q => q.from)[0];
+ok(!!mine && !!borrowed, 'one of each');
+ok(borrowed.row === -1, 'the borrowed one carries no row number');
+ok(borrowed.trainee === 'Alex Bramble', 'and it is the one only the other book has');
+
+const strayBefore = snapOf('STRAY-BOOK');
+const refusedWrite = threw(() => approveSignoffV1(borrowed.row, 'Evidence reviewed in person.'));
+ok(/not in this spreadsheet/.test(refusedWrite),
+   'approving it is refused, because the row is not here');
+ok(/where the row actually lives/.test(refusedWrite), 'and it says what to do instead');
+ok(snapOf('STRAY-BOOK') === strayBefore, 'the other spreadsheet is untouched');
+
+ok(threw(() => approveSignoffV1(mine.row, 'Evidence reviewed in person.')) === '',
+   'while the row that IS here approves normally');
+ok(String(BOOKS['PROD-BOOK'][PORTAL.TAB.QUEUE].g[HR][8]) === 'RECORDED',
+   'and lands on the right row');
+
+// ---------------------------------------------------------------- //
+section('The confirmation is a code for one set of changes');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+const plans = mergePlanAllV1_();
+const code = confirmCodeForV1_('PROD-BOOK', plans);
+ok(/^[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{2}$/.test(code),
+   'the code is short, typeable, and has no O against 0 or I against 1: ' + code);
+ok(confirmCodeForV1_('PROD-BOOK', plans) === code, 'the same plan gives the same code');
+ok(confirmCodeForV1_('OTHER-BOOK', plans) !== code, 'a different target gives a different code');
+ok(confirmCodeForV1_('PROD-BOOK', []) !== code, 'and so does a different set of changes');
+
+const preview = mergeBeforeAndAfter();
+ok(preview.indexOf(code) >= 0, 'the preview prints the code for what it just showed you');
+ok(/You do not have to do this/.test(preview),
+   'and says outright that the portal already reads the other book');
+
+PROPS[PORTAL_BACKFILL_CONFIRM] = code;
+ok(/MERGE COMPLETE/.test(runMergeForReal()), 'the code authorises exactly that merge');
+
+// a code from one plan does not authorise a different one
+world();
+as('chief@example.org');
+PROPS[PORTAL_BACKFILL_CONFIRM] = confirmCodeForV1_('PROD-BOOK', []);
+const wrongCode = threw(() => runMergeForReal());
+ok(/Refusing to write/.test(wrongCode), 'a code for a different plan is refused');
+ok(/not a code this portal issued/.test(wrongCode), 'and is not mistaken for a spreadsheet');
+
+// with nothing listed, it says that rather than complaining about the gate
+world(null, { others: '' });
+as('chief@example.org');
+delete PROPS[PORTAL_BACKFILL_CONFIRM];
+const none = runMergeForReal();
+ok(/No other spreadsheets are listed/.test(none),
+   'no sources listed reads as no sources listed, not as an authorisation problem');
+ok(/PORTAL_OTHER_SPREADSHEET_IDS/.test(none), 'and names the property to set');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

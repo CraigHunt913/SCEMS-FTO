@@ -28,14 +28,15 @@ function levelKeyV1_(level) {
 /** Every trainee on the master, normalized. Closed people are marked, never
  *  silently dropped, so a caller must decide rather than inherit a filter. */
 function traineesV1_() {
-  var t = readTabV1_(PORTAL.TAB.MASTER);
+  var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
     var name = String(r[t.col['TRAINEE']] || '').trim();
     if (!name) return null;
     var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
     return {
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
       level: String(r[t.col['LEVEL']] || '').trim(),
@@ -57,7 +58,7 @@ function traineesV1_() {
 }
 
 function skillsForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.SKILLS);
+  var t = readTabAllV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r) {
@@ -75,13 +76,14 @@ function skillsForV1_(norm) {
 }
 
 function openQueueV1_() {
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  var t = readTabAllV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
     out.push({
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      from: rowSourceV1_(t, i),
       trainee: String(r[t.col['TRAINEE']] || '').trim(),
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
@@ -95,7 +97,7 @@ function openQueueV1_() {
 }
 
 function lastEvalForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.EVAL);
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
   if (!t.ok) return null;
   var latest = null;
   t.rows.forEach(function (r) {
@@ -107,13 +109,14 @@ function lastEvalForV1_(norm) {
 }
 
 function coachingForV1_(norm) {
-  var t = readTabV1_(PORTAL.TAB.COACHING);
+  var t = readTabAllV1_(PORTAL.TAB.COACHING);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r, i) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
     out.push({
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
       when: asDateV1_(r[t.col['DATE']]),
       from: String(r[t.col['FROM']] || '').trim(),
       text: String(r[t.col['NOTE']] || '').trim(),
@@ -141,6 +144,7 @@ function traineePayloadV1_(viewer) {
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
     coaching: coaching.filter(function (c) { return !c.acknowledged; })
       .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+                                   book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
@@ -193,7 +197,8 @@ function divisionPayloadV1_() {
     closedCount: all.length - active.length,
     queue: queue.slice(0, 25).map(function (q) {
       return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId, row: q.row };
+               since: daysAgoTextV1_(q.since), requestId: q.requestId,
+               row: q.row, from: q.from };
     }),
     queueCount: queue.length,
     incomplete: incomplete.map(function (t) {
@@ -245,14 +250,15 @@ function supervisorPayloadV1_(viewer) {
 }
 
 function medicalPayloadV1_() {
-  var t = readTabV1_(PORTAL.TAB.URGENT);
+  var t = readTabAllV1_(PORTAL.TAB.URGENT);
   var cases = [];
   if (t.ok) {
     t.rows.forEach(function (r, i) {
       var who = String(r[3] || '').trim();
       if (!who) return;
       cases.push({
-        row: t.firstDataRow + i,
+        row: realRowV1_(t, i),
+        from: rowSourceV1_(t, i),
         trainee: who,
         when: asDateV1_(r[0]) ? asDateV1_(r[0]).toDateString() : '',
         from: String(r[2] || '').trim(),

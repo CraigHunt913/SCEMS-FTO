@@ -87,45 +87,99 @@ function backfillBeforeAndAfter() {
 
   lines.push('=======================================================');
   lines.push('To do it, set the script property');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + safeTargetIdV1_());
-  lines.push('and run runBackfillForReal(). Anything else and it refuses.');
+  lines.push('');
+  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' +
+             confirmCodeForV1_(safeTargetIdV1_(), plans));
+  lines.push('');
+  lines.push('and run runBackfillForReal().');
+  lines.push('');
+  lines.push('That code authorises exactly the changes above and nothing else.');
+  lines.push('If anything about them changes, so does the code.');
   return noteV1_(lines.join('\n'));
 }
 
 function safeTargetIdV1_() { try { return targetIdV1_(); } catch (e) { return '(not set)'; } }
 
-/** The gate. The confirmation must name the book about to be written to. */
-function requireImportAuthorityV1_() {
-  var id = targetIdV1_();
-  // Normalised the same way the target is, so pasting the spreadsheet's
-  // address here works exactly as well as pasting its id.
-  var confirm = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
-    .getProperty(PORTAL_BACKFILL_CONFIRM));
+/** Letters and digits with nothing ambiguous in them: no O against 0, no I
+ *  against 1. A code someone reads off one screen and types into another. */
+var PORTAL_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
-  if (!confirm) {
-    throw new Error('Refusing to write. Set the script property ' +
-      PORTAL_BACKFILL_CONFIRM + ' to ' + id + ' first. Run ' +
-      'backfillBeforeAndAfter() to see exactly what this would do.');
+function shortCodeV1_(text) {
+  var s = String(text), h = 0x811c9dc5;
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  var out = '', n = h;
+  for (var j = 0; j < 6; j++) {
+    out += PORTAL_CODE_ALPHABET.charAt(n % PORTAL_CODE_ALPHABET.length);
+    n = Math.floor(n / PORTAL_CODE_ALPHABET.length);
+    if (!n) n = h >>> (j + 1);
+  }
+  return out.slice(0, 4) + '-' + out.slice(4);
+}
+
+/** The code that authorises ONE set of changes to ONE spreadsheet.
+ *
+ *  It is derived from the target and from what is about to be written, so it
+ *  cannot be confused with a spreadsheet address, cannot be left over from
+ *  another book, and cannot approve a different set of changes than the one
+ *  you were shown. Change the plan and the code changes with it. */
+function confirmCodeForV1_(id, plans) {
+  var parts = [id];
+  (plans || []).forEach(function (p) {
+    parts.push(String(p.tab || p.dest || ''));
+    parts.push(String(p.source || p.key || ''));
+    parts.push(String((p.missing || []).length));
+    (p.missing || []).forEach(function (m) { parts.push(String(m.id || m.key || '')); });
+  });
+  return shortCodeV1_(parts.join('|'));
+}
+
+/** The gate.
+ *
+ *  Accepts the code from the preview, which is what the preview tells you to
+ *  use. Also still accepts the id of the spreadsheet being written to, so a
+ *  confirmation set before codes existed keeps working. Nothing else. */
+function requireImportAuthorityV1_(expectedCode) {
+  var id = targetIdV1_();
+  var raw = String(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_BACKFILL_CONFIRM) || '').trim();
+  var asCode = raw.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (expectedCode && asCode === expectedCode) return id;
+
+  var confirm = spreadsheetIdFromV1_(raw);
+
+  if (!raw) {
+    throw new Error('Refusing to write.\n\n' +
+      'Set the script property ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' +
+      (expectedCode || id) + '\n\n' +
+      (expectedCode
+        ? 'That is the code for exactly the changes you were just shown. Run\n' +
+          'the preview again if you have lost it.'
+        : 'Run the preview first to see what this would do.'));
   }
   if (confirm !== id) {
-    // The confirmation names the spreadsheet being WRITTEN TO. Naming the one
-    // being read from is the obvious way to get this backwards, so when that
-    // is what happened, say so rather than just reporting a mismatch.
     var others = [];
     try { others = otherBookIdsV1_(); } catch (e) { others = []; }
     var isASource = others.indexOf(confirm) >= 0;
+    var looksLikeAnId = confirm && confirm.length > 12;
 
     throw new Error('Refusing to write.\n\n' +
-      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + confirm + '\n' +
-      'but this portal writes to\n  ' + id + '\n\n' +
+      PORTAL_BACKFILL_CONFIRM + ' holds\n  ' + raw + '\n\n' +
       (isASource
-        ? 'That is one of the spreadsheets listed in ' + PORTAL_OTHER_IDS_PROPERTY +
-          ', which is the one being READ FROM. The confirmation names the one ' +
-          'being WRITTEN TO.\n\n'
-        : '') +
-      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + id + '\n' +
-      'which is ' + safeTargetNameV1_() + ', the spreadsheet this portal is ' +
-      'pointed at. Then run this again.');
+        ? 'That is one of the spreadsheets in ' + PORTAL_OTHER_IDS_PROPERTY + ', which\n' +
+          'is READ FROM. This confirmation is for what gets WRITTEN TO.\n\n'
+        : looksLikeAnId
+          ? 'That is not the spreadsheet this portal writes to, which is\n  ' + id +
+            '\n  ' + safeTargetNameV1_() + '\n\n'
+          : 'That is not a code this portal issued.\n\n') +
+      'Set ' + PORTAL_BACKFILL_CONFIRM + ' to\n  ' + (expectedCode || id) + '\n\n' +
+      (expectedCode
+        ? 'That is the code for exactly the changes you were just shown, and it\n' +
+          'authorises those and nothing else. Run the preview again if you have\n' +
+          'lost it.'
+        : 'Run the preview first to see what this would do.'));
   }
   return id;
 }
@@ -136,8 +190,16 @@ function requireImportAuthorityV1_() {
  *  any response cannot be placed in full, because a half-imported record is
  *  worse than one still sitting in the form. */
 function runBackfillForReal() {
-  var id = requireImportAuthorityV1_();
+  // What would happen is worked out FIRST. It writes nothing, and it means
+  // "there is nothing to do" never arrives dressed up as a problem with the
+  // confirmation.
   var plans = backfillPlanAllV1_();
+  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
+  if (!due && !plans.some(function (p) { return p.blocked.length; })) {
+    return noteV1_('Nothing to import. Every response is already in the tracker.');
+  }
+
+  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -146,9 +208,6 @@ function runBackfillForReal() {
       'half done. Run backfillBeforeAndAfter() to see which, add the column ' +
       'they need, then run this again.');
   }
-  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
-  if (!due) return noteV1_('Nothing to import. Every response is already in the tracker.');
-
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
   var manifest = [], report = ['BACKFILL COMPLETE', '',
     'Target : ' + safeTargetNameV1_(), 'Id     : ' + id,

@@ -100,7 +100,7 @@ function dayKeyV1_(d) {
 /** Every submission in one tab belonging to one person, newest first.
  *  Undated rows sort last rather than being dropped. */
 function submissionsFromV1_(source, norm) {
-  var t = readTabV1_(source.tab);
+  var t = readTabAllV1_(source.tab);
   if (!t.ok) return [];
 
   var whoIdx  = colIndexV1_(t, source.who);
@@ -124,7 +124,8 @@ function submissionsFromV1_(source, norm) {
       key: source.key,
       source: source.title,
       tab: source.tab,
-      row: t.firstDataRow + i,
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
       when: whenIdx >= 0 ? asDateV1_(r[whenIdx]) : null,
       by: byIdx >= 0 ? String(r[byIdx] || '').trim() : '',
       group: grpIdx >= 0 ? String(r[grpIdx] || '').trim() : '',
@@ -219,7 +220,7 @@ function recordForV1_(name, only) {
 
 function shapeV1_(s) {
   return {
-    key: s.key, source: s.source, tab: s.tab, row: s.row,
+    key: s.key, source: s.source, tab: s.tab, row: s.row, book: s.book || '',
     when: whenTextV1_(s.when), ago: daysAgoTextV1_(s.when),
     at: s.when instanceof Date && !isNaN(s.when.getTime()) ? s.when.getTime() : 0,
     by: s.by, group: s.group,

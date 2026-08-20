@@ -147,7 +147,7 @@ const LONG = 'Ran the airway on a prolonged resuscitation without prompting and 
   'radio report, which was rushed and had to be repeated twice before it was understood.';
 
 function world(mode) {
-  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  PROPS = {}; SHEETS = {}; LOGS = []; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
   OPENABLE = { 'STG-BOOK': 'STG_Sandbox', 'PROD-BOOK': 'SCEMS FTPD Tracker' };
   PROPS[PORTAL.PROPERTY_TARGET] = 'STG-BOOK';
   PROPS[PORTAL.PROPERTY_MODE] = mode || PORTAL.MODE_STAGING;
@@ -219,7 +219,7 @@ function world(mode) {
 
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
-function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
 function snapshot() { return JSON.stringify(SHEETS, (k, v) => (v instanceof Date ? v.toISOString() : v)); }
 function sect(rec, key) { return rec.sections.filter(s => s.key === key)[0]; }
 function textOf(sub) { return (sub.fields || []).map(f => f.value).join(' | '); }
@@ -356,11 +356,11 @@ ok(snapshot() === dupBefore, 'and changes nothing');
 // a closed trainee is not chased for decisions
 world();
 SHEETS[PORTAL.TAB.MASTER].g[HR][7] = 'Closed / Released';        // Jamie
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 ok(duplicateSubmissionsV1_().length === 1,
    'closing Jamie does not change Alex’s duplicate');
 SHEETS[PORTAL.TAB.MASTER].g[HR + 1][7] = 'Closed / Released';    // Alex
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 ok(duplicateSubmissionsV1_().length === 0,
    'and closing Alex takes the decision off the list without touching the rows');
 ok(SHEETS[PORTAL.TAB.EVAL].g.length === HR + 7, 'both rows are still in the sheet');
@@ -372,7 +372,7 @@ world();
 let READS = 0;
 const realRead = readTabUncachedV1_;
 readTabUncachedV1_ = function (n) { READS++; return realRead(n); };
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 divisionPayloadV1_();
 const readsForEveryone = READS;
 readTabUncachedV1_ = realRead;
@@ -382,7 +382,7 @@ ok(readsForEveryone <= Object.keys(PORTAL.TAB).length,
 world();
 READS = 0;
 readTabUncachedV1_ = function (n) { READS++; return realRead(n); };
-TAB_CACHE_V1 = {};
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 recordForV1_('Jamie Rivers');
 recordForV1_('Alex Bramble');
 recordForV1_('Priya Okafor');

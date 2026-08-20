@@ -366,17 +366,39 @@ function mergeBeforeAndAfter() {
   lines.push('=======================================================');
   lines.push(totalMissing + ' row(s) would be added, ' + totalBlocked + ' refused.');
   lines.push('');
-  lines.push('To do it, set the script property');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + safeTargetIdV1_());
-  lines.push('and run runMergeForReal(). Anything else and it refuses.');
+  lines.push('You do not have to do this. The portal reads the other spreadsheets');
+  lines.push('already, so everything above is visible on screen without moving it.');
+  lines.push('Bring it across only if you want it to live in one book.');
+  lines.push('');
+  lines.push('To do that, set the script property');
+  lines.push('');
+  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' +
+             confirmCodeForV1_(safeTargetIdV1_(), plans));
+  lines.push('');
+  lines.push('and run runMergeForReal().');
+  lines.push('');
+  lines.push('That code authorises exactly the rows above and nothing else.');
   return noteV1_(lines.join('\n'));
 }
 
 /** Brings them across, for real. Same gate as the form import, same manifest,
  *  and undoLastBackfill reverses it the same way. */
 function runMergeForReal() {
-  var id = requireImportAuthorityV1_();
+  // Worked out first, so "nothing to do" and "no spreadsheets listed" never
+  // arrive dressed up as a problem with the confirmation.
+  if (!otherBookIdsV1_().length) {
+    return noteV1_('No other spreadsheets are listed, so there is nothing to ' +
+      'bring across.\n\nProject Settings > Script Properties:\n  ' +
+      PORTAL_OTHER_IDS_PROPERTY + '\nOne address per line, or separated by commas.');
+  }
   var plans = mergePlanAllV1_();
+  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
+  if (!due && !plans.some(function (p) { return p.blocked.length; })) {
+    return noteV1_('Nothing to bring across. Everything in the other ' +
+      'spreadsheets is already here.');
+  }
+
+  var id = requireImportAuthorityV1_(confirmCodeForV1_(safeTargetIdV1_(), plans));
 
   var blocked = plans.reduce(function (n, p) { return n + p.blocked.length; }, 0);
   if (blocked) {
@@ -385,10 +407,6 @@ function runMergeForReal() {
       'done. Run mergeBeforeAndAfter() to see which, add the column they need, ' +
       'then run this again.');
   }
-  var due = plans.reduce(function (n, p) { return n + p.missing.length; }, 0);
-  if (!due) return noteV1_('Nothing to bring across. Everything in the other ' +
-    'spreadsheets is already here.');
-
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
   var manifest = [], report = ['MERGE COMPLETE', '',
     'Into   : ' + safeTargetNameV1_(), 'Id     : ' + id,
