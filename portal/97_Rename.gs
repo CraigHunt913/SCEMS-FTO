@@ -259,6 +259,7 @@ function applyRename() {
   }
 
   say();
+  rebuiltNoteV1_(L);
   refreshDropdownsNoteV1_(L);
   say();
   say('The portal matches trainees to their training officer by name, so this');
@@ -301,13 +302,38 @@ function undoRename() {
     });
   if (!entries.length) return noteV1_('The log names no cells for the last rename.');
 
-  var book = targetBookV1_(), put = 0, left = [];
+  // Putting it back needs the same order that putting it in did, and for the
+  // same reason: the old name has to be on the roster again before the
+  // dropdown will accept it anywhere else. So the roster goes first, the
+  // dropdown is rebuilt from it, and everything that refers to it follows.
+  entries.sort(function (a, b) {
+    var ra = a.tab === PORTAL.TAB.ROSTER ? 0 : 1;
+    var rb = b.tab === PORTAL.TAB.ROSTER ? 0 : 1;
+    return ra !== rb ? ra - rb : a.row - b.row;
+  });
+
+  var book = targetBookV1_(), put = 0, left = [], rebuilt = false;
   entries.forEach(function (e) {
+    if (!rebuilt && e.tab !== PORTAL.TAB.ROSTER) {
+      // every roster cell that was going back has gone back by now
+      forgetTabsV1_(); PEOPLE_CACHE_V1 = null;
+      try { rebuildFtoDropdownV1_(); } catch (err) {}
+      rebuilt = true;
+    }
     var sh = book.getSheetByName(e.tab);
     if (!sh) { left.push({ e: e, found: '(tab gone)' }); return; }
-    var now = String(sh.getRange(e.row, e.col).getValue() || '');
+    var now;
+    try { now = String(sh.getRange(e.row, e.col).getValue() || ''); }
+    catch (err) { left.push({ e: e, found: '(could not read it)' }); return; }
     if (normNameV1_(now) !== normNameV1_(e.now)) { left.push({ e: e, found: now || '(empty)' }); return; }
-    sh.getRange(e.row, e.col).setValue(e.was);
+    // A refusal here is the dropdown, not a person, and it must not abandon
+    // the run: an undo that stops halfway is worse than the state it is undoing.
+    try { sh.getRange(e.row, e.col).setValue(e.was); }
+    catch (err) {
+      left.push({ e: e, found: 'the sheet refused "' + e.was + '" - ' +
+        validationReasonV1_(sh, e.row, e.col) });
+      return;
+    }
     put++;
   });
   forgetTabsV1_();
@@ -315,11 +341,12 @@ function undoRename() {
 
   var lines = ['RENAME REVERSED', '', put + ' cell(s) put back to what they were on ' + last, ''];
   if (left.length) {
-    lines.push('LEFT ALONE, changed since  (' + left.length + ')');
+    lines.push('LEFT ALONE  (' + left.length + ')');
     left.forEach(function (l) {
-      lines.push('  ' + l.e.tab + ' row ' + l.e.row + '   now holds ' + l.found);
+      lines.push('  ' + l.e.tab + ' row ' + l.e.row + '   ' + l.found);
     });
-    lines.push('  Somebody edited those by hand, and that outranks this.');
+    lines.push('  A cell somebody edited by hand outranks this. A cell the sheet');
+    lines.push('  refused is a dropdown that no longer offers the old name.');
   }
   return noteV1_(lines.join('\n'));
 }

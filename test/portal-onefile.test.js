@@ -44,7 +44,7 @@ ok(one.indexOf("var PORTAL_BUILD = '" + stamp + "';") >= 0,
 section('Nothing was left behind');
 // ---------------------------------------------------------------- //
 const SOURCES = ['00_Config', '01_Start', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
-                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster', '97_Rename','98_Retire','99_AddFto'];
+                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging','94_Assign', '95_Unprocessed', '96_Roster', '97_Rename','98_Retire','99_AddFto'];
 
 let missing = [];
 SOURCES.forEach(name => {

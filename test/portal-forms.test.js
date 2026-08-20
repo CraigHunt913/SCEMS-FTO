@@ -123,7 +123,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -230,7 +230,7 @@ ok(new Set(ids).size === 9, 'no id appears twice');
 ok(new Set(PORTAL_FORMS.map(f => f.key)).size === 9, 'no key appears twice');
 ok(ids.every(i => /^[A-Za-z0-9_-]{20,}$/.test(i)), 'every id looks like a real Drive id');
 
-const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging']
+const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging','94_Assign']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(!ids.some(i => srcFiles.indexOf(i) >= 0), 'no form id is hard-coded anywhere outside the registry');
 const pageSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html', 'utf8');

@@ -376,7 +376,8 @@ function undoRosterEmails() {
       changed.push({ e: e, found: now || '(empty)' });
       return;
     }
-    sh.getRange(e.row, ci + 1).setValue('');
+    try { sh.getRange(e.row, ci + 1).setValue(''); }
+    catch (err) { changed.push({ e: e, found: '(the sheet refused to clear it)' }); return; }
     cleared.push(e);
   });
   forgetTabsV1_();

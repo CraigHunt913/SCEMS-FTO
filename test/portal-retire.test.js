@@ -63,10 +63,32 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
       }
       (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
     setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
-      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
+      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; },
+    setDataValidation: function (rule) {
+      sh.validate = sh.validate || {};
+      if (!rule) { delete sh.validate[C]; return api; }
+      sh.validate[C] = { allowed: () => rule.list.filter(x => x !== ''),
+                         type: rule.type, a1: 'X1:X9' };
+      return api; }
   };
   ['setFontWeight','setFontColor','setBackground','setWrap','setNumberFormat'].forEach(m => api[m] = () => api);
   return api;
+};
+
+
+/* Data validation, set the way the platform sets it: a rule applied to a
+   range, which every later write into that range is then checked against. */
+const NEW_DV = function () {
+  const rule = { type: '', list: [], allowInvalid: true, help: '' };
+  const b = {
+    requireValueInList: function (vals, drop) { rule.type = 'VALUE_IN_LIST';
+      rule.list = vals.slice(); return b; },
+    requireValueInRange: function (rg) { rule.type = 'VALUE_IN_RANGE'; rule.range = rg; return b; },
+    setAllowInvalid: function (v) { rule.allowInvalid = !!v; return b; },
+    setHelpText: function (h) { rule.help = String(h); return b; },
+    build: function () { return rule; }
+  };
+  return b;
 };
 
 let OPENABLE = {};                       // spreadsheet id -> name
@@ -82,6 +104,7 @@ global.SpreadsheetApp = {
   create: () => BOOK,
   getUi: () => { throw new Error('no ui'); }
 };
+global.SpreadsheetApp.newDataValidation = NEW_DV;
 global.Session = { getActiveUser: () => ({ getEmail: () => ACTIVE }),
   getEffectiveUser: () => ({ getEmail: () => EFFECTIVE }),
   getScriptTimeZone: () => 'America/New_York' };
@@ -149,7 +172,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -172,6 +195,7 @@ function bookFor(id) {
 global.SpreadsheetApp = {
   openById: id => { if (OPENABLE[id] === undefined) throw new Error('not found'); return bookFor(id); },
   create: () => bookFor('PROD-BOOK'), getUi: () => { throw new Error('no ui'); } };
+global.SpreadsheetApp.newDataValidation = NEW_DV;
 Object.defineProperty(global, 'SHEETS', {
   get() { return BOOKS['PROD-BOOK'] || (BOOKS['PROD-BOOK'] = {}); },
   set(v) { BOOKS['PROD-BOOK'] = v; }, configurable: true });
@@ -775,6 +799,152 @@ ok(/not on the roster/.test(out), 'START sees the assignment pointing nowhere');
 ok(/Latavia Cole -> Chyna Gray/.test(out), 'and says which trainee, to whom');
 ok(/Run  addFto/.test(out), 'and offers the function that fixes it');
 ok(/PORTAL_ADD_FTO/.test(out), 'naming the property to set');
+
+// ---------------------------------------------------------------- //
+section('The dropdown that refused a perfectly correct name');
+// ---------------------------------------------------------------- //
+// The ASSIGNED FTO column is a dropdown holding a fixed list of names typed
+// in at some point in the past. It does not follow the roster. So every
+// roster change quietly makes it wrong, and the sheet starts refusing names
+// that are now correct - which is what stopped Harley Simms being written.
+
+function dropWorld(opts) {
+  opts = opts || {};
+  rWorld({ retire: '', master: opts.master || [
+    ['Latavia Cole', 'EMT', '', 'Active', 'lc@example.org'],
+    ['Cassidy Bacci', 'EMT', 'Julieann White', 'Active', 'cb@example.org']] });
+  // the stale list: the roster as it was some time ago
+  BOOKS['PROD-BOOK'][PORTAL.TAB.MASTER].setValidation(3,
+    () => (opts.allowed || ['Julieann White', 'Brandon Lee']), 'VALUE_IN_LIST');
+  TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+  as('chief@example.org');
+}
+
+// before: the sheet refuses somebody who is plainly on the roster
+dropWorld();
+const masterNow = () => BOOKS['PROD-BOOK'][PORTAL.TAB.MASTER];
+let refusedIt = false;
+try { masterNow().getRange(HR + 1, 3).setValue('Chyna Gray'); }
+catch (e) { refusedIt = /violates the data validation/.test(e.message); }
+ok(refusedIt, 'the stale dropdown refuses a name that is on the roster');
+
+// rebuilding it from the roster fixes exactly that
+dropWorld();
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+addFto();
+as('chief@example.org');
+let dr = rebuildFtoDropdownV1_();
+ok(dr.ok, 'the dropdown rebuilds');
+ok(dr.names.indexOf('Chyna Gray') >= 0, 'and now offers everybody on the roster');
+ok(dr.names.indexOf('Alex White') < 0 || rosterPeopleV1_()
+     .filter(p => p.name === 'Alex White')[0].active,
+   'and nobody who has left');
+ok(threw(() => masterNow().getRange(HR + 1, 3).setValue('Chyna Gray')) === '',
+   'so the cell that refused her a moment ago now takes her');
+
+// the whole job in one function
+dropWorld();
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+addFto();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Chyna Gray';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+as('chief@example.org');
+let aOut = assignFto();
+ok(/rebuilt from the roster first/.test(aOut),
+   'assignFto rebuilds the dropdown before writing, not after');
+ok(/ASSIGNED   Latavia Cole   ->   Chyna Gray/.test(aOut), 'and writes the assignment');
+ok(!/THE SHEET REFUSED/.test(aOut), 'with nothing refused');
+let lat = traineesV1_().filter(t => t.name === 'Latavia Cole')[0];
+ok(lat.fto === 'Chyna Gray', 'the cell holds her officer');
+ok(ftoProblemV1_(lat) === '', 'and she is no longer on nobody\'s list');
+
+// she now appears on Chyna's screen, which is the entire point
+as('cgray@example.org');
+const chynaView = resolveViewerV1_(whoIsVisitingV1_());
+ok(chynaView.role === PORTAL.ROLE.FTO, 'Chyna Gray signs in as a training officer');
+ok(payloadForV1_(chynaView).trainees.map(t => t.name).indexOf('Latavia Cole') >= 0,
+   'and Latavia Cole is on her list');
+
+// a sentence in the cell is replaced like anything else
+dropWorld({ master: [['Latavia Cole', 'EMT',
+  'Now on the tab called 22 FTO ROSTER. Add or retire an FTO there, then run ' +
+  'Refresh form dropdowns.', 'Active', 'lc@example.org']] });
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+addFto();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Chyna Gray';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+as('chief@example.org');
+aOut = assignFto();
+ok(/was "Now on the tab called/.test(aOut), 'the report shows what was in the cell');
+ok(traineesV1_().filter(t => t.name === 'Latavia Cole')[0].fto === 'Chyna Gray',
+   'and the sentence is gone');
+
+// refusals
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Somebody Nobody';
+as('chief@example.org');
+aOut = assignFto();
+ok(/NOT ON THE ACTIVE ROSTER/.test(aOut), 'an officer not on the roster is refused');
+ok(/on nobody\'s list/.test(aOut), 'and it says why that would be wrong');
+ok(/addFto first/.test(aOut), 'pointing at the function that fixes it');
+ok(traineesV1_().filter(t => t.name === 'Latavia Cole')[0].fto === '',
+   'nothing was written');
+
+dropWorld();
+retireFtoNamed('Brandon Lee');
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Brandon Lee';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+as('chief@example.org');
+ok(/NOT ON THE ACTIVE ROSTER/.test(assignFto()),
+   'and somebody who has left is refused too');
+function retireFtoNamed(n) {
+  PROPS[PORTAL_RETIRE_PROPERTY] = n;
+  TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+  as('chief@example.org');
+  retireFto();
+  PROPS[PORTAL_RETIRE_PROPERTY] = '';
+}
+
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Nobody Here -> Julieann White';
+as('chief@example.org');
+ok(/NO SUCH TRAINEE/.test(assignFto()), 'a trainee the master does not have is refused');
+
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Cassidy Bacci -> Julieann White';
+as('chief@example.org');
+ok(/ALREADY ASSIGNED THAT WAY/.test(assignFto()), 'an assignment that is already right is a no-op');
+
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = '';
+ok(/Nothing is in PORTAL_ASSIGN/.test(assignFto()), 'an empty property says how to set it');
+
+// the preview writes nothing
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Julieann White';
+as('chief@example.org');
+let beforeAssign = snap();
+ok(/WOULD ASSIGN/.test(assignBeforeAndAfter()), 'the preview says what it would do');
+ok(snap() === beforeAssign, 'and writes nothing at all');
+
+// undo
+dropWorld();
+PROPS[PORTAL_ASSIGN_PROPERTY] = 'Latavia Cole -> Julieann White';
+as('chief@example.org');
+assignFto();
+ok(traineesV1_().filter(t => t.name === 'Latavia Cole')[0].fto === 'Julieann White', 'assigned');
+ok(/put back/.test(undoAssign()), 'the undo says what it did');
+ok(traineesV1_().filter(t => t.name === 'Latavia Cole')[0].fto === '',
+   'and the cell is back to what it held');
+
+// every roster change keeps the dropdown in step, so it cannot go stale again
+dropWorld();
+PROPS[PORTAL_ADD_FTO_PROPERTY] = 'Chyna Gray, cgray@example.org';
+as('chief@example.org');
+ok(/dropdown on 01 TRAINEE MASTER was rebuilt/.test(addFto()),
+   'addFto rebuilds it');
+ok(threw(() => masterNow().getRange(HR + 1, 3).setValue('Chyna Gray')) === '',
+   'so the new officer is immediately assignable, with nothing else to run');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -61,10 +61,32 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
       }
       (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
     setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
-      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
+      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; },
+    setDataValidation: function (rule) {
+      sh.validate = sh.validate || {};
+      if (!rule) { delete sh.validate[C]; return api; }
+      sh.validate[C] = { allowed: () => rule.list.filter(x => x !== ''),
+                         type: rule.type, a1: 'X1:X9' };
+      return api; }
   };
   ['setFontWeight','setFontColor','setBackground','setWrap','setNumberFormat'].forEach(m => api[m] = () => api);
   return api;
+};
+
+
+/* Data validation, set the way the platform sets it: a rule applied to a
+   range, which every later write into that range is then checked against. */
+const NEW_DV = function () {
+  const rule = { type: '', list: [], allowInvalid: true, help: '' };
+  const b = {
+    requireValueInList: function (vals, drop) { rule.type = 'VALUE_IN_LIST';
+      rule.list = vals.slice(); return b; },
+    requireValueInRange: function (rg) { rule.type = 'VALUE_IN_RANGE'; rule.range = rg; return b; },
+    setAllowInvalid: function (v) { rule.allowInvalid = !!v; return b; },
+    setHelpText: function (h) { rule.help = String(h); return b; },
+    build: function () { return rule; }
+  };
+  return b;
 };
 
 let OPENABLE = {};                       // spreadsheet id -> name
@@ -80,6 +102,7 @@ global.SpreadsheetApp = {
   create: () => BOOK,
   getUi: () => { throw new Error('no ui'); }
 };
+global.SpreadsheetApp.newDataValidation = NEW_DV;
 global.Session = { getActiveUser: () => ({ getEmail: () => ACTIVE }),
   getEffectiveUser: () => ({ getEmail: () => EFFECTIVE }),
   getScriptTimeZone: () => 'America/New_York' };
@@ -147,7 +170,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -170,6 +193,7 @@ function bookFor(id) {
 global.SpreadsheetApp = {
   openById: id => { if (OPENABLE[id] === undefined) throw new Error('not found'); return bookFor(id); },
   create: () => bookFor('PROD-BOOK'), getUi: () => { throw new Error('no ui'); } };
+global.SpreadsheetApp.newDataValidation = NEW_DV;
 Object.defineProperty(global, 'SHEETS', {
   get() { return BOOKS['PROD-BOOK'] || (BOOKS['PROD-BOOK'] = {}); },
   set(v) { BOOKS['PROD-BOOK'] = v; }, configurable: true });

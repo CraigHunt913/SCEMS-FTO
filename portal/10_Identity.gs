@@ -195,6 +195,25 @@ function looksLikeANameV1_(s) {
   return true;
 }
 
+/** Rebuilds the ASSIGNED FTO dropdown from the roster and says so.
+ *
+ *  Called after every roster change here, because that dropdown is a fixed
+ *  list that does not follow the roster, and a stale one refuses names that
+ *  are now perfectly correct. Keeping it in step is the difference between
+ *  this working and another "violates the data validation rules". */
+function rebuiltNoteV1_(L) {
+  var r;
+  try { r = rebuildFtoDropdownV1_(); } catch (e) { return L; }
+  if (r && r.ok) {
+    L.push('The ASSIGNED FTO dropdown on ' + PORTAL.TAB.MASTER + ' was rebuilt from');
+    L.push('the roster to match: ' + r.names.length + ' name(s). It is a fixed list');
+    L.push('that does not follow the roster on its own, and a stale one refuses');
+    L.push('names that are perfectly correct.');
+    L.push('');
+  }
+  return L;
+}
+
 /** What has to happen in the TRACKER's own script after the roster changes.
  *
  *  The tracker rebuilds the nine forms' "FTO name" dropdowns from the active

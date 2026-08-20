@@ -296,6 +296,7 @@ function retireFto() {
   }
 
   if (written.length) {
+    rebuiltNoteV1_(L);
     refreshDropdownsNoteV1_(L);
     L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
@@ -355,7 +356,11 @@ function unretireFto() {
       left.push({ e: e, found: now || '(empty)' });
       return;
     }
-    sh.getRange(e.row, ci + 1).setValue(e.was);
+    try { sh.getRange(e.row, ci + 1).setValue(e.was); }
+    catch (err) {
+      left.push({ e: e, found: 'the sheet refused "' + (e.was || '(blank)') + '"' });
+      return;
+    }
     put.push(e);
   });
   forgetTabsV1_();

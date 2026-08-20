@@ -270,6 +270,7 @@ function addFto() {
   if (added.length) {
     L.push('No row already on the roster was read, moved or changed.');
     L.push('');
+    rebuiltNoteV1_(L);
     refreshDropdownsNoteV1_(L);
     L.push('');
     L.push('NOW YOU CAN ASSIGN THEM');
