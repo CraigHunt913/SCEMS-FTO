@@ -1,0 +1,404 @@
+// SCEMS Portal — the other spreadsheets.
+//
+// Some of the record went somewhere else. The claim this layer makes is that
+// it can be found and brought across without losing a value, without writing
+// the same row twice, without touching the other book at all, and with a way
+// back out.
+//
+// These tests attack all of that, and the awkward parts specifically: a row
+// with no id of its own, a column order that does not match, a column the
+// target does not have, and a second run.
+//
+//   node test/portal-merge.test.js
+
+const fs = require('fs');
+let PASS = 0, FAIL = 0;
+function ok(c, w) { if (c) { PASS++; console.log('  PASS  ' + w); } else { FAIL++; console.log('  FAIL  ' + w); } }
+function section(t) { console.log('\n' + t); }
+function threw(fn) { try { fn(); return ''; } catch (e) { return String(e.message || e); } }
+
+/* ---------------- platform stubs ---------------- */
+
+let PROPS = {}, SHEETS = {}, ACTIVE = '', EFFECTIVE = '', LOGS = [];
+
+function FakeSheet(name, grid) { this.name = name; this.g = grid; }
+FakeSheet.prototype.getName = function () { return this.name; };
+FakeSheet.prototype.getLastRow = function () { return this.g.length; };
+FakeSheet.prototype.getLastColumn = function () { return this.g.reduce((w, r) => Math.max(w, (r || []).length), 1); };
+FakeSheet.prototype.appendRow = function (r) { this.g.push(r.slice()); return this; };
+FakeSheet.prototype.setFrozenRows = function () { return this; };
+FakeSheet.prototype.deleteRow = function (n) { this.g.splice(n - 1, 1); return this; };
+FakeSheet.prototype.clear = function () { this.g = []; return this; };
+FakeSheet.prototype.getRange = function (r, c, nr, nc) {
+  const sh = this, R = r, C = c, NR = nr || 1, NC = nc || 1;
+  const api = {
+    getValues: function () { const o = [];
+      for (let i = 0; i < NR; i++) { const row = sh.g[R - 1 + i] || [], s = [];
+        for (let j = 0; j < NC; j++) s.push(row[C - 1 + j] === undefined ? '' : row[C - 1 + j]); o.push(s); } return o; },
+    getValue: function () { return (sh.g[R - 1] || [])[C - 1]; },
+    setValue: function (v) { (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
+    setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
+      row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
+  };
+  ['setFontWeight','setFontColor','setBackground','setWrap','setNumberFormat'].forEach(m => api[m] = () => api);
+  return api;
+};
+
+let OPENABLE = {};                       // spreadsheet id -> name
+const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
+               getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
+
+global.SpreadsheetApp = {
+  openById: id => {
+    if (OPENABLE[id] === undefined) throw new Error('No item with the given ID could be found');
+    return Object.assign(Object.create(BOOK), { getName: () => OPENABLE[id], getId: () => id });
+  },
+  create: () => BOOK,
+  getUi: () => { throw new Error('no ui'); }
+};
+global.Session = { getActiveUser: () => ({ getEmail: () => ACTIVE }),
+  getEffectiveUser: () => ({ getEmail: () => EFFECTIVE }),
+  getScriptTimeZone: () => 'America/New_York' };
+global.PropertiesService = { getScriptProperties: () => ({
+  getProperty: k => (PROPS[k] === undefined ? null : PROPS[k]),
+  setProperty: (k, v) => { PROPS[k] = v; }, deleteProperty: k => { delete PROPS[k]; } }) };
+global.Utilities = { formatDate: () => '2026-08-19 0200' };
+global.Logger = { log: m => LOGS.push(String(m)) };
+global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
+  setTitle: function () { return this; }, addMetaTag: function () { return this; },
+  setXFrameOptionsMode: function (m) {
+    if (m === null || m === undefined) throw new Error('Argument cannot be null: mode');
+    return this; } }) }),
+  XFrameOptionsMode: { DEFAULT: 'DEFAULT', ALLOWALL: 'ALLOWALL' } };
+
+/* A FormApp that behaves like the real one where it matters:
+   - toPrefilledUrl() names the entry id belonging to the item responded to
+   - a choice item refuses a value it does not offer
+   - createResponse() builds an object; nothing is ever submitted           */
+
+let FORM_READS = 0, SUBMITS = 0, FORM_FAILS = {};
+
+function FakeItem(entryId, title, type, choices) {
+  this.entryId = entryId; this.title = title; this.type = type; this.choices = choices || null;
+}
+FakeItem.prototype.getTitle = function () { return this.title; };
+FakeItem.prototype.getType = function () { return this.type; };
+FakeItem.prototype._text = function () { const it = this;
+  return { createResponse: v => ({ item: it, value: String(v) }) }; };
+FakeItem.prototype._choice = function () { const it = this;
+  return { getChoices: () => (it.choices || []).map(c => ({ getValue: () => c })),
+           createResponse: v => {
+             if ((it.choices || []).indexOf(String(v)) < 0) throw new Error('Invalid choice: ' + v);
+             return { item: it, value: String(v) }; } }; };
+FakeItem.prototype.asTextItem = FakeItem.prototype._text;
+FakeItem.prototype.asParagraphTextItem = FakeItem.prototype._text;
+FakeItem.prototype.asListItem = FakeItem.prototype._choice;
+FakeItem.prototype.asMultipleChoiceItem = FakeItem.prototype._choice;
+
+function FakeForm(id, items, destination) {
+  this.id = id; this.items = items; this.destination = destination;
+}
+FakeForm.prototype.getPublishedUrl = function () { return 'https://forms.example/e/' + this.id + '/viewform'; };
+FakeForm.prototype.getItems = function () { return this.items.slice(); };
+FakeForm.prototype.getDestinationId = function () { return this.destination; };
+FakeForm.prototype.createResponse = function () {
+  const form = this, parts = [];
+  const resp = {
+    withItemResponse: function (r) { parts.push(r); return resp; },
+    toPrefilledUrl: function () {
+      return form.getPublishedUrl() + '?' +
+        parts.map(p => p.item.entryId + '=' + encodeURIComponent(p.value)).join('&');
+    },
+    submit: function () { SUBMITS++; return resp; }
+  };
+  return resp;
+};
+
+let FORMS = {};
+global.FormApp = { openById: id => {
+  FORM_READS++;
+  if (FORM_FAILS[id]) throw new Error(FORM_FAILS[id]);
+  if (!FORMS[id]) throw new Error('No item with the given ID could be found');
+  return FORMS[id];
+} };
+
+// one eval at module scope; eval inside a callback scopes the declarations away
+eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging']
+  .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
+  .join('\n'));
+
+
+
+const HR = PORTAL.HEADER_ROW;
+const D = s => new Date(s + 'T12:00:00');
+
+// Two books. BOOKS[id] is that book's own set of sheets.
+let BOOKS = {};
+function bookFor(id) {
+  if (!BOOKS[id]) BOOKS[id] = {};
+  const sheets = BOOKS[id];
+  return {
+    getId: () => id,
+    getName: () => OPENABLE[id],
+    getUrl: () => 'https://example/' + id,
+    getSheetByName: n => sheets[n] || null,
+    getSheets: () => Object.keys(sheets).map(n => sheets[n]),
+    insertSheet: n => (sheets[n] = new FakeSheet(n, []))
+  };
+}
+global.SpreadsheetApp = {
+  openById: id => {
+    if (OPENABLE[id] === undefined) throw new Error('No item with the given ID could be found');
+    return bookFor(id);
+  },
+  create: () => bookFor('STG-BOOK'),
+  getUi: () => { throw new Error('no ui'); }
+};
+// SHEETS is what the harness's helpers use; keep it pointed at the target
+Object.defineProperty(global, 'SHEETS', {
+  get() { return BOOKS['PROD-BOOK'] || (BOOKS['PROD-BOOK'] = {}); },
+  set(v) { BOOKS['PROD-BOOK'] = v; },
+  configurable: true
+});
+
+function tabIn(bookId, name, headers, rows) {
+  const g = [];
+  for (let i = 0; i < HR - 1; i++) g.push([]);
+  g.push(headers.slice());
+  rows.forEach(r => g.push(r));
+  if (!BOOKS[bookId]) BOOKS[bookId] = {};
+  BOOKS[bookId][name] = new FakeSheet(name, g);
+  return BOOKS[bookId][name];
+}
+
+const EVIDENCE = ['EVENT DATE','TRAINEE','FTO','SKILL','STAGE','OUTCOME','NOTE','SOURCE RESPONSE ID'];
+// Deliberately a different column ORDER, and one column this book does not have.
+const STRAY    = ['TRAINEE','EVENT DATE','SKILL','FTO','OUTCOME','STAGE','NOTE'];
+
+function world(mode, opts) {
+  opts = opts || {};
+  PROPS = {}; LOGS = []; BOOKS = {}; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {};
+  OPENABLE = { 'PROD-BOOK': 'SCEMS FTPD Tracker', 'STRAY-BOOK': 'SCEMS FTPD Tracker (copy)',
+               'STG-BOOK': 'STG_Sandbox' };
+  PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+  PROPS[PORTAL.PROPERTY_MODE] = mode || PORTAL.MODE_PRODUCTION;
+  PROPS[PORTAL_OTHER_IDS_PROPERTY] = opts.others === undefined ? 'STRAY-BOOK' : opts.others;
+  FORMS = {}; FORM_FAILS = {};
+  global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
+
+  tabIn('PROD-BOOK', PORTAL.TAB.MASTER,
+    ['TRAINEE','LEVEL','ASSIGNED FTO','START DATE','CURRENT PHASE','SET STATUS','TRAINEE EMAIL'],
+    [['Jamie Rivers','Paramedic','Dana Whitlock',D('2026-06-01'),'Phase 2','Active','jamie@example.org']]);
+
+  tabIn('PROD-BOOK', PORTAL.TAB.EVIDENCE, opts.destHeaders || EVIDENCE,
+    [[D('2026-08-18'),'Jamie Rivers','Dana Whitlock','IV access','Independent','Successful','','R-106']]);
+
+  tabIn('PROD-BOOK', PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
+
+  // the stray book: one row already here, three that never made it
+  tabIn('STRAY-BOOK', PORTAL.TAB.EVIDENCE, STRAY, opts.strayRows || [
+    ['Jamie Rivers', D('2026-08-18'),'IV access','Dana Whitlock','Successful','Independent',''],
+    ['Jamie Rivers', D('2026-07-04'),'Intubation','Marcus Vane','Successful','Assisted',
+     'First pass on a difficult airway after a failed attempt by the medic.'],
+    ['Jamie Rivers', D('2026-07-11'),'Intubation','Dana Whitlock','Unsuccessful','Assisted',
+     'Oesophageal placement, recognised immediately and corrected.'],
+    ['Alex Bramble', D('2026-06-30'),'Tourniquet','Dana Whitlock','Successful','Independent',
+     'High and tight, under a minute, no prompting.']
+  ]);
+  tabIn('STRAY-BOOK', 'Sheet1', ['SOMETHING','ELSE'], [['a','b']]);
+}
+function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; }
+function evid(bookId) { return BOOKS[bookId][PORTAL.TAB.EVIDENCE].g.slice(HR); }
+function snapOf(bookId) {
+  return JSON.stringify(BOOKS[bookId], (k, v) => (v instanceof Date ? v.toISOString() : v));
+}
+
+// ---------------------------------------------------------------- //
+section('Which other spreadsheets, from whatever was pasted');
+// ---------------------------------------------------------------- //
+world();
+PROPS[PORTAL_OTHER_IDS_PROPERTY] =
+  'https://docs.google.com/spreadsheets/d/STRAY-BOOK/edit#gid=0\n/d/OTHER-ONE/edit, THIRD-ONE';
+const ids = otherBookIdsV1_();
+ok(ids.length === 3, 'three books from a mix of addresses, fragments and bare ids');
+ok(ids.indexOf('STRAY-BOOK') >= 0 && ids.indexOf('OTHER-ONE') >= 0 && ids.indexOf('THIRD-ONE') >= 0,
+   'and each one is the id, not the address it came in');
+
+PROPS[PORTAL_OTHER_IDS_PROPERTY] = 'STRAY-BOOK, STRAY-BOOK, PROD-BOOK';
+const deduped = otherBookIdsV1_();
+ok(deduped.length === 1 && deduped[0] === 'STRAY-BOOK', 'listed twice counts once');
+ok(deduped.indexOf('PROD-BOOK') < 0,
+   'and the book it is already pointed at is never one of the others');
+
+PROPS[PORTAL_OTHER_IDS_PROPERTY] = 'the other one in my drive';
+ok(otherBookIdsV1_().length === 0, 'a sentence names no spreadsheet, and is not guessed at');
+
+// ---------------------------------------------------------------- //
+section('Looking writes nothing, to either book');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+let here = snapOf('PROD-BOOK'), there = snapOf('STRAY-BOOK');
+let rep = whatElseIsOutThere();
+ok(/SCEMS FTPD Tracker \(copy\)/.test(rep), 'it names the other spreadsheet');
+ok(/\[known\]/.test(rep), 'and marks the tabs this portal understands');
+ok(/Sheet1/.test(rep), 'while still listing the ones it does not');
+ok(/1 already here, 3 not/.test(rep), 'and says how many rows are not here yet');
+ok(snapOf('PROD-BOOK') === here && snapOf('STRAY-BOOK') === there,
+   'both spreadsheets are byte-identical afterwards');
+
+rep = mergeBeforeAndAfter();
+ok(/BEFORE AND AFTER/.test(rep) && /nothing has been written/.test(rep), 'the plan reports');
+ok(/holds 1 rows/.test(rep), 'the before count is real');
+ok(/would hold 4 rows/.test(rep), 'and so is the after count');
+ok(/Oesophageal placement/.test(rep),
+   'every value of every row it would add is shown, including the unflattering ones');
+ok(snapOf('PROD-BOOK') === here && snapOf('STRAY-BOOK') === there, 'and still nothing written');
+
+// ---------------------------------------------------------------- //
+section('Column order does not have to match');
+// ---------------------------------------------------------------- //
+world();
+const plan = mergePlanV1_('STRAY-BOOK', PORTAL.TAB.EVIDENCE);
+ok(plan.total === 4 && plan.present === 1 && plan.missing.length === 3,
+   'the row already here is recognised despite a different column order');
+const first = plan.missing[0];
+const dest = readTabV1_(PORTAL.TAB.EVIDENCE);
+function cell(row, header) { return row[dest.headers.indexOf(header)]; }
+ok(cell(first.row, 'TRAINEE') === 'Jamie Rivers', 'the trainee lands under TRAINEE');
+ok(cell(first.row, 'SKILL') === 'Intubation', 'the skill under SKILL');
+ok(cell(first.row, 'FTO') === 'Marcus Vane', 'the FTO under FTO');
+ok(cell(first.row, 'STAGE') === 'Assisted', 'the stage under STAGE, not where it sat over there');
+ok(cell(first.row, 'EVENT DATE') instanceof Date, 'and the date arrives as a date, not text');
+ok(String(cell(first.row, 'SOURCE RESPONSE ID')).indexOf('MERGED:') === 0,
+   'a row with no id of its own is given a stable key');
+
+// ---------------------------------------------------------------- //
+section('A column the target does not have is carried, not dropped');
+// ---------------------------------------------------------------- //
+world(null, { strayRows: [
+  ['Jamie Rivers', D('2026-07-04'),'Intubation','Marcus Vane','Successful','Assisted','A note.']
+] });
+BOOKS['STRAY-BOOK'][PORTAL.TAB.EVIDENCE].g[HR - 1].push('SUPERVISOR PRESENT');
+BOOKS['STRAY-BOOK'][PORTAL.TAB.EVIDENCE].g[HR].push('Yes, Captain Reyes');
+TAB_CACHE_V1 = {};
+const carried = mergePlanV1_('STRAY-BOOK', PORTAL.TAB.EVIDENCE);
+ok(carried.missing.length === 1, 'the row still comes across');
+const note = String(cell(carried.missing[0].row, 'NOTE'));
+ok(note.indexOf('A note.') >= 0, 'its own note survives');
+ok(note.indexOf('Supervisor present: Yes, Captain Reyes') >= 0 ||
+   note.indexOf('SUPERVISOR PRESENT: Yes, Captain Reyes') >= 0,
+   'and the extra column is carried into the note with its name attached');
+ok(carried.missing[0].carried === 1, 'and counted, so it is not a silent change');
+
+// nowhere to put it: refuse the row rather than write it short
+world(null, { destHeaders: ['EVENT DATE','TRAINEE','SKILL','SOURCE RESPONSE ID'] });
+const refused = mergePlanV1_('STRAY-BOOK', PORTAL.TAB.EVIDENCE);
+ok(refused.missing.length === 0, 'nothing is queued');
+ok(refused.blocked.length > 0, 'the rows are refused');
+ok(/no notes column/.test(refused.blocked[0].why), 'and it says why');
+ok(JSON.stringify(refused.blocked[0].spare).indexOf('Dana Whitlock') >= 0,
+   'listing the values that had nowhere to go, so they are visible rather than gone');
+
+// no id column at all: refuse the whole tab
+world(null, { destHeaders: ['EVENT DATE','TRAINEE','SKILL','NOTE'] });
+const noKey = mergePlanV1_('STRAY-BOOK', PORTAL.TAB.EVIDENCE);
+ok(/no response id column/i.test(noKey.problem),
+   'without a key column there is no way to tell a second run from a duplicate');
+ok(noKey.missing.length === 0, 'so nothing is planned');
+
+// ---------------------------------------------------------------- //
+section('Bringing it across is behind the same gate');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+here = snapOf('PROD-BOOK'); there = snapOf('STRAY-BOOK');
+ok(/Set the script property/.test(threw(() => runMergeForReal())),
+   'with no confirmation it refuses');
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'STRAY-BOOK';
+ok(/will not fire against another/.test(threw(() => runMergeForReal())),
+   'a confirmation naming the OTHER book does not authorise writing to this one');
+ok(snapOf('PROD-BOOK') === here && snapOf('STRAY-BOOK') === there, 'nothing written either time');
+
+const hereRecord = JSON.stringify(Object.keys(BOOKS['PROD-BOOK'])
+  .filter(n => n !== PORTAL_BACKFILL_LOG && n !== PORTAL.TAB.AUDIT)
+  .sort().map(n => [n, BOOKS['PROD-BOOK'][n].g]),
+  (k, v) => (v instanceof Date ? v.toISOString() : v));
+
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'https://docs.google.com/spreadsheets/d/PROD-BOOK/edit';
+rep = runMergeForReal();
+ok(/MERGE COMPLETE/.test(rep), 'the right confirmation, pasted as an address, runs it');
+ok(evid('PROD-BOOK').length === 4, 'the evidence log now holds all four');
+ok(/rows before   : 5/.test(rep) && /rows after    : 8/.test(rep),
+   'and the report gives the count either side');
+ok(snapOf('STRAY-BOOK') === there,
+   'the other spreadsheet is byte-identical - it was only ever read');
+
+// ---------------------------------------------------------------- //
+section('A second run adds nothing, and it comes back out exactly');
+// ---------------------------------------------------------------- //
+const afterMerge = snapOf('PROD-BOOK');
+rep = runMergeForReal();
+ok(/Nothing to bring across/.test(rep), 'running it again brings nothing');
+ok(evid('PROD-BOOK').length === 4, 'and the sheet is unchanged');
+ok(snapOf('PROD-BOOK') === afterMerge, 'byte-identical after the second run');
+
+rep = undoLastBackfill();
+ok(/REVERSED/.test(rep), 'the same undo reverses a merge');
+ok(/3 row\(s\) removed/.test(rep), 'removing exactly what it added');
+ok(evid('PROD-BOOK').length === 1, 'the evidence log is back to one row');
+// The manifest tab survives on purpose: it is the record of what was done and
+// undone. Everything that holds actual training data is compared instead.
+function recordTabsOf(bookId) {
+  return JSON.stringify(Object.keys(BOOKS[bookId])
+    .filter(n => n !== PORTAL_BACKFILL_LOG && n !== PORTAL.TAB.AUDIT)
+    .sort().map(n => [n, BOOKS[bookId][n].g]),
+    (k, v) => (v instanceof Date ? v.toISOString() : v));
+}
+ok(recordTabsOf('PROD-BOOK') === hereRecord,
+   'and every tab holding training data is byte-identical to before the merge');
+ok(!!BOOKS['PROD-BOOK'][PORTAL_BACKFILL_LOG],
+   'the manifest stays, because it is the record of what was done and undone');
+
+// a re-merge after an undo works, because the keys are deterministic
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+runMergeForReal();
+ok(evid('PROD-BOOK').length === 4, 'and it can be brought across again afterwards');
+const keys = evid('PROD-BOOK').map(r => r[7]);
+ok(new Set(keys).size === 4, 'with the same keys, all distinct');
+
+// ---------------------------------------------------------------- //
+section('The key is stable, and specific');
+// ---------------------------------------------------------------- //
+const H = ['TRAINEE','SKILL','OUTCOME'];
+const a = ['Jamie Rivers', 'Intubation', 'Successful'];
+ok(rowFingerprintV1_(H, a) === rowFingerprintV1_(H, a.slice()),
+   'the same row yields the same key twice');
+ok(rowFingerprintV1_(H, a) === rowFingerprintV1_(H, ['jamie  rivers', 'Intubation', 'SUCCESSFUL']),
+   'case and spacing do not make it a different row');
+ok(rowFingerprintV1_(H, a) !== rowFingerprintV1_(H, ['Jamie Rivers', 'Intubation', 'Unsuccessful']),
+   'but a different outcome does');
+ok(rowFingerprintV1_(H, a) !== rowFingerprintV1_(H, ['Alex Bramble', 'Intubation', 'Successful']),
+   'and so does a different person');
+ok(rowFingerprintV1_(['DATE'], [D('2026-07-04')]) ===
+   rowFingerprintV1_(['DATE'], [D('2026-07-04')]),
+   'two equal dates are the same row');
+ok(rowFingerprintV1_(['DATE'], [D('2026-07-04')]) !==
+   rowFingerprintV1_(['DATE'], [D('2026-07-05')]),
+   'two different dates are not');
+
+// ---------------------------------------------------------------- //
+section('An unreachable book costs that book and nothing else');
+// ---------------------------------------------------------------- //
+world(null, { others: 'STRAY-BOOK, GONE-BOOK' });
+as('chief@example.org');
+rep = whatElseIsOutThere();
+ok(/cannot open/.test(rep), 'a book it cannot open says so');
+ok(/1 already here, 3 not/.test(rep), 'and the one it can read is still surveyed');
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
+rep = runMergeForReal();
+ok(evid('PROD-BOOK').length === 4, 'and the reachable book still comes across');
+
+console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
+process.exit(FAIL ? 1 : 0);

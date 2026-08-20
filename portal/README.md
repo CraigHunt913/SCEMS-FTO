@@ -227,6 +227,44 @@ Both the import and the undo then refuse.
 
 ---
 
+## When some of the record went to another spreadsheet
+
+A form pointed at the wrong book, a copy made during a rebuild, a sheet
+someone started and abandoned. Add it in Project Settings:
+
+| Property | Value |
+| --- | --- |
+| `PORTAL_OTHER_SPREADSHEET_IDS` | one address per line, or comma separated |
+
+Paste whole addresses; the ids are picked out.
+
+**`whatElseIsOutThere()`** opens each one **read only** and reports every tab,
+how many rows it holds, which tabs this portal understands, and — for those —
+how many rows are not here yet. It writes nothing, to either book.
+
+**`mergeBeforeAndAfter()`** shows every row that would come across, in full,
+with the count either side. Also writes nothing.
+
+**`runMergeForReal()`** brings them across. Same gate as the form import:
+`PORTAL_BACKFILL_CONFIRM` must hold the id of the book being written to. It
+**appends** to this spreadsheet and never touches the other one — there is a
+test that requires the other book to be byte-identical afterwards.
+
+`undoLastBackfill()` reverses a merge the same way it reverses an import.
+
+Three things it gets right that are easy to get wrong:
+
+- **Column order does not have to match.** Columns are paired by name, not
+  position, through the same alias table the form import uses.
+- **A row already here is recognised even if it carries no matching id.** Both
+  sides are fingerprinted over the columns they share, so a row that arrived by
+  another path is not duplicated.
+- **A column this book does not have is carried into the notes with its name
+  attached.** Where there is nowhere to put it, the whole row is refused rather
+  than written short, and the report names the values that had nowhere to go.
+
+---
+
 ## Who is offered what
 
 | | Trainee | FTO | Division | Supervisor | Medical |
@@ -330,10 +368,11 @@ created, and it is the same way it was created last week.
 
 ```
 node test/portal.test.js           73 assertions — role isolation and write safety
-node test/portal-forms.test.js    103 assertions — the registry, prefill, production mode
+node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-backfill.test.js  97 assertions — importing responses, the production gate, the rollback
-node test/portal-onefile.test.js   52 assertions — the pasted file matches its sources and runs alone
+node test/portal-merge.test.js     58 assertions — the other spreadsheets, read only then across
+node test/portal-backfill.test.js  99 assertions — importing responses, the production gate, the rollback
+node test/portal-onefile.test.js   58 assertions — the pasted file matches its sources and runs alone
 ```
 
 `SCEMS_PORTAL_ONE_FILE.gs` is **built**, not written. Edit the files in this
