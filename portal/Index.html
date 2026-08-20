@@ -141,9 +141,16 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 </div>
 
 <script>
-// <?!= ?> prints raw. <?= ?> HTML-escapes, which turns every quote in this
-// JSON into &quot; and makes the line invalid JavaScript - the page then sits
-// on "Loading" forever because the script died before render() ran.
+// The scriptlet below prints the payload RAW. The escaping kind would turn
+// every quote in this JSON into &quot; and make the line invalid JavaScript,
+// and the page would sit on "Loading" forever because the script died before
+// render() ran.
+//
+// Never write a scriptlet marker anywhere else in this file, not even inside
+// a comment like this one. The template engine scans the raw page for those
+// markers and does not care what a comment is. An empty one compiles to
+// invalid JavaScript, and evaluate() then throws a SyntaxError reported
+// against the line in Code.gs that called it - nowhere near here.
 var BOOT = <?!= boot ?>;
 var S = { screen: 'main', ctx: null, busy: false };
 

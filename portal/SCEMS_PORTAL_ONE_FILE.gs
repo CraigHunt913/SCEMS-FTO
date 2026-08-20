@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 70a21349
+ * Build a99e5cb3
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -2560,9 +2560,16 @@ var PORTAL_PAGE_HTML = [
   "</div>\n",
   "\n",
   "<script>\n",
-  "// <?!= ?> prints raw. <?= ?> HTML-escapes, which turns every quote in this\n",
-  "// JSON into &quot; and makes the line invalid JavaScript - the page then sits\n",
-  "// on \"Loading\" forever because the script died before render() ran.\n",
+  "// The scriptlet below prints the payload RAW. The escaping kind would turn\n",
+  "// every quote in this JSON into &quot; and make the line invalid JavaScript,\n",
+  "// and the page would sit on \"Loading\" forever because the script died before\n",
+  "// render() ran.\n",
+  "//\n",
+  "// Never write a scriptlet marker anywhere else in this file, not even inside\n",
+  "// a comment like this one. The template engine scans the raw page for those\n",
+  "// markers and does not care what a comment is. An empty one compiles to\n",
+  "// invalid JavaScript, and evaluate() then throws a SyntaxError reported\n",
+  "// against the line in Code.gs that called it - nowhere near here.\n",
   "var BOOT = <?!= boot ?>;\n",
   "var S = { screen: 'main', ctx: null, busy: false };\n",
   "\n",
@@ -3112,7 +3119,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '70a21349';
+var PORTAL_BUILD = 'a99e5cb3';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

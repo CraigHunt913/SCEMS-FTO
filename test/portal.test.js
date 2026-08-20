@@ -328,6 +328,57 @@ const realBoot = JSON.stringify({
 
 function parses(js){ try { new Function(js); return true; } catch (e) { return false; } }
 
+// ---------------------------------------------------------------- //
+// What the TEMPLATE ENGINE sees, which is not what a JavaScript reader sees.
+//
+// HtmlService scans the raw page for scriptlet markers. It does not know what
+// a comment is. A marker inside a // comment is still a scriptlet, and an
+// EMPTY one compiles to invalid JavaScript - at which point evaluate() throws
+// a SyntaxError attributed to the line in Code.gs that called it, nowhere near
+// the page that caused it.
+//
+// That is not hypothetical. It shipped. This models the engine's scan rather
+// than one marker, so it cannot ship twice.
+// ---------------------------------------------------------------- //
+const OPEN = '<' + '?';                 // written this way so this FILE is not
+const CLOSE = '?' + '>';                // itself full of scriptlet markers
+
+const allMarks = tpl.split(OPEN).slice(1).map(function (chunk) {
+  const end = chunk.indexOf(CLOSE);
+  return end < 0 ? null : chunk.slice(0, end);
+});
+ok(allMarks.every(function (m) { return m !== null; }),
+   'every scriptlet in the page is closed');
+ok(allMarks.length === 1,
+   'the page contains exactly one scriptlet' +
+   (allMarks.length === 1 ? '' : ', but found ' + allMarks.length +
+    ' - the extras are markers someone wrote in prose'));
+
+allMarks.forEach(function (m) {
+  const body = String(m).replace(/^[!=]+/, '').trim();
+  ok(body.length > 0,
+     'the scriptlet has something in it (an empty one is what throws ' +
+     'SyntaxError from evaluate)');
+  ok(body === 'boot', 'and it prints the boot payload');
+});
+
+// no marker anywhere in the page outside that one scriptlet, comment or not
+const outsideMarkers = tpl.replace(OPEN + '!= boot ' + CLOSE, '');
+ok(outsideMarkers.indexOf(OPEN) < 0,
+   'no scriptlet opener appears anywhere else in the page, including in comments');
+ok(outsideMarkers.indexOf(CLOSE) < 0,
+   'and no closer either');
+
+// the same guard on the built single file, which is what actually gets pasted
+const oneFile = fs.readFileSync('/home/user/SCEMS-FTO/portal/SCEMS_PORTAL_ONE_FILE.gs', 'utf8');
+const pageInOne = (oneFile.match(/var PORTAL_PAGE_HTML = \[([\s\S]*?)\]\.join\(''\);/) || [])[1];
+if (pageInOne) {
+  const rebuilt = JSON.parse('[' + pageInOne + ']').join('');
+  const strippedOne = rebuilt.replace(OPEN + '!= boot ' + CLOSE, '');
+  ok(strippedOne.indexOf(OPEN) < 0 && strippedOne.indexOf(CLOSE) < 0,
+     'and none in the page embedded in the file you actually paste');
+}
+
 ok(parses('var BOOT = ' + realBoot + ';'),
    'the raw payload is valid JavaScript');
 // take the whole <script> block, not a slice of it, so braces stay balanced
