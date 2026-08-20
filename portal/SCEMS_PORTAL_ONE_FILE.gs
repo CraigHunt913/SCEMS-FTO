@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build ac245d37
+ * Build 6218c96d
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -397,6 +397,20 @@ function START() {
         why: 'They cannot open their own record until one is on the master.' });
     } else {
       good.push('every active trainee can sign in');
+    }
+
+    // Nobody assigned at all. This is the quietest failure in the system: an
+    // FTO's list is built by matching their name, so a trainee with a blank
+    // ASSIGNED FTO is not on anybody's list and does not appear as missing
+    // from one either. They simply are not there, and nothing says so.
+    var noFto = traineesV1_().filter(function (t) { return !t.closed && !t.fto; });
+    if (noFto.length) {
+      todo.push({ what: noFto.length + ' active trainee(s) have no training officer at all: ' +
+          noFto.map(function (t) { return t.name; }).join(', '),
+        run: '(nothing - this one needs a person)',
+        why: 'Their ASSIGNED FTO on ' + PORTAL.TAB.MASTER + ' is blank, so they are ' +
+             'on nobody\'s list and nobody is being asked about them. Put a name ' +
+             'in that column. Who it is is not a decision this can make.' });
     }
   } catch (e) {}
 
@@ -6118,7 +6132,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'ac245d37';
+var PORTAL_BUILD = '6218c96d';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

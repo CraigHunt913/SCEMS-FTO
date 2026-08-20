@@ -373,6 +373,18 @@ ok(/still assigned to somebody who has left/.test(out),
    'START keeps raising it until a person deals with it');
 ok(/Amanda Carr/.test(out), 'by name');
 
+// Nobody assigned at all is the quietest version of the same failure. An
+// FTO's list is built by matching their name, so a blank ASSIGNED FTO puts a
+// trainee on nobody's list and does not show up as missing from one either.
+rWorld({ master: [['Latavia Cole', 'EMT', '', 'Active', 'lc@example.org'],
+                  ['Cassidy Bacci', 'EMT', 'Julieann White', 'Active', 'cb@example.org']] });
+as('chief@example.org');
+out = START();
+ok(/no training officer at all/.test(out), 'START finds a trainee with nobody assigned');
+ok(/Latavia Cole/.test(out), 'and names her');
+ok(!/Cassidy Bacci/.test(out), 'without dragging in the one who is properly assigned');
+ok(/needs a person/.test(out), 'and does not pretend it can pick her FTO');
+
 // the closed one does not count: she is finished, not stranded
 rWorld();
 as('chief@example.org');

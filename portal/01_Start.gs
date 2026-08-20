@@ -214,6 +214,20 @@ function START() {
     } else {
       good.push('every active trainee can sign in');
     }
+
+    // Nobody assigned at all. This is the quietest failure in the system: an
+    // FTO's list is built by matching their name, so a trainee with a blank
+    // ASSIGNED FTO is not on anybody's list and does not appear as missing
+    // from one either. They simply are not there, and nothing says so.
+    var noFto = traineesV1_().filter(function (t) { return !t.closed && !t.fto; });
+    if (noFto.length) {
+      todo.push({ what: noFto.length + ' active trainee(s) have no training officer at all: ' +
+          noFto.map(function (t) { return t.name; }).join(', '),
+        run: '(nothing - this one needs a person)',
+        why: 'Their ASSIGNED FTO on ' + PORTAL.TAB.MASTER + ' is blank, so they are ' +
+             'on nobody\'s list and nobody is being asked about them. Put a name ' +
+             'in that column. Who it is is not a decision this can make.' });
+    }
   } catch (e) {}
 
   // responses sitting unread
