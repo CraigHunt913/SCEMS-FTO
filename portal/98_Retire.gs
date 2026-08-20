@@ -262,7 +262,17 @@ function retireFto() {
       refused.push({ s: s, why: p.activeCol + ' already holds "' + activeNow + '"' });
       return;
     }
-    sh.getRange(s.row, activeIdx + 1).setValue('N');
+    // The ACTIVE column is very often a Y/N dropdown. If it refuses, that is
+    // this person not being retired - it is not a reason to abandon the rest
+    // and leave the ones already done recorded nowhere.
+    try {
+      sh.getRange(s.row, activeIdx + 1).setValue('N');
+    } catch (e) {
+      refused.push({ s: s, why: 'the sheet refused it - ' +
+        (p.activeCol + ' is probably a dropdown that does not offer N. ' +
+         'Add N to it, or type it in yourself') });
+      return;
+    }
     manifest.push([stamp, PORTAL.TAB.ROSTER, s.row, p.activeCol, s.name,
                    activeNow, 'N', s.reason || '',
                    whoIsAskingV1_() || 'unidentified', PORTAL.VERSION]);

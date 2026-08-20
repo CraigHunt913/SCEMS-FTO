@@ -29,6 +29,15 @@ FakeSheet.prototype.appendRow = function (r) { this.g.push(r.slice()); return th
 FakeSheet.prototype.setFrozenRows = function () { return this; };
 FakeSheet.prototype.deleteRow = function (n) { this.g.splice(n - 1, 1); return this; };
 FakeSheet.prototype.clear = function () { this.g = []; return this; };
+/* A cell can carry a data validation rule, and the platform enforces it on
+   write exactly like this: setValue throws, with that wording, and the cell
+   keeps its old value. sh.validate is { "col": () => [allowed values] }. */
+FakeSheet.prototype.setValidation = function (col, allowed, type, a1) {
+  this.validate = this.validate || {};
+  this.validate[col] = { allowed: allowed, type: type || 'VALUE_IN_RANGE', a1: a1 || 'X1:X9' };
+  return this;
+};
+
 FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   const sh = this, R = r, C = c, NR = nr || 1, NC = nc || 1;
   const api = {
@@ -36,7 +45,21 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
       for (let i = 0; i < NR; i++) { const row = sh.g[R - 1 + i] || [], s = [];
         for (let j = 0; j < NC; j++) s.push(row[C - 1 + j] === undefined ? '' : row[C - 1 + j]); o.push(s); } return o; },
     getValue: function () { return (sh.g[R - 1] || [])[C - 1]; },
-    setValue: function (v) { (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
+    getDataValidation: function () {
+      const v = sh.validate && sh.validate[C];
+      if (!v) return null;
+      return { getCriteriaType: () => v.type,
+               getCriteriaValues: () => (v.type === 'VALUE_IN_RANGE'
+                 ? [{ getA1Notation: () => v.a1 }] : [v.allowed()]) };
+    },
+    setValue: function (v) {
+      const rule = sh.validate && sh.validate[C];
+      if (rule && String(v) !== '' && rule.allowed().indexOf(String(v)) < 0) {
+        throw new Error('The data you entered in cell ' +
+          String.fromCharCode(64 + C) + R +
+          ' violates the data validation rules set on this cell.');
+      }
+      (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
     setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
       row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
   };
@@ -551,6 +574,75 @@ ok(/Check the spelling/.test(out2), 'and says to check the spelling');
 nameWorld();
 PROPS[PORTAL_RENAME_PROPERTY] = '';
 ok(/Nothing is in PORTAL_RENAME/.test(applyRename()), 'an empty property says how to set it');
+
+// ---------------------------------------------------------------- //
+section('The dropdown on ASSIGNED FTO, and the order that satisfies it');
+// ---------------------------------------------------------------- //
+// The live tracker has a dropdown on the trainee master's ASSIGNED FTO
+// column, and its list of allowed names is the roster. The tabs are numbered,
+// so sorting the writes by tab name put "01 TRAINEE MASTER" first and
+// "22 FTO ROSTER" last - exactly backwards. Google refused the new name on
+// the master because at that instant the roster had never heard of her:
+//   "The data you entered in cell E10 violates the data validation rules"
+
+function dropdownWorld() {
+  nameWorld();
+  // the dropdown's allowed values ARE the roster, read live, as a range rule is
+  const rosterNames = () => BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g
+    .slice(HR).map(r => String(r[0] || '')).filter(Boolean);
+  BOOKS['PROD-BOOK'][PORTAL.TAB.MASTER]
+    .setValidation(3, rosterNames, 'VALUE_IN_RANGE', "'22 FTO ROSTER'!A5:A30");
+  TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+}
+
+dropdownWorld();
+const order = renamePlanV1_().cells;
+ok(order[0].tab === PORTAL.TAB.ROSTER,
+   'the roster is written first, because it is where a name is defined');
+ok(order.filter(c => c.tab === PORTAL.TAB.MASTER)
+        .every(c => order.indexOf(c) > order.lastIndexOf(order.filter(x => x.tab === PORTAL.TAB.ROSTER).pop())),
+   'and everything that refers to it comes after');
+
+dropdownWorld();
+let dOut = applyRename();
+ok(!/THE SHEET REFUSED/.test(dOut), 'so a live dropdown does not refuse the rename at all');
+ok(emailFreeCell(PORTAL.TAB.MASTER, 0, 2) === 'Rosa Ledger',
+   'the trainee master takes the new name');
+ok(emailFreeCell(PORTAL.TAB.ROSTER, 2, 0) === 'Rosa Ledger', 'and so does the roster');
+
+function emailFreeCell(tabName, dataRow, col) {
+  return String(BOOKS['PROD-BOOK'][tabName].g[HR + dataRow][col] || '');
+}
+
+// A dropdown with a typed-out list cannot be satisfied by fixing the roster.
+// It must not abandon the run halfway, and what DID go in must be recorded -
+// a half-applied rename that cannot be reversed is worse than one that fails.
+dropdownWorld();
+BOOKS['PROD-BOOK'][PORTAL.TAB.MASTER]
+  .setValidation(3, () => ['Rosa Quill', 'Glenda Vane'], 'VALUE_IN_LIST');
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+dOut = applyRename();
+
+ok(/THE SHEET REFUSED/.test(dOut), 'a fixed list is reported, not swallowed');
+ok(/typed-out list/.test(dOut), 'and says which kind of dropdown it is');
+ok(/Data validation/.test(dOut), 'and where to change it');
+ok(emailFreeCell(PORTAL.TAB.ROSTER, 2, 0) === 'Rosa Ledger',
+   'the cells that COULD change still did - one refusal does not abandon the run');
+ok(emailFreeCell(PORTAL.TAB.MASTER, 0, 2) === 'Rosa Quill',
+   'and the refused cell keeps its old value');
+ok(/name inconsistent/.test(dOut),
+   'it says plainly that this is the state the function exists to prevent');
+
+// the part that matters most: what went in is recorded, so it can be undone
+const log = readTabV1_(PORTAL_RENAME_LOG);
+ok(log.ok && log.rows.length >= 1,
+   'the manifest is written even though something refused');
+ok(log.rows.every(r => String(r[log.col['TAB']]) !== PORTAL.TAB.MASTER),
+   'and records only what actually went in, never the refused cell');
+const back = undoRename();
+ok(emailFreeCell(PORTAL.TAB.ROSTER, 2, 0) === 'Rosa Quill',
+   'so undoRename puts the half-applied rename back');
+ok(/put back/.test(back), 'and says so');
 
 // START notices the symptom: a trainee naming an FTO who is not on the roster
 world();

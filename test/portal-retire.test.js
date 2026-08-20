@@ -31,6 +31,15 @@ FakeSheet.prototype.appendRow = function (r) { this.g.push(r.slice()); return th
 FakeSheet.prototype.setFrozenRows = function () { return this; };
 FakeSheet.prototype.deleteRow = function (n) { this.g.splice(n - 1, 1); return this; };
 FakeSheet.prototype.clear = function () { this.g = []; return this; };
+/* A cell can carry a data validation rule, and the platform enforces it on
+   write exactly like this: setValue throws, with that wording, and the cell
+   keeps its old value. sh.validate is { "col": () => [allowed values] }. */
+FakeSheet.prototype.setValidation = function (col, allowed, type, a1) {
+  this.validate = this.validate || {};
+  this.validate[col] = { allowed: allowed, type: type || 'VALUE_IN_RANGE', a1: a1 || 'X1:X9' };
+  return this;
+};
+
 FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   const sh = this, R = r, C = c, NR = nr || 1, NC = nc || 1;
   const api = {
@@ -38,7 +47,21 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
       for (let i = 0; i < NR; i++) { const row = sh.g[R - 1 + i] || [], s = [];
         for (let j = 0; j < NC; j++) s.push(row[C - 1 + j] === undefined ? '' : row[C - 1 + j]); o.push(s); } return o; },
     getValue: function () { return (sh.g[R - 1] || [])[C - 1]; },
-    setValue: function (v) { (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
+    getDataValidation: function () {
+      const v = sh.validate && sh.validate[C];
+      if (!v) return null;
+      return { getCriteriaType: () => v.type,
+               getCriteriaValues: () => (v.type === 'VALUE_IN_RANGE'
+                 ? [{ getA1Notation: () => v.a1 }] : [v.allowed()]) };
+    },
+    setValue: function (v) {
+      const rule = sh.validate && sh.validate[C];
+      if (rule && String(v) !== '' && rule.allowed().indexOf(String(v)) < 0) {
+        throw new Error('The data you entered in cell ' +
+          String.fromCharCode(64 + C) + R +
+          ' violates the data validation rules set on this cell.');
+      }
+      (sh.g[R - 1] = sh.g[R - 1] || [])[C - 1] = v; return api; },
     setValues: function (vs) { vs.forEach((row, i) => { sh.g[R - 1 + i] = sh.g[R - 1 + i] || [];
       row.forEach((v, j) => { sh.g[R - 1 + i][C - 1 + j] = v; }); }); return api; }
   };
@@ -474,6 +497,24 @@ ok(!rosterActiveV1_('Resigned 8/16'), 'which still reads as somebody who has lef
 rWorld();
 as('chief@example.org');
 ok(/Nobody has been retired/.test(unretireFto()), 'with no log it says so plainly');
+
+// A Y/N dropdown on ACTIVE that does not offer N. One refusal is one person
+// not retired; it must not abandon the run and leave the ones already done
+// recorded nowhere, because then unretireFto cannot reverse them.
+rWorld({ retire: 'Alex White; Brandon Lee' });
+as('chief@example.org');
+BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].setValidation(4, function () {
+  // refuses N only on Alex White's row is not expressible, so refuse N wholly
+  return ['Y'];
+}, 'VALUE_IN_LIST');
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+out = retireFto();
+ok(/NOT CHANGED/.test(out), 'a dropdown that will not take N is reported');
+ok(/dropdown/.test(out), 'and named as the cause');
+ok(activeAt('Alex White') === 'Y' && activeAt('Brandon Lee') === 'Y',
+   'and nobody is half-retired');
+ok(threw(function () { retireFto(); }) === '',
+   'running it again still returns a report rather than throwing');
 
 // ---------------------------------------------------------------- //
 section('The refusals');

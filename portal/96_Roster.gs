@@ -282,7 +282,15 @@ function applyRosterEmails() {
     // would be an overwrite by accident
     var now = String(sh.getRange(s.row, col).getValue() || '').trim();
     if (now) { refused.push({ name: s.name, row: s.row, found: now }); return; }
-    sh.getRange(s.row, col).setValue(s.email);
+    // One cell refusing is one address not written, not a reason to stop with
+    // the ones already written recorded nowhere and no way to undo them.
+    try {
+      sh.getRange(s.row, col).setValue(s.email);
+    } catch (e) {
+      refused.push({ name: s.name, row: s.row,
+        found: '(the sheet refused it: ' + String(e.message || e).slice(0, 120) + ')' });
+      return;
+    }
     manifest.push([stamp, PORTAL.TAB.ROSTER, s.row, p.emailCol, s.email, s.name,
                    whoIsAskingV1_() || 'unidentified', PORTAL.VERSION, code]);
     written++;

@@ -104,9 +104,53 @@ function renamePlanV1_() {
     });
   } catch (e) {}
 
-  plan.cells.sort(function (a, b) {
-    return a.tab === b.tab ? a.row - b.row : (a.tab < b.tab ? -1 : 1); });
+  plan.cells.sort(renameOrderV1_);
   return plan;
+}
+
+/** The order the cells must be written in, which is not alphabetical.
+ *
+ *  The ASSIGNED FTO column on the trainee master is a dropdown, and its list
+ *  of allowed names comes from the roster. Write the master first and Google
+ *  rejects the new name outright, because at that instant the roster has
+ *  never heard of her: "the data you entered violates the data validation
+ *  rules set on this cell".
+ *
+ *  The tabs are numbered, so sorting by name put "01 TRAINEE MASTER" first
+ *  and "22 FTO ROSTER" last - exactly the wrong way round. The roster is
+ *  where a name is defined; everything else refers to it, so the roster goes
+ *  first and the rest follow it. */
+function renameOrderV1_(a, b) {
+  var ra = a.tab === PORTAL.TAB.ROSTER ? 0 : 1;
+  var rb = b.tab === PORTAL.TAB.ROSTER ? 0 : 1;
+  if (ra !== rb) return ra - rb;
+  if (a.tab !== b.tab) return a.tab < b.tab ? -1 : 1;
+  return a.row - b.row;
+}
+
+/** Why a cell might have refused a perfectly good name.
+ *
+ *  A dropdown built from a range can be satisfied by fixing the range. A
+ *  dropdown built from a typed-out list cannot, and needs a person. Saying
+ *  which is the difference between a fixable problem and a mystery. */
+function validationReasonV1_(sh, row, col) {
+  try {
+    var rule = sh.getRange(row, col).getDataValidation();
+    if (!rule) return 'the sheet refused the value, and there is no dropdown on that cell';
+    var type = String(rule.getCriteriaType());
+    var vals = rule.getCriteriaValues() || [];
+    if (type === 'VALUE_IN_RANGE' && vals[0] && vals[0].getA1Notation) {
+      return 'that cell is a dropdown fed by ' + vals[0].getA1Notation() +
+             ', and the new name is not in it yet';
+    }
+    if (type === 'VALUE_IN_LIST') {
+      return 'that cell is a dropdown with a typed-out list of names. Add the ' +
+             'new name to it (Data > Data validation) and run this again';
+    }
+    return 'a data validation rule on that cell (' + type + ') refused the value';
+  } catch (e) {
+    return 'the sheet refused the value';
+  }
 }
 
 /** Changes the name everywhere it stands alone. One step. Undoable. */
@@ -134,28 +178,62 @@ function applyRename() {
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
   var manifest = [], done = 0, skipped = [], byTab = {};
 
+  // One cell refusing must not abandon the run halfway with the ones already
+  // changed written down nowhere. That is what happened the first time this
+  // met a dropdown: it threw on the third cell, the manifest is written after
+  // the loop, so two cells had been changed and undoRename had no record of
+  // either. A half-applied rename that cannot be reversed is worse than one
+  // that fails outright. So every cell is attempted, every refusal is
+  // reported, and what did go in is always recorded.
+  var refused = [];
+
   p.cells.forEach(function (c) {
     var sh = book.getSheetByName(c.tab);
     if (!sh) { skipped.push({ c: c, why: 'that tab is not here any more' }); return; }
     // read it again: the plan came from a cached read
-    var now = String(sh.getRange(c.row, c.col).getValue() || '');
+    var now;
+    try { now = String(sh.getRange(c.row, c.col).getValue() || ''); }
+    catch (e) { refused.push({ c: c, why: 'that cell could not be read' }); return; }
     if (normNameV1_(now) !== normNameV1_(c.was)) {
       skipped.push({ c: c, why: 'it now holds "' + now + '"' });
       return;
     }
-    sh.getRange(c.row, c.col).setValue(c.now);
+    try {
+      sh.getRange(c.row, c.col).setValue(c.now);
+    } catch (e) {
+      refused.push({ c: c, why: validationReasonV1_(sh, c.row, c.col) });
+      return;
+    }
     manifest.push([stamp, c.tab, c.row, c.col, c.header, c.was, c.now,
                    whoIsAskingV1_() || 'unidentified', PORTAL.VERSION]);
     byTab[c.tab] = (byTab[c.tab] || 0) + 1;
     done++;
   });
 
+  // Always, even when something refused. Especially when something refused.
   writeRenameManifestV1_(manifest);
   forgetTabsV1_();
   PEOPLE_CACHE_V1 = null;
 
   say(done + ' cell(s) changed:');
   Object.keys(byTab).forEach(function (t) { say('  ' + byTab[t] + '   ' + t); });
+
+  if (refused.length) {
+    say();
+    say('THE SHEET REFUSED  (' + refused.length + ')');
+    refused.forEach(function (r) {
+      say('  ' + r.c.tab + ' row ' + r.c.row + ', ' + labelForV1_(r.c.header));
+      say('      ' + r.why);
+    });
+    say();
+    say('  Those cells still say "' + p.pairs[0].from + '". The rest of the change');
+    say('  DID go in and is recorded, so undoRename() will reverse exactly what');
+    say('  was written and nothing else.');
+    say();
+    say('  This leaves the name inconsistent, which is the thing this function');
+    say('  exists to prevent. Either fix the dropdown and run applyRename()');
+    say('  again, or run undoRename() and put it all back until you can.');
+  }
 
   if (skipped.length) {
     say();
