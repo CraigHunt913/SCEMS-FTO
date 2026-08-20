@@ -1,3 +1,4 @@
+const fs = require('fs');
 // SCEMS Portal — writing addresses onto the roster.
 //
 // This is the most consequential write in the project. An address in the
@@ -11,7 +12,6 @@
 //
 //   node test/portal-roster.test.js
 
-const fs = require('fs');
 let PASS = 0, FAIL = 0;
 function ok(c, w) { if (c) { PASS++; console.log('  PASS  ' + w); } else { FAIL++; console.log('  FAIL  ' + w); } }
 function section(t) { console.log('\n' + t); }
@@ -124,7 +124,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -279,36 +279,41 @@ ok(pairs.length === 1 && pairs[0].email === 'khharlow@example.org',
    'an address with nothing before it is skipped rather than given the next name');
 
 // ---------------------------------------------------------------- //
-section('Nothing is written without the code for this exact plan');
+section('It runs in one step, and the safety is in what it will not do');
 // ---------------------------------------------------------------- //
+// No confirmation code, deliberately. A handshake earns its place when a
+// write is irreversible, or lands on something that already had a value, or
+// could hit the wrong row. None of those is true here, and asking for one
+// turned a two-minute job into an argument.
 world();
 as('chief@example.org');
-before = snap();
-ok(/Refusing to write/.test(threw(() => applyRosterEmails())), 'with no code it refuses');
-ok(snap() === before, 'and writes nothing');
-
-PROPS[PORTAL_BACKFILL_CONFIRM] = 'PROD-BOOK';
 ok(threw(() => applyRosterEmails()) === '',
-   'the target id still works, for a confirmation set before codes existed');
+   'it just runs - nothing has to be set first');
+ok(emailAt('Kent Harlow') === 'khharlow@example.org', 'and the addresses are on the roster');
 
 world();
 as('chief@example.org');
-const code = rosterConfirmCodeV1_(rosterEmailPlanV1_());
-ok(/^[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{2}$/.test(code), 'the code is typeable: ' + code);
-PROPS[PORTAL_ROSTER_EMAILS_PROPERTY] += '\nSomebody Else, other@example.org';
-ok(rosterConfirmCodeV1_(rosterEmailPlanV1_()) === code,
-   'a line that changes nothing on the roster does not change the code');
-PROPS[PORTAL_ROSTER_EMAILS_PROPERTY] =
-  'Dale Whitlock, someoneelse@example.org\nGlenda Vane, vaneglenda9@example.org';
-ok(rosterConfirmCodeV1_(rosterEmailPlanV1_()) !== code,
-   'but a different address does');
+applyRosterEmails();
+ok(threw(() => undoRosterEmails()) === '', 'the undo needs nothing set either');
+ok(emailAt('Kent Harlow') === '', 'and it undoes');
+
+// What replaces the handshake is that the file cannot do the dangerous things.
+const rosterSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/96_Roster.gs', 'utf8');
+ok(rosterSrc.indexOf('requireImportAuthorityV1_') < 0,
+   'the gate is gone from this file entirely, not merely bypassed');
+ok(/var now = String\(sh\.getRange\(s\.row, col\)\.getValue/.test(rosterSrc),
+   'it re-reads the cell immediately before writing, every time');
+
+// The bulk row-adding writers keep theirs, because that is a different act.
+const importSrc2 = fs.readFileSync('/home/user/SCEMS-FTO/portal/80_Import.gs', 'utf8');
+ok(/requireImportAuthorityV1_\(code\)/.test(importSrc2),
+   'adding rows to an evidence log still asks for a code');
 
 // ---------------------------------------------------------------- //
 section('It fills empty cells and refuses to change a full one');
 // ---------------------------------------------------------------- //
 world();
 as('chief@example.org');
-PROPS[PORTAL_BACKFILL_CONFIRM] = rosterConfirmCodeV1_(rosterEmailPlanV1_());
 let rep = applyRosterEmails();
 ok(/5 address\(es\) written/.test(rep), 'all five are written');
 Object.keys(want).forEach(n => ok(emailAt(n) === want[n], n + ' has their own address on the roster'));
@@ -325,7 +330,6 @@ ok(p.hasOne[0].same === false, 'and noted as different from what was offered');
 rep = rosterEmailsBeforeAndAfter();
 ok(/OFFERED dalewhitlock913@example\.org INSTEAD/.test(rep), 'the preview shows both');
 ok(/Nothing is overwritten/.test(rep), 'and says it will not choose');
-PROPS[PORTAL_BACKFILL_CONFIRM] = rosterConfirmCodeV1_(p);
 applyRosterEmails();
 ok(emailAt('Dale Whitlock') === 'alreadyhere@example.org',
    'the address already there is untouched');
@@ -335,7 +339,6 @@ ok(emailAt('Glenda Vane') === 'vaneglenda9@example.org', 'while the empty ones a
 world();
 as('chief@example.org');
 p = rosterEmailPlanV1_();
-PROPS[PORTAL_BACKFILL_CONFIRM] = rosterConfirmCodeV1_(p);
 const sh = BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER];
 sh.g[HR + 1][5] = 'typed.in.meanwhile@example.org';       // Dale Whitlock's row
 rep = applyRosterEmails();
@@ -383,7 +386,6 @@ section('And it comes back out again');
 world();
 as('chief@example.org');
 const pristine = JSON.stringify(BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g);
-PROPS[PORTAL_BACKFILL_CONFIRM] = rosterConfirmCodeV1_(rosterEmailPlanV1_());
 applyRosterEmails();
 ok(emailAt('Kent Harlow') === 'khharlow@example.org', 'written');
 rep = undoRosterEmails();
@@ -395,7 +397,6 @@ ok(!!BOOKS['PROD-BOOK'][PORTAL_ROSTER_LOG], 'the log of what was done stays');
 // somebody edited one by hand since
 world();
 as('chief@example.org');
-PROPS[PORTAL_BACKFILL_CONFIRM] = rosterConfirmCodeV1_(rosterEmailPlanV1_());
 applyRosterEmails();
 BOOKS['PROD-BOOK'][PORTAL.TAB.ROSTER].g[HR + 2][5] = 'corrected.by.hand@example.org';
 TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
@@ -405,6 +406,57 @@ ok(emailAt('Rosa Quill') === 'corrected.by.hand@example.org',
    'and left exactly as the person left it');
 ok(/outranks anything here/.test(rep), 'because a person editing it outranks this');
 ok(emailAt('Kent Harlow') === '', 'the others are still emptied');
+
+// ---------------------------------------------------------------- //
+section('START says the one thing to do next, and only that');
+// ---------------------------------------------------------------- //
+// This is the only function anybody should have to remember. A Run dropdown
+// with thirty names in it is not an interface, it is my internals handed to
+// somebody else to sort out.
+world();
+as('chief@example.org');
+let before2 = snap();
+let out = START();
+ok(/DO THIS NEXT/.test(out), 'it names a next step');
+ok(/Run  applyRosterEmails/.test(out),
+   'and with addresses ready and a roster that cannot sign in, that is the step');
+ok(/cannot sign in/.test(out), 'saying what the problem actually is');
+ok(out.indexOf('DO THIS NEXT') < out.indexOf('AFTER THAT') || !/AFTER THAT/.test(out),
+   'the one thing comes before the rest');
+ok(snap() === before2, 'and START writes nothing');
+
+// with no list pasted yet it sends you to find the addresses first
+world({ list: '' });
+as('chief@example.org');
+out = START();
+ok(/Run  suggestFtoEmails/.test(out),
+   'with nothing to apply it sends you to find the addresses');
+
+// once the roster is done it stops mentioning it
+world({ roster: ROSTER.map(function (r) {
+  var c = r.slice(); c[5] = 'someone@example.org'; return c; }) });
+as('chief@example.org');
+out = START();
+ok(/all 5 training officers can sign in/.test(out), 'it says what is working');
+ok(!/cannot sign in/.test(out), 'and stops raising what is already done');
+
+// pointed nowhere at all
+world();
+delete PROPS[PORTAL.PROPERTY_TARGET];
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+out = START();
+ok(/NOT POINTED AT ANYTHING YET/.test(out), 'with no target it says so first');
+ok(/Run  setUpStaging/.test(out), 'and gives the one step that fixes it');
+ok(!/AFTER THAT/.test(out), 'without burying it under everything else');
+
+// the named menu wrappers all exist and none of them writes
+world();
+as('chief@example.org');
+before2 = snap();
+[WHERE_AM_I, CHECK_EVERYTHING, WHAT_IS_WAITING].forEach(function (fn) {
+  ok(threw(function () { fn(); }) === '', fn.name + ' runs');
+});
+ok(snap() === before2, 'and none of the read-only menu entries wrote anything');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

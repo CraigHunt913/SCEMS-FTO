@@ -1,10 +1,14 @@
 /**
  * Putting addresses on the roster.
  *
- * This is the second thing in this project that can write to a live
- * spreadsheet, and it is the more consequential of the two. An address in the
- * roster's EMAIL column is what lets the portal recognise someone. Put the
- * wrong one there and that person opens another person's trainees.
+ * An address in the roster's EMAIL column is what lets the portal recognise
+ * someone. Put the wrong one there and that person opens another person's
+ * trainees. So the care here goes into being RIGHT, not into asking again.
+ *
+ * There is no confirmation code. This write only ever fills a cell that is
+ * empty, matches people by name rather than row order, and can be undone
+ * exactly. A handshake on top of that buys nothing and costs a person their
+ * evening.
  *
  * So it works by NAME, not by row order. Pasting a column of addresses into a
  * sorted sheet is how they end up one row out, and one row out here means one
@@ -16,8 +20,8 @@
  *      reported. Changing one is a decision, and a decision is not a batch job.
  *   2. It refuses unless it can find exactly one roster row for a name. No row,
  *      or two rows, and that line is reported and left alone.
- *   3. Nothing is written until the whole plan has been shown and the code for
- *      that exact plan has been set, the same gate the form import uses.
+ *   3. It re-reads every cell immediately before writing it, so a cell that
+ *      stopped being empty since the plan was built is left as it is.
  *
  * undoRosterEmails() blanks precisely the cells it filled, and only if each one
  * still holds what it put there.
@@ -210,14 +214,9 @@ function rosterEmailsBeforeAndAfter() {
     lines.push('There is nothing to fill in.');
     return noteV1_(lines.join('\n'));
   }
-  lines.push('To do it, set the script property');
-  lines.push('');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + rosterConfirmCodeV1_(p));
-  lines.push('');
-  lines.push('and run applyRosterEmails().');
-  lines.push('');
-  lines.push('That code authorises exactly the ' + p.set.length + ' row(s) above.');
-  lines.push('Change the list and the code changes with it.');
+  lines.push('Run applyRosterEmails() to do it. There is nothing to set first.');
+  lines.push('It fills only cells that are empty, matches by name, and');
+  lines.push('undoRosterEmails() puts it back.');
   return noteV1_(lines.join('\n'));
 }
 
@@ -238,8 +237,19 @@ function applyRosterEmails() {
       'rosterEmailsBeforeAndAfter() to see which.');
   }
 
+  // No confirmation code. This one does not earn a handshake, and asking for
+  // one made a two-minute job into an argument.
+  //
+  // What makes a write dangerous is being irreversible, or hitting something
+  // that already had a value, or landing on the wrong row. None of those is
+  // true here: it only ever fills a cell that is EMPTY, it matches by name so
+  // a sorted roster cannot shift it, it re-reads every cell immediately
+  // before writing, it logs each one, and undoRosterEmails puts it back.
+  //
+  // The bulk row-adding writers keep their code. Adding rows to an evidence
+  // log is a different kind of act from filling in a blank column.
+  var id = safeTargetIdV1_();
   var code = rosterConfirmCodeV1_(p);
-  var id = requireImportAuthorityV1_(code);
 
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
   if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
@@ -310,6 +320,8 @@ function writeRosterManifestV1_(rows) {
  *  what was put there. One that has been edited since is left alone and
  *  reported, because someone changing it by hand outranks this. */
 function undoRosterEmails() {
+  // No code either. Undoing is the safe direction, and a person reaching for
+  // it is usually in a hurry.
   var t = readTabV1_(PORTAL_ROSTER_LOG);
   if (!t.ok || !t.rows.length) {
     return noteV1_('This portal has not written anything into the roster.');
@@ -318,17 +330,6 @@ function undoRosterEmails() {
   var runs = t.rows.map(function (r) { return String(r[t.col['RUN']] || ''); })
     .filter(String).sort();
   var last = runs[runs.length - 1];
-
-  // The code that authorised writing these cells authorises emptying them
-  // again. Anything else and you would have to go and find a code for work
-  // that has already happened.
-  var wroteWith = '';
-  t.rows.forEach(function (r) {
-    if (String(r[t.col['RUN']] || '') === last && t.col['CODE'] !== undefined) {
-      wroteWith = String(r[t.col['CODE']] || '') || wroteWith;
-    }
-  });
-  requireImportAuthorityV1_(wroteWith);
 
   var entries = t.rows.filter(function (r) { return String(r[t.col['RUN']] || '') === last; })
     .map(function (r) {

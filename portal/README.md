@@ -23,6 +23,29 @@ write path refuses, by design and under test.
 
 ---
 
+## The only thing to remember
+
+```
+START
+```
+
+Run it from the dropdown. It says where the portal is pointed, what is
+stopping it working, and **the one function to run next** — and then the rest,
+in order, underneath. It writes nothing.
+
+Everything else in this project is a tool that `START` will send you to when
+you need it. A dropdown with thirty function names in it is not an interface.
+
+| Also named for the job | Does |
+| --- | --- |
+| `WHERE_AM_I` | What is set and what it is pointed at |
+| `CHECK_EVERYTHING` | Every problem, in one report |
+| `FIX_THE_ROSTER` | Put the addresses on so people can sign in |
+| `UNDO_THE_ROSTER` | Put it back |
+| `WHAT_IS_WAITING` | Submissions nothing has read |
+
+---
+
 ## Setting it up
 
 **One file.** Paste
@@ -370,11 +393,18 @@ value is read word by word, and each address takes the words in front of it as
 its name. It is why the **name has to come before the address**, and why a
 three-word name still holds together.
 
-**`rosterEmailsBeforeAndAfter()`** shows every cell that would be filled, every
-one left alone and why, and prints the code. Writes nothing.
+**`applyRosterEmails()`** fills them in. One step, nothing to set first. It
+prints every cell it filled and every one it left alone.
 
-**`applyRosterEmails()`** fills them in, behind the same gate.
-**`undoRosterEmails()`** empties exactly what it filled.
+**`rosterEmailsBeforeAndAfter()`** shows the same thing without doing it, if
+you would rather look first. **`undoRosterEmails()`** empties exactly what it
+filled.
+
+There is **no confirmation code on this one**. A handshake earns its place
+when a write is irreversible, or lands on a cell that already had a value, or
+could hit the wrong row. None of those is true here, and asking for one turned
+a two-minute job into an argument. The bulk row-adding writers keep theirs,
+because adding rows to an evidence log is a different kind of act.
 
 It matches **by name, never by row order.** Pasting a column into a roster
 sorted by shift is how addresses end up one row out, and one row out here means
@@ -473,7 +503,7 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           85 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-roster.test.js    60 assertions — writing addresses onto the roster, by name
+node test/portal-roster.test.js    76 assertions — the roster write, and START — writing addresses onto the roster, by name
 node test/portal-unprocessed.test.js 79 assertions — response tabs, waiting rows, roster addresses
 node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
 node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback

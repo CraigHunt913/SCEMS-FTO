@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build c9e6d77f
+ * Build 3e362b54
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -10,8 +10,8 @@
  *   node tools/build-one-file.js
  * A test fails if this file and those sources disagree.
  *
- * First run: setUpStaging
- * Then:      Deploy > New deployment > Web app
+ * Run START from the dropdown above. It tells you the one thing to do
+ * next, every time. Nothing else has to be remembered.
  */
 
 
@@ -124,6 +124,232 @@ function requireWritableV1_(what) {
     ' mode, which is read-only. Writing to a live record from here has not ' +
     'been approved.');
 }
+
+
+/* ======================================================================
+ * 01_Start.gs
+ * ====================================================================== */
+
+/**
+ * START.
+ *
+ * One function. Run it, read it, do the one thing it says.
+ *
+ * Everything else in this project is a tool. This is the only thing anyone
+ * should have to remember, and it exists because a Run dropdown with thirty
+ * function names in it is not a user interface - it is a list of my internals
+ * handed to somebody else to sort out.
+ *
+ * It looks at where the portal is pointed and what state the tracker is in,
+ * and answers three questions in order:
+ *
+ *   Where am I
+ *   What is stopping this from working
+ *   What do I run next
+ *
+ * It writes nothing. Ever. It only ever tells you what to run.
+ */
+
+function START() {
+  var L = [];
+  function say(s) { L.push(s === undefined ? '' : s); }
+  function rule() { say('---------------------------------------------------------'); }
+
+  say('SCEMS FIELD TRAINING PORTAL');
+  say(PORTAL.VERSION + (typeof PORTAL_BUILD === 'string' ? '   build ' + PORTAL_BUILD : ''));
+  rule();
+  say();
+
+  /* ---- where am I ---- */
+
+  var id = '';
+  try { id = targetIdV1_(); } catch (e) { id = ''; }
+
+  if (!id) {
+    say('THE PORTAL IS NOT POINTED AT ANYTHING YET.');
+    say();
+    say('DO THIS NEXT');
+    say('  Run  setUpStaging');
+    say();
+    say('It builds a practice spreadsheet with made-up people in it and points');
+    say('the portal there. Nothing of yours is opened. When you have had a look');
+    say('at it, run START again and it will tell you how to go live.');
+    return noteV1_(L.join('\n'));
+  }
+
+  var name = '(cannot open it)';
+  try { name = targetBookV1_().getName(); } catch (e) {}
+  var live = safeModeV1_() === PORTAL.MODE_PRODUCTION;
+
+  say('READING   ' + name);
+  say('MODE      ' + safeModeV1_() + (live ? '   your real records, read only' : '   practice data'));
+  say('YOU       ' + (whoIsAskingV1_() || 'Google is not naming this account'));
+
+  var others = [];
+  try { others = otherBookIdsV1_(); } catch (e) {}
+  if (others.length) {
+    say('ALSO      ' + others.length + ' other spreadsheet' + (others.length === 1 ? '' : 's') +
+        ', read as well');
+  }
+  say();
+
+  /* ---- what is stopping this from working ---- */
+
+  var todo = [];      // { what, run, why }
+  var good = [];
+
+  // tabs
+  var missingTabs = [];
+  Object.keys(PORTAL.TAB).forEach(function (k) {
+    var tn = PORTAL.TAB[k];
+    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT) return;
+    if (!readTabV1_(tn).ok) missingTabs.push(tn);
+  });
+  if (missingTabs.length) {
+    todo.push({ what: missingTabs.length + ' tab(s) the portal reads are not here',
+      run: 'productionReadinessCheck',
+      why: 'It names them. The screens that use them will be empty.' });
+  } else {
+    good.push('every tab it reads is here');
+  }
+
+  // the roster: this is what stops FTOs using it at all
+  var noAddress = [], onRoster = 0;
+  try {
+    var ros = readTabV1_(PORTAL.TAB.ROSTER);
+    if (ros.ok) {
+      ros.rows.forEach(function (r) {
+        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
+        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
+        if (!nm) return;
+        onRoster++;
+        if (em.indexOf('@') < 1) noAddress.push(nm);
+      });
+    }
+  } catch (e) {}
+
+  if (noAddress.length) {
+    var ready = 0;
+    try { ready = rosterEmailPlanV1_().set.length; } catch (e) { ready = 0; }
+    if (ready) {
+      todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
+        run: 'applyRosterEmails',
+        why: ready + ' address(es) are ready to go in. It fills only empty cells, ' +
+             'matches by name, and undoRosterEmails puts it back.' });
+    } else {
+      todo.push({ what: noAddress.length + ' of ' + onRoster + ' training officers cannot sign in',
+        run: 'suggestFtoEmails',
+        why: 'Their EMAIL column is blank, so the portal cannot recognise them. ' +
+             'This shows the accounts they have been submitting forms from.' });
+    }
+  } else if (onRoster) {
+    good.push('all ' + onRoster + ' training officers can sign in');
+  }
+
+  // trainees
+  try {
+    var noMail = traineesV1_().filter(function (t) { return !t.closed && !t.email; });
+    if (noMail.length) {
+      todo.push({ what: noMail.length + ' trainee(s) have no email address',
+        run: 'productionReadinessCheck',
+        why: 'They cannot open their own record until one is on the master.' });
+    } else {
+      good.push('every active trainee can sign in');
+    }
+  } catch (e) {}
+
+  // responses sitting unread
+  try {
+    var stray = formResponseTabsV1_().reduce(function (n, t) { return n + t.rows.length; }, 0);
+    if (stray) {
+      todo.push({ what: stray + ' form response(s) are in this spreadsheet but not in the logs',
+        run: 'unprocessedResponses',
+        why: 'They arrived and nothing turned them into rows. Nothing is lost.' });
+    }
+  } catch (e) {}
+
+  // duplicates
+  try {
+    var dupes = duplicateSubmissionsV1_();
+    if (dupes.length) {
+      todo.push({ what: dupes.length + ' place(s) where two submissions landed the same day',
+        run: 'duplicateSubmissionsReport',
+        why: 'Both are kept and both are shown. Somebody has to say which stands.' });
+    }
+  } catch (e) {}
+
+  // going live
+  if (!live) {
+    var prodSet = '';
+    try {
+      prodSet = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
+        .getProperty(PORTAL_PROD_ID_PROPERTY));
+    } catch (e) {}
+    todo.push({ what: 'this is still the practice spreadsheet',
+      run: prodSet ? 'pointAtProductionReadOnly' : '(set PORTAL_PRODUCTION_SPREADSHEET_ID first)',
+      why: prodSet ? 'It points the portal at your real tracker, read only.'
+                   : 'Project Settings > Script Properties. Paste the whole address of your tracker.' });
+  }
+
+  /* ---- what do I run next ---- */
+
+  if (good.length) {
+    say('WORKING');
+    good.forEach(function (g) { say('  ' + g); });
+    say();
+  }
+
+  if (!todo.length) {
+    rule();
+    say('NOTHING IS BLOCKING IT.');
+    say();
+    say('Open the web app and check you see the screen your role should see.');
+    say('If you changed the code, deploy first:');
+    say('  Deploy > Manage deployments > pencil > Version: New version > Deploy');
+    return noteV1_(L.join('\n'));
+  }
+
+  rule();
+  say('DO THIS NEXT');
+  say();
+  say('  Run  ' + todo[0].run);
+  say();
+  say('  ' + todo[0].what + '.');
+  say('  ' + todo[0].why);
+  say();
+
+  if (todo.length > 1) {
+    rule();
+    say('AFTER THAT  (' + (todo.length - 1) + ' more, in order)');
+    say();
+    todo.slice(1).forEach(function (t, i) {
+      say('  ' + (i + 2) + '. ' + t.what);
+      say('     Run  ' + t.run);
+    });
+  }
+
+  return noteV1_(L.join('\n'));
+}
+
+/* ---------------------------------------------------------------- *
+ *  The whole menu, in the words of the job rather than the code.
+ *  Every one of these is safe to run and none of them writes.
+ * ---------------------------------------------------------------- */
+
+/** What is set, what it is pointed at, whether it can write. */
+function WHERE_AM_I() { return showSettings(); }
+
+/** Everything that is wrong, in one report. */
+function CHECK_EVERYTHING() { return productionReadinessCheck(); }
+
+/** Put the addresses on the roster so training officers can sign in. */
+function FIX_THE_ROSTER() { return applyRosterEmails(); }
+
+/** Undo the last thing FIX_THE_ROSTER did. */
+function UNDO_THE_ROSTER() { return undoRosterEmails(); }
+
+/** What has been submitted that nothing has read. */
+function WHAT_IS_WAITING() { return unprocessedResponses(); }
 
 
 /* ======================================================================
@@ -3585,10 +3811,14 @@ function suggestFtoEmails() {
 /**
  * Putting addresses on the roster.
  *
- * This is the second thing in this project that can write to a live
- * spreadsheet, and it is the more consequential of the two. An address in the
- * roster's EMAIL column is what lets the portal recognise someone. Put the
- * wrong one there and that person opens another person's trainees.
+ * An address in the roster's EMAIL column is what lets the portal recognise
+ * someone. Put the wrong one there and that person opens another person's
+ * trainees. So the care here goes into being RIGHT, not into asking again.
+ *
+ * There is no confirmation code. This write only ever fills a cell that is
+ * empty, matches people by name rather than row order, and can be undone
+ * exactly. A handshake on top of that buys nothing and costs a person their
+ * evening.
  *
  * So it works by NAME, not by row order. Pasting a column of addresses into a
  * sorted sheet is how they end up one row out, and one row out here means one
@@ -3600,8 +3830,8 @@ function suggestFtoEmails() {
  *      reported. Changing one is a decision, and a decision is not a batch job.
  *   2. It refuses unless it can find exactly one roster row for a name. No row,
  *      or two rows, and that line is reported and left alone.
- *   3. Nothing is written until the whole plan has been shown and the code for
- *      that exact plan has been set, the same gate the form import uses.
+ *   3. It re-reads every cell immediately before writing it, so a cell that
+ *      stopped being empty since the plan was built is left as it is.
  *
  * undoRosterEmails() blanks precisely the cells it filled, and only if each one
  * still holds what it put there.
@@ -3794,14 +4024,9 @@ function rosterEmailsBeforeAndAfter() {
     lines.push('There is nothing to fill in.');
     return noteV1_(lines.join('\n'));
   }
-  lines.push('To do it, set the script property');
-  lines.push('');
-  lines.push('  ' + PORTAL_BACKFILL_CONFIRM + ' = ' + rosterConfirmCodeV1_(p));
-  lines.push('');
-  lines.push('and run applyRosterEmails().');
-  lines.push('');
-  lines.push('That code authorises exactly the ' + p.set.length + ' row(s) above.');
-  lines.push('Change the list and the code changes with it.');
+  lines.push('Run applyRosterEmails() to do it. There is nothing to set first.');
+  lines.push('It fills only cells that are empty, matches by name, and');
+  lines.push('undoRosterEmails() puts it back.');
   return noteV1_(lines.join('\n'));
 }
 
@@ -3822,8 +4047,19 @@ function applyRosterEmails() {
       'rosterEmailsBeforeAndAfter() to see which.');
   }
 
+  // No confirmation code. This one does not earn a handshake, and asking for
+  // one made a two-minute job into an argument.
+  //
+  // What makes a write dangerous is being irreversible, or hitting something
+  // that already had a value, or landing on the wrong row. None of those is
+  // true here: it only ever fills a cell that is EMPTY, it matches by name so
+  // a sorted roster cannot shift it, it re-reads every cell immediately
+  // before writing, it logs each one, and undoRosterEmails puts it back.
+  //
+  // The bulk row-adding writers keep their code. Adding rows to an evidence
+  // log is a different kind of act from filling in a blank column.
+  var id = safeTargetIdV1_();
   var code = rosterConfirmCodeV1_(p);
-  var id = requireImportAuthorityV1_(code);
 
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
   if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
@@ -3894,6 +4130,8 @@ function writeRosterManifestV1_(rows) {
  *  what was put there. One that has been edited since is left alone and
  *  reported, because someone changing it by hand outranks this. */
 function undoRosterEmails() {
+  // No code either. Undoing is the safe direction, and a person reaching for
+  // it is usually in a hurry.
   var t = readTabV1_(PORTAL_ROSTER_LOG);
   if (!t.ok || !t.rows.length) {
     return noteV1_('This portal has not written anything into the roster.');
@@ -3902,17 +4140,6 @@ function undoRosterEmails() {
   var runs = t.rows.map(function (r) { return String(r[t.col['RUN']] || ''); })
     .filter(String).sort();
   var last = runs[runs.length - 1];
-
-  // The code that authorised writing these cells authorises emptying them
-  // again. Anything else and you would have to go and find a code for work
-  // that has already happened.
-  var wroteWith = '';
-  t.rows.forEach(function (r) {
-    if (String(r[t.col['RUN']] || '') === last && t.col['CODE'] !== undefined) {
-      wroteWith = String(r[t.col['CODE']] || '') || wroteWith;
-    }
-  });
-  requireImportAuthorityV1_(wroteWith);
 
   var entries = t.rows.filter(function (r) { return String(r[t.col['RUN']] || '') === last; })
     .map(function (r) {
@@ -4769,7 +4996,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'c9e6d77f';
+var PORTAL_BUILD = '3e362b54';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

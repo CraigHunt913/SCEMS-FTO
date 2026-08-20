@@ -24,7 +24,7 @@ const OUT = path.join(SRC, 'SCEMS_PORTAL_ONE_FILE.gs');
 
 const MAX_CHUNK = 90;
 
-const ORDER = ['00_Config', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
+const ORDER = ['00_Config', '01_Start', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
                '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster'];
 
 function rule(title) {
@@ -56,8 +56,8 @@ function build() {
     ' *   node tools/build-one-file.js',
     ' * A test fails if this file and those sources disagree.',
     ' *',
-    ' * First run: setUpStaging',
-    ' * Then:      Deploy > New deployment > Web app',
+    ' * Run START from the dropdown above. It tells you the one thing to do',
+    ' * next, every time. Nothing else has to be remembered.',
     ' */',
     ''
   ].join('\n');
