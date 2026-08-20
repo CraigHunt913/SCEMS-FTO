@@ -342,8 +342,18 @@ submitting forms from — the response tabs record the respondent's address ever
 time — and pairs each name on the roster with what it finds. Two accounts for
 one name are flagged rather than chosen.
 
-It writes nothing to the roster. A name someone typed into a form is not proof
-of identity, and filling that column is a decision about who is authorised.
+If you have a list of everyone's address, paste it into
+`PORTAL_DIRECTORY_EMAILS` and it matches the roster against that too — but in
+a separate section, sorted into **matched with confidence**, **probable** and
+**guesswork**, each saying *why* it matched.
+
+That split is the whole point. `jhead@` looks exactly as much like Jane Head as
+Justin Head, and there is a test that asserts both score identically. An
+address someone actually submitted from is evidence; an address that merely
+looks right is not.
+
+It writes nothing to the roster. Filling that column decides who can open whose
+personnel record.
 
 ---
 
@@ -424,7 +434,7 @@ created, and it is the same way it was created last week.
 node test/portal.test.js           85 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
-node test/portal-unprocessed.test.js 36 assertions — response tabs, waiting rows, roster addresses
+node test/portal-unprocessed.test.js 59 assertions — response tabs, waiting rows, roster addresses
 node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
 node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback
 node test/portal-onefile.test.js   61 assertions — the pasted file matches its sources and runs alone

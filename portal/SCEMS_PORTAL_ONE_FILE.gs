@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 28dde1bb
+ * Build be55176b
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -3277,6 +3277,68 @@ function unprocessedResponses() {
   return noteV1_(lines.join('\n'));
 }
 
+var PORTAL_DIRECTORY_PROPERTY = 'PORTAL_DIRECTORY_EMAILS';
+
+/** Every address pasted into the directory property. One per line, or
+ *  separated by commas. Anything without an @ in it is ignored. */
+function directoryEmailsV1_() {
+  var raw = String(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_DIRECTORY_PROPERTY) || '');
+  var seen = {}, out = [];
+  raw.split(/[\s,;]+/).forEach(function (piece) {
+    var e = String(piece || '').trim().toLowerCase();
+    if (e.indexOf('@') < 1 || seen[e]) return;
+    seen[e] = true;
+    out.push(e);
+  });
+  return out;
+}
+
+/** How much an address LOOKS like it belongs to a name, and why.
+ *
+ *  This is shape, not evidence. jhead@ looks like Justin Head and probably is,
+ *  but it looks exactly as much like Jane Head. The score exists so the report
+ *  can separate what it is confident about from what it is guessing at, and
+ *  the "why" exists so a person can judge it rather than trust it. */
+function nameShapeScoreV1_(name, address) {
+  var local = String(address).split('@')[0].toLowerCase().replace(/[^a-z]/g, '');
+  var p = String(name).toLowerCase().split(/\s+/)
+    .map(function (x) { return x.replace(/[^a-z]/g, ''); })
+    .filter(Boolean);
+  if (p.length < 2 || !local) return { score: 0, why: '' };
+
+  var first = p[0], last = p[p.length - 1];
+  var fi = first.charAt(0), li = last.charAt(0);
+
+  if (local === first + last || local === last + first) return { score: 100, why: 'the whole name' };
+  if (local.indexOf(first + last) >= 0 || local.indexOf(last + first) >= 0) {
+    return { score: 92, why: 'the whole name, inside' };
+  }
+  if (local.indexOf(fi + last) === 0) return { score: 86, why: 'initial and surname' };
+  if (local.length > last.length + 1 && local.charAt(0) === fi &&
+      local.slice(2, 2 + last.length) === last) {
+    return { score: 84, why: 'two initials and surname' };
+  }
+  if (local.indexOf(first + li) === 0) return { score: 80, why: 'given name and initial' };
+  for (var cut = first.length - 1; cut > 2; cut--) {
+    if (local.indexOf(first.slice(0, cut) + last) === 0) {
+      return { score: 76, why: 'shortened given name and surname' };
+    }
+  }
+  for (var lc = last.length; lc >= 4; lc--) {
+    if (local.indexOf(fi + last.slice(0, lc)) === 0 && lc >= 4) {
+      return { score: 72, why: 'initial and part of the surname' };
+    }
+    if (local.indexOf(first.slice(0, 2) + last.slice(0, lc)) === 0 && lc >= 4) {
+      return { score: 70, why: 'part of both names' };
+    }
+  }
+  if (local.indexOf(last) === 0 && last.length >= 5) return { score: 62, why: 'surname only' };
+  if (local.indexOf(first) === 0 && first.length >= 5) return { score: 56, why: 'given name only' };
+  if (local.indexOf(last) > 0 && last.length >= 6) return { score: 54, why: 'surname somewhere inside' };
+  return { score: 0, why: '' };
+}
+
 /** Addresses for the roster, taken from what people actually submitted.
  *
  *  Every FTO on the roster has no email, so no FTO can sign in. But they have
@@ -3371,6 +3433,52 @@ function suggestFtoEmails() {
     lines.push('');
     lines.push('No submission on file for these, so there is nothing to suggest:');
     none.forEach(function (n) { lines.push('  ' + n); });
+  }
+
+  // The directory, if one has been pasted in. Shape matching only, kept well
+  // apart from the submissions above, because a name that merely LOOKS like an
+  // address is not the same kind of fact as an address someone submitted from.
+  var dir = directoryEmailsV1_();
+  if (dir.length && none.length) {
+    lines.push('');
+    lines.push('=======================================================');
+    lines.push('FROM THE DIRECTORY  (' + dir.length + ' addresses)');
+    lines.push('These are matched on what the address LOOKS like. That is a guess,');
+    lines.push('and a good-looking guess is still a guess.');
+    lines.push('=======================================================');
+
+    var tiers = { sure: [], likely: [], weak: [] };
+    none.forEach(function (nm) {
+      var hits = [];
+      dir.forEach(function (a) {
+        var sc = nameShapeScoreV1_(nm, a);
+        if (sc.score) hits.push({ score: sc.score, why: sc.why, email: a });
+      });
+      hits.sort(function (a, b) { return b.score - a.score; });
+      if (!hits.length) { tiers.weak.push({ name: nm, hits: [] }); return; }
+      var t = hits[0].score >= 92 ? 'sure' : (hits[0].score >= 70 ? 'likely' : 'weak');
+      tiers[t].push({ name: nm, hits: hits.slice(0, 3) });
+    });
+
+    [['MATCHED WITH CONFIDENCE', tiers.sure],
+     ['PROBABLE, check each one', tiers.likely],
+     ['GUESSWORK, ask the person', tiers.weak]].forEach(function (pair) {
+      lines.push('');
+      lines.push(pair[0]);
+      if (!pair[1].length) { lines.push('  none'); return; }
+      pair[1].forEach(function (e) {
+        if (!e.hits.length) { lines.push('  ' + e.name + '   nothing in the directory resembles this'); return; }
+        lines.push('  ' + e.name);
+        e.hits.forEach(function (h, i) {
+          lines.push('      ' + (i ? 'or ' : '   ') + h.email + '   (' + h.why + ')');
+        });
+      });
+    });
+  } else if (!dir.length) {
+    lines.push('');
+    lines.push('If you have a list of everyone\'s address, paste it into the script');
+    lines.push('property ' + PORTAL_DIRECTORY_PROPERTY + ' and run this again. It will');
+    lines.push('match names against it and say how sure it is about each one.');
   }
 
   lines.push('');
@@ -4200,7 +4308,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '28dde1bb';
+var PORTAL_BUILD = 'be55176b';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

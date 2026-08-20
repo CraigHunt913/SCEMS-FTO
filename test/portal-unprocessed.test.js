@@ -306,6 +306,73 @@ ok(/Every one of them can sign in. Nothing to do./.test(suggestFtoEmails()),
    'a complete roster says there is nothing to do');
 
 // ---------------------------------------------------------------- //
+section('Matching a name to an address is a guess, and says so');
+// ---------------------------------------------------------------- //
+// These are the real shapes from the county's own directory. What matters is
+// not that every one matches - it is that the confident ones and the guesses
+// end up in different piles, because this decides who can open whose record.
+[['Craig Hunt', 'craighunt913@gmail.com', 92],
+ ['Macie Morse', 'morsemacie9@gmail.com', 92],
+ ['Harley Pack', 'packharley4@gmail.com', 92],
+ ['Malcolm Armstrong', 'malcolmarmstrongj@gmail.com', 92],
+ ['Justin Head', 'jhead@sumtercountysc.gov', 86],
+ ['Kent Hall', 'kehall@sumtercountysc.gov', 84],
+ ['Brandon Lee', 'bglee.contact@gmail.com', 84],
+ ['Mallori Huggins', 'malhuggins02@gmail.com', 76]
+].forEach(function (t) {
+  const got = nameShapeScoreV1_(t[0], t[1]);
+  ok(got.score >= t[2], t[0] + ' matches ' + t[1] + '  (' + got.score + ', ' + got.why + ')');
+});
+
+[['Kinley Atkinson', 'kinleylaken@gmail.com'],
+ ['Hanna Byrd', 'hannahuff0129@gmail.com'],
+ ['Courtney Dean', 'courtneytgumm1@gmail.com'],
+ ['Julieann White', 'julieannmefford@gmail.com']
+].forEach(function (t) {
+  const got = nameShapeScoreV1_(t[0], t[1]);
+  ok(got.score > 0 && got.score < 70,
+     t[0] + ' against ' + t[1] + ' scores as a guess, not a match  (' + got.score + ')');
+});
+
+ok(nameShapeScoreV1_('Stephen Porter', 'mudduck00064@gmail.com').score === 0,
+   'an address with nothing of the name in it scores nothing at all');
+ok(nameShapeScoreV1_('Alex White', 'awise@sumtercountysc.gov').score === 0,
+   'and a near miss on the surname is not a match');
+ok(nameShapeScoreV1_('Hanna', 'hanna@example.org').score === 0,
+   'one name is not enough to match on');
+
+// the same address must not look equally like two people, silently
+const a = nameShapeScoreV1_('Justin Head', 'jhead@sumtercountysc.gov');
+const b = nameShapeScoreV1_('Jane Head', 'jhead@sumtercountysc.gov');
+ok(a.score === b.score,
+   'jhead scores the same for Justin Head and Jane Head, which is exactly why '
+   + 'the report calls it probable rather than certain');
+
+// ---------------------------------------------------------------- //
+section('The directory is offered, never applied');
+// ---------------------------------------------------------------- //
+world({ roster: [
+  ['Craig Hunt','A','Paramedic','Y','','','EMS 1'],
+  ['Justin Head','A','Paramedic','Y','','','EMS 9'],
+  ['Kinley Atkinson','A','Advanced EMT','Y','','','EMS 8']
+], responses: [] });
+as('chief@example.org');
+PROPS[PORTAL_DIRECTORY_PROPERTY] =
+  'craighunt913@gmail.com\njhead@sumtercountysc.gov\nkinleylaken@gmail.com\nnobody@example.org';
+before = snap();
+rep = suggestFtoEmails();
+ok(/FROM THE DIRECTORY  \(4 addresses\)/.test(rep), 'the directory is read');
+ok(/MATCHED WITH CONFIDENCE[\s\S]*Craig Hunt/.test(rep), 'a whole name is confident');
+ok(/PROBABLE, check each one[\s\S]*Justin Head/.test(rep), 'an initial and surname is probable');
+ok(/GUESSWORK, ask the person[\s\S]*Kinley Atkinson/.test(rep), 'a given name alone is guesswork');
+ok(/a good-looking guess is still a guess/.test(rep), 'and it says so before the list');
+ok(snap() === before, 'nothing was written to the roster or anywhere else');
+
+world({ roster: [['Craig Hunt','A','Paramedic','Y','','','EMS 1']], responses: [] });
+ok(/paste it into the script/.test(suggestFtoEmails()),
+   'with no directory set it says how to give it one');
+
+// ---------------------------------------------------------------- //
 section('The readiness check tells the two kinds of missing tab apart');
 // ---------------------------------------------------------------- //
 world();

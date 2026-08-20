@@ -23,7 +23,7 @@ node test/portal-backfill.test.js        # importing responses, the production g
 node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All seventeen exit non-zero on failure. 1,124 assertions total.
+All seventeen exit non-zero on failure. 1,147 assertions total.
 
 The last two cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that
@@ -48,7 +48,7 @@ not offer.
 | `portal-forms.test.js` | `PORTAL_FORMS`, `prefilledUrlV1_`, `probeItemV1_`, `traineeFormsForV1_`, `pointAtProductionReadOnly`, `productionReadinessCheck` | the unbound combined form being offered to anyone, a form id escaping the registry into the page, a dropdown prefilled with a value the form does not offer, discovery submitting a response, and production mode permitting a write |
 | `portal-history.test.js` | `recordForV1_`, `submissionsFromV1_`, `markCurrentV1_`, `recordScopeV1_`, `recordV1`, `duplicateSubmissionsV1_`, `readTabV1_` caching | a submission being dropped, shortened, merged or reordered on its way to the screen; an undated row becoming current; a duplicate being resolved silently; one person opening another's record; and the six-tabs-per-person read that would make the Division screen unusable |
 | `portal-onefile.test.js` | `tools/build-one-file.js`, `SCEMS_PORTAL_ONE_FILE.gs`, `portalTemplateV1_` | the pasted file drifting from the sources it was built from, a function being lost in the concatenation, the embedded page differing by a byte from `Index.html`, `doGet` asking for an HTML file the single-file project does not have, and any line long enough to be mangled by a code editor on paste |
-| `portal-unprocessed.test.js` | `formResponseTabsV1_`, `unprocessedResponses`, `suggestFtoEmails`, the readiness check's tab classification | a real tab being mistaken for a form-response tab, a response being called unprocessed when an evidence row already covers it, and an address being chosen for someone when the data offers two |
+| `portal-unprocessed.test.js` | `formResponseTabsV1_`, `unprocessedResponses`, `suggestFtoEmails`, the readiness check's tab classification | a real tab being mistaken for a form-response tab, a response being called unprocessed when an evidence row already covers it, an address being chosen for someone when the data offers two, and a name that merely looks like an address being reported with the same confidence as one someone actually submitted from |
 | `portal-merge.test.js` | `otherBookIdsV1_`, `surveyBookV1_`, `mergePlanV1_`, `matchHeaderV1_`, `rowFingerprintV1_`, `runMergeForReal` | a row being duplicated because it arrived without a matching id, a value landing under the wrong column when the two books order them differently, a column with no home here being dropped, and the other spreadsheet being written to at all |
 | `portal-backfill.test.js` | `backfillPlanV1_`, `columnForAnswerV1_`, `backfillPreview`, `backfillIntoStaging`, `requireImportAuthorityV1_`, `runBackfillForReal`, `undoLastBackfill` | an answer being lost because its question matched no column, the same response being imported twice, a stale sandbox confirmation firing against production, a half-imported record, and an undo deleting rows that had moved |
 
