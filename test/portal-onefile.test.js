@@ -44,7 +44,7 @@ ok(one.indexOf("var PORTAL_BUILD = '" + stamp + "';") >= 0,
 section('Nothing was left behind');
 // ---------------------------------------------------------------- //
 const SOURCES = ['00_Config', '01_Start', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
-                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster'];
+                 '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '90_Staging', '95_Unprocessed', '96_Roster', '97_Rename'];
 
 let missing = [];
 SOURCES.forEach(name => {
@@ -59,7 +59,8 @@ ok(missing.length === 0, 'every function from all ten script files is present' +
 
 // the ones a person actually types into the Run dropdown
 ['START', 'WHERE_AM_I', 'CHECK_EVERYTHING', 'FIX_THE_ROSTER', 'UNDO_THE_ROSTER',
- 'WHAT_IS_WAITING', 'setUpStaging', 'viewAsTrainee', 'viewAsFTO', 'viewAsDivision', 'viewAsSupervisor',
+ 'WHAT_IS_WAITING', 'FIX_A_NAME', 'UNDO_A_NAME', 'applyRename', 'undoRename',
+ 'setUpStaging', 'viewAsTrainee', 'viewAsFTO', 'viewAsDivision', 'viewAsSupervisor',
  'viewAsMedical', 'portalStatusV1', 'pointAtProductionReadOnly', 'pointAtStaging',
  'productionReadinessCheck', 'warmFormCache', 'clearFormCache', 'enableFormLinks',
  'disableFormLinks', 'backfillPreview', 'backfillIntoStaging', 'backfillBeforeAndAfter',

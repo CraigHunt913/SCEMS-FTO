@@ -43,6 +43,8 @@ you need it. A dropdown with thirty function names in it is not an interface.
 | `FIX_THE_ROSTER` | Put the addresses on so people can sign in |
 | `UNDO_THE_ROSTER` | Put it back |
 | `WHAT_IS_WAITING` | Submissions nothing has read |
+| `FIX_A_NAME` | Somebody changed their name |
+| `UNDO_A_NAME` | Put it back |
 
 ---
 
@@ -318,6 +320,36 @@ Three things it gets right that are easy to get wrong:
 - **A column this book does not have is carried into the notes with its name
   attached.** Where there is nowhere to put it, the whole row is refused rather
   than written short, and the report names the values that had nowhere to go.
+
+---
+
+## When somebody changes their name
+
+Not a one-cell edit. A training officer's name is in the roster, in every
+trainee's `ASSIGNED FTO`, in every evaluation, every skill logged, every
+sign-off. The portal pairs trainees to their officer **by name**, so changing
+one and not the rest means her trainees quietly drop off her list with nothing
+to show it happened.
+
+Set `PORTAL_RENAME`:
+
+```
+Harley Pack -> Harley Simms
+```
+
+Then run **`applyRename()`**. One step. It changes every cell whose whole value
+is that name, prints each one, and `undoRename()` puts them all back.
+
+What it leaves alone, deliberately:
+
+- **A name inside something somebody wrote.** An evaluation that says "Harley
+  talked her through the handover" is a record of what was written. Rewriting
+  it is not a rename. Those are listed, not touched.
+- **The form-response tabs.** That is the archive of what people actually
+  typed and submitted.
+
+`START` notices the symptom on its own: a trainee naming a training officer
+who is not on the roster.
 
 ---
 

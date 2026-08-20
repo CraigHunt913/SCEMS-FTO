@@ -114,6 +114,30 @@ function START() {
     good.push('all ' + onRoster + ' training officers can sign in');
   }
 
+  // a name on the roster that no trainee is assigned to. Usually a spelling
+  // that drifted, or somebody's name changed in one place and not the others.
+  try {
+    var ros2 = readTabV1_(PORTAL.TAB.ROSTER);
+    var assigned = {};
+    traineesV1_().forEach(function (t) {
+      if (!t.closed && t.fto) assigned[normNameV1_(t.fto)] = true; });
+    var orphanFto = [];
+    if (ros2.ok && Object.keys(assigned).length) {
+      Object.keys(assigned).forEach(function (a) {
+        var onRoster2 = ros2.rows.some(function (r) {
+          return normNameV1_(pickV1_(ros2, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])) === a;
+        });
+        if (!onRoster2) orphanFto.push(a);
+      });
+    }
+    if (orphanFto.length) {
+      todo.push({ what: orphanFto.length + ' trainee(s) name a training officer who is not on the roster',
+        run: 'applyRename',
+        why: 'Their trainees will not appear on anyone\'s list. If it is a name ' +
+             'that changed, set PORTAL_RENAME to "Old Name -> New Name" and run it.' });
+    }
+  } catch (e) {}
+
   // trainees
   try {
     var noMail = traineesV1_().filter(function (t) { return !t.closed && !t.email; });
@@ -193,6 +217,8 @@ function START() {
     todo.slice(1).forEach(function (t, i) {
       say('  ' + (i + 2) + '. ' + t.what);
       say('     Run  ' + t.run);
+      say('     ' + t.why);
+      say();
     });
   }
 
@@ -218,3 +244,6 @@ function UNDO_THE_ROSTER() { return undoRosterEmails(); }
 
 /** What has been submitted that nothing has read. */
 function WHAT_IS_WAITING() { return unprocessedResponses(); }
+
+/** Somebody changed their name. Set PORTAL_RENAME first. */
+function FIX_A_NAME_EVERYWHERE() { return applyRename(); }

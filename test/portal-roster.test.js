@@ -124,7 +124,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -457,6 +457,95 @@ before2 = snap();
   ok(threw(function () { fn(); }) === '', fn.name + ' runs');
 });
 ok(snap() === before2, 'and none of the read-only menu entries wrote anything');
+
+// ---------------------------------------------------------------- //
+section('A name that changed has to change everywhere at once');
+// ---------------------------------------------------------------- //
+// The portal pairs a trainee to their training officer BY NAME. Fix the
+// roster alone and her trainees quietly drop off her list, with nothing to
+// show anything happened. So it is all of them or none.
+function nameWorld() {
+  world();
+  tab(PORTAL.TAB.MASTER,
+    ['TRAINEE','LEVEL','ASSIGNED FTO','SET STATUS','TRAINEE EMAIL'],
+    [['Kayla Voss','EMT','Rosa Quill','Active','kv@example.org'],
+     ['Elena Marchetti','EMT','Rosa Quill','Active','em@example.org'],
+     ['Annika Skye','Advanced EMT','Glenda Vane','Active','as@example.org']]);
+  tab(PORTAL.TAB.EVAL, ['TIMESTAMP','FTO','TRAINEE','PHASE','STRENGTH'],
+    [[D('2026-08-10'),'Rosa Quill','Kayla Voss','Phase 2',
+      'Rosa Quill talked her through the whole handover and it landed.']]);
+  tab(PORTAL.TAB.EVIDENCE, ['EVENT DATE','TRAINEE','FTO','SKILL','NOTE','SOURCE RESPONSE ID'],
+    [[D('2026-08-10'),'Kayla Voss','Rosa Quill','Intubation','','R-9']]);
+  PROPS[PORTAL_RENAME_PROPERTY] = 'Rosa Quill -> Rosa Ledger';
+  as('chief@example.org');
+}
+
+nameWorld();
+let np = renamePlanV1_();
+ok(np.pairs.length === 1 && np.pairs[0].to === 'Rosa Ledger', 'the pair is read');
+const tabsHit = {};
+np.cells.forEach(c => tabsHit[c.tab] = true);
+ok(tabsHit[PORTAL.TAB.ROSTER], 'the roster is in the plan');
+ok(tabsHit[PORTAL.TAB.MASTER], 'so is the trainee master');
+ok(tabsHit[PORTAL.TAB.EVAL], 'so is the evaluation log');
+ok(tabsHit[PORTAL.TAB.EVIDENCE], 'so is the evidence log');
+ok(np.cells.length === 5,
+   'five cells hold her name on its own: roster, two trainees, an eval, an evidence row');
+ok(np.mentions.length === 1, 'and one place mentions her inside something written');
+ok(/talked her through/.test(np.mentions[0].text), 'which is a narrative someone wrote');
+
+nameWorld();
+let out2 = applyRename();
+ok(/5 cell\(s\) changed/.test(out2), 'all five change together');
+const m = readTabV1_(PORTAL.TAB.MASTER);
+ok(m.rows.filter(r => String(r[m.col['ASSIGNED FTO']]) === 'Rosa Ledger').length === 2,
+   'both her trainees now name her by her new name');
+const ros3 = readTabV1_(PORTAL.TAB.ROSTER);
+ok(ros3.rows.some(r => String(r[ros3.col['FTO NAME']]) === 'Rosa Ledger'),
+   'and so does the roster');
+
+// the narrative is left exactly as it was written
+const ev2 = readTabV1_(PORTAL.TAB.EVAL);
+ok(/Rosa Quill talked her through/.test(String(ev2.rows[0][ev2.col['STRENGTH']])),
+   'an evaluation that mentions her by name is NOT rewritten');
+ok(/not touched/.test(out2), 'and the report says so');
+ok(String(ev2.rows[0][ev2.col['FTO']]) === 'Rosa Ledger',
+   'while the FTO column on that same row, which is only her name, does change');
+
+// her trainees still find her, which is the whole point
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const mine = traineesV1_().filter(t => normNameV1_(t.fto) === normNameV1_('Rosa Ledger'));
+ok(mine.length === 2, 'and she still has both of them after the change');
+
+// and back again
+out2 = undoRename();
+ok(/5 cell\(s\) put back/.test(out2), 'the undo restores every one');
+const m2 = readTabV1_(PORTAL.TAB.MASTER);
+ok(m2.rows.filter(r => String(r[m2.col['ASSIGNED FTO']]) === 'Rosa Quill').length === 2,
+   'the trainees name her by the old name again');
+
+// a name nothing holds
+nameWorld();
+PROPS[PORTAL_RENAME_PROPERTY] = 'Nobody Atall -> Somebody Else';
+out2 = applyRename();
+ok(/holds that name on its own, so nothing/.test(out2),
+   'a name nothing holds changes nothing');
+ok(/Check the spelling/.test(out2), 'and says to check the spelling');
+
+nameWorld();
+PROPS[PORTAL_RENAME_PROPERTY] = '';
+ok(/Nothing is in PORTAL_RENAME/.test(applyRename()), 'an empty property says how to set it');
+
+// START notices the symptom: a trainee naming an FTO who is not on the roster
+world();
+tab(PORTAL.TAB.MASTER, ['TRAINEE','LEVEL','ASSIGNED FTO','SET STATUS','TRAINEE EMAIL'],
+  [['Kayla Voss','EMT','Rosa Ledger','Active','kv@example.org']]);
+as('chief@example.org');
+out2 = START();
+ok(/training officer who is not on the roster/.test(out2),
+   'START spots a trainee pointing at a name the roster does not have');
+ok(/PORTAL_RENAME/.test(out2),
+   'and names the property that fixes it - every item says why, not just the first');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -71,7 +71,7 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 // with the registry in the picture. portal-forms.test.js proves the registry.
 global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
 
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','95_Unprocessed','96_Roster','97_Rename']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
