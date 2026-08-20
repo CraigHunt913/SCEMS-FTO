@@ -28,12 +28,20 @@ var PORTAL_PROD_ID_PROPERTY = 'PORTAL_PRODUCTION_SPREADSHEET_ID';
  *  production data on its own. */
 function pointAtProductionReadOnly() {
   var props = PropertiesService.getScriptProperties();
-  var id = String(props.getProperty(PORTAL_PROD_ID_PROPERTY) || '').trim();
-  if (!id) {
+  var raw = String(props.getProperty(PORTAL_PROD_ID_PROPERTY) || '').trim();
+  if (!raw) {
     throw new Error('Set the script property ' + PORTAL_PROD_ID_PROPERTY +
-      ' to the live tracker id first. Project Settings > Script Properties > ' +
-      'Add script property. This function will not guess which spreadsheet ' +
-      'you mean.');
+      ' to the live tracker first. Project Settings > Script Properties > ' +
+      'Add script property. Paste the whole address of the spreadsheet if you ' +
+      'like; the id is picked out of it. This function will not guess which ' +
+      'spreadsheet you mean.');
+  }
+  // Paste the address bar, paste the id, paste the bit in between - all fine.
+  var id = spreadsheetIdFromV1_(raw);
+  if (!id) {
+    throw new Error('There is no spreadsheet id in "' + raw + '". Open the ' +
+      'tracker and copy its address out of the address bar, then put that in ' +
+      PORTAL_PROD_ID_PROPERTY + '. Nothing was changed.');
   }
 
   var name = '';
@@ -63,7 +71,7 @@ function pointAtProductionReadOnly() {
 /** Go back to the sandbox. */
 function pointAtStaging() {
   var props = PropertiesService.getScriptProperties();
-  var id = String(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID') || '').trim();
+  var id = spreadsheetIdFromV1_(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID'));
   if (!id) {
     throw new Error('No staging sandbox is remembered. Run setUpStaging() to ' +
       'build a fresh one.');

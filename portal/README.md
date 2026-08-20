@@ -87,7 +87,11 @@ This is two deliberate steps, and neither happens by default.
 
    | Property | Value |
    | --- | --- |
-   | `PORTAL_PRODUCTION_SPREADSHEET_ID` | the live tracker's id |
+   | `PORTAL_PRODUCTION_SPREADSHEET_ID` | the live tracker's address, or its id |
+
+   Paste the whole address bar if that is easier — `https://docs.google.com/…`,
+   or `/d/1YL…/edit`, or the bare id. The id is picked out of whichever you
+   give it. The same is true of `PORTAL_BACKFILL_CONFIRM` later.
 
    The id is not in this code. A copy of this project cannot reach your
    production data on its own.

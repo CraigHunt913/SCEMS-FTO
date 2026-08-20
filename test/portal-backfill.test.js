@@ -408,6 +408,17 @@ ok(/will not fire against another/.test(threw(() => runBackfillForReal())),
    'a confirmation left over from the sandbox cannot fire against production');
 ok(snapshot() === snap, 'still nothing written');
 
+// the confirmation is read the same way the target is, so pasting the
+// spreadsheet's address here works as well as pasting its bare id
+PROPS[PORTAL_BACKFILL_CONFIRM] = 'https://docs.google.com/spreadsheets/d/PROD-BOOK/edit#gid=0';
+ok(threw(() => runBackfillForReal()) === '',
+   'the confirmation accepts a pasted address, not only a bare id');
+world(PORTAL.MODE_PRODUCTION);
+PROPS[PORTAL.PROPERTY_TARGET] = 'PROD-BOOK';
+PROPS[PORTAL_BACKFILL_CONFIRM] = '/d/STG-BOOK/edit';
+ok(/will not fire against another/.test(threw(() => runBackfillForReal())),
+   'and a pasted address for the WRONG book is still refused');
+
 // ---------------------------------------------------------------- //
 section('It refuses rather than import half a record');
 // ---------------------------------------------------------------- //

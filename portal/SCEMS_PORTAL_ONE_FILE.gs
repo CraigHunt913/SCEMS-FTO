@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build a99e5cb3
+ * Build 6d732cba
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -70,14 +70,39 @@ var PORTAL = Object.freeze({
   })
 });
 
+/** A spreadsheet id out of whatever got pasted.
+ *
+ *  Accepts the bare id, the whole address bar, or any fragment of it -
+ *  "/d/1YL-.../edit", "docs.google.com/spreadsheets/d/1YL-...", or the id on
+ *  its own. Returns '' when there is no id in there at all.
+ *
+ *  This exists because "the long jumble between /d/ and /edit" is a fiddly
+ *  thing to select by hand, and getting it slightly wrong should not be an
+ *  error message. Every place this project takes an id goes through here. */
+function spreadsheetIdFromV1_(input) {
+  var s = String(input == null ? '' : input).trim();
+  if (!s) return '';
+  var inUrl = s.match(/\/d\/([-\w]+)/);          // .../d/<id>/edit
+  if (inUrl) return inUrl[1];
+  if (/^[-\w]+$/.test(s)) return s;              // already just an id
+  var buried = s.match(/[-\w]{20,}/);            // dig one out of something longer
+  return buried ? buried[0] : '';
+}
+
 /** The spreadsheet this portal is pointed at. Throws rather than guessing. */
 function targetIdV1_() {
-  var id = String(PropertiesService.getScriptProperties()
+  var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL.PROPERTY_TARGET) || '').trim();
-  if (!id) {
+  if (!raw) {
     throw new Error('This portal is not pointed at a spreadsheet yet. Run ' +
       'setUpStaging() once from the script editor; it builds a staging copy ' +
       'with invented people and points the portal at that.');
+  }
+  var id = spreadsheetIdFromV1_(raw);
+  if (!id) {
+    throw new Error('The portal is pointed at "' + raw + '", and there is no ' +
+      'spreadsheet id in that. Paste the address of the spreadsheet, or its ' +
+      'id, into ' + PORTAL.PROPERTY_TARGET + '.');
   }
   return id;
 }
@@ -1103,12 +1128,20 @@ var PORTAL_PROD_ID_PROPERTY = 'PORTAL_PRODUCTION_SPREADSHEET_ID';
  *  production data on its own. */
 function pointAtProductionReadOnly() {
   var props = PropertiesService.getScriptProperties();
-  var id = String(props.getProperty(PORTAL_PROD_ID_PROPERTY) || '').trim();
-  if (!id) {
+  var raw = String(props.getProperty(PORTAL_PROD_ID_PROPERTY) || '').trim();
+  if (!raw) {
     throw new Error('Set the script property ' + PORTAL_PROD_ID_PROPERTY +
-      ' to the live tracker id first. Project Settings > Script Properties > ' +
-      'Add script property. This function will not guess which spreadsheet ' +
-      'you mean.');
+      ' to the live tracker first. Project Settings > Script Properties > ' +
+      'Add script property. Paste the whole address of the spreadsheet if you ' +
+      'like; the id is picked out of it. This function will not guess which ' +
+      'spreadsheet you mean.');
+  }
+  // Paste the address bar, paste the id, paste the bit in between - all fine.
+  var id = spreadsheetIdFromV1_(raw);
+  if (!id) {
+    throw new Error('There is no spreadsheet id in "' + raw + '". Open the ' +
+      'tracker and copy its address out of the address bar, then put that in ' +
+      PORTAL_PROD_ID_PROPERTY + '. Nothing was changed.');
   }
 
   var name = '';
@@ -1138,7 +1171,7 @@ function pointAtProductionReadOnly() {
 /** Go back to the sandbox. */
 function pointAtStaging() {
   var props = PropertiesService.getScriptProperties();
-  var id = String(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID') || '').trim();
+  var id = spreadsheetIdFromV1_(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID'));
   if (!id) {
     throw new Error('No staging sandbox is remembered. Run setUpStaging() to ' +
       'build a fresh one.');
@@ -1940,8 +1973,10 @@ function safeTargetIdV1_() { try { return targetIdV1_(); } catch (e) { return '(
 /** The gate. The confirmation must name the book about to be written to. */
 function requireImportAuthorityV1_() {
   var id = targetIdV1_();
-  var confirm = String(PropertiesService.getScriptProperties()
-    .getProperty(PORTAL_BACKFILL_CONFIRM) || '').trim();
+  // Normalised the same way the target is, so pasting the spreadsheet's
+  // address here works exactly as well as pasting its id.
+  var confirm = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_BACKFILL_CONFIRM));
 
   if (!confirm) {
     throw new Error('Refusing to write. Set the script property ' +
@@ -3119,7 +3154,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'a99e5cb3';
+var PORTAL_BUILD = '6d732cba';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

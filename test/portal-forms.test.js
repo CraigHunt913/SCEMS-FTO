@@ -418,6 +418,45 @@ disableFormLinks();
 ok(formLinksLiveV1_() === false, 'disableFormLinks() turns them off again');
 
 // ---------------------------------------------------------------- //
+section('It takes the id however you paste it');
+// ---------------------------------------------------------------- //
+// "The long jumble between /d/ and /edit" is a fiddly thing to select by
+// hand, and getting it slightly wrong should not be an error message.
+const ID = '1YLxGk458tR0jpRO680DVtvswNGSLVTlugmclsRI';
+[['the id on its own', ID],
+ ['the whole address bar', 'https://docs.google.com/spreadsheets/d/' + ID + '/edit#gid=0'],
+ ['the address without a scheme', 'docs.google.com/spreadsheets/d/' + ID + '/edit'],
+ ['just the /d/ fragment', '/d/' + ID],
+ ['the fragment with /edit on it', '/d/' + ID + '/edit'],
+ ['it with spaces round it', '   ' + ID + '  '],
+ ['a copied link with a gid', 'https://docs.google.com/spreadsheets/d/' + ID + '/edit?gid=1889#gid=1889']
+].forEach(function (pair) {
+  ok(spreadsheetIdFromV1_(pair[1]) === ID, pair[0] + ' yields the id');
+});
+ok(spreadsheetIdFromV1_('') === '', 'nothing yields nothing');
+ok(spreadsheetIdFromV1_('   ') === '', 'whitespace yields nothing');
+ok(spreadsheetIdFromV1_('paste it here') === '', 'a sentence yields nothing, not a guess');
+ok(spreadsheetIdFromV1_(null) === '', 'and neither does a missing value');
+
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = '/d/PROD-BOOK-000000000000000000';
+OPENABLE['PROD-BOOK-000000000000000000'] = 'SCEMS FTPD Tracker';
+pointAtProductionReadOnly();
+ok(PROPS[PORTAL.PROPERTY_TARGET] === '/d/PROD-BOOK-000000000000000000' ||
+   targetIdV1_() === 'PROD-BOOK-000000000000000000',
+   'a pasted /d/ fragment points the portal at the right book');
+ok(targetIdV1_() === 'PROD-BOOK-000000000000000000',
+   'and the id it uses from then on is the clean one');
+
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'the one in my drive';
+const noId = threw(() => pointAtProductionReadOnly());
+ok(/no spreadsheet id in/.test(noId), 'a value with no id in it says exactly that');
+ok(/the one in my drive/.test(noId), 'quoting back what it actually found');
+ok(/Nothing was changed/.test(noId), 'and nothing moved');
+ok(PROPS[PORTAL.PROPERTY_TARGET] === 'STG-BOOK', 'the portal stayed where it was');
+
+// ---------------------------------------------------------------- //
 section('Pointing at production reads and refuses to write');
 // ---------------------------------------------------------------- //
 world();

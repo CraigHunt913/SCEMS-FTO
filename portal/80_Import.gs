@@ -97,8 +97,10 @@ function safeTargetIdV1_() { try { return targetIdV1_(); } catch (e) { return '(
 /** The gate. The confirmation must name the book about to be written to. */
 function requireImportAuthorityV1_() {
   var id = targetIdV1_();
-  var confirm = String(PropertiesService.getScriptProperties()
-    .getProperty(PORTAL_BACKFILL_CONFIRM) || '').trim();
+  // Normalised the same way the target is, so pasting the spreadsheet's
+  // address here works exactly as well as pasting its id.
+  var confirm = spreadsheetIdFromV1_(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_BACKFILL_CONFIRM));
 
   if (!confirm) {
     throw new Error('Refusing to write. Set the script property ' +

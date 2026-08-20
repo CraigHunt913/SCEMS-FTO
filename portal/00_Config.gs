@@ -49,14 +49,39 @@ var PORTAL = Object.freeze({
   })
 });
 
+/** A spreadsheet id out of whatever got pasted.
+ *
+ *  Accepts the bare id, the whole address bar, or any fragment of it -
+ *  "/d/1YL-.../edit", "docs.google.com/spreadsheets/d/1YL-...", or the id on
+ *  its own. Returns '' when there is no id in there at all.
+ *
+ *  This exists because "the long jumble between /d/ and /edit" is a fiddly
+ *  thing to select by hand, and getting it slightly wrong should not be an
+ *  error message. Every place this project takes an id goes through here. */
+function spreadsheetIdFromV1_(input) {
+  var s = String(input == null ? '' : input).trim();
+  if (!s) return '';
+  var inUrl = s.match(/\/d\/([-\w]+)/);          // .../d/<id>/edit
+  if (inUrl) return inUrl[1];
+  if (/^[-\w]+$/.test(s)) return s;              // already just an id
+  var buried = s.match(/[-\w]{20,}/);            // dig one out of something longer
+  return buried ? buried[0] : '';
+}
+
 /** The spreadsheet this portal is pointed at. Throws rather than guessing. */
 function targetIdV1_() {
-  var id = String(PropertiesService.getScriptProperties()
+  var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL.PROPERTY_TARGET) || '').trim();
-  if (!id) {
+  if (!raw) {
     throw new Error('This portal is not pointed at a spreadsheet yet. Run ' +
       'setUpStaging() once from the script editor; it builds a staging copy ' +
       'with invented people and points the portal at that.');
+  }
+  var id = spreadsheetIdFromV1_(raw);
+  if (!id) {
+    throw new Error('The portal is pointed at "' + raw + '", and there is no ' +
+      'spreadsheet id in that. Paste the address of the spreadsheet, or its ' +
+      'id, into ' + PORTAL.PROPERTY_TARGET + '.');
   }
   return id;
 }
