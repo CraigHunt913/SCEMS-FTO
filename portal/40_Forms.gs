@@ -106,11 +106,16 @@ var PORTAL_FORMS = [
     landsIn: '19 SKILL EVIDENCE LOG',
     prefill: { fto: /^(fto|your name|name)/i, trainee: /trainee/i } },
 
-  /* Retired, and the reason is not cosmetic. This form has no submit trigger
-     bound to it, so responses land in the form and reach the tracker never.
-     Sixteen of them are sitting there now. The portal must not send anyone
-     here, and the Training Division view says so out loud until it is dealt
-     with. Nothing about the form itself is changed by this portal. */
+  /* Retired, and the reason is not cosmetic - but it is narrower than it
+     first looked. This form IS linked to the tracker, so its responses do
+     arrive: Google drops them into a response tab of their own. What has
+     never happened is the step that turns a response into a row in the
+     evidence log, because no submit trigger is bound to the form. So the
+     answers are present and unused rather than absent.
+
+     The portal must not send anyone here while that is true, and the Training
+     Division view says so. unprocessedResponses() lists what is waiting.
+     Nothing about the form itself is changed by this portal. */
   { key: 'SKILLS_COMBINED',
     id: '1Q1R2bQPQe3eDbiDQTGJJHtzgAOC9jhEJJUkeh2w2u4s',
     title: 'Skills quick log (all levels)',
@@ -119,7 +124,9 @@ var PORTAL_FORMS = [
     perTrainee: false,
     level: '',
     retired: true,
-    retiredWhy: 'No submit trigger is bound to it, so responses never reach the tracker.',
+    retiredWhy: 'No submit trigger is bound to it. Responses do land in the ' +
+      'tracker, in a response tab of their own, but nothing turns them into rows ' +
+      'in the evidence log. Run unprocessedResponses() to see them.',
     landsIn: '19 SKILL EVIDENCE LOG',
     prefill: {} }
 ];

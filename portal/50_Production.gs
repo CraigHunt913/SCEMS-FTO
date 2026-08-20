@@ -104,11 +104,19 @@ function productionReadinessCheck() {
   say('');
 
   say('TABS');
-  var missing = [];
+  // COACHING and AUDIT are the portal's own, not part of the tracker. Against
+  // a live book it cannot create them and does not try. Reporting them as
+  // "missing" alongside a real source tab reads as breakage when it is not.
+  var optional = [PORTAL.TAB.COACHING, PORTAL.TAB.AUDIT];
+  var missing = [], absentOptional = [];
   Object.keys(PORTAL.TAB).forEach(function (k) {
     var name = PORTAL.TAB[k];
     var t = readTabV1_(name);
-    if (!t.ok) { missing.push(name); say('  missing  ' + name); return; }
+    if (!t.ok) {
+      if (optional.indexOf(name) >= 0) { absentOptional.push(name); say('  not made ' + name + '  (optional)'); }
+      else { missing.push(name); say('  MISSING  ' + name); }
+      return;
+    }
     say('  ok       ' + name + '  (' + t.rows.length + ' rows, ' +
         t.headers.filter(String).length + ' named columns)');
   });
@@ -152,16 +160,46 @@ function productionReadinessCheck() {
   });
   say('');
 
+  say('WHAT TO DO');
   if (missing.length) {
-    say('WHAT TO DO');
-    say('  ' + missing.length + ' tab(s) the portal expects are not in this ' +
-        'spreadsheet. The screens that use them will be empty. Nothing is ' +
-        'broken; they simply have no source.');
+    say('  ' + missing.length + ' source tab(s) are not in this spreadsheet:');
+    missing.forEach(function (n) { say('    ' + n); });
+    say('  The screens that use them will be empty.');
   } else {
-    say('WHAT TO DO');
-    say('  Every tab the portal expects is present. Deploy, open the URL, and');
-    say('  check that you see the view your role should see.');
+    say('  Every source tab is present.');
   }
+  if (absentOptional.length) {
+    say('  ' + absentOptional.join(' and ') + ' have not been made. They are the');
+    say('  portal\'s own and it will not create them in a live spreadsheet.');
+    say('  Coaching notes have nowhere to live until one exists; nothing else');
+    say('  depends on them.');
+  }
+
+  var noEmail = 0;
+  try {
+    var ros = readTabV1_(PORTAL.TAB.ROSTER);
+    if (ros.ok) {
+      ros.rows.forEach(function (r) {
+        var nm = String(pickV1_(ros, r, ['FTO NAME', 'FTO', 'NAME', 'TRAINING OFFICER'])).trim();
+        var em = String(pickV1_(ros, r, ['EMAIL', 'FTO EMAIL', 'WORK EMAIL'])).trim();
+        if (nm && em.indexOf('@') < 1) noEmail++;
+      });
+    }
+  } catch (e) {}
+  if (noEmail) {
+    say('  ' + noEmail + ' on the roster have no address, so none of them can sign');
+    say('  in. Run suggestFtoEmails() to see the accounts they have actually');
+    say('  been submitting from.');
+  }
+
+  try {
+    var stray = formResponseTabsV1_().reduce(function (n, t) { return n + t.rows.length; }, 0);
+    if (stray) {
+      say('  ' + stray + ' form response(s) are sitting in response tabs in this');
+      say('  spreadsheet, never turned into rows in the logs. Run');
+      say('  unprocessedResponses() to see them.');
+    }
+  } catch (e) {}
 
   return noteV1_(lines.join('\n'));
 }

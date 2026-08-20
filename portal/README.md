@@ -313,16 +313,37 @@ The FTO never picks a form and never picks a level. They pick a person.
 
 ---
 
-## The combined skills log
+## The combined skills log, and responses nothing has read
 
-`Skills Quick Log (all levels)` is in the registry and is offered to **nobody**.
-It has no submit trigger bound to it, so a response to it stays in the form and
-never reaches the tracker. Sixteen are sitting there now.
+`Skills Quick Log (all levels)` is in the registry and is offered to **nobody**,
+because no submit trigger is bound to it.
 
-The portal will not send anyone to it, and the Training Division screen says so
-until it is resolved. The form itself is untouched — deciding what happens to
-it, and to those sixteen responses, is not something this portal does on its
-own.
+That is narrower than it first looks. The form **is** linked to the tracker, so
+its responses do arrive — Google drops them into a response tab of its own, with
+the header on row 1. What has never happened is the step that turns a response
+into a row in `19 SKILL EVIDENCE LOG`. **The answers are present and unused,
+not absent.**
+
+**`unprocessedResponses()`** finds every form-response tab in the tracker,
+counts what is in it, and marks each response according to whether an evidence
+row shares that trainee and date. It says outright that a match on trainee and
+date is a hint rather than a proof. Read only.
+
+Turning a response into an evidence row is the tracker's own ingestion job, and
+this portal does not do it.
+
+## When nobody on the roster can sign in
+
+An FTO with no address in the roster's `EMAIL` column cannot be recognised, and
+opening the portal tells them they are not set up.
+
+**`suggestFtoEmails()`** reads the accounts each of them has actually been
+submitting forms from — the response tabs record the respondent's address every
+time — and pairs each name on the roster with what it finds. Two accounts for
+one name are flagged rather than chosen.
+
+It writes nothing to the roster. A name someone typed into a form is not proof
+of identity, and filling that column is a decision about who is authorised.
 
 ---
 
@@ -400,12 +421,13 @@ created, and it is the same way it was created last week.
 - The page cannot be framed by another site
 
 ```
-node test/portal.test.js           73 assertions — role isolation and write safety
+node test/portal.test.js           85 assertions — role isolation and write safety
 node test/portal-forms.test.js    120 assertions — the registry, prefill, production mode
 node test/portal-history.test.js   92 assertions — current first, nothing lost, who may open whose
+node test/portal-unprocessed.test.js 36 assertions — response tabs, waiting rows, roster addresses
 node test/portal-merge.test.js    108 assertions — reading both books, then merging if you want to
 node test/portal-backfill.test.js 103 assertions — importing responses, the production gate, the rollback
-node test/portal-onefile.test.js   59 assertions — the pasted file matches its sources and runs alone
+node test/portal-onefile.test.js   61 assertions — the pasted file matches its sources and runs alone
 ```
 
 `SCEMS_PORTAL_ONE_FILE.gs` is **built**, not written. Edit the files in this
