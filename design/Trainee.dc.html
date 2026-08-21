@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+  <style>
+    body{margin:0;font-family:"Source Sans 3",system-ui,sans-serif;}
+    a{color:#1f5f9e;} a:hover{color:#12233b;}
+    button{font:inherit;}
+    .seg{display:flex;gap:2px;}
+    .seg i{display:block;width:8px;height:15px;border-radius:1px;}
+  </style>
+</helmet>
+
+<div style="width:390px;height:844px;background:{{t.surface}};color:{{t.ink}};display:flex;flex-direction:column;overflow:hidden;">
+
+  <div style="background:{{t.navy}};color:#fff;padding:13px 16px;display:flex;align-items:center;gap:11px;flex:none;">
+    <div style="width:30px;height:33px;background:{{t.gold}};clip-path:polygon(50% 0,100% 22%,100% 72%,50% 100%,0 72%,0 22%);flex:none;"></div>
+    <div style="line-height:1.1;">
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.02rem;">Latavia Cole</div>
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Advanced EMT &middot; EMS 79</div>
+    </div>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:18px 16px 30px;">
+
+    <!-- where I am -->
+    <div style="background:{{t.paper}};border:1px solid {{t.line}};border-radius:11px;box-shadow:{{t.shadow}};padding:16px;margin-bottom:16px;">
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;">Where you are</div>
+      <div style="display:flex;align-items:baseline;gap:9px;margin-top:3px;">
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.85rem;line-height:1;">Phase 1</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.92rem;color:{{t.ink3}};">day 18</div>
+      </div>
+
+      <!-- the four phases as a track -->
+      <div style="display:flex;gap:4px;margin-top:14px;">
+        <sc-for list="{{phases}}" as="p" hint-placeholder-count="4">
+          <div style="flex:1;">
+            <div style="height:5px;border-radius:3px;background:{{p.bg}};"></div>
+            <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:{{p.fg}};font-weight:600;margin-top:5px;">{{p.name}}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid {{t.line}};display:flex;gap:18px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:1.15rem;">6</div>
+          <div style="font-size:.74rem;color:{{t.ink3}};">shifts evaluated</div>
+        </div>
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:1.15rem;">3.8</div>
+          <div style="font-size:.74rem;color:{{t.ink3}};">average, rising</div>
+        </div>
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:1.15rem;color:{{t.ok}};">2</div>
+          <div style="font-size:.74rem;color:{{t.ink3}};">skills signed off</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- what is waiting on me -->
+    <div style="background:{{t.warnBg}};border:1px solid {{t.warn}};border-radius:10px;padding:13px 14px;margin-bottom:20px;display:flex;gap:11px;align-items:flex-start;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{t.warn}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:2px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:.95rem;">Your reflection is due</div>
+        <div style="font-size:.83rem;color:{{t.ink2}};margin-top:2px;line-height:1.4;">Last one was 8 days ago. Two minutes.</div>
+      </div>
+      <button style="flex:none;background:{{t.warn}};color:{{t.warnFg}};border:0;border-radius:7px;padding:10px 13px;font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:.9rem;cursor:pointer;min-height:44px;">File it</button>
+    </div>
+
+    <!-- the skills, with the thresholds visible -->
+    <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin:0 0 4px;">What each skill still needs</div>
+    <p style="font-size:.83rem;color:{{t.ink3}};margin:0 0 12px;line-height:1.45;">Four bars each. All four full and it goes to the Training Division for sign-off.</p>
+
+    <sc-for list="{{skills}}" as="s" hint-placeholder-count="3">
+      <div style="background:{{t.paper}};border:1px solid {{s.border}};border-radius:10px;padding:13px 14px;margin-bottom:9px;">
+        <div style="display:flex;align-items:center;gap:9px;">
+          <div style="flex:1;min-width:0;font-weight:600;font-size:.98rem;line-height:1.25;">{{s.name}}</div>
+          <div style="flex:none;font-family:'Barlow Semi Condensed',sans-serif;font-size:.6rem;letter-spacing:.11em;text-transform:uppercase;font-weight:700;padding:3px 7px;border-radius:3px;background:{{s.tagBg}};color:{{s.tagFg}};">{{s.tag}}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:9px;margin-top:11px;">
+          <sc-for list="{{s.bars}}" as="b" hint-placeholder-count="4">
+            <div>
+              <div class="seg" style="margin-bottom:4px;">
+                <sc-for list="{{b.cells}}" as="c" hint-placeholder-count="2">
+                  <i style="background:{{c.fill}};"></i>
+                </sc-for>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:.74rem;">{{b.have}}<span style="color:{{t.ink3}};">/{{b.need}}</span></div>
+              <div style="font-size:.66rem;color:{{t.ink3}};line-height:1.25;margin-top:1px;">{{b.label}}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+
+  </div>
+</div>
+
+</x-dc>
+
+<script data-dc-script data-props='{
+  "dark":{"editor":"boolean","default":false,"section":"Theme"}
+}'>
+class Component extends DCLogic {
+  theme(){
+    return this.props.dark
+      ? { navy:'#0d1826', paper:'#161d27', surface:'#111821', line:'#2b3646',
+          ink:'#e9eef5', ink2:'#b3bfcf', ink3:'#7d8a9c', gold:'#d6ad50',
+          aemt:'#6aa8dd', ok:'#6bbd8a', okBg:'#16261d',
+          warn:'#d6ad50', warnBg:'#272113', warnFg:'#1a1509',
+          shadow:'0 1px 2px rgba(0,0,0,.5),0 10px 28px -18px rgba(0,0,0,.9)' }
+      : { navy:'#12233b', paper:'#ffffff', surface:'#f5f7fa', line:'#dfe5ec',
+          ink:'#12233b', ink2:'#4a5a70', ink3:'#7b8798', gold:'#b08a2e',
+          aemt:'#1f5f9e', ok:'#2f7d4f', okBg:'#eef6f0',
+          warn:'#8a6a14', warnBg:'#fdf6e4', warnFg:'#ffffff',
+          shadow:'0 1px 2px rgba(18,35,59,.07),0 10px 28px -18px rgba(18,35,59,.45)' };
+  }
+
+  renderVals(){
+    const t = this.theme();
+
+    const phases = ['Phase 1','Phase 2','Phase 3','Phase 4'].map(function (n, i) {
+      return { name: n.replace('Phase ','P'), bg: i === 0 ? t.aemt : t.line,
+               fg: i === 0 ? t.ink : t.ink3 };
+    });
+
+    const raw = [
+      { name:'Blood glucose measurement', ev:[[2,2],[2,2],[2,2],[2,2]] },
+      { name:'IV access',                 ev:[[5,3],[3,3],[3,2],[1,2]] },
+      { name:'Advanced patient assessment', ev:[[1,2],[0,2],[1,2],[1,2]] }
+    ];
+    const labels = ['successful','independent','dates','FTOs'];
+
+    const skills = raw.map(function (s) {
+      const full = s.ev.every(function (e) { return e[0] >= e[1]; });
+      const bars = s.ev.map(function (e, i) {
+        const have = e[0], need = e[1], n = Math.max(need, have);
+        const cells = [];
+        for (let k = 0; k < n; k++) {
+          cells.push({ fill: k < have ? (full ? t.ok : t.aemt) : t.line });
+        }
+        return { have: have, need: need, label: labels[i], cells: cells };
+      });
+      return {
+        name: s.name, bars: bars,
+        border: full ? t.ok : t.line,
+        tag: full ? 'With the Chief' : 'Building',
+        tagBg: full ? t.okBg : 'transparent',
+        tagFg: full ? t.ok : t.ink3
+      };
+    });
+
+    return { t: t, phases: phases, skills: skills };
+  }
+}
+</script>
+</body>
+</html>

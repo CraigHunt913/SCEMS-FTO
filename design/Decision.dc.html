@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+  <style>
+    body{margin:0;font-family:"Source Sans 3",system-ui,sans-serif;}
+    a{color:#1f5f9e;} a:hover{color:#12233b;}
+    button,textarea{font:inherit;}
+    textarea::placeholder{color:#9aa6b6;}
+  </style>
+</helmet>
+
+<div style="width:390px;height:844px;background:{{t.surface}};color:{{t.ink}};display:flex;flex-direction:column;overflow:hidden;">
+
+  <div style="background:{{t.navy}};color:#fff;padding:13px 16px;display:flex;align-items:center;gap:11px;flex:none;">
+    <button onClick="{{back}}" style="background:none;border:0;color:#9fb2c9;cursor:pointer;padding:0;display:flex;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.02rem;">Return for more evidence</div>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:18px 16px 30px;">
+
+    <div style="display:flex;background:{{t.paper}};border:1px solid {{t.line}};border-radius:10px;overflow:hidden;margin-bottom:16px;">
+      <div style="width:5px;background:{{t.pmd}};flex:none;"></div>
+      <div style="padding:13px 15px;">
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.pmd}};font-weight:700;">Paramedic &middot; Phase 3</div>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.3rem;line-height:1.15;margin-top:1px;">Endotracheal intubation</div>
+        <div style="font-size:.93rem;color:{{t.ink2}};margin-top:2px;">Samantha Wilson &middot; recommended by Malcolm Armstrong</div>
+      </div>
+    </div>
+
+    <!-- why this one is different -->
+    <div style="background:{{t.warnBg}};border:1px solid {{t.warn}};border-radius:9px;padding:12px 13px;margin-bottom:18px;display:flex;gap:10px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{t.warn}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:1px;"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+      <div style="font-size:.87rem;color:{{t.ink2}};line-height:1.45;">
+        This goes on Samantha&rsquo;s permanent record as an adverse finding. It needs your words, not a menu.
+      </div>
+    </div>
+
+    <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin-bottom:8px;">What is missing, and what would satisfy it</div>
+
+    <textarea onInput="{{type}}" placeholder="Two attempts, both assisted. I want one first-pass tube with no hands-on before I sign this — and a second FTO on it."
+      style="width:100%;min-height:132px;padding:13px;border:1px solid {{t.line}};border-radius:9px;background:{{t.paper}};color:{{t.ink}};font-size:.95rem;line-height:1.5;resize:vertical;outline:none;"></textarea>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;margin-bottom:18px;">
+      <div style="font-size:.78rem;color:{{t.ink3}};">{{hint}}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.76rem;color:{{countColor}};">{{n}}</div>
+    </div>
+
+    <!-- what will be written -->
+    <div style="padding:12px 13px;background:{{t.navy}};border-radius:9px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9fb2c9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Goes on the sign-off log</div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.685rem;line-height:1.75;color:#cfdae8;">
+        <div>SO-4826   21 Aug 2026 19:47   RETURNED</div>
+        <div>decided by  C. Hunt, FTO Program Director</div>
+        <div>rationale   {{preview}}</div>
+      </div>
+    </div>
+
+    <button onClick="{{send}}" disabled="{{blocked}}"
+      style="width:100%;background:{{btnBg}};color:{{btnFg}};border:0;border-radius:9px;padding:15px;font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.06rem;letter-spacing:.03em;cursor:{{cursor}};min-height:52px;">
+      {{btnText}}
+    </button>
+
+    <div style="font-size:.78rem;color:{{t.ink3}};line-height:1.45;margin-top:11px;text-align:center;">
+      Malcolm gets this tonight. Samantha sees it on her record with the skill still open.
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+
+<script data-dc-script data-props='{
+  "dark":{"editor":"boolean","default":false,"section":"Theme"}
+}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { text: '' }; }
+
+  theme(){
+    return this.props.dark
+      ? { navy:'#0d1826', paper:'#161d27', surface:'#111821', line:'#2b3646',
+          ink:'#e9eef5', ink2:'#b3bfcf', ink3:'#7d8a9c',
+          pmd:'#e08b82', ok:'#6bbd8a', warn:'#d6ad50', warnBg:'#272113', stop:'#e08b82' }
+      : { navy:'#12233b', paper:'#ffffff', surface:'#f5f7fa', line:'#dfe5ec',
+          ink:'#12233b', ink2:'#4a5a70', ink3:'#7b8798',
+          pmd:'#a8342b', ok:'#2f7d4f', warn:'#8a6a14', warnBg:'#fdf6e4', stop:'#a8342b' };
+  }
+
+  renderVals(){
+    const t = this.theme();
+    const self = this;
+    const txt = this.state.text;
+    const n = txt.trim().length;
+    const ready = n >= 20;
+
+    return {
+      t: t,
+      n: n + ' / 20',
+      countColor: ready ? t.ok : t.ink3,
+      hint: ready ? 'That will do.' : 'Enough that it means something in a year.',
+      preview: ready ? (txt.trim().length > 46 ? txt.trim().slice(0, 46) + '…' : txt.trim())
+                     : '— waiting for your words —',
+      blocked: !ready,
+      btnBg: ready ? t.pmd : t.line,
+      btnFg: ready ? '#ffffff' : t.ink3,
+      cursor: ready ? 'pointer' : 'not-allowed',
+      btnText: ready ? 'Return it' : 'Type your reasons first',
+      type: function (e) { self.setState({ text: e.target.value }); },
+      send: function () { if (ready) self.setState({ text: '' }); },
+      back: function () {}
+    };
+  }
+}
+</script>
+</body>
+</html>

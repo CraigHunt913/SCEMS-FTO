@@ -1,0 +1,23 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",       "x": 0,    "y": 0,    "w": 390, "h": 844, "title": "Training Division — the queue" },
+    { "file": "Decision.dc.html",   "x": 490,  "y": 0,    "w": 390, "h": 844, "title": "Returning it — where the friction lives" },
+    { "file": "FTO.dc.html",        "x": 980,  "y": 0,    "w": 390, "h": 844, "title": "Field Training Officer" },
+    { "file": "Trainee.dc.html",    "x": 1470, "y": 0,    "w": 390, "h": 844, "title": "Trainee" },
+    { "file": "Medical.dc.html",    "x": 1960, "y": 0,    "w": 390, "h": 844, "title": "Medical Director" },
+    { "file": "Scoreboard.dc.html", "x": 0,    "y": 1010, "w": 760, "h": 980, "title": "The scoreboard you forward" }
+  ],
+  "annotations": [
+    { "id": "one-click", "x": 0, "y": -190, "w": 390,
+      "text": "THE THESIS\n\nOne click, fully defensible — because the click isn't empty.\n\nThe four evidence bars are the doctrine's four convictions, drawn from the real counts. The FTO's own words sit above the button. The dark block underneath is the sign-off row that gets written the moment you press.\n\nYou can see the defensibility before you commit to it.\n\nTap Approve — it works." },
+    { "id": "friction", "x": 490, "y": -190, "w": 390,
+      "text": "AND WHERE THE FRICTION GOES\n\nYour doctrine draws the line precisely: adverse findings get the human's own justification.\n\nSo Approve is one tap. Return demands you type, and the button stays dead until you have.\n\nEase for the common case. Friction exactly where a career is on the line." },
+    { "id": "roles", "x": 980, "y": -190, "w": 880,
+      "text": "SAME SYSTEM, THREE DIFFERENT JOBS\n\nThe FTO screen opens on who they rode with, not on a form. One tap to recommend an advancement — their name goes on it, your 72-hour clock starts.\n\nThe trainee screen answers the only question they actually have: what is still missing. Four bars per skill, the same four in the Chief's queue. Nothing is hidden from them and nothing is softened." },
+    { "id": "md", "x": 1960, "y": -190, "w": 390,
+      "text": "MEDICAL DIRECTION\n\nHe sees clinical questions and nothing else — no scores, no scoreboard, no personnel matters. Both sides of the disagreement, every attempt on the record, and his decision governs.\n\nThe empty space at the bottom is deliberate." },
+    { "id": "board", "x": 0, "y": 2040, "w": 760,
+      "text": "THE SCOREBOARD\n\nBuilt to be forwarded unedited. Counted from filed records, never from recollection.\n\nThe closing paragraph does the work the numbers can't: it says plainly that a backlog is a failure to document, not a judgement about the training. That is what makes it survivable to send up the chain." }
+  ],
+  "launch": { "view": "focused", "file": "Main.dc.html" }
+}

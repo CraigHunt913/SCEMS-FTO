@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+  <style>
+    body{margin:0;font-family:"Source Sans 3",system-ui,sans-serif;}
+    a{color:#1f5f9e;} a:hover{color:#12233b;}
+  </style>
+</helmet>
+
+<div style="width:760px;min-height:980px;background:{{t.paper}};color:{{t.ink}};display:flex;flex-direction:column;">
+
+  <!-- masthead: this is a document that gets forwarded -->
+  <div style="background:{{t.navy}};color:#fff;padding:26px 34px;display:flex;align-items:flex-start;gap:16px;">
+    <div style="width:44px;height:48px;background:{{t.gold}};clip-path:polygon(50% 0,100% 22%,100% 72%,50% 100%,0 72%,0 22%);flex:none;"></div>
+    <div style="flex:1;">
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Sumter County EMS &middot; Field Training</div>
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:2.1rem;line-height:1.05;margin-top:3px;">Training officer scoreboard</div>
+      <div style="font-size:.95rem;color:#cfdae8;margin-top:5px;">Week ending 21 August 2026 &middot; filed by the system, not by hand</div>
+    </div>
+  </div>
+
+  <div style="padding:26px 34px 34px;">
+
+    <!-- the number that matters -->
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:1px;background:{{t.line}};border:1px solid {{t.line}};border-radius:10px;overflow:hidden;margin-bottom:26px;">
+      <div style="background:{{t.paper}};padding:18px 20px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:2rem;line-height:1;color:{{t.stop}};">11 / 22</div>
+        <div style="font-size:.85rem;color:{{t.ink3}};margin-top:6px;line-height:1.4;">officers filed every evaluation they owed</div>
+      </div>
+      <div style="background:{{t.paper}};padding:18px 20px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:2rem;line-height:1;">31</div>
+        <div style="font-size:.85rem;color:{{t.ink3}};margin-top:6px;line-height:1.4;">evaluations filed against 44 shifts worked</div>
+      </div>
+      <div style="background:{{t.paper}};padding:18px 20px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:2rem;line-height:1;color:{{t.warn}};">4</div>
+        <div style="font-size:.85rem;color:{{t.ink3}};margin-top:6px;line-height:1.4;">extreme scores filed with no narrative behind them</div>
+      </div>
+    </div>
+
+    <!-- the roll -->
+    <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin-bottom:11px;">By officer, in order of what is owed</div>
+
+    <div style="border:1px solid {{t.line}};border-radius:10px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:180px 1fr 78px 78px;gap:0;background:{{t.surface}};border-bottom:1px solid {{t.line}};padding:9px 16px;">
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;">Officer</div>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;">Filed against shifts worked</div>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;text-align:right;">Owed</div>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;text-align:right;">Oldest</div>
+      </div>
+
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:180px 1fr 78px 78px;gap:0;padding:11px 16px;border-bottom:1px solid {{t.line}};align-items:center;background:{{r.rowBg}};">
+          <div>
+            <div style="font-weight:600;font-size:.95rem;line-height:1.2;">{{r.name}}</div>
+            <div style="font-size:.76rem;color:{{t.ink3}};">{{r.shift}} &middot; {{r.trainees}}</div>
+          </div>
+          <div style="padding-right:18px;">
+            <div style="height:9px;background:{{t.line}};border-radius:5px;overflow:hidden;">
+              <div style="height:9px;width:{{r.pct}};background:{{r.barColor}};border-radius:5px;"></div>
+            </div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:.76rem;color:{{t.ink3}};margin-top:4px;">{{r.filed}} of {{r.worked}}</div>
+          </div>
+          <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:1.02rem;color:{{r.owedColor}};">{{r.owed}}</div>
+          <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:.86rem;color:{{r.ageColor}};">{{r.age}}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- the doctrine, stated once, at the bottom, where it belongs -->
+    <div style="margin-top:24px;padding:16px 18px;background:{{t.surface}};border-radius:10px;border-left:4px solid {{t.navy}};">
+      <div style="font-size:.9rem;color:{{t.ink2}};line-height:1.55;">
+        Every number here is counted from filed records, not from anybody&rsquo;s recollection. An officer with nothing owed has trained and documented it; an officer with a backlog has trained and not documented it, which leaves their trainee&rsquo;s progress unprovable. Neither is a judgement about the training itself &mdash; only about the record of it.
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:{{t.ink3}};margin-top:12px;">
+        generated 21 Aug 2026 06:00 &middot; SCEMS FTPD &middot; forwarded unedited
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+
+<script data-dc-script data-props='{
+  "dark":{"editor":"boolean","default":false,"section":"Theme"}
+}'>
+class Component extends DCLogic {
+  theme(){
+    return this.props.dark
+      ? { navy:'#0d1826', paper:'#161d27', surface:'#111821', line:'#2b3646',
+          ink:'#e9eef5', ink2:'#b3bfcf', ink3:'#7d8a9c', gold:'#d6ad50',
+          ok:'#6bbd8a', warn:'#d6ad50', stop:'#e08b82', stopBg:'#2a1917' }
+      : { navy:'#12233b', paper:'#ffffff', surface:'#f5f7fa', line:'#dfe5ec',
+          ink:'#12233b', ink2:'#4a5a70', ink3:'#7b8798', gold:'#b08a2e',
+          ok:'#2f7d4f', warn:'#8a6a14', stop:'#a8342b', stopBg:'#fbeeec' };
+  }
+
+  renderVals(){
+    const t = this.theme();
+    const data = [
+      { name:'Harley Simms',    shift:'B', trainees:'1 trainee',  filed:1, worked:6, age:'21d' },
+      { name:'Makayla Hall',    shift:'B', trainees:'1 trainee',  filed:2, worked:5, age:'17d' },
+      { name:'Ali Robinson',    shift:'A', trainees:'1 trainee',  filed:3, worked:5, age:'11d' },
+      { name:'Michael Hooks',   shift:'C', trainees:'1 trainee',  filed:4, worked:5, age:'6d'  },
+      { name:'Julieann White',  shift:'D', trainees:'released',   filed:5, worked:6, age:'5d'  },
+      { name:'Courtney Dean',   shift:'C', trainees:'1 trainee',  filed:5, worked:5, age:'—'   },
+      { name:'Macie Morse',     shift:'A', trainees:'1 trainee',  filed:6, worked:6, age:'—'   },
+      { name:'Stephen Porter',  shift:'B', trainees:'1 trainee',  filed:5, worked:5, age:'—'   }
+    ];
+
+    const rows = data.map(function (d) {
+      const owed = Math.max(0, d.worked - d.filed);
+      const pct = Math.round((d.filed / d.worked) * 100);
+      const bad = owed >= 3, mid = owed > 0 && owed < 3;
+      return {
+        name: d.name, shift: d.shift, trainees: d.trainees,
+        filed: d.filed, worked: d.worked, owed: owed, age: d.age,
+        pct: pct + '%',
+        barColor: bad ? t.stop : (mid ? t.warn : t.ok),
+        owedColor: bad ? t.stop : (mid ? t.warn : t.ink3),
+        ageColor: bad ? t.stop : t.ink3,
+        rowBg: bad ? t.stopBg : t.paper
+      };
+    });
+
+    return { t: t, rows: rows };
+  }
+}
+</script>
+</body>
+</html>

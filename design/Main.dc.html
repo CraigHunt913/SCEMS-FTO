@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+  <style>
+    body{margin:0;font-family:"Source Sans 3",system-ui,sans-serif;}
+    a{color:#1f5f9e;} a:hover{color:#12233b;}
+    .seg{display:flex;gap:2px;}
+    .seg i{display:block;width:7px;height:14px;border-radius:1px;}
+    button{font:inherit;}
+  </style>
+</helmet>
+
+<div style="width:390px;height:844px;background:{{t.surface}};color:{{t.ink}};display:flex;flex-direction:column;overflow:hidden;">
+
+  <!-- masthead -->
+  <div style="background:{{t.navy}};color:#fff;padding:13px 16px;display:flex;align-items:center;gap:11px;flex:none;">
+    <div style="width:30px;height:33px;background:{{t.gold}};clip-path:polygon(50% 0,100% 22%,100% 72%,50% 100%,0 72%,0 22%);flex:none;"></div>
+    <div style="line-height:1.1;">
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.02rem;">Field Training</div>
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Training Division</div>
+    </div>
+    <div style="margin-left:auto;font-family:'Barlow Semi Condensed',sans-serif;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:3px 8px;border-radius:3px;background:{{t.okBg}};color:{{t.ok}};border:1px solid {{t.ok}};">Live</div>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:18px 16px 30px;">
+
+    <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
+      <!-- cleared state -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:520px;text-align:center;gap:14px;">
+        <div style="width:64px;height:64px;border-radius:50%;border:2px solid {{t.ok}};display:flex;align-items:center;justify-content:center;">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="{{t.ok}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.5rem;">Queue clear</div>
+        <div style="color:{{t.ink3}};font-size:.93rem;max-width:250px;">{{cleared}} decisions recorded. Every one is on the sign-off log with your name against it.</div>
+        <button onClick="{{reset}}" style="margin-top:6px;background:none;border:1px solid {{t.line}};color:{{t.ink3}};padding:9px 16px;border-radius:7px;cursor:pointer;font-size:.88rem;">Run it again</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{hasWork}}" hint-placeholder-val="{{true}}">
+    <div>
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:3px;">
+        <h1 style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.72rem;margin:0;line-height:1.1;">Waiting on you</h1>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.9rem;color:{{t.ink3}};">{{count}}</div>
+      </div>
+      <p style="color:{{t.ink3}};font-size:.9rem;margin:0 0 18px;">Evidence met the bar. The call is yours.</p>
+
+      <!-- THE DECISION CARD -->
+      <div style="background:{{t.paper}};border:1px solid {{t.line}};border-radius:11px;box-shadow:{{t.shadow}};overflow:hidden;margin-bottom:20px;">
+
+        <div style="display:flex;">
+          <div style="width:5px;background:{{cur.levelColor}};flex:none;"></div>
+          <div style="flex:1;min-width:0;padding:15px 16px 0;">
+
+            <div style="display:flex;align-items:flex-start;gap:12px;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.13em;text-transform:uppercase;color:{{cur.levelColor}};font-weight:700;">{{cur.level}} &middot; {{cur.phase}}</div>
+                <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.44rem;line-height:1.15;margin-top:1px;">{{cur.skill}}</div>
+                <div style="font-size:.95rem;color:{{t.ink2}};margin-top:2px;">{{cur.trainee}}</div>
+              </div>
+              <!-- 72-hour ring -->
+              <div style="flex:none;width:52px;height:52px;position:relative;">
+                <svg width="52" height="52" viewBox="0 0 52 52">
+                  <circle cx="26" cy="26" r="22" fill="none" stroke="{{t.line}}" stroke-width="4"/>
+                  <circle cx="26" cy="26" r="22" fill="none" stroke="{{cur.clockColor}}" stroke-width="4"
+                          stroke-linecap="round" stroke-dasharray="{{cur.dash}}"
+                          transform="rotate(-90 26 26)"/>
+                </svg>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;">
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:.92rem;font-weight:500;color:{{cur.clockColor}};">{{cur.hours}}</div>
+                  <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.52rem;letter-spacing:.1em;text-transform:uppercase;color:{{t.ink3}};margin-top:1px;">hrs</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- THE FOUR CONVICTIONS -->
+            <div style="margin-top:15px;padding-top:13px;border-top:1px solid {{t.line}};">
+              <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin-bottom:9px;">Evidence against the catalog</div>
+              <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:11px 14px;">
+                <sc-for list="{{cur.bars}}" as="b" hint-placeholder-count="4">
+                  <div>
+                    <div class="seg" style="margin-bottom:4px;">
+                      <sc-for list="{{b.cells}}" as="c" hint-placeholder-count="3">
+                        <i style="background:{{c.fill}};"></i>
+                      </sc-for>
+                    </div>
+                    <div style="font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:{{t.ink}};">{{b.have}}<span style="color:{{t.ink3}};">/{{b.need}}</span></div>
+                    <div style="font-size:.72rem;color:{{t.ink3}};line-height:1.25;margin-top:1px;">{{b.label}}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- what the FTO said -->
+            <div style="margin-top:14px;padding:11px 12px;background:{{t.surface}};border-radius:8px;border-left:3px solid {{t.line}};">
+              <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;">{{cur.fto}} recommends</div>
+              <div style="font-size:.91rem;color:{{t.ink2}};margin-top:3px;line-height:1.4;">&ldquo;{{cur.says}}&rdquo;</div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- THE RECORD THIS WILL WRITE -->
+        <div style="margin:15px 16px 0;padding:11px 12px;background:{{t.navy}};border-radius:8px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9fb2c9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Approving writes this, permanently</div>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:.685rem;line-height:1.75;color:#cfdae8;">
+            <div>{{cur.recId}}</div>
+            <div>{{cur.recWho}}</div>
+            <div>{{cur.recWhy}}</div>
+            <div>{{cur.recEvid}}</div>
+          </div>
+        </div>
+
+        <!-- ONE CLICK -->
+        <div style="display:flex;gap:9px;padding:14px 16px 16px;">
+          <button onClick="{{approve}}"
+            style="flex:1;background:{{t.ok}};color:#fff;border:0;border-radius:9px;padding:15px 10px;font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.06rem;letter-spacing:.03em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Approve sign-off
+          </button>
+          <button onClick="{{ret}}"
+            style="flex:none;width:52px;min-height:52px;background:none;border:1px solid {{t.line}};color:{{t.ink3}};border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;"
+            title="Return for more evidence">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          </button>
+        </div>
+
+        <div style="padding:0 16px 15px;font-size:.755rem;color:{{t.ink3}};line-height:1.4;">
+          Returning it needs your reasons in your own words — that goes on {{cur.trainee}}&rsquo;s record.
+        </div>
+      </div>
+
+      <!-- the rest of the queue -->
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin:0 0 9px;">Behind it</div>
+      <sc-for list="{{rest}}" as="r" hint-placeholder-count="3">
+        <div style="display:flex;background:{{t.paper}};border:1px solid {{t.line}};border-radius:9px;margin-bottom:8px;overflow:hidden;">
+          <div style="width:4px;background:{{r.levelColor}};flex:none;"></div>
+          <div style="flex:1;min-width:0;padding:11px 13px;display:flex;align-items:center;gap:11px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:.94rem;line-height:1.25;">{{r.skill}}</div>
+              <div style="font-size:.8rem;color:{{t.ink3}};margin-top:1px;">{{r.trainee}} &middot; {{r.fto}}</div>
+            </div>
+            <div style="flex:none;text-align:right;">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:{{r.clockColor}};">{{r.hours}}h</div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+
+<script data-dc-script data-props='{
+  "dark":{"editor":"boolean","default":false,"section":"Theme"}
+}'>
+class Component extends DCLogic {
+  constructor(p){
+    super(p);
+    this.state = { i: 0, cleared: 0 };
+  }
+
+  theme(){
+    return this.props.dark
+      ? { navy:'#0d1826', paper:'#161d27', surface:'#111821', line:'#2b3646',
+          ink:'#e9eef5', ink2:'#b3bfcf', ink3:'#7d8a9c',
+          emt:'#6bbd8a', aemt:'#6aa8dd', pmd:'#e08b82', gold:'#d6ad50',
+          ok:'#6bbd8a', okBg:'#16261d', warn:'#d6ad50', stop:'#e08b82',
+          shadow:'0 1px 2px rgba(0,0,0,.5),0 10px 28px -18px rgba(0,0,0,.9)' }
+      : { navy:'#12233b', paper:'#ffffff', surface:'#f5f7fa', line:'#dfe5ec',
+          ink:'#12233b', ink2:'#4a5a70', ink3:'#7b8798',
+          emt:'#2f7d4f', aemt:'#1f5f9e', pmd:'#a8342b', gold:'#b08a2e',
+          ok:'#2f7d4f', okBg:'#eef6f0', warn:'#8a6a14', stop:'#a8342b',
+          shadow:'0 1px 2px rgba(18,35,59,.07),0 10px 28px -18px rgba(18,35,59,.45)' };
+  }
+
+  queue(){
+    return [
+      { skill:'12-lead acquisition', trainee:'Justin Carrasquillo', fto:'Macie Morse',
+        level:'EMT', phase:'Phase 3', hours:19,
+        says:'Three clean acquisitions on real patients, no prompting on lead placement. He is ready.',
+        ev:[[2,2,'successful reps'],[2,2,'done independently'],[3,2,'separate dates'],[2,2,'different FTOs']] },
+      { skill:'Advanced patient assessment', trainee:'Anicia Scipp', fto:'Stephen Porter',
+        level:'Advanced EMT', phase:'Phase 4', hours:41,
+        says:'She led the assessment on a difficult abdominal pain call and found what I would have missed.',
+        ev:[[4,2,'successful reps'],[3,2,'done independently'],[4,2,'separate dates'],[2,2,'different FTOs']] },
+      { skill:'CPAP application', trainee:'Colton Blackwell', fto:'Courtney Dean',
+        level:'EMT', phase:'Phase 3', hours:7,
+        says:'Set it up unprompted on a CHF patient and talked her through it while it went on.',
+        ev:[[2,2,'successful reps'],[2,2,'done independently'],[2,2,'separate dates'],[2,2,'different FTOs']] },
+      { skill:'Supraglottic airway', trainee:'Kaylie Vaughn', fto:'Michael Hooks',
+        level:'EMT', phase:'Phase 4', hours:58,
+        says:'First pass, correct size, confirmed placement without being asked to.',
+        ev:[[3,2,'successful reps'],[2,2,'done independently'],[2,2,'separate dates'],[3,2,'different FTOs']] }
+    ];
+  }
+
+  shape(q, t){
+    const lc = q.level === 'Paramedic' ? t.pmd : (q.level === 'Advanced EMT' ? t.aemt : t.emt);
+    const clock = q.hours <= 12 ? t.stop : (q.hours <= 24 ? t.warn : t.ink3);
+    return Object.assign({}, q, { levelColor: lc, clockColor: clock });
+  }
+
+  renderVals(){
+    const t = this.theme();
+    const all = this.queue();
+    const i = this.state.i;
+    const done = i >= all.length;
+    const q = all[i] || all[0];
+    const lc = q.level === 'Paramedic' ? t.pmd : (q.level === 'Advanced EMT' ? t.aemt : t.emt);
+    const clock = q.hours <= 12 ? t.stop : (q.hours <= 24 ? t.warn : t.ink3);
+    const frac = Math.max(0, Math.min(1, q.hours / 72));
+    const C = 2 * Math.PI * 22;
+
+    const bars = q.ev.map(function (e) {
+      const have = e[0], need = e[1], n = Math.max(need, have);
+      const cells = [];
+      for (let k = 0; k < n; k++) {
+        cells.push({ fill: k < have ? (k < need ? t.ok : lc) : t.line });
+      }
+      return { have: have, need: need, label: e[2], cells: cells };
+    });
+
+    const cur = {
+      skill: q.skill, trainee: q.trainee, fto: q.fto, level: q.level, phase: q.phase,
+      says: q.says, hours: q.hours, levelColor: lc, clockColor: clock,
+      dash: (C * frac).toFixed(1) + ' ' + C.toFixed(1),
+      bars: bars,
+      recId:   'SO-' + (4821 + i) + '   21 Aug 2026 19:42',
+      recWho:  'decided by  C. Hunt, FTO Program Director',
+      recWhy:  'rationale   thresholds met, FTO recommendation accepted',
+      recEvid: 'evidence    ' + q.ev.map(function (e) { return e[0]; }).join(' / ') + '   attested ' + q.fto
+    };
+
+    const self = this;
+    return {
+      t: t,
+      cur: cur,
+      count: (all.length - i) + ' of ' + all.length,
+      hasWork: !done,
+      done: done,
+      cleared: this.state.cleared,
+      rest: all.slice(i + 1).map(function (x) { return self.shape(x, t); }),
+      approve: function () { self.setState({ i: i + 1, cleared: self.state.cleared + 1 }); },
+      ret: function () { self.setState({ i: i + 1 }); },
+      reset: function () { self.setState({ i: 0, cleared: 0 }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

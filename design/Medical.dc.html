@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+  <style>
+    body{margin:0;font-family:"Source Sans 3",system-ui,sans-serif;}
+    a{color:#1f5f9e;} a:hover{color:#12233b;}
+    button{font:inherit;}
+  </style>
+</helmet>
+
+<div style="width:390px;height:844px;background:{{t.surface}};color:{{t.ink}};display:flex;flex-direction:column;overflow:hidden;">
+
+  <div style="background:{{t.navy}};color:#fff;padding:13px 16px;display:flex;align-items:center;gap:11px;flex:none;">
+    <div style="width:30px;height:33px;background:{{t.gold}};clip-path:polygon(50% 0,100% 22%,100% 72%,50% 100%,0 72%,0 22%);flex:none;"></div>
+    <div style="line-height:1.1;">
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.02rem;">Medical Direction</div>
+      <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#9fb2c9;font-weight:600;">Clinical questions only</div>
+    </div>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:18px 16px 30px;">
+
+    <h1 style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.72rem;margin:0 0 3px;line-height:1.1;">Referred to you</h1>
+    <p style="color:{{t.ink3}};font-size:.9rem;margin:0 0 18px;line-height:1.45;">Clinical readiness where training and the FTO disagree. Your decision governs.</p>
+
+    <!-- the case -->
+    <div style="background:{{t.paper}};border:1px solid {{t.line}};border-radius:11px;box-shadow:{{t.shadow}};overflow:hidden;margin-bottom:18px;">
+      <div style="display:flex;">
+        <div style="width:5px;background:{{t.pmd}};flex:none;"></div>
+        <div style="flex:1;min-width:0;padding:15px 16px;">
+
+          <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.pmd}};font-weight:700;">Paramedic &middot; Phase 3</div>
+          <div style="font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1.36rem;line-height:1.15;margin-top:1px;">Endotracheal intubation</div>
+          <div style="font-size:.93rem;color:{{t.ink2}};margin-top:2px;">Samantha Wilson</div>
+
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid {{t.line}};">
+            <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin-bottom:7px;">The disagreement</div>
+
+            <div style="display:flex;gap:10px;margin-bottom:11px;">
+              <div style="width:3px;background:{{t.ok}};border-radius:2px;flex:none;"></div>
+              <div>
+                <div style="font-size:.79rem;color:{{t.ink3}};font-weight:600;">Malcolm Armstrong, FTO</div>
+                <div style="font-size:.9rem;color:{{t.ink2}};line-height:1.45;margin-top:2px;">&ldquo;Two attempts, both successful, both with my hands ready but not on. I am comfortable.&rdquo;</div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;">
+              <div style="width:3px;background:{{t.stop}};border-radius:2px;flex:none;"></div>
+              <div>
+                <div style="font-size:.79rem;color:{{t.ink3}};font-weight:600;">C. Hunt, Training Division</div>
+                <div style="font-size:.9rem;color:{{t.ink2}};line-height:1.45;margin-top:2px;">&ldquo;Neither was a first-pass on a difficult airway. I want your read before this is signed.&rdquo;</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the evidence, plainly -->
+          <div style="margin-top:14px;padding:12px 13px;background:{{t.surface}};border-radius:8px;">
+            <div style="font-family:'Barlow Semi Condensed',sans-serif;font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;color:{{t.ink3}};font-weight:600;margin-bottom:8px;">Every attempt on the record</div>
+            <sc-for list="{{attempts}}" as="a" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:baseline;padding:5px 0;border-bottom:1px solid {{t.line}};">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:.76rem;color:{{t.ink3}};flex:none;width:52px;">{{a.date}}</div>
+                <div style="flex:1;min-width:0;font-size:.86rem;line-height:1.35;">{{a.what}}</div>
+                <div style="flex:none;width:9px;height:9px;border-radius:50%;background:{{a.dot}};"></div>
+              </div>
+            </sc-for>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="display:flex;gap:9px;padding:15px 16px 16px;">
+        <button style="flex:1;background:{{t.ok}};color:#fff;border:0;border-radius:9px;padding:14px 8px;font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1rem;cursor:pointer;min-height:50px;">Clinically ready</button>
+        <button style="flex:1;background:none;border:1px solid {{t.stop}};color:{{t.stop}};border-radius:9px;padding:14px 8px;font-family:'Barlow Semi Condensed',sans-serif;font-weight:700;font-size:1rem;cursor:pointer;min-height:50px;">Not yet</button>
+      </div>
+      <div style="padding:0 16px 15px;font-size:.77rem;color:{{t.ink3}};line-height:1.45;">
+        Either way you type why. It governs, and it goes on the record under your name.
+      </div>
+    </div>
+
+    <!-- nothing else is shown to you -->
+    <div style="border:1px dashed {{t.line}};border-radius:10px;padding:15px;text-align:center;">
+      <div style="font-size:.88rem;color:{{t.ink3}};line-height:1.5;">
+        Nothing else on this screen. No scores, no scoreboard, no personnel matters &mdash; those are not clinical questions.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+
+<script data-dc-script data-props='{
+  "dark":{"editor":"boolean","default":false,"section":"Theme"}
+}'>
+class Component extends DCLogic {
+  theme(){
+    return this.props.dark
+      ? { navy:'#0d1826', paper:'#161d27', surface:'#111821', line:'#2b3646',
+          ink:'#e9eef5', ink2:'#b3bfcf', ink3:'#7d8a9c', gold:'#d6ad50',
+          pmd:'#e08b82', ok:'#6bbd8a', warn:'#d6ad50', stop:'#e08b82',
+          shadow:'0 1px 2px rgba(0,0,0,.5),0 10px 28px -18px rgba(0,0,0,.9)' }
+      : { navy:'#12233b', paper:'#ffffff', surface:'#f5f7fa', line:'#dfe5ec',
+          ink:'#12233b', ink2:'#4a5a70', ink3:'#7b8798', gold:'#b08a2e',
+          pmd:'#a8342b', ok:'#2f7d4f', warn:'#8a6a14', stop:'#a8342b',
+          shadow:'0 1px 2px rgba(18,35,59,.07),0 10px 28px -18px rgba(18,35,59,.45)' };
+  }
+
+  renderVals(){
+    const t = this.theme();
+    return {
+      t: t,
+      attempts: [
+        { date:'02 Aug', what:'Assisted &mdash; hands on the blade for placement', dot:t.warn },
+        { date:'09 Aug', what:'Successful, prompted on tube depth', dot:t.warn },
+        { date:'16 Aug', what:'Successful, unprompted, routine airway', dot:t.ok }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
