@@ -120,6 +120,15 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .more{background:none;border:1px solid var(--line);border-radius:7px;width:100%;padding:10px;
   font:inherit;font-size:.88rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;}
 .more:hover{border-color:var(--ink-3);color:var(--ink);}
+/* One box instead of a list. Native <select> on purpose: on a phone that is
+   the platform's own picker, which beats anything built here, and it costs
+   one line of screen no matter how many names are in it. */
+.pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  background-color:var(--paper);color:inherit;border:1px solid var(--line);border-radius:9px;
+  padding:14px 40px 14px 14px;font:inherit;cursor:pointer;margin-bottom:10px;min-height:50px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%237b8798' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px;}
+.pick:hover{border-color:var(--ink-3);}
 .foot{padding:20px 18px 32px;border-top:1px solid var(--line);color:var(--ink-3);font-size:.8rem;background:var(--surface);}
 :focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
@@ -163,6 +172,28 @@ function el(id){ return document.getElementById(id); }
    the quotes and backslashes; esc() handles the angle brackets and the
    double quote that would end the attribute. */
 function jsStr(v){ return esc(JSON.stringify(String(v==null?'':v))); }
+
+/* A list nobody scrolls is worse than a control they can use. Anything longer
+   than a handful of rows becomes one box: open it, pick, go.
+
+   Leave `selected` undefined and the box snaps back to its placeholder after
+   it fires, because the choice was a destination, not a setting. Pass one and
+   it stays put, because the choice is what the screen is now showing. */
+function picker(id, placeholder, items, handler, selected){
+  var stay = (selected !== undefined);
+  var h = '<select class="pick" id="'+esc(id)+'" aria-label="'+esc(placeholder)+'"'+
+          ' onchange="'+handler+'(this.value)'+(stay ? '' : ';this.selectedIndex=0')+'">'+
+          '<option value="">'+esc(placeholder)+'</option>';
+  items.forEach(function(it){
+    h += '<option value="'+esc(it.value)+'"'+
+         (stay && String(selected) === String(it.value) ? ' selected' : '')+
+         '>'+esc(it.label)+'</option>';
+  });
+  return h + '</select>';
+}
+function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }
+function pickRecord(v){ if (v === '') return; openRecord(v); }
+function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
   el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging'
@@ -265,14 +296,16 @@ function paintTrainee(d){
       h += '</div>';
     }
     if (building.length){
-      h += '<button class="more" onclick="toggleShow(\'skills\')">'+
-           (shown('skills') ? 'Hide' : 'Show')+' the '+building.length+' still building</button>';
-      if (shown('skills')){
-        h += '<div class="panel">';
-        building.forEach(function(s){
-          h += kv(s.skill, '<span class="chip c-mute">'+esc(s.successful)+' reps</span>');
-        });
-        h += '</div>';
+      h += picker('pick-skill', building.length+' still building\u2026',
+        building.map(function(s,i){ return { value: String(i), label: s.skill }; }),
+        'pickSkill', (S.skillPick == null ? '' : S.skillPick));
+      var picked = (S.skillPick == null) ? null : building[S.skillPick];
+      if (picked){
+        h += '<div class="panel">'+
+             kv('Successful reps', String(picked.successful))+
+             kv('Independent reps', String(picked.independent))+
+             kv('Where it stands', '<span class="chip c-mute">'+
+                esc(picked.readiness || 'building')+'</span>')+'</div>';
       }
     }
   }
@@ -433,11 +466,15 @@ function paintDivision(d){
     h += '<h2>Needs a look</h2>';
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
-  if (quiet.length){
-    h += '<button class="more" onclick="toggleShow(\'quiet\')">'+
-         (shown('quiet') ? 'Hide' : 'Show')+' '+quiet.length+
-         (quiet.length===1?' trainee with':' trainees with')+' nothing outstanding</button>';
-    if (shown('quiet')) quiet.forEach(function(p){ h += personCard(p.t, p.i, ''); });
+  if ((d.people||[]).length){
+    h += '<h2>Anyone else</h2>';
+    h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
+         ' have nothing outstanding. Pick a name to open their record.</p>';
+    h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
+      return { value: String(i),
+               label: t.name + ' \u2014 ' + (t.phase || 'no phase set') +
+                      (t.needs ? ' \u00b7 needs a look' : '') };
+    }), 'pickPerson');
   }
 
   if (d.forms && d.forms.length) h += '<h2>Forms</h2>'+formCards(d.forms);
@@ -497,23 +534,15 @@ function housekeeping(d){
   if (!subs.length && !dupes.length) return '';
   var h = '<h2>Housekeeping</h2>';
   if (subs.length){
-    h += '<button class="more" onclick="toggleShow(\'sameday\')">'+
-         (shown('sameday') ? 'Hide' : 'Show')+' '+subs.length+' same-day '+
-         (subs.length===1?'submission':'submissions')+' to settle</button>';
-    if (shown('sameday')){
-      h += '<div class="note n-info"><b>Both are kept</b>Nothing has been removed. These are the '+
-           'places where two submissions of the same kind landed on the same day and somebody '+
-           'has to say which one stands. Open the record to read them side by side.</div>';
-      subs.forEach(function(x){
-        h += '<button class="card act" onclick="openRecord('+jsStr(x.trainee)+')">'+
-          '<span class="dot soon"></span><span class="bd">'+
-          '<span class="h">'+esc(x.trainee)+'</span>'+
-          '<span class="m">'+esc(x.source)+(x.group?' &middot; '+esc(x.group):'')+
-          ' &middot; '+esc(x.when)+'</span>'+
-          '<span class="m">'+x.count+' submissions on the one day</span>'+
-          '</span><span class="go">&rsaquo;</span></button>';
-      });
-    }
+    h += '<p class="sub" style="margin-bottom:9px">'+subs.length+' same-day '+
+         (subs.length===1?'submission':'submissions')+', where two of a kind landed on one '+
+         'day and somebody has to say which stands. Both are kept. Pick one to read them '+
+         'side by side.</p>';
+    h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x){
+      return { value: x.trainee,
+               label: x.trainee + ' \u2014 ' + x.source + (x.group ? ' \u00b7 ' + x.group : '') +
+                      ' \u00b7 ' + x.when + ' (' + x.count + ')' };
+    }), 'pickRecord');
   }
   if (dupes.length){
     h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'record':'records')+
@@ -523,8 +552,6 @@ function housekeeping(d){
   return h;
 }
 
-function toggleShow(k){ S.show = S.show || {}; S.show[k] = !S.show[k]; render(); }
-function shown(k){ return !!(S.show||{})[k]; }
 function openPerson(i){
   var t = (BOOT.data.people||[])[i];
   if (!t) return;

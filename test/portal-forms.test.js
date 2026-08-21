@@ -815,44 +815,50 @@ let api3 = null;
 try {
   api3 = new Function('document', 'window', 'alert', 'google',
     body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot)) +
-    '\nreturn { S: S, render: render, toggleShow: toggleShow };')
+    '\nreturn { S: S, render: render, pickPerson: pickPerson, pickRecord: pickRecord };')
     (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
 } catch (e) { api3 = null; }
 ok(!!api3, 'the Division screen renders');
 
+// a <select> collapses to one line however many options it holds, so the
+// question is never "is the name on the page" but "is it a ROW on the page".
+function cards(html) { return html.replace(/<select[\s\S]*?<\/select>/g, ''); }
+
 if (api3) {
   let html = nodes['view'].innerHTML;
+  const rows = cards(html);
 
   ok(/Nothing waiting on you/.test(html),
      'with no sign-offs pending it says so at the top, in one line');
-  ok(/Latavia Cole/.test(html), 'the one trainee who needs something is named');
-  ok(/no training officer is named/i.test(html), 'with the reason on her card');
-  ok(!/Quiet Person 1/.test(html),
-     'and the nine with nothing outstanding are NOT a list of names');
-  ok(/9 trainees with nothing outstanding/.test(html),
-     'they are one line with a count behind a button');
-  ok(/openPerson\(9\)/.test(html),
-     'and the card that IS shown carries her index into people, not into the filtered list');
+  ok(/Latavia Cole/.test(rows), 'the one trainee who needs something gets a row');
+  ok(/no training officer is named/i.test(rows), 'with the reason on it');
+  ok(!/Quiet Person 1/.test(rows),
+     'and the nine with nothing outstanding get no rows at all');
+  ok(/9 of 10 have nothing outstanding/.test(html), 'they are one sentence');
+
+  ok(/<select class="pick" id="pick-person"/.test(html),
+     'and one dropdown reaches any of them');
+  ok((html.match(/<option value="\d+"/g) || []).length === 10,
+     'which carries every active trainee, the flagged one included');
+  ok(/<option value="9">Latavia Cole \u2014 Phase 1 \u00b7 needs a look<\/option>/.test(html) ||
+     /<option value="9">Latavia Cole — Phase 1 · needs a look<\/option>/.test(html),
+     'each option says who, where they are, and whether they need a look');
+  ok(/onchange="pickPerson\(this.value\);this.selectedIndex=0"/.test(html),
+     'picking one is a destination, so the box snaps back to its placeholder');
+  ok(/openPerson\(9\)/.test(rows),
+     'the row that IS shown indexes into people, not into the filtered list');
 
   // the row numbers. this is the thing that shipped.
-  ok(!/\b26[0-4]\b/.test(html), 'no spreadsheet row number appears anywhere on the screen');
+  ok(!/\b2[0-9][0-9]\b/.test(html), 'no spreadsheet row number appears anywhere on the screen');
   ok(!/19 SKILL EVIDENCE LOG/.test(html), 'nor the name of a raw tab');
-  ok(!/Elizabeth McInville/.test(html),
-     'the same-day submissions are not listed until they are asked for');
-  ok(/1 same-day submission to settle/.test(html),
-     'they are a count with a button');
-
-  api3.toggleShow('sameday');
-  html = nodes['view'].innerHTML;
-  ok(/Elizabeth McInville/.test(html), 'opening it shows whose record needs the call');
-  ok(/9 submissions on the one day/.test(html), 'and how many landed');
-  ok(!/\b26[0-4]\b/.test(html), 'still with no row numbers, even opened');
-  ok(/openRecord\(/.test(html), 'and it opens the record, where both are readable side by side');
-
-  api3.toggleShow('quiet');
-  html = nodes['view'].innerHTML;
-  ok(/Quiet Person 1/.test(html), 'asking for the quiet nine shows them');
-  ok(/openPerson\(0\)/.test(html), 'each still indexed into the real people list');
+  ok(!/Elizabeth McInville/.test(rows), 'the same-day submissions are not a stack of cards');
+  ok(/<select class="pick" id="pick-sameday"/.test(html), 'they are a dropdown');
+  ok(/Elizabeth McInville \u2014 Skill logged/.test(html) ||
+     /Elizabeth McInville — Skill logged/.test(html),
+     'whose options name the person and the kind');
+  ok(/\(9\)<\/option>/.test(html), 'and how many landed that day');
+  ok(/onchange="pickRecord\(this.value\)/.test(html),
+     'picking one opens that record, where both are readable side by side');
 }
 
 // ---------------------------------------------------------------- //
@@ -880,6 +886,62 @@ if (api4) {
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
   ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
      "and an apostrophe in a name survives instead of being stripped out");
+}
+
+// ---------------------------------------------------------------- //
+section('A trainee sees what is out of their hands, not the whole catalogue');
+// ---------------------------------------------------------------- //
+const manySkills = [];
+for (let i = 1; i <= 18; i++) {
+  manySkills.push({ skill: 'Building skill ' + i, readiness: 'IN PROGRESS',
+                    signed: false, successful: i % 4, independent: 0 });
+}
+manySkills.push({ skill: 'Blood glucose measurement', readiness: 'SIGNED OFF',
+                  signed: true, successful: 4, independent: 3 });
+manySkills.push({ skill: 'IV access', readiness: 'READY FOR VALIDATION',
+                  signed: false, successful: 5, independent: 3 });
+
+const skillBoot = { version: PORTAL.VERSION, mode: 'PRODUCTION',
+  viewer: { email: 'jamie@example.org', role: 'TRAINEE',
+            name: 'Jamie Rivers', ok: true, why: '' },
+  data: { name: 'Jamie Rivers', level: 'EMT', levelKey: 'emt', phase: 'Phase 2',
+          fto: 'Dana Whitlock', phaseStart: '', lastEval: '3 days ago',
+          signed: 1, applicable: 20, percent: 5, waiting: [], coaching: [],
+          skills: manySkills, forms: [], freshness: [] },
+  error: '' };
+
+let api5 = null;
+try {
+  api5 = new Function('document', 'window', 'alert', 'google',
+    body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(skillBoot)) +
+    '\nreturn { S: S, render: render, pickSkill: pickSkill };')
+    (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
+} catch (e) { api5 = null; }
+ok(!!api5, 'the trainee screen renders with twenty skills on file');
+
+if (api5) {
+  let html = nodes['view'].innerHTML;
+  const rows = cards(html);
+
+  ok(/1 signed off &middot; 1 with the Division &middot; 18 still building/.test(html) ||
+     /1 signed off · 1 with the Division · 18 still building/.test(html),
+     'the three counts are one line');
+  ok(/IV access/.test(rows),
+     'the skill sitting with the Division is on the page, because it is out of their hands');
+  ok(!/Building skill 1</.test(rows),
+     'the eighteen still building are not eighteen rows');
+  ok(/<select class="pick" id="pick-skill"/.test(html), 'they are a dropdown');
+  ok(/18 still building/.test(html), 'labelled with the count');
+  ok((html.match(/<option value="\d+">Building skill/g) || []).length === 18,
+     'holding every one of them');
+  ok(!/selectedIndex=0/.test((html.match(/id="pick-skill"[^>]*/) || [''])[0]),
+     'and this one stays where you put it, because the choice is what is being shown');
+
+  api5.pickSkill('2');
+  html = nodes['view'].innerHTML;
+  ok(/Successful reps/.test(html) && /Independent reps/.test(html),
+     'picking a skill shows its reps underneath');
+  ok(/<option value="2"[^>]*selected/.test(html), 'with that skill still selected in the box');
 }
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
