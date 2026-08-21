@@ -13074,3 +13074,54 @@ function catchUpUnprocessedV20_2_(previewOnly) {
   Logger.log(msg);
   return msg;
 }
+
+/** The two safe tracker jobs, in one go.
+ *
+ *  Neither sends mail and neither touches delivery mode, so this is safe to
+ *  run while still in test mode - which is where it should be run.
+ *
+ *  Turning mail on stays a separate, deliberate act: run whichMode() to read
+ *  who starts receiving, then goLive() when you mean it. */
+function FINISH_TRACKER() {
+  var L = ['FINISHING THE TRACKER', ''];
+
+  L.push('1. The responses nothing was listening for');
+  try {
+    String(catchUpUnprocessed()).split('\n').forEach(function (x) {
+      if (x.trim()) L.push('   ' + x);
+    });
+  } catch (e) {
+    L.push('   FAILED: ' + String(e.message || e));
+    L.push('   Nothing below was run. Fix that and run this again.');
+    var early = L.join('\n');
+    Logger.log(early);
+    return early;
+  }
+
+  L.push('');
+  L.push('2. The form dropdowns, so they list who is actually here');
+  try {
+    String(refreshDropdowns()).split('\n').slice(0, 12).forEach(function (x) {
+      if (x.trim()) L.push('   ' + x);
+    });
+  } catch (e) {
+    L.push('   FAILED: ' + String(e.message || e));
+    L.push('   The catch-up above still stands.');
+  }
+
+  L.push('');
+  L.push('---------------------------------------------------------');
+  L.push('Mail is still in TEST MODE, which is deliberate. Everything above');
+  L.push('reroutes to ' + CONFIG.TEST_INBOX + ' and reached nobody else.');
+  L.push('');
+  L.push('Look at that inbox. If what arrived is what you would want a real');
+  L.push('person to get, then:');
+  L.push('  whichMode()   reads out exactly who starts receiving');
+  L.push('  goLive()      stops the rerouting');
+  L.push('');
+  L.push('backToTestMode() reverses it at any time.');
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}

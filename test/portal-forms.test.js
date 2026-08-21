@@ -625,6 +625,59 @@ ok(/read only/i.test(threw(() => approveSignoffV1(PORTAL.HEADER_ROW + 1, 'a good
    'and the everyday actions refuse again');
 
 // ---------------------------------------------------------------- //
+section('FINISH does the whole portal side, or stops and says why');
+// ---------------------------------------------------------------- //
+// START names the next thing to run. Eight of those across two script
+// editors is not easier than one long instruction, it is just better
+// documented. This does the portal side end to end.
+
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+as('chief@example.org');
+setUpStaging();                                   // turns the form links off
+pointAtProductionReadOnly();
+tab(PORTAL.TAB.EVIDENCE, ['TRAINEE','SKILL','EVENT DATE'], []);
+tab(PORTAL.TAB.SIGNOFF, ['TRAINEE','SKILL','DECIDED BY'], []);
+disableFormLinks();                               // as if the sandbox left them off
+PROPS[PORTAL_OTHER_IDS_PROPERTY] = 'PROD-BOOK-COPY';
+OPENABLE['PROD-BOOK-COPY'] = 'An old copy';
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+
+let fin = FINISH();
+ok(!PROPS[PORTAL_OTHER_IDS_PROPERTY], 'it stops reading the stale copy');
+ok(/An old copy/.test(fin), 'naming it, so the change is not silent');
+ok(/put back in/.test(fin) || /PORTAL_OTHER_SPREADSHEET_IDS/.test(fin),
+   'and saying how to undo that');
+ok(formLinksLiveV1_() === true, 'it switches the form links back on');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_LIVE, 'and goes live');
+ok(/NOW DEPLOY/.test(fin), 'then says the one step no code can do');
+ok(/Execute as/.test(fin) && /not "Anyone"/.test(fin),
+   'with the two settings that decide whether live is safe');
+ok(/TRACKER/.test(fin) && /catchUpUnprocessed/.test(fin),
+   'and what is still owed in the OTHER script editor');
+
+// running it again is harmless
+fin = FINISH();
+ok(/Already live/.test(fin), 'a second run is a no-op that says so');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_LIVE, 'and nothing regresses');
+
+// it stops at the first thing that needs a person, keeping what it did
+world();
+PROPS['PORTAL_PRODUCTION_SPREADSHEET_ID'] = 'PROD-BOOK';
+as('chief@example.org');
+pointAtProductionReadOnly();
+disableFormLinks();
+// no EVIDENCE / SIGNOFF tab, so goLive must refuse
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; PEOPLE_CACHE_V1 = null;
+fin = FINISH();
+ok(/STOPPED BEFORE GOING LIVE/.test(fin), 'it stops rather than pressing on');
+ok(/tab\(s\) the portal reads/.test(fin), 'naming exactly what stopped it');
+ok(PROPS[PORTAL.PROPERTY_MODE] === PORTAL.MODE_PRODUCTION, 'and does not go live');
+ok(formLinksLiveV1_() === true,
+   'while the work it DID do stands - it does not roll back what already worked');
+ok(/run FINISH again/.test(fin), 'and says it picks up where it left off');
+
+// ---------------------------------------------------------------- //
 section('Getting back to the sandbox');
 // ---------------------------------------------------------------- //
 world();

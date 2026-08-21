@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 374e9187
+ * Build 4e06ba77
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -590,6 +590,136 @@ function WHAT_IS_WAITING() { return unprocessedResponses(); }
 
 /** Somebody changed their name. Set PORTAL_RENAME first. */
 function FIX_A_NAME_EVERYWHERE() { return applyRename(); }
+
+/** Everything left, in one go.
+ *
+ *  START tells you the next thing to run. That was meant to make this easy
+ *  and instead produced a queue of eight functions across two script editors,
+ *  which is not easier, it is just better documented. This does the portal
+ *  side end to end.
+ *
+ *  Every step is one this project already offers on its own, each is named as
+ *  it happens, and each is reversible by the undo already beside it. It stops
+ *  at the first thing that genuinely needs a person rather than pressing on.
+ *
+ *  It does NOT touch the tracker's own script, and it does NOT deploy - a
+ *  deployment is a click in a menu no code can reach. */
+function FINISH() {
+  var L = [];
+  function say(s) { L.push(s === undefined ? '' : s); }
+  function rule() { say('---------------------------------------------------------'); }
+
+  say('FINISHING THE PORTAL');
+  say(PORTAL.VERSION + (typeof PORTAL_BUILD === 'string' ? '   build ' + PORTAL_BUILD : ''));
+  rule();
+  say();
+
+  var props = PropertiesService.getScriptProperties();
+  var did = [], stopped = '';
+
+  /* 1. stop reading a spreadsheet that only disagrees with this one */
+  try {
+    var others = otherBookIdsV1_();
+    if (others.length) {
+      var names = others.map(function (o) {
+        try { return SpreadsheetApp.openById(o).getName(); } catch (e) { return o; } });
+      props.deleteProperty(PORTAL_OTHER_IDS_PROPERTY);
+      forgetTabsV1_(); PEOPLE_CACHE_V1 = null;
+      did.push('Stopped reading ' + names.join(', ') + '.');
+      did.push('    Nothing in it was missing from here. To read it again, put');
+      did.push('    ' + others.join(', ') + ' back in ' + PORTAL_OTHER_IDS_PROPERTY + '.');
+    }
+  } catch (e) {}
+
+  /* 2. the form links, which the sandbox switched off days ago */
+  try {
+    if (!isPracticeV1_() && !formLinksLiveV1_()) {
+      enableFormLinks();
+      did.push('Switched the form links back on. setUpStaging turned them off so a');
+      did.push('    practice user could not submit to a real form; that reason is gone.');
+    }
+  } catch (e) {}
+
+  /* 3. a rename that is set and has something left to do */
+  try {
+    var rp = renamePlanV1_();
+    if (!rp.problem && rp.cells.length) {
+      var out = applyRename();
+      var n = (String(out).match(/(\d+) cell\(s\) changed/) || [, '0'])[1];
+      did.push(n + ' cell(s) renamed: ' +
+        rp.pairs.map(function (x) { return x.from + ' -> ' + x.to; }).join(', ') + '.');
+      if (/THE SHEET REFUSED/.test(String(out))) {
+        did.push('    Some cells were refused by a dropdown. Run applyRename() on its');
+        did.push('    own to read the detail. undoRename() reverses what did go in.');
+      }
+    }
+  } catch (e) {}
+
+  /* 4. assignments waiting in the property */
+  try {
+    var ap = assignPlanV1_();
+    if (!ap.problem && ap.set.length) {
+      assignFto();
+      did.push(ap.set.length + ' trainee(s) assigned: ' +
+        ap.set.map(function (x) { return x.trainee + ' -> ' + x.fto; }).join(', ') + '.');
+    }
+  } catch (e) {}
+
+  /* 5. and switch it on */
+  var wasLive = safeModeV1_() === PORTAL.MODE_LIVE;
+  if (!wasLive) {
+    try {
+      goLive();
+      did.push('LIVE. A trainee can file their own reflection and you can approve a');
+      did.push('    sign-off. goReadOnly() puts that back.');
+    } catch (e) {
+      stopped = String(e.message || e);
+    }
+  } else {
+    did.push('Already live.');
+  }
+
+  if (did.length) {
+    say('DONE');
+    did.forEach(function (d) { say('  ' + d); });
+    say();
+  } else {
+    say('There was nothing left to do on this side.');
+    say();
+  }
+
+  if (stopped) {
+    rule();
+    say('STOPPED BEFORE GOING LIVE');
+    say();
+    String(stopped).split('\n').forEach(function (x) { say('  ' + x); });
+    say();
+    say('Everything above this line was done and stands. Fix that one thing and');
+    say('run FINISH again - it picks up where it left off.');
+    return noteV1_(L.join('\n'));
+  }
+
+  rule();
+  say('NOW DEPLOY. This is the only step no code can do for you.');
+  say();
+  say('  Deploy > Manage deployments > pencil > Version: New version > Deploy');
+  say();
+  say('Until you do, the link serves the code as it was when you last deployed,');
+  say('so none of the above reaches anybody.');
+  say();
+  say('Check these two on that screen:');
+  say('  Execute as      Me (' + (whoIsAskingV1_() || 'you') + ')');
+  say('  Who has access  Anyone with a Google Account   -- not "Anyone"');
+  say();
+  say('Then open the link yourself. The footer names the build, so you can see');
+  say('whether what you pasted is what is being served.');
+  say();
+  say('Still to do in the TRACKER\'s script editor, not this one:');
+  say('  catchUpUnprocessed   the 12 responses waiting');
+  say('  refreshDropdowns     so the forms list the right people');
+  say('  goLive               mail out of test mode - read whichMode() first');
+  return noteV1_(L.join('\n'));
+}
 
 /** The deployment settings, and how to check it actually worked. */
 function GO_LIVE() { return START(); }
@@ -7341,7 +7471,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '374e9187';
+var PORTAL_BUILD = '4e06ba77';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
