@@ -7,131 +7,206 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <style>
+/* ------------------------------------------------------------------ *
+   Sumter County EMS — Field Training
+
+   Built for one hand, at the end of a shift, on a phone, by somebody who
+   has been awake for fourteen hours. Every rule below follows from that.
+
+   The colour of a card's spine is the only thing that has to be read from
+   across a room: red means it wants you now, amber means soon, and no spine
+   at all means it is fine and you can stop looking at it. Everything else
+   is there to be read once you have decided to read it.
+ * ------------------------------------------------------------------ */
 :root{
-  --navy:#12233b; --navy-2:#1b3454;
-  --paper:#fff; --surface:#f5f7fa; --line:#dfe5ec;
-  --ink:#12233b; --ink-2:#4a5a70; --ink-3:#7b8798;
+  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;
+  --paper:#fff; --surface:#f4f6f9; --raised:#fff; --line:#e2e7ee; --line-2:#eef1f5;
+  --ink:#12233b; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;
   --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#b08a2e;
-  --ok:#2f7d4f; --ok-bg:#eef6f0;
-  --warn:#8a6a14; --warn-bg:#fdf6e4;
-  --stop:#a8342b; --stop-bg:#fbeeec;
-  --shadow:0 1px 2px rgba(18,35,59,.07),0 10px 28px -18px rgba(18,35,59,.45);
+  --ok:#2f7d4f; --ok-bg:#eaf4ee;
+  --warn:#8a6a14; --warn-bg:#fdf5e2;
+  --stop:#a8342b; --stop-bg:#fbeceb;
+  --r:13px; --r-sm:9px;
+  --lift:0 1px 1px rgba(18,35,59,.04), 0 2px 6px -2px rgba(18,35,59,.10);
+  --lift-2:0 2px 4px rgba(18,35,59,.06), 0 14px 32px -18px rgba(18,35,59,.55);
+  --page:radial-gradient(1200px 600px at 50% -10%, #eaeff6 0%, #f4f6f9 55%, #eef1f6 100%);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --navy:#0d1826; --navy-2:#16283f;
-  --paper:#161d27; --surface:#111821; --line:#2b3646;
-  --ink:#e9eef5; --ink-2:#b3bfcf; --ink-3:#7d8a9c;
-  --emt:#6bbd8a; --aemt:#6aa8dd; --pmd:#e08b82; --gold:#d6ad50;
-  --ok:#6bbd8a; --ok-bg:#16261d; --warn:#d6ad50; --warn-bg:#272113;
-  --stop:#e08b82; --stop-bg:#2a1917;
-  --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 28px -18px rgba(0,0,0,.9);
+  --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;
+  --paper:#171e29; --surface:#0f151d; --raised:#1b2331; --line:#2a3444; --line-2:#212a37;
+  --ink:#e9eef5; --ink-2:#b6c2d2; --ink-3:#8593a6; --ink-4:#6a778a;
+  --emt:#6bbd8a; --aemt:#6aa8dd; --pmd:#e58f86; --gold:#d6ad50;
+  --ok:#6bbd8a; --ok-bg:#15251c; --warn:#d6ad50; --warn-bg:#251f12;
+  --stop:#e58f86; --stop-bg:#2a1816;
+  --lift:0 1px 1px rgba(0,0,0,.35), 0 2px 6px -2px rgba(0,0,0,.5);
+  --lift-2:0 2px 4px rgba(0,0,0,.45), 0 14px 32px -18px rgba(0,0,0,.95);
+  --page:radial-gradient(1200px 600px at 50% -10%, #16202d 0%, #0f151d 55%, #0c1219 100%);
 }}
 :root[data-theme="dark"]{
-  --navy:#0d1826; --navy-2:#16283f;
-  --paper:#161d27; --surface:#111821; --line:#2b3646;
-  --ink:#e9eef5; --ink-2:#b3bfcf; --ink-3:#7d8a9c;
-  --emt:#6bbd8a; --aemt:#6aa8dd; --pmd:#e08b82; --gold:#d6ad50;
-  --ok:#6bbd8a; --ok-bg:#16261d; --warn:#d6ad50; --warn-bg:#272113;
-  --stop:#e08b82; --stop-bg:#2a1917;
-  --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 28px -18px rgba(0,0,0,.9);
+  --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;
+  --paper:#171e29; --surface:#0f151d; --raised:#1b2331; --line:#2a3444; --line-2:#212a37;
+  --ink:#e9eef5; --ink-2:#b6c2d2; --ink-3:#8593a6; --ink-4:#6a778a;
+  --emt:#6bbd8a; --aemt:#6aa8dd; --pmd:#e58f86; --gold:#d6ad50;
+  --ok:#6bbd8a; --ok-bg:#15251c; --warn:#d6ad50; --warn-bg:#251f12;
+  --stop:#e58f86; --stop-bg:#2a1816;
+  --lift:0 1px 1px rgba(0,0,0,.35), 0 2px 6px -2px rgba(0,0,0,.5);
+  --lift-2:0 2px 4px rgba(0,0,0,.45), 0 14px 32px -18px rgba(0,0,0,.95);
+  --page:radial-gradient(1200px 600px at 50% -10%, #16202d 0%, #0f151d 55%, #0c1219 100%);
 }
 *{box-sizing:border-box;}
-html,body{margin:0;background:var(--surface);color:var(--ink);
-  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.55;
-  -webkit-font-smoothing:antialiased;}
-.app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var(--shadow);}
-@media(min-width:560px){.app{margin:24px auto;border-radius:14px;overflow:hidden;min-height:0;}}
-.bar{background:var(--navy);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:12px;
-  position:sticky;top:0;z-index:20;}
+html{-webkit-text-size-adjust:100%;}
+html,body{margin:0;min-height:100%;background:var(--surface);background-image:var(--page);
+  background-attachment:fixed;color:var(--ink);
+  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+.app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var(--lift-2);}
+@media(min-width:560px){.app{margin:28px auto 40px;border-radius:18px;overflow:hidden;min-height:0;}}
+
+/* --- the bar --- */
+.bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:20;border-bottom:2px solid var(--gold);}
 .bar img{width:34px;height:37px;display:block;flex:none;}
-.bar .t{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.06rem;line-height:1.1;}
-.bar .s{font-size:.72rem;color:#9fb2c9;letter-spacing:.13em;text-transform:uppercase;font-weight:600;
+.bar .t{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.1rem;line-height:1.05;}
+.bar .s{font-size:.66rem;color:#9db0c8;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
   font-family:"Barlow Semi Condensed",sans-serif;}
-.mode{margin-left:auto;font-family:"Barlow Semi Condensed",sans-serif;font-size:.66rem;letter-spacing:.12em;
-  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:3px;
-  background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);}
-.wrap{padding:20px 18px 44px;}
-h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.6rem;line-height:1.12;margin:0 0 4px;}
-.sub{color:var(--ink-3);font-size:.94rem;margin:0 0 20px;}
-h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.8rem;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;}
-h2:first-of-type{margin-top:4px;}
-.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:14px 15px;margin-bottom:9px;}
-.card.act{display:flex;gap:13px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;text-decoration:none;}
-.card.act:hover,.card.act:focus-visible{border-color:var(--ink-3);}
-.dot{flex:none;width:9px;height:9px;border-radius:50%;margin-top:7px;background:var(--ink-3);}
-.dot.due{background:var(--stop);}.dot.soon{background:var(--warn);}.dot.ok{background:var(--ok);}
+.mode{margin-left:auto;font-family:"Barlow Semi Condensed",sans-serif;font-size:.64rem;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:4px;
+  background:rgba(214,173,80,.16);color:var(--gold);border:1px solid rgba(214,173,80,.5);}
+
+/* --- the hero ---
+   Every screen gets a top. The navy block from the bar carries on down and
+   rounds off, and the one sentence that says where you are lives in it -
+   so the screen opens with a statement rather than with body text. */
+.hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:6px 18px 24px;
+  border-radius:0 0 20px 20px;}
+.hero .eyebrow{font-family:"Barlow Semi Condensed",sans-serif;font-size:.66rem;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:3px;}
+.hero h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:2.05rem;
+  line-height:1.05;margin:0;color:#fff;letter-spacing:-.005em;}
+.hero .sub{color:#a9bcd3;font-size:.93rem;margin:6px 0 0;}
+.hero .chip{border-color:rgba(255,255,255,.45);color:#dbe5f0;}
+.wrap{padding:0 18px 44px;position:relative;}
+
+/* --- sections --- */
+h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;display:flex;align-items:center;gap:8px;}
+h2:first-child{margin-top:16px;}
+h2:after{content:"";flex:1;height:1px;background:var(--line);}
+h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);border:1px solid var(--line);
+  color:var(--ink-2);border-radius:20px;padding:1px 8px;order:9;}
+.sub{color:var(--ink-3);font-size:.92rem;margin:0 0 14px;}
+
+/* --- the card ---
+   One shape for everything a person can act on. The spine carries the
+   urgency, the chip carries the level, and the body carries the words. */
+.card{position:relative;background:var(--raised);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 15px 14px 17px;margin-bottom:9px;overflow:hidden;box-shadow:var(--lift);}
+.card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:var(--accent,transparent);}
+.card.act{display:flex;gap:12px;align-items:center;width:100%;text-align:left;cursor:pointer;
+  font:inherit;color:inherit;text-decoration:none;min-height:66px;
+  transition:border-color .12s ease, box-shadow .12s ease, transform .08s ease;}
+.card.act:hover,.card.act:focus-visible{border-color:var(--ink-4);box-shadow:var(--lift-2);}
+.card.act:active{transform:scale(.994);}
 .bd{flex:1;min-width:0;}
-.h{display:block;font-weight:700;font-size:1rem;line-height:1.3;}
-.m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:2px;}
-.go{flex:none;color:var(--ink-3);font-size:1.3rem;line-height:1;margin-top:4px;}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:15px 16px;margin-bottom:14px;}
-.lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:7px;}
-.kv{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.93rem;}
-.kv:last-child{border-bottom:none;}
-.kv .k{color:var(--ink-3);}.kv .v{font-weight:600;text-align:right;}
-.chip{display:inline-block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:600;font-size:.7rem;
-  letter-spacing:.09em;text-transform:uppercase;padding:2px 8px;border-radius:3px;border:1px solid currentColor;}
+.hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.h{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.16rem;
+  line-height:1.2;letter-spacing:.002em;}
+.m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:3px;}
+.flag{display:block;font-size:.86rem;font-weight:600;line-height:1.35;margin-top:5px;
+  color:var(--accent,var(--ink-2));}
+.go{flex:none;color:var(--ink-4);font-size:1.5rem;line-height:1;}
+.card.act:hover .go{color:var(--ink-2);}
+
+/* --- level identity --- */
+.chip{display:inline-block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.66rem;
+  letter-spacing:.11em;text-transform:uppercase;padding:2px 7px;border-radius:4px;
+  border:1px solid currentColor;white-space:nowrap;}
 .c-emt{color:var(--emt);}.c-aemt{color:var(--aemt);}.c-pmd{color:var(--pmd);}
 .c-ok{color:var(--ok);background:var(--ok-bg);}.c-warn{color:var(--warn);background:var(--warn-bg);}
 .c-stop{color:var(--stop);background:var(--stop-bg);}.c-mute{color:var(--ink-3);}
-.prog{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:9px 0 5px;}
-.prog i{display:block;height:100%;border-radius:4px;background:var(--emt);}
-.big{font-family:"Barlow Semi Condensed",sans-serif;font-size:1.9rem;font-weight:700;line-height:1;}
+
+/* --- notes: a rule, not a box. a box shouts; a rule states. --- */
+.note{border-radius:var(--r-sm);padding:12px 14px;margin:0 0 11px;font-size:.91rem;line-height:1.45;
+  border-left:3px solid var(--ink-3);background:var(--surface);color:var(--ink-2);}
+.note b{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+  text-transform:uppercase;margin-bottom:4px;color:var(--ink-3);}
+.n-ok{border-left-color:var(--ok);background:var(--ok-bg);}.n-ok b{color:var(--ok);}
+.n-warn{border-left-color:var(--warn);background:var(--warn-bg);}.n-warn b{color:var(--warn);}
+.n-stop{border-left-color:var(--stop);background:var(--stop-bg);}.n-stop b{color:var(--stop);}
+.n-info{border-left-color:var(--ink-4);}
+
+/* --- panels and rows --- */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;margin-bottom:11px;}
+.lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:7px;}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-2);
+  font-size:.93rem;align-items:center;}
+.kv:last-child{border-bottom:none;}
+.kv:first-child{padding-top:0;}
+.kv .k{color:var(--ink-3);}.kv .v{font-weight:600;text-align:right;}
+.prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:10px 0 6px;}
+.prog i{display:block;height:100%;border-radius:5px;background:var(--emt);}
+.big{font-family:"Barlow Semi Condensed",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}
 .big small{font-size:1rem;color:var(--ink-3);font-weight:600;}
-.btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:none;border-radius:9px;
-  padding:15px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.05rem;cursor:pointer;margin-top:8px;}
+
+/* --- controls --- */
+.btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:none;
+  border-radius:var(--r);padding:16px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;
+  font-size:1.1rem;letter-spacing:.01em;cursor:pointer;margin-top:10px;min-height:56px;
+  box-shadow:var(--lift);transition:background .12s ease, transform .08s ease;}
 .btn:hover{background:var(--navy-2);}
-.btn.ghost{background:none;color:var(--ink-2);border:1px solid var(--line);}
+.btn:active{transform:scale(.994);}
+.btn.ghost{background:none;color:var(--ink-2);border:1px solid var(--line);box-shadow:none;}
 .btn[disabled]{opacity:.5;cursor:not-allowed;}
-textarea{width:100%;min-height:96px;border:1px solid var(--line);border-radius:8px;padding:11px 12px;
-  font:inherit;color:inherit;background:var(--paper);resize:vertical;}
+textarea{width:100%;min-height:104px;border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:12px 13px;font:inherit;color:inherit;background:var(--paper);resize:vertical;}
 textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
-.note{border-radius:8px;padding:13px 15px;margin:0 0 14px;font-size:.9rem;}
-.note b{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.74rem;letter-spacing:.13em;
-  text-transform:uppercase;margin-bottom:5px;}
-.n-ok{background:var(--ok-bg);border:1px solid var(--ok);}.n-ok b{color:var(--ok);}
-.n-warn{background:var(--warn-bg);border:1px solid var(--warn);}.n-warn b{color:var(--warn);}
-.n-stop{background:var(--stop-bg);border:1px solid var(--stop);}.n-stop b{color:var(--stop);}
-.n-info{background:var(--surface);border:1px solid var(--line);}.n-info b{color:var(--ink-3);}
-.next{border-left:3px solid var(--gold);padding-left:12px;margin:16px 0;font-size:.9rem;color:var(--ink-2);}
-.next b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}
+.pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  background-color:var(--raised);color:inherit;border:1px solid var(--line);border-radius:var(--r);
+  padding:15px 42px 15px 16px;font:inherit;cursor:pointer;margin-bottom:10px;min-height:56px;
+  box-shadow:var(--lift);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2378859a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 16px center;background-size:12px 8px;}
+.pick:hover{border-color:var(--ink-4);}
+.more{background:none;border:1px solid var(--line);border-radius:var(--r);width:100%;padding:13px;
+  font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-height:50px;}
+.more:hover{border-color:var(--ink-4);color:var(--ink);}
 .back{background:none;border:none;color:var(--ink-3);font-family:"Barlow Semi Condensed",sans-serif;
-  font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;font-weight:600;cursor:pointer;padding:0;margin:0 0 12px;}
+  font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:pointer;
+  padding:8px 0;margin:4px 0 6px;}
 .back:hover{color:var(--ink);}
-/* record screen: current at the top, everything earlier below it */
-.rec{border:1px solid var(--line);border-radius:9px;padding:14px 15px;margin-bottom:9px;background:var(--paper);}
+
+/* --- the next-step rail --- */
+.next{border-left:3px solid var(--gold);padding:2px 0 2px 13px;margin:18px 0 6px;font-size:.89rem;
+  color:var(--ink-2);line-height:1.5;}
+.next b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}
+
+/* --- the record --- */
+.rec{border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;margin-bottom:9px;
+  background:var(--raised);box-shadow:var(--lift);}
 .rec.cur{border-left:4px solid var(--gold);}
 .rec.dup{border-left:4px solid var(--stop);}
-.rec .when{font-family:"Barlow Semi Condensed",sans-serif;font-size:.74rem;letter-spacing:.12em;
+.rec .when{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;}
 .rec .when b{color:var(--gold);font-weight:700;}
-.rec .fld{margin-top:9px;}
-.rec .fld .l{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.11em;
+.rec .fld{margin-top:10px;}
+.rec .fld .l{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);}
 .rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;}
-.fresh{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 14px;}
+.fresh{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px;}
 .fresh span{font-size:.78rem;color:var(--ink-2);background:var(--surface);
-  border:1px solid var(--line);border-radius:20px;padding:3px 11px;}
-.fresh span b{color:var(--ink);font-weight:600;}
-.fresh span.never{color:var(--ink-3);}
-.more{background:none;border:1px solid var(--line);border-radius:7px;width:100%;padding:10px;
-  font:inherit;font-size:.88rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;}
-.more:hover{border-color:var(--ink-3);color:var(--ink);}
-/* One box instead of a list. Native <select> on purpose: on a phone that is
-   the platform's own picker, which beats anything built here, and it costs
-   one line of screen no matter how many names are in it. */
-.pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:none;
-  background-color:var(--paper);color:inherit;border:1px solid var(--line);border-radius:9px;
-  padding:14px 40px 14px 14px;font:inherit;cursor:pointer;margin-bottom:10px;min-height:50px;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%237b8798' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px;}
-.pick:hover{border-color:var(--ink-3);}
-.foot{padding:20px 18px 32px;border-top:1px solid var(--line);color:var(--ink-3);font-size:.8rem;background:var(--surface);}
-:focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+  border:1px solid var(--line);border-radius:20px;padding:4px 11px;}
+.fresh span b{color:var(--ink);font-weight:700;}
+.fresh span.never{color:var(--ink-4);}
+
+.foot{padding:20px 18px 34px;border-top:1px solid var(--line);color:var(--ink-4);font-size:.79rem;
+  background:var(--surface);}
+:focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;border-radius:4px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}
+  .card.act:active,.btn:active{transform:none;}}
 </style>
 </head>
 <body>
@@ -166,6 +241,32 @@ var S = { screen: 'main', ctx: null, busy: false };
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function lvlChip(k,l){ return '<span class="chip c-'+esc(k||'emt')+'">'+esc(l||'')+'</span>'; }
+
+/* The top of a screen. Eyebrow, the statement, and one quiet line under it.
+   `sub` is trusted markup so a level chip can sit in it; everything a person
+   or a spreadsheet supplied is escaped by the caller. */
+function hero(eyebrow, title, sub){
+  return '<div class="hero">'+
+    (eyebrow ? '<div class="eyebrow">'+esc(eyebrow)+'</div>' : '')+
+    '<h1>'+esc(title)+'</h1>'+
+    (sub ? '<p class="sub">'+sub+'</p>' : '')+'</div>';
+}
+
+/* A section heading with the count on the end of the rule. */
+function sec(label, n){
+  return '<h2>'+esc(label)+(n === undefined ? '' : '<span class="n">'+esc(n)+'</span>')+'</h2>';
+}
+
+/* The one thing readable across a room: red wants you now, amber soon,
+   nothing at all means it is fine. Returns the style attribute, or ''. */
+function spine(level){
+  if (level === 'due')  return ' style="--accent:var(--stop)"';
+  if (level === 'soon') return ' style="--accent:var(--warn)"';
+  if (level === 'ok')   return ' style="--accent:var(--ok)"';
+  if (level === 'gold') return ' style="--accent:var(--gold)"';
+  if (level === 'pmd')  return ' style="--accent:var(--pmd)"';
+  return '';
+}
 function el(id){ return document.getElementById(id); }
 /* A name ends up inside onclick="...", so it has to survive two parsers: the
    HTML attribute and the JavaScript string inside it. JSON.stringify handles
@@ -196,17 +297,23 @@ function pickRecord(v){ if (v === '') return; openRecord(v); }
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
-  el('mode').textContent = BOOT.mode === 'STAGING' ? 'Staging'
-    : (BOOT.mode === 'LIVE' ? '' : BOOT.mode);
+  /* LIVE is the system doing its job and wants no badge at all. Emptying the
+     text was not enough: the chip keeps its border, background and padding, so
+     what shipped was a small amber lozenge with nothing written in it, sitting
+     where a warning goes. An empty warning is worse than no warning. */
+  var chip = el('mode');
+  var label = BOOT.mode === 'STAGING' ? 'Staging' : (BOOT.mode === 'LIVE' ? '' : BOOT.mode);
+  chip.textContent = label;
+  chip.style.display = label ? '' : 'none';
   el('foot').innerHTML = BOOT.mode === 'STAGING'
     ? 'Staging sandbox. Invented people. Nothing here is a personnel record.'
     : 'Signed in as ' + esc(BOOT.viewer.email || 'unknown') + ' &middot; ' + esc(BOOT.version);
 
   var v = BOOT.viewer, d = BOOT.data || {};
-  if (BOOT.error) return paint('<h1>Something went wrong</h1><div class="note n-stop"><b>Error</b>'+esc(BOOT.error)+'</div>');
+  if (BOOT.error) return paint(hero('', 'Something went wrong', '')+
+    '<div class="note n-stop"><b>Error</b>'+esc(BOOT.error)+'</div>');
   if (!v.ok) return paint(
-    '<h1>You are not set up yet</h1>'+
-    '<p class="sub">'+esc(v.why || 'This account is not recognised.')+'</p>'+
+    hero('', 'You are not set up yet', esc(v.why || 'This account is not recognised.'))+
     '<div class="note n-info"><b>What to do</b>Ask the Training Division to add '+
     esc(v.email || 'your account')+' to the roster or the trainee master. Nothing is broken.</div>');
 
@@ -223,16 +330,17 @@ function render(){
     case 'TRAINING_DIVISION':  return paintDivision(d);
     case 'SUPERVISOR':         return paintSupervisor(d);
     case 'MEDICAL_DIRECTOR':   return paintMedical(d);
-    default:                   return paint('<h1>No role</h1>');
+    default:                   return paint(hero('', 'No role', ''));
   }
 }
 function paint(h){ el('view').innerHTML = h; window.scrollTo(0,0); }
 
 /* ---------------- trainee ---------------- */
 function paintTrainee(d){
-  if (d.error) return paint('<h1>No record</h1><div class="note n-stop"><b>Not found</b>'+esc(d.error)+'</div>');
-  var h = '<h1>'+esc(d.name)+'</h1><p class="sub">'+lvlChip(d.levelKey,d.level)+
-    ' &nbsp; '+esc(d.phase)+'</p>';
+  if (d.error) return paint(hero('', 'No record', '')+
+    '<div class="note n-stop"><b>Not found</b>'+esc(d.error)+'</div>');
+  var h = hero('Your training', d.name,
+    lvlChip(d.levelKey,d.level)+' &nbsp; '+esc(d.phase||'no phase set'));
   h += '<div class="panel"><div class="lab">Skills signed off</div><div class="big">'+d.signed+
        ' <small>of '+d.applicable+'</small></div><div class="prog"><i style="width:'+d.percent+
        '%;background:var(--'+esc(d.levelKey)+')"></i></div>'+
@@ -240,7 +348,7 @@ function paintTrainee(d){
        (d.waiting.length ? d.waiting.length+' waiting on the Training Division' : 'Nothing waiting on anyone else')+
        '</div></div>';
 
-  h += '<h2>Waiting on you</h2>';
+  h += sec('Waiting on you');
   // In staging the reflection is filed in the portal so the flow can be tried
   // end to end. Against the real tracker the existing self-reflection FORM is
   // the one that files it - that form has the trigger and the destination, and
@@ -251,32 +359,33 @@ function paintTrainee(d){
   // button reappeared against the live tracker without anybody deciding it
   // should. isPractice() cannot drift that way.
   if (isPractice()){
-    h += '<button class="card act" onclick="S.screen=\'reflect\';render()"><span class="dot due"></span>'+
+    h += '<button class="card act"'+spine('due')+' onclick="S.screen=\'reflect\';render()">'+
          '<span class="bd"><span class="h">Weekly reflection</span>'+
-         '<span class="m">Your own words. Takes about four minutes.</span></span><span class="go">&rsaquo;</span></button>';
+         '<span class="m">Your own words. Takes about four minutes.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
   }
   h += formCards(d.forms);
   (d.coaching||[]).forEach(function(c){
     if (canWrite() && !c.book){
-      h += '<button class="card act" onclick="ack('+c.row+')"><span class="dot soon"></span>'+
+      h += '<button class="card act"'+spine('soon')+' onclick="ack('+c.row+')">'+
            '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
            '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
     } else {
-      h += '<div class="card"><div class="h">Coaching from '+esc(c.from)+'</div>'+
+      h += '<div class="card"'+spine('soon')+'><div class="h">Coaching from '+esc(c.from)+'</div>'+
            '<div class="m">'+esc(c.text)+'</div>'+
            (c.book ? '<div class="m" style="color:var(--ink-3)">from '+esc(c.book)+'</div>' : '')+
            '</div>';
     }
   });
 
-  h += '<h2>Where things stand</h2>';
+  h += sec('Where things stand');
   h += freshRow(d.freshness);
   h += '<div class="panel">'+
        kv('Training officer', d.fto || 'not assigned')+
        kv('Phase started', d.phaseStart || 'not set')+
        kv('Last evaluation', d.lastEval)+'</div>';
   h += '<button class="card act" onclick="openRecord('+jsStr(d.name)+')">'+
-       '<span class="dot ok"></span><span class="bd"><span class="h">My whole record</span>'+
+       '<span class="bd"><span class="h">My whole record</span>'+
        '<span class="m">Everything ever submitted about you, newest first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
 
@@ -290,7 +399,7 @@ function paintTrainee(d){
       else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
       else building.push(s);
     });
-    h += '<h2>Your skills</h2>';
+    h += sec('Your skills', d.skills.length);
     h += '<p class="sub" style="margin-bottom:10px">'+done.length+' signed off &middot; '+
          withDiv.length+' with the Division &middot; '+building.length+' still building</p>';
     if (withDiv.length){
@@ -339,22 +448,22 @@ function formCards(list){
   var h = '';
   (list||[]).forEach(function(f){
     if (f.live && f.url){
-      h += '<a class="card act" href="'+esc(f.url)+'" target="_blank" rel="noopener">'+
-        dotFor(f)+'<span class="bd"><span class="h">'+esc(f.title)+'</span>'+
+      h += '<a class="card act"'+spine(f.urgent?'due':'')+
+        ' href="'+esc(f.url)+'" target="_blank" rel="noopener">'+
+        '<span class="bd"><span class="h">'+esc(f.title)+'</span>'+
         '<span class="m">'+esc(f.blurb)+'</span></span><span class="go">&rsaquo;</span></a>';
     } else {
       h += '<div class="card"><div class="h">'+esc(f.title)+'</div>'+
         '<div class="m">'+esc(f.blurb)+'</div>'+
-        '<div class="m" style="color:var(--warn)">Form links are switched off in this mode.</div></div>';
+        '<div class="flag" style="--accent:var(--warn)">Form links are switched off in this mode.</div></div>';
     }
   });
   return h;
 }
-function dotFor(f){ return '<span class="dot '+(f.urgent?'due':'soon')+'"></span>'; }
 
 function paintReflect(){
-  paint('<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<h1>Weekly reflection</h1><p class="sub">Four questions, in your own words. No length limit.</p>'+
+  paint(hero('In your own words', 'Weekly reflection', 'No length limit. Nobody edits it.')+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
     '<div class="panel"><div class="lab">What went well</div><textarea id="q1"></textarea></div>'+
     '<div class="panel"><div class="lab">What was hard</div><textarea id="q2"></textarea></div>'+
     '<div class="panel"><div class="lab">What I want to work on</div><textarea id="q3"></textarea></div>'+
@@ -371,8 +480,8 @@ function sendReflection(){
 }
 function paintReceipt(){
   var r = S.ctx || {};
-  paint('<h1>Submitted</h1>'+
-    '<div class="note n-ok"><b>Recorded</b>Saved as '+esc(r.ref||'')+'.</div>'+
+  paint(hero('Filed', 'Submitted', 'Saved as '+esc(r.ref||''))+
+    '<div class="note n-ok"><b>Recorded</b>Nothing about it can be edited by anyone.</div>'+
     '<div class="panel">'+kv('Went to','Your training officer')+
     kv('Visible to','You, your FTO, the Training Division')+
     kv('Stored in','Your training record')+'</div>'+
@@ -386,18 +495,20 @@ function ack(row){
 
 /* ---------------- fto ---------------- */
 function paintFto(d){
-  var h = '<h1>Your trainees</h1><p class="sub">'+d.trainees.length+' assigned to you</p>';
+  var h = hero('Field Training Officer', 'Your trainees',
+    d.trainees.length+(d.trainees.length===1?' person':' people')+' ride with you');
   if (!d.trainees.length) h += '<div class="note n-info"><b>Nobody assigned</b>No trainees list you as their training officer.</div>';
   d.trainees.forEach(function(t,i){
-    h += '<button class="card act" onclick="openTrainee('+i+')">'+
-      '<span class="dot '+(t.setupComplete?'ok':'soon')+'"></span>'+
-      '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
+    h += '<button class="card act"'+spine(t.setupComplete ? '' : 'soon')+
+      ' onclick="openTrainee('+i+')">'+
+      '<span class="bd">'+
+      '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
       '<span class="m">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.lastEval)+'</span>'+
-      (t.setupComplete ? '' : '<span class="m" style="color:var(--warn)">Setup incomplete - tell the Division</span>')+
+      (t.setupComplete ? '' : '<span class="flag">Setup incomplete &mdash; tell the Division</span>')+
       '</span><span class="go">&rsaquo;</span></button>';
   });
   if (d.forms && d.forms.length){
-    h += '<h2>Anything else</h2>'+formCards(d.forms);
+    h += sec('Anything else')+formCards(d.forms);
   }
   h += '<div class="next"><b>How this works</b>Pick the person, not the form. The skills log you get is already the one for their level, with both names filled in.</div>';
   paint(h);
@@ -409,17 +520,18 @@ function openTrainee(i){
 }
 function paintTraineeSheet(){
   var t = S.ctx || {};
-  var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  var h = hero('Your trainee', t.name,
+    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Last evaluation', esc(t.lastEval))+
        kv('Setup', t.setupComplete ? '<span class="chip c-ok">Complete</span>'
                                    : '<span class="chip c-warn">Incomplete</span>')+'</div>';
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
-       '<span class="dot ok"></span><span class="bd"><span class="h">Their whole record</span>'+
+       '<span class="bd"><span class="h">Their whole record</span>'+
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
-  h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
+  h += sec('File something for '+firstName(t.name));
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
@@ -446,11 +558,11 @@ function paintDivision(d){
     if (t.needs || missingBy[t.name]) flagged.push({t:t,i:i}); else quiet.push({t:t,i:i});
   });
 
-  var h = '<h1>'+(q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
-                           : 'Nothing waiting on you')+'</h1>';
-  h += '<p class="sub">'+d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
-       ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look')+
-       '</p>';
+  var h = hero('Training Division',
+    q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
+             : 'Nothing waiting on you',
+    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
+    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look'));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
@@ -458,9 +570,30 @@ function paintDivision(d){
 
   h += warnRow(d.warnings);
 
+  /* Something wrong with the system rather than with a person. It belongs at
+     the top with the other system-level alerts, not floating between two
+     groups of people where it reads as a third sign-off. */
+  (d.retiredForms||[]).forEach(function(f){
+    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
+         ' is no longer offered anywhere in this portal. '+esc(f.why)+
+         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
+  });
+
+
+  if (!q.length){
+    h += '<div class="note n-ok"><b>Sign-offs clear</b>No skill is waiting on your decision.</div>';
+  } else {
+    h += sec('Sign-offs', d.queueCount);
+    q.forEach(function(x){ h += signoffCard(x); });
+    if (d.queueCount > q.length)
+      h += '<p class="sub" style="margin-top:-2px">Showing the oldest '+q.length+' of '+
+           d.queueCount+'.</p>';
+  }
+
   /* Decisions already made here, waiting on the tracker to make them
-     permanent. Not still waiting on you - and not silently gone either, which
-     is what they would be if the count above simply dropped them. */
+     permanent. After the queue, because what you have already decided must
+     never sit above what is still waiting on you - and not dropped either,
+     which is what they would be if the count simply stopped mentioning them. */
   var staged = d.staged || [];
   if (staged.length){
     h += '<div class="note n-info"><b>'+staged.length+' waiting on the tracker</b>'+
@@ -473,28 +606,12 @@ function paintDivision(d){
     }), 'pickRecord');
   }
 
-  (d.retiredForms||[]).forEach(function(f){
-    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere in this portal. '+esc(f.why)+
-         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
-  });
-
-  if (!q.length){
-    h += '<div class="note n-ok"><b>Sign-offs clear</b>No skill is waiting on your decision.</div>';
-  } else {
-    h += '<h2>Sign-offs</h2>';
-    q.forEach(function(x){ h += signoffCard(x); });
-    if (d.queueCount > q.length)
-      h += '<p class="sub" style="margin-top:-2px">Showing the oldest '+q.length+' of '+
-           d.queueCount+'.</p>';
-  }
-
   if (flagged.length){
-    h += '<h2>Needs a look</h2>';
+    h += sec('Needs a look', flagged.length);
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
   if ((d.people||[]).length){
-    h += '<h2>Anyone else</h2>';
+    h += sec('Anyone else', (d.people||[]).length);
     h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
          ' have nothing outstanding. Pick a name to open their record.</p>';
     h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
@@ -504,11 +621,11 @@ function paintDivision(d){
     }), 'pickPerson');
   }
 
-  if (d.forms && d.forms.length) h += '<h2>Forms</h2>'+formCards(d.forms);
+  if (d.forms && d.forms.length) h += sec('Forms')+formCards(d.forms);
 
   h += housekeeping(d);
 
-  h += '<h2>System</h2><div class="panel">'+
+  h += sec('System')+'<div class="panel">'+
     kv('Delivery mode','<span class="chip c-warn">'+esc(d.mode)+'</span>')+
     kv('Active trainees', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed, not counted</span>')+
     kv('Form links', d.formLinks ? '<span class="chip c-ok">Live</span>'
@@ -522,16 +639,17 @@ function paintDivision(d){
    always been recorded, rather than offered and then refused. */
 function signoffCard(q){
   if (canWrite() && !q.from){
-    return '<button class="card act" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
+    return '<button class="card act"'+spine('gold')+' onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
       jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">'+
-      '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
-      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
-      '<span class="go">&rsaquo;</span></button>';
+      '<span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
+      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span>'+
+      (q.evidence ? '<span class="m" style="color:var(--ink-2)">'+esc(short(q.evidence, 64))+'</span>' : '')+
+      '</span><span class="go">&rsaquo;</span></button>';
   }
-  return '<div class="card"><div class="h">'+esc(q.skill)+'</div>'+
+  return '<div class="card"'+spine('soon')+'><div class="h">'+esc(q.skill)+'</div>'+
     '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
     '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
-    '<div class="m" style="color:var(--warn);margin-top:7px">'+
+    '<div class="flag" style="--accent:var(--warn)">'+
     (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
             : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
 }
@@ -541,25 +659,27 @@ function signoffCard(q){
 function personCard(t, i, missing){
   var why = missing ? 'missing '+missing : String(t.needs || '');
   var hard = why && urgentNeedV(why);
-  var dot = why ? (hard ? 'due' : 'soon') : 'ok';
-  return '<button class="card act" onclick="openPerson('+i+')"><span class="dot '+dot+'"></span>'+
-    '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
+  return '<button class="card act"'+spine(why ? (hard ? 'due' : 'soon') : '')+
+    ' onclick="openPerson('+i+')">'+
+    '<span class="bd">'+
+    '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
     '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no training officer')+'</span>'+
-    (why ? '<span class="m" style="color:var(--'+(hard?'stop':'warn')+')">'+esc(cap(why))+'</span>' : '')+
+    (why ? '<span class="flag">'+esc(cap(why))+'</span>' : '')+
     '</span><span class="go">&rsaquo;</span></button>';
 }
 function urgentNeedV(w){
   return /no one|no training officer|has left|sentence, not a name|not responding|remediation|concern|never evaluated/i.test(w);
 }
 function cap(s){ s = String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1); }
-function short(s){ s = String(s==null?'':s).trim(); return s.length > 44 ? s.slice(0,44)+'…' : s; }
+function short(s, n){ s = String(s==null?'':s).trim(); n = n || 44;
+  return s.length > n ? s.slice(0,n)+'…' : s; }
 
 /* Data-quality work. Real, but it is not a decision about a person, so it
    sits under a count until you ask for it. */
 function housekeeping(d){
   var subs = d.duplicateSubs || [], dupes = d.duplicates || [];
   if (!subs.length && !dupes.length) return '';
-  var h = '<h2>Housekeeping</h2>';
+  var h = sec('Housekeeping');
   if (subs.length){
     h += '<p class="sub" style="margin-bottom:9px">'+subs.length+' same-day '+
          (subs.length===1?'submission':'submissions')+', where two of a kind landed on one '+
@@ -586,16 +706,17 @@ function openPerson(i){
 }
 function paintPersonSheet(){
   var t = S.ctx || {};
-  var h = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<h1>'+esc(t.name)+'</h1><p class="sub">'+lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set')+'</p>';
+  var h = hero('Trainee record', t.name,
+    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
-       '<span class="dot ok"></span><span class="bd"><span class="h">Their whole record</span>'+
+       '<span class="bd"><span class="h">Their whole record</span>'+
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
-  h += '<h2>File something for '+esc(firstName(t.name))+'</h2>';
+  h += sec('File something for '+firstName(t.name));
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
@@ -607,8 +728,8 @@ function openSignoff(row,trainee,skill,evidence,requestId){
 }
 function paintSignoff(){
   var c = S.ctx || {};
-  paint('<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<h1>'+esc(c.skill)+'</h1><p class="sub">'+esc(c.trainee)+'</p>'+
+  paint(hero('The decision', c.skill, esc(c.trainee))+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
     '<div class="panel"><div class="lab">Evidence on file</div>'+
     '<div style="font-size:.93rem">'+esc(c.evidence)+'</div></div>'+
     '<div class="panel"><div class="lab">Why are you approving this</div>'+
@@ -633,14 +754,16 @@ function approve(){
 
 /* ---------------- supervisor / medical ---------------- */
 function paintSupervisor(d){
-  var h = '<h1>'+esc(d.shift)+'</h1><p class="sub">Read only. Nothing here asks you to do anything.</p>';
+  var h = hero('Shift supervisor', d.shift,
+    'Read only. Nothing here asks you to do anything.');
   if (!d.trainees.length) h += '<div class="note n-ok"><b>Nobody on shift</b>No active trainees are assigned to this shift.</div>';
   d.trainees.forEach(function(t){
-    h += '<div class="card"><div class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</div>'+
+    h += '<div class="card"><div class="hd"><span class="h">'+esc(t.name)+'</span>'+
+      lvlChip(t.levelKey,t.level)+'</div>'+
       '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last evaluation '+esc(t.lastEval)+'</div></div>';
   });
   if (d.forms && d.forms.length){
-    h += '<h2>If something cannot wait</h2>'+formCards(d.forms);
+    h += sec('If something cannot wait')+formCards(d.forms);
   }
   h += '<div class="next"><b>Deliberately thin</b>Supervisors get situational awareness, not personnel-development detail.</div>';
   paint(h);
@@ -648,15 +771,24 @@ function paintSupervisor(d){
 function paintMedical(d){
   var cases = d.cases || [];
   var total = (d.total === undefined) ? cases.length : d.total;
-  var h = '<h1>Clinical review</h1><p class="sub">'+total+
-    (total===1?' open case':' open cases')+' for you. Nothing else.</p>';
+  var h = hero('Medical Direction', 'Clinical review',
+    total+(total===1?' open case':' open cases')+' for you. Nothing else.');
   h += warnRow(d.warnings);
+
+  /* Something wrong with the system rather than with a person. It belongs at
+     the top with the other system-level alerts, not floating between two
+     groups of people where it reads as a third sign-off. */
+  (d.retiredForms||[]).forEach(function(f){
+    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
+         ' is no longer offered anywhere in this portal. '+esc(f.why)+
+         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
+  });
   if (!total) h += '<div class="note n-ok"><b>Nothing pending</b>No open concern requires your authority.</div>';
   cases.forEach(function(c){
-    h += '<button class="card act" style="border-left:4px solid var(--pmd)" '+
-      'onclick="openRecord('+jsStr(c.trainee)+')">'+
-      '<span class="dot due"></span><span class="bd">'+
-      '<span class="h">'+esc(c.trainee)+(c.category ? ' &nbsp;<span class="chip c-pmd">'+esc(c.category)+'</span>' : '')+'</span>'+
+    h += '<button class="card act"'+spine('pmd')+' onclick="openRecord('+jsStr(c.trainee)+')">'+
+      '<span class="bd">'+
+      '<span class="hd"><span class="h">'+esc(c.trainee)+'</span>'+
+      (c.category ? '<span class="chip c-pmd">'+esc(c.category)+'</span>' : '')+'</span>'+
       '<span class="m">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+
       (c.book ? ' &middot; in '+esc(c.book) : '')+'</span>'+
       (c.what ? '<span class="m" style="color:var(--ink-2);margin-top:7px">'+esc(c.what)+'</span>' : '')+
@@ -705,13 +837,14 @@ function openRecord(name){
 function paintRecord(){
   var c = S.ctx || {};
   var back = '<button class="back" onclick="S.screen=\''+(c.from||'main')+'\';render()">&larr; Back</button>';
-  if (c.err) return paint(back+'<h1>'+esc(c.name)+'</h1>'+
+  if (c.err) return paint(hero('The whole record', c.name, '')+back+
     '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
-  if (!c.rec) return paint(back+'<h1>'+esc(c.name)+'</h1><p class="sub">Reading the record…</p>');
+  if (!c.rec) return paint(hero('The whole record', c.name, 'Reading the record&hellip;')+back);
 
   var r = c.rec;
-  var h = back + '<h1>'+esc(r.name)+'</h1><p class="sub">'+r.total+
-    (r.total===1?' submission on file':' submissions on file')+'. Nothing has been removed.</p>';
+  var h = hero('The whole record', r.name,
+    r.total+(r.total===1?' submission on file':' submissions on file')+
+    '. Nothing has been removed.') + back;
 
   if (r.partial) h += '<div class="note n-info"><b>Part of the record</b>'+esc(r.scopeNote)+'</div>';
   if (r.duplicates) h += '<div class="note n-warn"><b>'+r.duplicates+
@@ -720,17 +853,16 @@ function paintRecord(){
   if (!r.sections.length) h += '<div class="note n-info"><b>Nothing on file</b>No submissions '+
     'have been recorded for this person yet.</div>';
 
-  r.sections.forEach(function(sec){
-    h += '<h2>'+esc(sec.title)+'</h2>';
-    h += '<p class="sub" style="margin-top:-6px">Most recent '+esc(sec.newestAgo)+
-         ' &middot; '+sec.count+' on file</p>';
-    sec.current.forEach(function(s){ h += recCard(s, true); });
-    if (sec.earlier.length){
-      var open = !!(S.ctx.show||{})[sec.key];
-      h += '<button class="more" onclick="toggleEarlier(\''+esc(sec.key)+'\')">'+
-           (open ? 'Hide' : 'Show')+' '+sec.earlier.length+' earlier '+
-           (sec.earlier.length===1?'submission':'submissions')+'</button>';
-      if (open) sec.earlier.forEach(function(s){ h += recCard(s, false); });
+  r.sections.forEach(function(part){
+    h += sec(part.title, part.count);
+    h += '<p class="sub" style="margin-top:-4px">Most recent '+esc(part.newestAgo)+'</p>';
+    part.current.forEach(function(x){ h += recCard(x, true); });
+    if (part.earlier.length){
+      var open = !!(S.ctx.show||{})[part.key];
+      h += '<button class="more" onclick="toggleEarlier(\''+esc(part.key)+'\')">'+
+           (open ? 'Hide' : 'Show')+' '+part.earlier.length+' earlier '+
+           (part.earlier.length===1?'submission':'submissions')+'</button>';
+      if (open) part.earlier.forEach(function(x){ h += recCard(x, false); });
     }
   });
 

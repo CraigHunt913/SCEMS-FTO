@@ -741,7 +741,7 @@ ok(!!compiled, 'the page script still compiles with a real forms payload in it')
 
 const nodes = {};
 const fakeDoc = { getElementById: id3 => (nodes[id3] = nodes[id3] ||
-  { textContent: '', innerHTML: '', value: '', disabled: false }) };
+  { textContent: '', innerHTML: '', value: '', disabled: false, style: {} }) };
 let api = null;
 try { api = compiled(fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } }); }
 catch (e) { api = null; }
@@ -876,6 +876,7 @@ divBoot2.data.queue = [{ trainee: "Sam O'Neill", skill: 'IV access',
 divBoot2.data.queueCount = 1;
 divBoot2.data.staged = [{ trainee: 'Kaylie Vaughn', skill: 'CPR / AED operation',
   decision: 'Approve sign-off', by: 'chief@example.org', since: '1 day ago' }];
+divBoot2.data.retiredForms = [{ title: 'Skills quick log', why: 'No submit trigger is bound to it.' }];
 
 let api4 = null;
 try {
@@ -959,6 +960,72 @@ if (api5) {
      'picking a skill shows its reps underneath');
   ok(/<option value="2"[^>]*selected/.test(html), 'with that skill still selected in the box');
 }
+
+// ---------------------------------------------------------------- //
+section('The mode badge says something or is not there');
+// ---------------------------------------------------------------- //
+// Emptying its text left the chip's border, background and padding behind:
+// a small amber lozenge with nothing written in it, sitting in the corner
+// where a warning goes. An empty warning is worse than no warning.
+function bootIn(mode) {
+  const b = JSON.parse(JSON.stringify(divBoot));
+  b.mode = mode; b.data.mode = mode;
+  try {
+    new Function('document', 'window', 'alert', 'google',
+      body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(b)))
+      (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
+  } catch (e) {}
+  return nodes['mode'];
+}
+let chip = bootIn('LIVE');
+ok(chip.textContent === '', 'LIVE writes no label');
+ok(chip.style.display === 'none', 'and hides the chip rather than leaving an empty one');
+
+chip = bootIn('STAGING');
+ok(chip.textContent === 'Staging', 'STAGING says so');
+ok(chip.style.display !== 'none', 'and is visible');
+
+chip = bootIn('PRODUCTION');
+ok(chip.textContent === 'PRODUCTION', 'PRODUCTION says so');
+ok(chip.style.display !== 'none', 'and is visible');
+
+// ---------------------------------------------------------------- //
+section('Every screen has a top, and urgency is a spine not a dot');
+// ---------------------------------------------------------------- //
+// A 9px dot is not readable at arm's length in a moving ambulance. The card's
+// left spine is, and it is the only thing on the screen that has to be.
+ok(!/class="dot/.test(pageSrc), 'the old status dot is gone from the page entirely');
+ok(/--accent:var\(--stop\)/.test(pageSrc) && /--accent:var\(--warn\)/.test(pageSrc),
+   'replaced by a spine colour set per card');
+ok(/\.card:before\{content:"";position:absolute;left:0/.test(pageSrc.replace(/\s+/g,'')) ||
+   /\.card:before/.test(pageSrc),
+   'drawn by the card itself, so no card can forget it');
+
+let heroed = 0;
+['paintDivision','paintTrainee','paintFto','paintMedical','paintSupervisor',
+ 'paintRecord','paintSignoff'].forEach(function (fn) {
+  const body2 = pageSrc.slice(pageSrc.indexOf('function ' + fn + '('));
+  if (/hero\(/.test(body2.slice(0, 900))) heroed++;
+});
+ok(heroed === 7, 'all seven role and detail screens open with a hero, not with body text: ' + heroed);
+
+const divHtml = (function () {
+  try {
+    new Function('document', 'window', 'alert', 'google',
+      body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot2)))
+      (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
+  } catch (e) {}
+  return nodes['view'].innerHTML;
+})();
+
+ok(/<div class="hero">/.test(divHtml), 'the Division screen renders one');
+ok(/class="eyebrow">Training Division</.test(divHtml), 'which names the role');
+ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('Sign-offs'),
+   'above everything else on the page');
+ok(divHtml.indexOf('IV access') < divHtml.indexOf('waiting on the tracker'),
+   'a decision still waiting on you sits above one you have already made');
+ok(divHtml.indexOf('Retired form still open') < divHtml.indexOf('Sign-offs'),
+   'and a broken form is a system alert, so it sits above the queue rather than inside it');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

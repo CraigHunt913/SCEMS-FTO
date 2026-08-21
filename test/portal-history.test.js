@@ -518,7 +518,7 @@ const boot = { version: PORTAL.VERSION, mode: 'PRODUCTION',
   data: divisionPayloadV1_(), error: '' };
 const nodes = {};
 const fakeDoc = { getElementById: k => (nodes[k] = nodes[k] ||
-  { textContent: '', innerHTML: '', value: '', disabled: false }) };
+  { textContent: '', innerHTML: '', value: '', disabled: false, style: {} }) };
 let api = null;
 try {
   api = new Function('document', 'window', 'alert', 'google',
