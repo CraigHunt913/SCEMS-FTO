@@ -62,8 +62,8 @@ h2:first-of-type{margin-top:4px;}
 .dot{flex:none;width:9px;height:9px;border-radius:50%;margin-top:7px;background:var(--ink-3);}
 .dot.due{background:var(--stop);}.dot.soon{background:var(--warn);}.dot.ok{background:var(--ok);}
 .bd{flex:1;min-width:0;}
-.h{font-weight:700;font-size:1rem;line-height:1.3;}
-.m{font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:2px;}
+.h{display:block;font-weight:700;font-size:1rem;line-height:1.3;}
+.m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:2px;}
 .go{flex:none;color:var(--ink-3);font-size:1.3rem;line-height:1;margin-top:4px;}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:15px 16px;margin-bottom:14px;}
 .lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
@@ -244,15 +244,37 @@ function paintTrainee(d){
        '<span class="m">Everything ever submitted about you, newest first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
 
+  /* Not the whole catalogue. What is with the Division is the only part that
+     is out of your hands; the rest is a count and a button. A screen you have
+     to scroll past is a screen nobody reads. */
   if (d.skills && d.skills.length){
-    h += '<h2>Your skills</h2><div class="panel">';
+    var withDiv = [], building = [], done = [];
     d.skills.forEach(function(s){
-      var chip = s.signed ? '<span class="chip c-ok">Signed off</span>'
-        : (s.readiness === 'READY FOR VALIDATION' ? '<span class="chip c-warn">With the Division</span>'
-        : '<span class="chip c-mute">'+esc(s.successful)+' reps</span>');
-      h += kv(s.skill, chip);
+      if (s.signed) done.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
+      else building.push(s);
     });
-    h += '</div>';
+    h += '<h2>Your skills</h2>';
+    h += '<p class="sub" style="margin-bottom:10px">'+done.length+' signed off &middot; '+
+         withDiv.length+' with the Division &middot; '+building.length+' still building</p>';
+    if (withDiv.length){
+      h += '<div class="panel">';
+      withDiv.forEach(function(s){
+        h += kv(s.skill, '<span class="chip c-warn">With the Division</span>');
+      });
+      h += '</div>';
+    }
+    if (building.length){
+      h += '<button class="more" onclick="toggleShow(\'skills\')">'+
+           (shown('skills') ? 'Hide' : 'Show')+' the '+building.length+' still building</button>';
+      if (shown('skills')){
+        h += '<div class="panel">';
+        building.forEach(function(s){
+          h += kv(s.skill, '<span class="chip c-mute">'+esc(s.successful)+' reps</span>');
+        });
+        h += '</div>';
+      }
+    }
   }
   h += '<div class="next"><b>What happens next</b>Anything you file goes to your training officer and the Training Division. Nobody else sees it.</div>';
   paint(h);
@@ -364,63 +386,32 @@ function paintTraineeSheet(){
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
 /* ---------------- division ---------------- */
+/* This screen answers one question before it does anything else: what needs a
+   decision from me. Everything after that is a count with a disclosure behind
+   it. Ten identical rows of names is not information, and a spreadsheet row
+   number is my diagnostics on somebody else's phone - neither belongs here. */
 function paintDivision(d){
-  var h = '<h1>Waiting on you</h1><p class="sub">'+d.queueCount+' sign-offs &middot; '+
-    d.incomplete.length+' setup gaps</p>';
+  var q = d.queue || [];
+  var missingBy = {};
+  (d.incomplete||[]).forEach(function(t){ missingBy[t.name] = t.missing; });
+
+  // Every active trainee is either asking something of you or is not. Only
+  // the first kind gets a row; the rest get counted and hidden behind a
+  // button, because a name with nothing next to it is just noise.
+  var flagged = [], quiet = [];
+  (d.people||[]).forEach(function(t,i){
+    if (t.needs || missingBy[t.name]) flagged.push({t:t,i:i}); else quiet.push({t:t,i:i});
+  });
+
+  var h = '<h1>'+(q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
+                           : 'Nothing waiting on you')+'</h1>';
+  h += '<p class="sub">'+d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
+       ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look')+
+       '</p>';
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
          ' mode, so sign-offs cannot be approved from here yet.</div>';
-
-  h += '<h2>Sign-offs</h2>';
-  if (!d.queue.length) h += '<div class="note n-ok"><b>Clear</b>No skills are waiting for a decision.</div>';
-  d.queue.forEach(function(q){
-    // Approving writes a decision into the queue. Against the live tracker
-    // this portal will not do that, so the item is shown and the decision is
-    // recorded where it has always been recorded.
-    if (canWrite() && !q.from){
-      h += '<button class="card act" onclick="openSignoff('+q.row+',\''+esc(q.trainee).replace(/\'/g,"")+'\',\''+
-        esc(q.skill).replace(/\'/g,"")+'\',\''+esc(q.evidence).replace(/\'/g,"")+'\')">'+
-        '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
-        '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
-        '<span class="go">&rsaquo;</span></button>';
-    } else {
-      h += '<div class="card"><div class="h">'+esc(q.skill)+'</div>'+
-        '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
-        '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
-        '<div class="m" style="color:var(--warn);margin-top:7px">'+
-        (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
-                : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
-    }
-  });
-
-  if (d.people && d.people.length){
-    h += '<h2>Trainees</h2>';
-    d.people.forEach(function(t,i){
-      h += '<button class="card act" onclick="openPerson('+i+')"><span class="dot ok"></span>'+
-        '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
-        '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(t.fto||'no training officer')+'</span>'+
-        '</span><span class="go">&rsaquo;</span></button>';
-    });
-  }
-
-  if (d.forms && d.forms.length){
-    h += '<h2>Forms</h2>'+formCards(d.forms);
-  }
-
-  if (d.duplicateSubs && d.duplicateSubs.length){
-    h += '<h2>Two submissions, one day</h2>';
-    h += '<div class="note n-warn"><b>Both are kept</b>Nothing has been removed. '+
-         'These are the places where two submissions of the same kind landed on the '+
-         'same day and somebody has to say which one stands.</div>';
-    d.duplicateSubs.forEach(function(x){
-      h += '<div class="card"><div class="h">'+esc(x.trainee)+'</div>'+
-        '<div class="m">'+esc(x.source)+(x.group?' &middot; '+esc(x.group):'')+
-        ' &middot; '+esc(x.when)+'</div>'+
-        '<div class="m">'+x.count+' submissions &middot; '+esc(x.tab)+
-        ' rows '+esc(x.rows.join(', '))+'</div></div>';
-    });
-  }
 
   (d.retiredForms||[]).forEach(function(f){
     h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
@@ -428,39 +419,31 @@ function paintDivision(d){
          ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
   });
 
-  /* People on nobody's list. An officer's screen is built by matching their
-     name, so anything in ASSIGNED FTO that is not an active officer's name
-     means that trainee appears nowhere and nothing looks wrong. This is the
-     one screen that shows them, so being lost is impossible rather than
-     merely unlikely. */
-  if ((d.stranded||[]).length){
-    h += '<h2>On nobody\'s list</h2>'+
-         '<div class="note n-stop"><b>'+d.stranded.length+' active '+
-         (d.stranded.length===1?'trainee is':'trainees are')+' not on any officer\'s screen</b>'+
-         'Their ASSIGNED FTO does not reach anybody on the roster, so no one is '+
-         'being asked about them. Only you can see this.</div>';
-    d.stranded.forEach(function(s){
-      h += '<div class="card"><div class="h">'+esc(s.name)+'</div>'+
-           '<div class="m">'+esc(s.why)+'</div>'+
-           '<div class="m">Assigned FTO holds: '+
-             (s.fto ? '&ldquo;'+esc(s.fto.length>70?s.fto.slice(0,70)+'…':s.fto)+'&rdquo;'
-                    : '<i>nothing</i>')+'</div>'+
-           '<div class="m">'+esc(s.level||'')+(s.phase?' &middot; '+esc(s.phase):'')+
-           ' &middot; last evaluation '+esc(s.lastEval)+'</div></div>';
-    });
+  if (!q.length){
+    h += '<div class="note n-ok"><b>Sign-offs clear</b>No skill is waiting on your decision.</div>';
+  } else {
+    h += '<h2>Sign-offs</h2>';
+    q.forEach(function(x){ h += signoffCard(x); });
+    if (d.queueCount > q.length)
+      h += '<p class="sub" style="margin-top:-2px">Showing the oldest '+q.length+' of '+
+           d.queueCount+'.</p>';
   }
 
-  if (d.incomplete.length){
-    h += '<h2>Setup incomplete</h2>';
-    d.incomplete.forEach(function(t){
-      h += '<div class="card"><div class="h">'+esc(t.name)+'</div>'+
-           '<div class="m">Missing '+esc(t.missing)+'. Not counted as on track.</div></div>';
-    });
+  if (flagged.length){
+    h += '<h2>Needs a look</h2>';
+    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
-  if (d.duplicates.length){
-    h += '<h2>Possible duplicates</h2><div class="note n-warn"><b>Check these</b>'+
-         esc(d.duplicates.join(', '))+'</div>';
+  if (quiet.length){
+    h += '<button class="more" onclick="toggleShow(\'quiet\')">'+
+         (shown('quiet') ? 'Hide' : 'Show')+' '+quiet.length+
+         (quiet.length===1?' trainee with':' trainees with')+' nothing outstanding</button>';
+    if (shown('quiet')) quiet.forEach(function(p){ h += personCard(p.t, p.i, ''); });
   }
+
+  if (d.forms && d.forms.length) h += '<h2>Forms</h2>'+formCards(d.forms);
+
+  h += housekeeping(d);
+
   h += '<h2>System</h2><div class="panel">'+
     kv('Delivery mode','<span class="chip c-warn">'+esc(d.mode)+'</span>')+
     kv('Active trainees', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed, not counted</span>')+
@@ -469,6 +452,79 @@ function paintDivision(d){
     '</div>';
   paint(h);
 }
+
+/* Approving writes a decision into the queue. Against a tracker this portal
+   cannot write, the item is shown and the decision is recorded where it has
+   always been recorded, rather than offered and then refused. */
+function signoffCard(q){
+  if (canWrite() && !q.from){
+    return '<button class="card act" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
+      jsStr(q.skill)+','+jsStr(q.evidence)+')">'+
+      '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
+      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
+      '<span class="go">&rsaquo;</span></button>';
+  }
+  return '<div class="card"><div class="h">'+esc(q.skill)+'</div>'+
+    '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
+    '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
+    '<div class="m" style="color:var(--warn);margin-top:7px">'+
+    (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
+            : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
+}
+
+/* One row per person, and the row says what it wants. The index is the one
+   into BOOT.data.people, not into whichever list this card came from. */
+function personCard(t, i, missing){
+  var why = missing ? 'missing '+missing : String(t.needs || '');
+  var hard = why && urgentNeedV(why);
+  var dot = why ? (hard ? 'due' : 'soon') : 'ok';
+  return '<button class="card act" onclick="openPerson('+i+')"><span class="dot '+dot+'"></span>'+
+    '<span class="bd"><span class="h">'+esc(t.name)+' &nbsp;'+lvlChip(t.levelKey,t.level)+'</span>'+
+    '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no training officer')+'</span>'+
+    (why ? '<span class="m" style="color:var(--'+(hard?'stop':'warn')+')">'+esc(cap(why))+'</span>' : '')+
+    '</span><span class="go">&rsaquo;</span></button>';
+}
+function urgentNeedV(w){
+  return /no one|no training officer|has left|sentence, not a name|not responding|remediation|concern|never evaluated/i.test(w);
+}
+function cap(s){ s = String(s==null?'':s); return s.charAt(0).toUpperCase()+s.slice(1); }
+function short(s){ s = String(s==null?'':s).trim(); return s.length > 44 ? s.slice(0,44)+'…' : s; }
+
+/* Data-quality work. Real, but it is not a decision about a person, so it
+   sits under a count until you ask for it. */
+function housekeeping(d){
+  var subs = d.duplicateSubs || [], dupes = d.duplicates || [];
+  if (!subs.length && !dupes.length) return '';
+  var h = '<h2>Housekeeping</h2>';
+  if (subs.length){
+    h += '<button class="more" onclick="toggleShow(\'sameday\')">'+
+         (shown('sameday') ? 'Hide' : 'Show')+' '+subs.length+' same-day '+
+         (subs.length===1?'submission':'submissions')+' to settle</button>';
+    if (shown('sameday')){
+      h += '<div class="note n-info"><b>Both are kept</b>Nothing has been removed. These are the '+
+           'places where two submissions of the same kind landed on the same day and somebody '+
+           'has to say which one stands. Open the record to read them side by side.</div>';
+      subs.forEach(function(x){
+        h += '<button class="card act" onclick="openRecord('+jsStr(x.trainee)+')">'+
+          '<span class="dot soon"></span><span class="bd">'+
+          '<span class="h">'+esc(x.trainee)+'</span>'+
+          '<span class="m">'+esc(x.source)+(x.group?' &middot; '+esc(x.group):'')+
+          ' &middot; '+esc(x.when)+'</span>'+
+          '<span class="m">'+x.count+' submissions on the one day</span>'+
+          '</span><span class="go">&rsaquo;</span></button>';
+      });
+    }
+  }
+  if (dupes.length){
+    h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'record':'records')+
+         '</b>'+esc(dupes.join(', '))+' '+(dupes.length===1?'appears':'appear')+
+         ' more than once in the trainee master.</div>';
+  }
+  return h;
+}
+
+function toggleShow(k){ S.show = S.show || {}; S.show[k] = !S.show[k]; render(); }
+function shown(k){ return !!(S.show||{})[k]; }
 function openPerson(i){
   var t = (BOOT.data.people||[])[i];
   if (!t) return;

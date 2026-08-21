@@ -287,9 +287,22 @@ function divisionPayloadV1_() {
     duplicates: dupes,
     releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
       .map(function (t) { return { name: t.name, level: t.level }; }),
+    // Every active trainee, each carrying enough for the screen to decide
+    // whether it needs to say anything about them at all. A list of ten
+    // identical rows is not information; it is my internals on somebody's
+    // phone. The screen shows the exceptions and counts the rest.
     people: active.map(function (t) {
+      var last = lastEvalForV1_(t.norm);
+      var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
+      var why = '';
+      if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
+      else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
+      else if (days < 0) why = 'never evaluated';
+      else if (days > 14) why = days + ' days since an evaluation';
+      else if (!t.setupComplete) why = 'record incomplete';
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
+               days: days, status: t.status || '', needs: why,
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),

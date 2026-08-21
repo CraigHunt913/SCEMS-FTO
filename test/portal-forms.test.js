@@ -776,5 +776,111 @@ if (api2) {
   ok(/Urgent concern/.test(html), 'the urgent concern route is on the trainee’s own screen');
 }
 
+// ---------------------------------------------------------------- //
+section('The Division screen is a decision queue, not a directory');
+// ---------------------------------------------------------------- //
+// What went wrong on the live deployment: ten identical trainee rows, every
+// one of them green, followed by a scroll of duplicate submissions printing
+// SPREADSHEET ROW NUMBERS on the Training Chief's phone. Both of those are
+// my internals leaking into somebody else's interface. These tests keep them
+// out and keep the count honest.
+
+function personAt(i) {
+  return { name: 'Quiet Person ' + i, level: 'EMT', levelKey: 'emt', phase: 'Phase 2',
+           fto: 'Dana Whitlock', shift: 'A', days: 3, status: '', needs: '',
+           forms: [], freshness: [] };
+}
+const divPeople = [];
+for (let i = 1; i <= 9; i++) divPeople.push(personAt(i));
+divPeople.push({ name: 'Latavia Cole', level: 'EMT', levelKey: 'emt', phase: 'Phase 1',
+  fto: '', shift: 'C', days: -1, status: '', needs: 'no training officer is named',
+  forms: [], freshness: [] });
+
+const divBoot = { version: PORTAL.VERSION, mode: 'LIVE',
+  viewer: { email: 'chief@example.org', role: 'TRAINING_DIVISION',
+            name: 'C. Hunt', ok: true, why: '' },
+  data: { mode: 'LIVE', activeCount: 10, closedCount: 4,
+          queue: [], queueCount: 0,
+          people: divPeople,
+          incomplete: [], stranded: [], duplicates: [],
+          forms: [], retiredForms: [], formLinks: true,
+          duplicateSubs: [
+            { trainee: 'Elizabeth McInville', source: 'Skill logged',
+              group: 'ePCR documentation', when: 'Mon Aug 17 2026', count: 9,
+              tab: '19 SKILL EVIDENCE LOG', rows: [264, 263, 262, 260, 261] }
+          ] },
+  error: '' };
+
+let api3 = null;
+try {
+  api3 = new Function('document', 'window', 'alert', 'google',
+    body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot)) +
+    '\nreturn { S: S, render: render, toggleShow: toggleShow };')
+    (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
+} catch (e) { api3 = null; }
+ok(!!api3, 'the Division screen renders');
+
+if (api3) {
+  let html = nodes['view'].innerHTML;
+
+  ok(/Nothing waiting on you/.test(html),
+     'with no sign-offs pending it says so at the top, in one line');
+  ok(/Latavia Cole/.test(html), 'the one trainee who needs something is named');
+  ok(/no training officer is named/i.test(html), 'with the reason on her card');
+  ok(!/Quiet Person 1/.test(html),
+     'and the nine with nothing outstanding are NOT a list of names');
+  ok(/9 trainees with nothing outstanding/.test(html),
+     'they are one line with a count behind a button');
+  ok(/openPerson\(9\)/.test(html),
+     'and the card that IS shown carries her index into people, not into the filtered list');
+
+  // the row numbers. this is the thing that shipped.
+  ok(!/\b26[0-4]\b/.test(html), 'no spreadsheet row number appears anywhere on the screen');
+  ok(!/19 SKILL EVIDENCE LOG/.test(html), 'nor the name of a raw tab');
+  ok(!/Elizabeth McInville/.test(html),
+     'the same-day submissions are not listed until they are asked for');
+  ok(/1 same-day submission to settle/.test(html),
+     'they are a count with a button');
+
+  api3.toggleShow('sameday');
+  html = nodes['view'].innerHTML;
+  ok(/Elizabeth McInville/.test(html), 'opening it shows whose record needs the call');
+  ok(/9 submissions on the one day/.test(html), 'and how many landed');
+  ok(!/\b26[0-4]\b/.test(html), 'still with no row numbers, even opened');
+  ok(/openRecord\(/.test(html), 'and it opens the record, where both are readable side by side');
+
+  api3.toggleShow('quiet');
+  html = nodes['view'].innerHTML;
+  ok(/Quiet Person 1/.test(html), 'asking for the quiet nine shows them');
+  ok(/openPerson\(0\)/.test(html), 'each still indexed into the real people list');
+}
+
+// ---------------------------------------------------------------- //
+section('A pending sign-off outranks everything else on that screen');
+// ---------------------------------------------------------------- //
+const divBoot2 = JSON.parse(JSON.stringify(divBoot));
+divBoot2.data.queue = [{ trainee: "Sam O'Neill", skill: 'IV access',
+  evidence: '4 successful, 3 independent', since: '2 days ago', row: 12, from: '' }];
+divBoot2.data.queueCount = 1;
+
+let api4 = null;
+try {
+  api4 = new Function('document', 'window', 'alert', 'google',
+    body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot2)) +
+    '\nreturn { S: S, render: render };')
+    (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
+} catch (e) { api4 = null; }
+ok(!!api4, 'it renders with a decision waiting');
+
+if (api4) {
+  const html = nodes['view'].innerHTML;
+  ok(/1 decision waiting/.test(html), 'the headline is the decision, not the roster');
+  ok(html.indexOf('IV access') < html.indexOf('Latavia Cole'),
+     'and the decision comes before anybody else on the page');
+  ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
+  ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
+     "and an apostrophe in a name survives instead of being stripped out");
+}
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);
