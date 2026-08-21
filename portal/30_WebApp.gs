@@ -109,42 +109,138 @@ function ackCoachingV1(row) {
   return 'Acknowledged.';
 }
 
-/** Trainee files a reflection. */
+/** Trainee files a reflection — in STAGING only.
+ *
+ *  Two reasons it is not allowed against the real tracker, and each on its own
+ *  would be enough.
+ *
+ *  03 SELF-REFLECTION RAW is a form-response tab. The self-reflection FORM
+ *  writes it, that form has a trigger and a destination, and the tracker reads
+ *  what lands there. A second writer into the same tab is a second version of
+ *  the truth, and this portal was never meant to be one.
+ *
+ *  And this write was positional — date, name, three answers, in that order,
+ *  into whatever columns happened to be there. The column order of a form
+ *  response tab belongs to the form, and Google mints a fresh one on every
+ *  relink. One added question and a reflection would file itself into the
+ *  wrong columns of somebody's permanent record, quietly.
+ *
+ *  So: STAGING only, where the flow can be practised end to end, and mapped by
+ *  header even there, because a practice run that exercises a different shape
+ *  from the real one proves nothing. */
 function submitReflectionV1(answers) {
-  requireWritableV1_('file a reflection');
+  requireStagingV1_('file a reflection from inside the portal');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only a trainee may file a reflection.');
+
+  var t = readTabV1_(PORTAL.TAB.REFLECT);
+  if (!t.ok) throw new Error('No reflection log.');
+
   var a = answers || {};
-  var sh = targetBookV1_().getSheetByName(PORTAL.TAB.REFLECT);
-  if (!sh) throw new Error('No reflection log.');
-  sh.appendRow([new Date(), viewer.traineeName,
-                clean_(a.wentWell), clean_(a.wasHard), clean_(a.workOn)]);
-  var ref = 'RF-' + String(sh.getLastRow());
+  var byHeader = {};
+  byHeader[headerNameV1_(t, ['TIMESTAMP', 'DATE'])] = new Date();
+  byHeader[headerNameV1_(t, ['TRAINEE', 'TRAINEE NAME', 'NAME'])] = viewer.traineeName;
+  byHeader[headerNameV1_(t, ['WHAT WENT WELL', 'WENT WELL'])] = clean_(a.wentWell);
+  byHeader[headerNameV1_(t, ['WHAT WAS HARD', 'WAS HARD', 'WHAT WAS DIFFICULT'])] = clean_(a.wasHard);
+  byHeader[headerNameV1_(t, ['WHAT I WANT TO WORK ON', 'WORK ON', 'GOALS'])] = clean_(a.workOn);
+  delete byHeader[''];
+
+  var row = t.headers.map(function (h) {
+    var v = byHeader[String(h).toUpperCase()];
+    return v === undefined ? '' : v;
+  });
+  t.sheet.appendRow(row);
+
+  var ref = 'RF-' + String(t.sheet.getLastRow());
   forgetTabsV1_();
   auditV1_('REFLECTION FILED', viewer.email, ref);
   return { ref: ref, at: new Date().toString() };
 }
 
-/** Division approves a sign-off. A typed reason is required — there is no
- *  default wording, because a pre-filled reason is not a reason. */
-function approveSignoffV1(row, reason) {
-  requireWritableV1_('approve a sign-off');
+/** The first of these headers the tab actually has, upper-cased, or ''. */
+function headerNameV1_(t, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    if (t.col[headers[i]] !== undefined) return headers[i];
+  }
+  return '';
+}
+
+/** Division STAGES a sign-off decision. A typed reason is required — there is
+ *  no default wording, because a pre-filled reason is not a reason.
+ *
+ *  It stages. It does not record, and that is the whole point.
+ *
+ *  The tracker's recordDecisionForRowV20_1_ is the single writer to
+ *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
+ *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
+ *  The result was the worst of both: the approval never reached the sign-off
+ *  log, so the skill was never actually signed off anywhere permanent — and
+ *  the row was now shut against the only function that could have put it
+ *  there. It also skipped that function's authority check, its evidence gate
+ *  and its duplicate guard, every one of which exists because somebody
+ *  decided a career decision needed them.
+ *
+ *  So this writes the four fields a decision is made of and leaves RECORD
+ *  STATUS alone. The tracker records it — tick RECORD on the row, or run
+ *  "Record pending decisions" from its menu. One writer, every gate, and the
+ *  result is exactly as defensible as a decision typed into the sheet by
+ *  hand, because that is now literally what it is. */
+function approveSignoffV1(row, reason, requestId) {
+  requireWritableV1_('stage a sign-off decision');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
   var why = String(reason || '').trim();
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
+
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
   var r = requireLocalRowV1_(t, row, 'approve that sign-off');
-  if (t.col['DECISION'] === undefined) throw new Error('Queue is missing its DECISION column.');
+
+  // Every column checked before any of them is written. A throw halfway
+  // through leaves a decision with no reason attached to it, which is worse
+  // than no decision at all.
+  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
+  var missing = [];
+  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
+  if (missing.length) {
+    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
+      'written. Fix the header row in the tracker first.');
+  }
+
+  var live = t.rows[r - t.firstDataRow] || [];
+
+  // The screen was built some time ago, and the queue re-sorts itself every
+  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
+  // the one on screen is how you sign off the wrong person's skill.
+  var want = String(requestId == null ? '' : requestId).trim();
+  var have = t.col['REQUEST ID'] === undefined ? ''
+           : String(live[t.col['REQUEST ID']] || '').trim();
+  if (want && have && want !== have) {
+    throw new Error('That is not the row you were looking at any more — the queue moved ' +
+      'underneath you. Nothing was written. Reload and try again.');
+  }
+
+  var status = String(live[t.col['RECORD STATUS']] || '').trim();
+  if (status !== 'OPEN') {
+    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
+  }
+  var already = String(live[t.col['DECISION']] || '').trim();
+  if (already) {
+    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
+      'was written. Record it in the tracker, or clear it there, first.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
   t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(new Date());
+  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue('RECORDED');
+  // RECORD STATUS is deliberately not touched. See the note above.
   forgetTabsV1_();
-  auditV1_('SIGN-OFF APPROVED', viewer.email, 'row ' + r + ' | ' + why.slice(0, 120));
-  return 'Recorded.';
+  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
+    ' | ' + why.slice(0, 120));
+  return 'Staged. The tracker records it.';
 }
 
 /** One person's whole record: the most recent submission of each kind, then

@@ -117,8 +117,20 @@ function world() {
   tab(PORTAL.TAB.EVAL, ['TIMESTAMP','FTO','TRAINEE','LEVEL','PHASE'],
     [[new Date(),'Dana Whitlock','Jamie Rivers','Paramedic','Phase 2']]);
   tab(PORTAL.TAB.REFLECT, ['TIMESTAMP','TRAINEE','WENT WELL','WAS HARD','WORK ON'], []);
-  tab(PORTAL.TAB.URGENT, ['TIMESTAMP','CALLED','YOUR NAME','TRAINEE INVOLVED','WHAT HAPPENED'],
-    [[new Date(),'Yes','Dana Whitlock','Alex Bramble','Medication concentration error caught before administration.']]);
+  // The REAL header row of 04 URGENT CONCERNS RAW, read off the live tracker.
+  // The fixture used to be a five-column invention that happened to match the
+  // positional code reading it, which is why that code's bug survived every
+  // test: column 3 here is the reporter's ROLE and column 4 is the trainee.
+  tab(PORTAL.TAB.URGENT,
+    ['TIMESTAMP','TRAINING OFFICER CONTACTED','REPORTER','ROLE','TRAINEE','DATE','SHIFT',
+     'CATEGORY','WHAT HAPPENED','ACTION TAKEN','RESOLUTION (TCO)','DATE CLOSED','STATUS','OWNER'],
+    [[new Date(2026,7,1),'Yes','Dana Whitlock','FTO','Alex Bramble',new Date(2026,7,1),'B',
+      'Medication','Concentration error caught before administration.','Held the drug','','','',''],
+     [new Date(2026,7,14),'Yes','Dana Whitlock','FTO','Jamie Rivers',new Date(2026,7,14),'A',
+      'Airway','Second attempt without asking for help.','Debriefed on scene','','','',''],
+     [new Date(2026,7,3),'Yes','Priya Okafor','FTO','Alex Bramble',new Date(2026,7,3),'C',
+      'Scene safety','Walked into the lane without checking.','Coached','Resolved on shift',
+      new Date(2026,7,4),'Closed','C. Hunt']]);
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'],
     [[new Date(),'Jamie Rivers','Dana Whitlock','Radio reports still rushed.',''],
      [new Date(),'Alex Bramble','Dana Whitlock','Slow the primary survey down.','']]);
@@ -231,8 +243,8 @@ section('The Medical Director gets clinical cases and nothing else');
 // ---------------------------------------------------------------- //
 world();
 r = payloadFor('md@example.org');
-ok(r.d.cases.length === 1, 'one referred case');
-ok(/Medication concentration/.test(JSON.stringify(r.d)), 'with the clinical narrative');
+ok(r.d.cases.length === 2, 'two open referred cases, and not the closed third');
+ok(/Concentration error caught/.test(JSON.stringify(r.d)), 'with the clinical narrative');
 ok(!/Radio reports/.test(JSON.stringify(r.d)), 'but no routine coaching');
 ok(!r.d.trainees, 'and no trainee roster at all');
 
@@ -281,7 +293,20 @@ approveSignoffV1(HR + 1, 'Directly observed on two separate shifts and verified.
 let q = readTabV1_(PORTAL.TAB.QUEUE);
 ok(q.rows[0][q.col['DECISION']] === 'Approve sign-off', 'a proper approval records the decision');
 ok(q.rows[0][q.col['DECIDED BY']] === 'chief@example.org', 'against the real signed-in account');
-ok(q.rows[0][q.col['RECORD STATUS']] === 'RECORDED', 'and closes the queue row');
+// The portal STAGES the decision and stops. recordDecisionForRowV20_1_ in the
+// tracker is the only writer to 21 SKILL SIGN-OFF LOG, and it refuses any row
+// that is not OPEN - so closing the row here would have meant the approval
+// never reached the permanent log AND could never be recorded afterwards.
+ok(q.rows[0][q.col['RECORD STATUS']] === 'OPEN',
+   'and leaves the row OPEN, so the tracker can still record it');
+threw = false;
+try { approveSignoffV1(HR + 1, 'Watched it again and it was clean.'); }
+catch (e) { threw = /already staged/.test(e.message); }
+ok(threw, 'and a second approval on the same row is refused rather than doubled');
+threw = false;
+try { approveSignoffV1(HR + 1, 'A perfectly good reason.', 'SOME-OTHER-REQUEST'); }
+catch (e) { threw = /not the row you were looking at/.test(e.message); }
+ok(threw, 'and a stale screen whose row has moved is refused, not written');
 
 world(); as('jamie@example.org');
 threw = false;
@@ -321,12 +346,15 @@ ok(mayWriteV1_() === true, 'LIVE allows the everyday actions');
 ok(isPracticeV1_() === false, 'and knows perfectly well the data is real');
 ok(isLiveV1_() === true, 'and says so');
 
-// the three that open
+// the two that open
 as('jamie@example.org');
-ok(threwMsg(() => submitReflectionV1({ wentWell: 'Slowed the primary survey.' })) === '',
-   'a trainee can file their own reflection');
 ok(threwMsg(() => ackCoachingV1(HR + 1)) === '',
-   'and acknowledge their own coaching note');
+   'a trainee can acknowledge their own coaching note');
+// and the one that does NOT. 03 SELF-REFLECTION RAW belongs to the
+// self-reflection FORM, which has the trigger and the destination. A portal
+// that also appends to it is a second version of the truth.
+ok(/practice spreadsheet/i.test(threwMsg(() => submitReflectionV1({ wentWell: 'Slowed the primary survey.' }))),
+   'but filing a reflection through the portal is refused, because the form owns that tab');
 as('chief@example.org');
 ok(threwMsg(() => approveSignoffV1(HR + 1, 'Watched the last three in person.')) === '',
    'and the Division can approve a sign-off with a typed reason');
@@ -335,8 +363,8 @@ ok(threwMsg(() => approveSignoffV1(HR + 1, 'Watched the last three in person.'))
 world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
 PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 as('dana@example.org');
-ok(/Only a trainee/.test(threwMsg(() => submitReflectionV1({ wentWell: 'x' }))),
-   'an FTO still cannot file a reflection as a trainee');
+ok(/practice spreadsheet/i.test(threwMsg(() => submitReflectionV1({ wentWell: 'x' }))),
+   'and nobody at all can, whatever their role');
 ok(/Only the Training Division/.test(threwMsg(() => approveSignoffV1(HR + 1, 'looks fine to me'))),
    'and still cannot approve a sign-off');
 as('jamie@example.org');
@@ -641,6 +669,73 @@ PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 vis = resolveViewerV1_(whoIsVisitingV1_());
 ok(vis.role === PORTAL.ROLE.TRAINEE && vis.name === 'Jamie Rivers',
    'a visitor Google DOES name is themselves, not the owner');
+
+// ---------------------------------------------------------------- //
+section('The Medical Director is shown the right person and the right words');
+// ---------------------------------------------------------------- //
+// 04 URGENT CONCERNS RAW is
+//   Timestamp | TRAINING OFFICER CONTACTED | Reporter | Role | Trainee |
+//   Date | Shift | Category | What Happened | Action Taken |
+//   RESOLUTION (TCO) | DATE CLOSED | STATUS | OWNER
+// and this screen was reading it by position: column 3 as the trainee (that
+// is Role) and column 4 as what happened (that is the trainee's name). Every
+// case named the wrong thing as the person. A physician is the last person in
+// this system who should be handed a mislabelled record.
+world();
+as('md@example.org');
+const md = payloadForV1_(resolveViewerV1_(whoIsAskingV1_()));
+
+ok(md.cases.length === 2, 'the closed concern is not shown: two open, not three');
+ok(md.total === 2, 'and the count agrees');
+ok(!md.cases.some(c => /scene safety/i.test(c.category || '')),
+   'specifically, the one with a DATE CLOSED and STATUS Closed is gone');
+
+ok(md.cases[0].trainee === 'Jamie Rivers',
+   'the newest concern comes first, not the oldest');
+ok(md.cases[1].trainee === 'Alex Bramble', 'then the one before it');
+ok(!md.cases.some(c => c.trainee === 'FTO'),
+   'and nobody is called "FTO", which is what reading column 3 produced');
+
+const one = md.cases[0];
+ok(/Second attempt without asking/.test(one.what),
+   'what happened is the account of what happened');
+ok(one.what.indexOf('Jamie Rivers') < 0,
+   'not the trainee\'s name, which is what reading column 4 produced');
+ok(one.from === 'Dana Whitlock', 'the reporter is the reporter');
+ok(one.category === 'Airway', 'the category is carried through');
+ok(one.book === '', 'and `book` survives, instead of being overwritten by a second `from:`');
+
+// and the record screen, which reads the same tab through PORTAL_SOURCES
+world();
+as('md@example.org');
+const mdRec = recordV1('Alex Bramble');
+const urg = mdRec.sections.filter(x => /urgent/i.test(x.title))[0];
+ok(!!urg, 'the medical director can open the urgent part of a record');
+ok(urg.count === 2, 'and it finds both of that trainee\'s concerns by header, not by position');
+
+// ---------------------------------------------------------------- //
+section('A missing column is reported, never answered with a neighbour');
+// ---------------------------------------------------------------- //
+world();
+// take the trainee column away entirely
+SHEETS[PORTAL.TAB.URGENT].g[PORTAL.HEADER_ROW - 1][4] = '';
+as('md@example.org');
+const blind = payloadForV1_(resolveViewerV1_(whoIsAskingV1_()));
+ok(blind.warnings.length >= 1, 'losing the trainee column produces a warning');
+ok(/no column naming the trainee/i.test(blind.warnings[0]),
+   'which says exactly which column is missing');
+ok(/nothing is being guessed/i.test(blind.warnings[0]),
+   'and promises it did not read the one next to it');
+ok(!blind.cases.some(c => c.trainee === 'FTO'),
+   'and it did not: no case is attributed to the ROLE column');
+
+world();
+SHEETS[PORTAL.TAB.EVAL].g[PORTAL.HEADER_ROW - 1][2] = '';   // TRAINEE
+as('chief@example.org');
+const dv = divisionPayloadV1_();
+ok(dv.warnings.length >= 1, 'losing the evaluation tab\'s trainee column is reported too');
+ok(/last evaluated/i.test(dv.warnings[0]),
+   'on the screen that counts days since the last evaluation');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -481,7 +481,7 @@ as('chief@example.org');
 ok(/read-only|read only/i.test(threw(() => approveSignoffV1(5, 'Evidence reviewed in person'))),
    'approving a sign-off refuses');
 as('jamie@example.org');
-ok(/read-only|read only/i.test(threw(() => submitReflectionV1({ wentWell: 'x' }))),
+ok(/read only|practice spreadsheet/i.test(threw(() => submitReflectionV1({ wentWell: 'x' }))),
    'filing a reflection through the portal refuses');
 ok(/read-only|read only/i.test(threw(() => ackCoachingV1(5))),
    'acknowledging coaching refuses');
@@ -499,9 +499,14 @@ ok(isPracticeV1_() === false, 'and knows the data is real');
 ok(/practice spreadsheet/i.test(threw(() => switchRoleForTestingV1('DIVISION'))),
    'and the role switcher still refuses, because that gate is about the data');
 
+// LIVE opens the everyday actions - but not this one. 03 SELF-REFLECTION RAW
+// belongs to the self-reflection FORM, which already has the trigger and the
+// destination; a portal that also appends to it is a second version of the
+// truth, and the append it used to do was positional into a tab whose column
+// order belongs to Google.
 as('jamie@example.org');
-ok(threw(() => submitReflectionV1({ wentWell: 'Kept the primary survey slow.' })) === '',
-   'while a trainee filing their own reflection now works, which is the point');
+ok(/practice spreadsheet/i.test(threw(() => submitReflectionV1({ wentWell: 'Kept the primary survey slow.' }))),
+   'filing a reflection through the portal stays shut even in LIVE, because that tab belongs to the form');
 as('chief@example.org');
 ok(threw(() => switchRoleForTestingV1('TRAINEE')) !== '',
    'and being the Division does not unlock it either');
@@ -866,8 +871,11 @@ section('A pending sign-off outranks everything else on that screen');
 // ---------------------------------------------------------------- //
 const divBoot2 = JSON.parse(JSON.stringify(divBoot));
 divBoot2.data.queue = [{ trainee: "Sam O'Neill", skill: 'IV access',
-  evidence: '4 successful, 3 independent', since: '2 days ago', row: 12, from: '' }];
+  evidence: '4 successful, 3 independent', since: '2 days ago', row: 12,
+  from: '', requestId: 'QR-77' }];
 divBoot2.data.queueCount = 1;
+divBoot2.data.staged = [{ trainee: 'Kaylie Vaughn', skill: 'CPR / AED operation',
+  decision: 'Approve sign-off', by: 'chief@example.org', since: '1 day ago' }];
 
 let api4 = null;
 try {
@@ -884,6 +892,14 @@ if (api4) {
   ok(html.indexOf('IV access') < html.indexOf('Latavia Cole'),
      'and the decision comes before anybody else on the page');
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
+  ok(/QR-77/.test(html),
+     'carrying the request id, so a queue that re-sorted cannot be approved blind');
+  ok(/1 waiting on the tracker/.test(html),
+     'a decision already made is counted separately, not as one still waiting on you');
+  ok(/Record pending decisions/.test(html),
+     'and the screen says what turns it into a permanent sign-off');
+  ok(!/Kaylie Vaughn/.test(cards(html)),
+     'without putting it back on the page as a row');
   ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
      "and an apostrophe in a name survives instead of being stripped out");
 }

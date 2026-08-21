@@ -39,10 +39,16 @@ var PORTAL_SOURCES = [
     when: { re: /^timestamp|^date/i,            at: 0 },
     by:   null },
 
+  // The positional fallback for `who` used to be column 3. On the live tab
+  // column 3 is Role, not the trainee - the header is at column 4. Falling
+  // back to a fixed position on a form-response tab is how a record ends up
+  // attributed to "FTO" instead of to a person, so this one resolves by
+  // header or not at all. `Reporter` is the live header and matched none of
+  // the old patterns; it does now.
   { key: 'URGENT', tab: PORTAL.TAB.URGENT, title: 'Urgent concern',
-    who:  { re: /trainee/i,                     at: 3 },
-    when: { re: /^timestamp|^date/i,            at: 0 },
-    by:   { re: /^your name|reported by/i,      at: 2 },
+    who:  { re: /^trainee/i,                          at: -1 },
+    when: { re: /^timestamp|^date$|^date /i,          at: 0 },
+    by:   { re: /^reporter|^your name|reported by/i,  at: 2 },
     restricted: true },
 
   { key: 'EVIDENCE', tab: PORTAL.TAB.EVIDENCE, title: 'Skill logged',

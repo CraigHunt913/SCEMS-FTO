@@ -522,7 +522,8 @@ ok(snapOf('STRAY-BOOK') === strayBefore, 'the other spreadsheet is untouched');
 
 ok(threw(() => approveSignoffV1(mine.row, 'Evidence reviewed in person.')) === '',
    'while the row that IS here approves normally');
-ok(String(BOOKS['PROD-BOOK'][PORTAL.TAB.QUEUE].g[HR][8]) === 'RECORDED',
+const qHere = readTabV1_(PORTAL.TAB.QUEUE);
+ok(String(qHere.rows[mine.row - qHere.firstDataRow][qHere.col['DECISION']]) === 'Approve sign-off',
    'and lands on the right row');
 
 // ---------------------------------------------------------------- //

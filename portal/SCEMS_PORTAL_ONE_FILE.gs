@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 51d02fad
+ * Build 64050886
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -837,6 +837,39 @@ function resolveViewerV1_(email) {
  *  no such column, read undefined, and every FTO on it resolved to nobody -
  *  silently, because an empty name simply skips the row. A header this layer
  *  depends on is worth naming several ways rather than one. */
+/** The index of the first of these headers this tab actually has, or -1.
+ *
+ *  Deliberately different from pickV1_. This resolves the COLUMN once, from
+ *  the header row, and every row is then read from that column - including
+ *  the rows where it happens to be blank. pickV1_ falls through to the next
+ *  alias when a CELL is empty, which is right for a name that could be in
+ *  either of two columns and dangerous for a column that is legitimately
+ *  blank sometimes: an empty TRAINEE would quietly be answered with whatever
+ *  sits in ROLE, and nothing would look wrong.
+ *
+ *  -1 means the tab does not have that column at all. That is a defect to
+ *  report on screen, never a reason to read a neighbouring one. */
+function headerIndexV1_(t, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var ci = t.col[headers[i]];
+    if (ci !== undefined) return ci;
+  }
+  return -1;
+}
+
+/** One cell from a resolved column index, trimmed. '' when there is no column. */
+function atV1_(row, ci) {
+  return ci < 0 ? '' : String(row[ci] == null ? '' : row[ci]).trim();
+}
+
+/** Is there anything at all in this row? */
+function rowHasAnythingV1_(row) {
+  for (var i = 0; i < row.length; i++) {
+    if (String(row[i] == null ? '' : row[i]).trim() !== '') return true;
+  }
+  return false;
+}
+
 function pickV1_(t, row, headers) {
   for (var i = 0; i < headers.length; i++) {
     var ci = t.col[headers[i]];
@@ -1288,19 +1321,55 @@ function openQueueV1_() {
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
       evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
       since: asDateV1_(r[t.col['READY DATE']]),
-      requestId: String(r[t.col['REQUEST ID']] || '').trim()
+      requestId: String(r[t.col['REQUEST ID']] || '').trim(),
+      // A row can be OPEN and already carry a decision: that is one the portal
+      // (or somebody in the sheet) has staged, waiting for the tracker to
+      // record it. It is not still waiting on the Chief, and counting it as
+      // though it were is how a queue never appears to go down.
+      decision: String(r[t.col['DECISION']] || '').trim(),
+      decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
   });
   return out;
 }
 
+/* The evaluation tab, read by its headers.
+ *
+ *  This used to be r[2] for the trainee and r[0] for the date. Both happen to
+ *  be right on today's live tab - and that is the whole problem with a
+ *  positional read: it is right until somebody adds a question to the form,
+ *  and then it is silently wrong on every screen at once, with every trainee
+ *  reading "never evaluated" and nothing anywhere saying why.
+ *
+ *  Shift Date first, then the form's own timestamp. An officer who files three
+ *  days late did not evaluate anybody today, and the Division screen counts
+ *  days from this. */
+var EVAL_TRAINEE_HEADERS_V1 = ['TRAINEE', 'TRAINEE NAME', 'NAME'];
+var EVAL_DATE_HEADERS_V1    = ['SHIFT DATE', 'DATE', 'TIMESTAMP'];
+
+/** What is wrong with the evaluation tab, in a sentence, or ''. */
+function evalHeaderProblemV1_() {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  if (!t.ok) return PORTAL.TAB.EVAL + ' is not in this spreadsheet.';
+  var missing = [];
+  if (headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1) < 0) missing.push('one naming the trainee');
+  if (headerIndexV1_(t, EVAL_DATE_HEADERS_V1) < 0) missing.push('one holding the date');
+  return missing.length
+    ? PORTAL.TAB.EVAL + ' is missing ' + missing.join(' and ') + ', so nothing on ' +
+      'these screens can say when anybody was last evaluated. Nothing is being guessed at.'
+    : '';
+}
+
 function lastEvalForV1_(norm) {
   var t = readTabAllV1_(PORTAL.TAB.EVAL);
   if (!t.ok) return null;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return null;
   var latest = null;
   t.rows.forEach(function (r) {
-    if (normNameV1_(r[2]) !== norm) return;
-    var d = asDateV1_(r[0]);
+    if (normNameV1_(r[iWho]) !== norm) return;
+    var d = asDateV1_(r[iWhen]);
     if (d && (!latest || d > latest)) latest = d;
   });
   return latest;
@@ -1416,7 +1485,9 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var queue = openQueueV1_();
+  var open = openQueueV1_();
+  var queue = open.filter(function (q) { return !q.decision; });
+  var staged = open.filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -1440,6 +1511,17 @@ function divisionPayloadV1_() {
                row: q.row, from: q.from };
     }),
     queueCount: queue.length,
+    // Decisions already made here and waiting on the tracker to make them
+    // permanent. The portal deliberately does not close these rows: the
+    // tracker's own writer is the only thing allowed to put a sign-off in
+    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    staged: staged.map(function (q) {
+      return { trainee: q.trainee, skill: q.skill, decision: q.decision,
+               by: q.decidedBy, since: daysAgoTextV1_(q.since) };
+    }),
+    // A column this screen leans on that is not there. Doctrine: report it,
+    // never read the one beside it and hope.
+    warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
       if (!t.level) missing.push('level');
@@ -1505,24 +1587,83 @@ function supervisorPayloadV1_(viewer) {
   };
 }
 
+/* ---------------- the medical director ---------------- */
+/* This screen was reading the urgent-concern tab by position, and the live
+   tab is
+     Timestamp | TRAINING OFFICER CONTACTED | Reporter | Role | Trainee |
+     Date | Shift | Category | What Happened | Action Taken |
+     RESOLUTION (TCO) | DATE CLOSED | STATUS | OWNER
+   so column 3 is the REPORTER'S ROLE, not the trainee, and column 4 is the
+   trainee's NAME, not the account of what happened. Every case on the
+   physician's screen named the wrong thing as the person and printed a name
+   where the narrative should be.
+
+   Three more, found with it: the twenty shown were the twenty OLDEST, so
+   nothing recent ever appeared; concerns already closed kept appearing, since
+   nothing read DATE CLOSED or STATUS; and the key saying which book a row came
+   from was declared twice in the same object literal, so it was overwritten
+   and lost every time.
+
+   A physician is the last person in this system who should be handed a
+   mislabelled record. Every column is resolved once, by name, and a column
+   that is not there is said out loud rather than answered with a neighbour. */
+
+var URGENT_TRAINEE_HEADERS_V1  = ['TRAINEE', 'TRAINEE INVOLVED', 'TRAINEE NAME', 'NAME'];
+var URGENT_REPORTER_HEADERS_V1 = ['REPORTER', 'REPORTED BY', 'YOUR NAME', 'FTO', 'TRAINING OFFICER'];
+var URGENT_WHAT_HEADERS_V1     = ['WHAT HAPPENED', 'DETAIL', 'DETAILS', 'DESCRIPTION', 'NARRATIVE'];
+var URGENT_WHEN_HEADERS_V1     = ['DATE', 'SHIFT DATE', 'TIMESTAMP'];
+var URGENT_CATEGORY_HEADERS_V1 = ['CATEGORY', 'CONCERN TYPE', 'TYPE'];
+var URGENT_STATUS_HEADERS_V1   = ['STATUS', 'RECORD STATUS'];
+var URGENT_CLOSED_HEADERS_V1   = ['DATE CLOSED', 'CLOSED'];
+
 function medicalPayloadV1_() {
   var t = readTabAllV1_(PORTAL.TAB.URGENT);
-  var cases = [];
-  if (t.ok) {
-    t.rows.forEach(function (r, i) {
-      var who = String(r[3] || '').trim();
-      if (!who) return;
-      cases.push({
-        row: realRowV1_(t, i),
-        from: rowSourceV1_(t, i),
-        trainee: who,
-        when: asDateV1_(r[0]) ? asDateV1_(r[0]).toDateString() : '',
-        from: String(r[2] || '').trim(),
-        what: String(r[4] || '').trim()
-      });
-    });
+  if (!t.ok) {
+    return { cases: [], total: 0, warnings: [PORTAL.TAB.URGENT +
+      ' is not in this spreadsheet, so nothing can be shown here.'] };
   }
-  return { cases: cases.slice(0, 20) };
+
+  var iWho  = headerIndexV1_(t, URGENT_TRAINEE_HEADERS_V1);
+  var iFrom = headerIndexV1_(t, URGENT_REPORTER_HEADERS_V1);
+  var iWhat = headerIndexV1_(t, URGENT_WHAT_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, URGENT_WHEN_HEADERS_V1);
+  var iCat  = headerIndexV1_(t, URGENT_CATEGORY_HEADERS_V1);
+  var iStat = headerIndexV1_(t, URGENT_STATUS_HEADERS_V1);
+  var iShut = headerIndexV1_(t, URGENT_CLOSED_HEADERS_V1);
+
+  var warnings = [];
+  if (iWho < 0) warnings.push(PORTAL.TAB.URGENT + ' has no column naming the trainee, ' +
+    'so nothing on this screen can be attributed to a person. Nothing is being guessed at.');
+  if (iWhat < 0) warnings.push(PORTAL.TAB.URGENT + ' has no column holding the account ' +
+    'of what happened, so these cases are shown without one.');
+
+  var cases = [];
+  t.rows.forEach(function (r, i) {
+    if (!rowHasAnythingV1_(r)) return;
+    var who = atV1_(r, iWho);
+    if (iWho >= 0 && !who) return;
+
+    // Already dealt with. A closed concern is history, not a question for you.
+    if (atV1_(r, iShut)) return;
+    if (/^(CLOSED|RESOLVED|COMPLETE|COMPLETED|NO ACTION)/.test(atV1_(r, iStat).toUpperCase())) return;
+
+    var when = iWhen < 0 ? null : asDateV1_(r[iWhen]);
+    cases.push({
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
+      trainee: who || '(nobody is named on this row)',
+      from: atV1_(r, iFrom) || '(the reporter is not named)',
+      category: atV1_(r, iCat),
+      when: when ? when.toDateString() : 'no date on the row',
+      at: when ? when.getTime() : 0,
+      what: atV1_(r, iWhat)
+    });
+  });
+
+  // Newest first. It showed the oldest twenty, which on a tab that only ever
+  // grows means the physician never saw anything that had just happened.
+  cases.sort(function (a, b) { return b.at - a.at; });
+  return { cases: cases.slice(0, 20), total: cases.length, warnings: warnings };
 }
 
 /* ---------------- forms, defensively ---------------- */
@@ -1655,42 +1796,138 @@ function ackCoachingV1(row) {
   return 'Acknowledged.';
 }
 
-/** Trainee files a reflection. */
+/** Trainee files a reflection — in STAGING only.
+ *
+ *  Two reasons it is not allowed against the real tracker, and each on its own
+ *  would be enough.
+ *
+ *  03 SELF-REFLECTION RAW is a form-response tab. The self-reflection FORM
+ *  writes it, that form has a trigger and a destination, and the tracker reads
+ *  what lands there. A second writer into the same tab is a second version of
+ *  the truth, and this portal was never meant to be one.
+ *
+ *  And this write was positional — date, name, three answers, in that order,
+ *  into whatever columns happened to be there. The column order of a form
+ *  response tab belongs to the form, and Google mints a fresh one on every
+ *  relink. One added question and a reflection would file itself into the
+ *  wrong columns of somebody's permanent record, quietly.
+ *
+ *  So: STAGING only, where the flow can be practised end to end, and mapped by
+ *  header even there, because a practice run that exercises a different shape
+ *  from the real one proves nothing. */
 function submitReflectionV1(answers) {
-  requireWritableV1_('file a reflection');
+  requireStagingV1_('file a reflection from inside the portal');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.TRAINEE) throw new Error('Only a trainee may file a reflection.');
+
+  var t = readTabV1_(PORTAL.TAB.REFLECT);
+  if (!t.ok) throw new Error('No reflection log.');
+
   var a = answers || {};
-  var sh = targetBookV1_().getSheetByName(PORTAL.TAB.REFLECT);
-  if (!sh) throw new Error('No reflection log.');
-  sh.appendRow([new Date(), viewer.traineeName,
-                clean_(a.wentWell), clean_(a.wasHard), clean_(a.workOn)]);
-  var ref = 'RF-' + String(sh.getLastRow());
+  var byHeader = {};
+  byHeader[headerNameV1_(t, ['TIMESTAMP', 'DATE'])] = new Date();
+  byHeader[headerNameV1_(t, ['TRAINEE', 'TRAINEE NAME', 'NAME'])] = viewer.traineeName;
+  byHeader[headerNameV1_(t, ['WHAT WENT WELL', 'WENT WELL'])] = clean_(a.wentWell);
+  byHeader[headerNameV1_(t, ['WHAT WAS HARD', 'WAS HARD', 'WHAT WAS DIFFICULT'])] = clean_(a.wasHard);
+  byHeader[headerNameV1_(t, ['WHAT I WANT TO WORK ON', 'WORK ON', 'GOALS'])] = clean_(a.workOn);
+  delete byHeader[''];
+
+  var row = t.headers.map(function (h) {
+    var v = byHeader[String(h).toUpperCase()];
+    return v === undefined ? '' : v;
+  });
+  t.sheet.appendRow(row);
+
+  var ref = 'RF-' + String(t.sheet.getLastRow());
   forgetTabsV1_();
   auditV1_('REFLECTION FILED', viewer.email, ref);
   return { ref: ref, at: new Date().toString() };
 }
 
-/** Division approves a sign-off. A typed reason is required — there is no
- *  default wording, because a pre-filled reason is not a reason. */
-function approveSignoffV1(row, reason) {
-  requireWritableV1_('approve a sign-off');
+/** The first of these headers the tab actually has, upper-cased, or ''. */
+function headerNameV1_(t, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    if (t.col[headers[i]] !== undefined) return headers[i];
+  }
+  return '';
+}
+
+/** Division STAGES a sign-off decision. A typed reason is required — there is
+ *  no default wording, because a pre-filled reason is not a reason.
+ *
+ *  It stages. It does not record, and that is the whole point.
+ *
+ *  The tracker's recordDecisionForRowV20_1_ is the single writer to
+ *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
+ *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
+ *  The result was the worst of both: the approval never reached the sign-off
+ *  log, so the skill was never actually signed off anywhere permanent — and
+ *  the row was now shut against the only function that could have put it
+ *  there. It also skipped that function's authority check, its evidence gate
+ *  and its duplicate guard, every one of which exists because somebody
+ *  decided a career decision needed them.
+ *
+ *  So this writes the four fields a decision is made of and leaves RECORD
+ *  STATUS alone. The tracker records it — tick RECORD on the row, or run
+ *  "Record pending decisions" from its menu. One writer, every gate, and the
+ *  result is exactly as defensible as a decision typed into the sheet by
+ *  hand, because that is now literally what it is. */
+function approveSignoffV1(row, reason, requestId) {
+  requireWritableV1_('stage a sign-off decision');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
   var why = String(reason || '').trim();
   if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
+
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
   var r = requireLocalRowV1_(t, row, 'approve that sign-off');
-  if (t.col['DECISION'] === undefined) throw new Error('Queue is missing its DECISION column.');
+
+  // Every column checked before any of them is written. A throw halfway
+  // through leaves a decision with no reason attached to it, which is worse
+  // than no decision at all.
+  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
+  var missing = [];
+  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
+  if (missing.length) {
+    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
+      'written. Fix the header row in the tracker first.');
+  }
+
+  var live = t.rows[r - t.firstDataRow] || [];
+
+  // The screen was built some time ago, and the queue re-sorts itself every
+  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
+  // the one on screen is how you sign off the wrong person's skill.
+  var want = String(requestId == null ? '' : requestId).trim();
+  var have = t.col['REQUEST ID'] === undefined ? ''
+           : String(live[t.col['REQUEST ID']] || '').trim();
+  if (want && have && want !== have) {
+    throw new Error('That is not the row you were looking at any more — the queue moved ' +
+      'underneath you. Nothing was written. Reload and try again.');
+  }
+
+  var status = String(live[t.col['RECORD STATUS']] || '').trim();
+  if (status !== 'OPEN') {
+    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
+  }
+  var already = String(live[t.col['DECISION']] || '').trim();
+  if (already) {
+    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
+      'was written. Record it in the tracker, or clear it there, first.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
   t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(new Date());
+  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue('RECORDED');
+  // RECORD STATUS is deliberately not touched. See the note above.
   forgetTabsV1_();
-  auditV1_('SIGN-OFF APPROVED', viewer.email, 'row ' + r + ' | ' + why.slice(0, 120));
-  return 'Recorded.';
+  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
+    ' | ' + why.slice(0, 120));
+  return 'Staged. The tracker records it.';
 }
 
 /** One person's whole record: the most recent submission of each kind, then
@@ -2633,10 +2870,16 @@ var PORTAL_SOURCES = [
     when: { re: /^timestamp|^date/i,            at: 0 },
     by:   null },
 
+  // The positional fallback for `who` used to be column 3. On the live tab
+  // column 3 is Role, not the trainee - the header is at column 4. Falling
+  // back to a fixed position on a form-response tab is how a record ends up
+  // attributed to "FTO" instead of to a person, so this one resolves by
+  // header or not at all. `Reporter` is the live header and matched none of
+  // the old patterns; it does now.
   { key: 'URGENT', tab: PORTAL.TAB.URGENT, title: 'Urgent concern',
-    who:  { re: /trainee/i,                     at: 3 },
-    when: { re: /^timestamp|^date/i,            at: 0 },
-    by:   { re: /^your name|reported by/i,      at: 2 },
+    who:  { re: /^trainee/i,                          at: -1 },
+    when: { re: /^timestamp|^date$|^date /i,          at: 0 },
+    by:   { re: /^reporter|^your name|reported by/i,  at: 2 },
     restricted: true },
 
   { key: 'EVIDENCE', tab: PORTAL.TAB.EVIDENCE, title: 'Skill logged',
@@ -7006,11 +7249,16 @@ var PORTAL_PAGE_HTML = [
   "       '</div></div>';\n",
   "\n",
   "  h += '<h2>Waiting on you</h2>';\n",
-  "  // In staging the reflection is filed in the portal so the flow can be\n",
-  "  // tried end to end. Against the live tracker the existing self-reflection\n",
-  "  // form is the one that files it, because that form already has a trigger\n",
-  "  // and a destination and this portal must not become a second writer.\n",
-  "  if (canWrite()){\n",
+  "  // In staging the reflection is filed in the portal so the flow can be tried\n",
+  "  // end to end. Against the real tracker the existing self-reflection FORM is\n",
+  "  // the one that files it - that form has the trigger and the destination, and\n",
+  "  // this portal must not become a second writer into a tab it does not own.\n",
+  "  //\n",
+  "  // This used to read canWrite(), which meant STAGING when it was written and\n",
+  "  // quietly came to mean STAGING or LIVE when the third mode was added. The\n",
+  "  // button reappeared against the live tracker without anybody deciding it\n",
+  "  // should. isPractice() cannot drift that way.\n",
+  "  if (isPractice()){\n",
   "    h += '<button class=\"card act\" onclick=\"S.screen=\\'reflect\\';render()\"><span class=\"do",
   "t due\"></span>'+\n",
   "         '<span class=\"bd\"><span class=\"h\">Weekly reflection</span>'+\n",
@@ -7098,6 +7346,11 @@ var PORTAL_PAGE_HTML = [
   "   offered at all rather than offered and then refused, because a button that\n",
   "   throws when you press it is worse than no button. */\n",
   "function canWrite(){ return BOOT.mode === 'STAGING' || BOOT.mode === 'LIVE'; }\n",
+  "\n",
+  "/* Made-up people, in a spreadsheet nobody's career depends on. Anything that\n",
+  "   would put a second writer into a tab the forms own is offered here and\n",
+  "   nowhere else. */\n",
+  "function isPractice(){ return BOOT.mode === 'STAGING'; }\n",
   "\n",
   "/* A form card. The person sees a task, not a form: the registry has already\n",
   "   picked which of the nine it is and filled in the names it knows. */\n",
@@ -7248,6 +7501,26 @@ var PORTAL_PAGE_HTML = [
   "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
   "         ' mode, so sign-offs cannot be approved from here yet.</div>';\n",
   "\n",
+  "  h += warnRow(d.warnings);\n",
+  "\n",
+  "  /* Decisions already made here, waiting on the tracker to make them\n",
+  "     permanent. Not still waiting on you - and not silently gone either, which\n",
+  "     is what they would be if the count above simply dropped them. */\n",
+  "  var staged = d.staged || [];\n",
+  "  if (staged.length){\n",
+  "    h += '<div class=\"note n-info\"><b>'+staged.length+' waiting on the tracker</b>'+\n",
+  "         'You have decided '+(staged.length===1?'this one':'these')+' already. '+\n",
+  "         'The tracker turns '+(staged.length===1?'it':'them')+' into permanent sign-offs: ",
+  "'+\n",
+  "         'tick RECORD on the row, or run &ldquo;Record pending decisions&rdquo; from its m",
+  "enu.</div>';\n",
+  "    h += picker('pick-staged', staged.length+' already decided\\u2026', staged.map(function",
+  "(x){\n",
+  "      return { value: x.trainee,\n",
+  "               label: x.trainee + ' \\u2014 ' + x.skill + ' \\u00b7 ' + x.decision };\n",
+  "    }), 'pickRecord');\n",
+  "  }\n",
+  "\n",
   "  (d.retiredForms||[]).forEach(function(f){\n",
   "    h += '<div class=\"note n-stop\"><b>Retired form still open</b>'+esc(f.title)+\n",
   "         ' is no longer offered anywhere in this portal. '+esc(f.why)+\n",
@@ -7302,7 +7575,7 @@ var PORTAL_PAGE_HTML = [
   "  if (canWrite() && !q.from){\n",
   "    return '<button class=\"card act\" onclick=\"openSignoff('+q.row+','+jsStr(q.trainee)+','",
   "+\n",
-  "      jsStr(q.skill)+','+jsStr(q.evidence)+')\">'+\n",
+  "      jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">'+\n",
   "      '<span class=\"dot due\"></span><span class=\"bd\"><span class=\"h\">'+esc(q.skill)+'</spa",
   "n>'+\n",
   "      '<span class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+\n",
@@ -7397,8 +7670,9 @@ var PORTAL_PAGE_HTML = [
   "he registry could not reach them.</div>';\n",
   "  paint(h);\n",
   "}\n",
-  "function openSignoff(row,trainee,skill,evidence){\n",
-  "  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence };\n",
+  "function openSignoff(row,trainee,skill,evidence,requestId){\n",
+  "  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId|",
+  "|'' };\n",
   "  S.screen = 'signoff'; render();\n",
   "}\n",
   "function paintSignoff(){\n",
@@ -7412,19 +7686,26 @@ var PORTAL_PAGE_HTML = [
   "xtarea></div>'+\n",
   "    '<button class=\"btn\" id=\"ap\" onclick=\"approve()\">Approve sign-off</button>'+\n",
   "    '<div class=\"next\"><b>No pre-filled wording</b>The old system wrote \"Evidence threshol",
-  "ds met\" without checking anything. You type it, or it is not recorded.</div>');\n",
+  "ds met\" without checking anything. You type it, or nothing is written.</div>'+\n",
+  "    '<div class=\"next\"><b>Where this goes</b>Your decision, your name and your reason go o",
+  "nto the queue row. '+\n",
+  "    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+\n",
+  "    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only t",
+  "hing '+\n",
+  "    'allowed to write the sign-off log, and it runs the authority and evidence checks on t",
+  "he way.</div>');\n",
   "}\n",
   "function approve(){\n",
   "  if (S.busy) return;\n",
   "  var why = el('why').value.trim();\n",
   "  if (why.length < 8) { alert('Type why you are approving this.'); return; }\n",
-  "  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Recording…';\n",
+  "  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';\n",
   "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
   "; })\n",
   "    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approv",
   "e sign-off';\n",
   "      alert(e.message||e); })\n",
-  "    .approveSignoffV1(S.ctx.row, why);\n",
+  "    .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');\n",
   "}\n",
   "\n",
   "/* ---------------- supervisor / medical ---------------- */\n",
@@ -7447,23 +7728,40 @@ var PORTAL_PAGE_HTML = [
   "  paint(h);\n",
   "}\n",
   "function paintMedical(d){\n",
-  "  var h = '<h1>Clinical review</h1><p class=\"sub\">'+d.cases.length+\n",
-  "    (d.cases.length===1?' case':' cases')+' for you. Nothing else.</p>';\n",
-  "  if (!d.cases.length) h += '<div class=\"note n-ok\"><b>Nothing pending</b>No cases require",
-  " your authority.</div>';\n",
-  "  d.cases.forEach(function(c){\n",
+  "  var cases = d.cases || [];\n",
+  "  var total = (d.total === undefined) ? cases.length : d.total;\n",
+  "  var h = '<h1>Clinical review</h1><p class=\"sub\">'+total+\n",
+  "    (total===1?' open case':' open cases')+' for you. Nothing else.</p>';\n",
+  "  h += warnRow(d.warnings);\n",
+  "  if (!total) h += '<div class=\"note n-ok\"><b>Nothing pending</b>No open concern requires ",
+  "your authority.</div>';\n",
+  "  cases.forEach(function(c){\n",
   "    h += '<button class=\"card act\" style=\"border-left:4px solid var(--pmd)\" '+\n",
   "      'onclick=\"openRecord('+jsStr(c.trainee)+')\">'+\n",
   "      '<span class=\"dot due\"></span><span class=\"bd\">'+\n",
-  "      '<span class=\"h\">'+esc(c.trainee)+'</span>'+\n",
-  "      '<span class=\"m\">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+'</span>'+\n",
-  "      '<span class=\"m\" style=\"color:var(--ink-2);margin-top:7px\">'+esc(c.what)+'</span></s",
-  "pan>'+\n",
-  "      '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "      '<span class=\"h\">'+esc(c.trainee)+(c.category ? ' &nbsp;<span class=\"chip c-pmd\">'+e",
+  "sc(c.category)+'</span>' : '')+'</span>'+\n",
+  "      '<span class=\"m\">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+\n",
+  "      (c.book ? ' &middot; in '+esc(c.book) : '')+'</span>'+\n",
+  "      (c.what ? '<span class=\"m\" style=\"color:var(--ink-2);margin-top:7px\">'+esc(c.what)+'",
+  "</span>' : '')+\n",
+  "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "  });\n",
-  "  h += '<div class=\"next\"><b>Only your cases</b>You never see routine evaluations, reflect",
-  "ions, or other trainees.</div>';\n",
+  "  if (total > cases.length)\n",
+  "    h += '<p class=\"sub\">Showing the '+cases.length+' most recent of '+total+'.</p>';\n",
+  "  h += '<div class=\"next\"><b>Only your cases</b>Concerns already closed are not shown, and",
+  " you never see routine evaluations, reflections, or other trainees.</div>';\n",
   "  paint(h);\n",
+  "}\n",
+  "\n",
+  "/* A column this screen depends on is missing. Doctrine: that is a defect to\n",
+  "   report, never permission to read the one next to it and hope. */\n",
+  "function warnRow(list){\n",
+  "  var h = '';\n",
+  "  (list||[]).forEach(function(w){\n",
+  "    h += '<div class=\"note n-stop\"><b>Cannot read the record</b>'+esc(w)+'</div>';\n",
+  "  });\n",
+  "  return h;\n",
   "}\n",
   "\n",
   "/* ---------------- the record ---------------- */\n",
@@ -7582,7 +7880,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '51d02fad';
+var PORTAL_BUILD = '64050886';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

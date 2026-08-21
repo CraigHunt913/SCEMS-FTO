@@ -100,6 +100,39 @@ function resolveViewerV1_(email) {
  *  no such column, read undefined, and every FTO on it resolved to nobody -
  *  silently, because an empty name simply skips the row. A header this layer
  *  depends on is worth naming several ways rather than one. */
+/** The index of the first of these headers this tab actually has, or -1.
+ *
+ *  Deliberately different from pickV1_. This resolves the COLUMN once, from
+ *  the header row, and every row is then read from that column - including
+ *  the rows where it happens to be blank. pickV1_ falls through to the next
+ *  alias when a CELL is empty, which is right for a name that could be in
+ *  either of two columns and dangerous for a column that is legitimately
+ *  blank sometimes: an empty TRAINEE would quietly be answered with whatever
+ *  sits in ROLE, and nothing would look wrong.
+ *
+ *  -1 means the tab does not have that column at all. That is a defect to
+ *  report on screen, never a reason to read a neighbouring one. */
+function headerIndexV1_(t, headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var ci = t.col[headers[i]];
+    if (ci !== undefined) return ci;
+  }
+  return -1;
+}
+
+/** One cell from a resolved column index, trimmed. '' when there is no column. */
+function atV1_(row, ci) {
+  return ci < 0 ? '' : String(row[ci] == null ? '' : row[ci]).trim();
+}
+
+/** Is there anything at all in this row? */
+function rowHasAnythingV1_(row) {
+  for (var i = 0; i < row.length; i++) {
+    if (String(row[i] == null ? '' : row[i]).trim() !== '') return true;
+  }
+  return false;
+}
+
 function pickV1_(t, row, headers) {
   for (var i = 0; i < headers.length; i++) {
     var ci = t.col[headers[i]];

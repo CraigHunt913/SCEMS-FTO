@@ -120,19 +120,55 @@ function openQueueV1_() {
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
       evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
       since: asDateV1_(r[t.col['READY DATE']]),
-      requestId: String(r[t.col['REQUEST ID']] || '').trim()
+      requestId: String(r[t.col['REQUEST ID']] || '').trim(),
+      // A row can be OPEN and already carry a decision: that is one the portal
+      // (or somebody in the sheet) has staged, waiting for the tracker to
+      // record it. It is not still waiting on the Chief, and counting it as
+      // though it were is how a queue never appears to go down.
+      decision: String(r[t.col['DECISION']] || '').trim(),
+      decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
   });
   return out;
 }
 
+/* The evaluation tab, read by its headers.
+ *
+ *  This used to be r[2] for the trainee and r[0] for the date. Both happen to
+ *  be right on today's live tab - and that is the whole problem with a
+ *  positional read: it is right until somebody adds a question to the form,
+ *  and then it is silently wrong on every screen at once, with every trainee
+ *  reading "never evaluated" and nothing anywhere saying why.
+ *
+ *  Shift Date first, then the form's own timestamp. An officer who files three
+ *  days late did not evaluate anybody today, and the Division screen counts
+ *  days from this. */
+var EVAL_TRAINEE_HEADERS_V1 = ['TRAINEE', 'TRAINEE NAME', 'NAME'];
+var EVAL_DATE_HEADERS_V1    = ['SHIFT DATE', 'DATE', 'TIMESTAMP'];
+
+/** What is wrong with the evaluation tab, in a sentence, or ''. */
+function evalHeaderProblemV1_() {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  if (!t.ok) return PORTAL.TAB.EVAL + ' is not in this spreadsheet.';
+  var missing = [];
+  if (headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1) < 0) missing.push('one naming the trainee');
+  if (headerIndexV1_(t, EVAL_DATE_HEADERS_V1) < 0) missing.push('one holding the date');
+  return missing.length
+    ? PORTAL.TAB.EVAL + ' is missing ' + missing.join(' and ') + ', so nothing on ' +
+      'these screens can say when anybody was last evaluated. Nothing is being guessed at.'
+    : '';
+}
+
 function lastEvalForV1_(norm) {
   var t = readTabAllV1_(PORTAL.TAB.EVAL);
   if (!t.ok) return null;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return null;
   var latest = null;
   t.rows.forEach(function (r) {
-    if (normNameV1_(r[2]) !== norm) return;
-    var d = asDateV1_(r[0]);
+    if (normNameV1_(r[iWho]) !== norm) return;
+    var d = asDateV1_(r[iWhen]);
     if (d && (!latest || d > latest)) latest = d;
   });
   return latest;
@@ -248,7 +284,9 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var queue = openQueueV1_();
+  var open = openQueueV1_();
+  var queue = open.filter(function (q) { return !q.decision; });
+  var staged = open.filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -272,6 +310,17 @@ function divisionPayloadV1_() {
                row: q.row, from: q.from };
     }),
     queueCount: queue.length,
+    // Decisions already made here and waiting on the tracker to make them
+    // permanent. The portal deliberately does not close these rows: the
+    // tracker's own writer is the only thing allowed to put a sign-off in
+    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    staged: staged.map(function (q) {
+      return { trainee: q.trainee, skill: q.skill, decision: q.decision,
+               by: q.decidedBy, since: daysAgoTextV1_(q.since) };
+    }),
+    // A column this screen leans on that is not there. Doctrine: report it,
+    // never read the one beside it and hope.
+    warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
       if (!t.level) missing.push('level');
@@ -337,24 +386,83 @@ function supervisorPayloadV1_(viewer) {
   };
 }
 
+/* ---------------- the medical director ---------------- */
+/* This screen was reading the urgent-concern tab by position, and the live
+   tab is
+     Timestamp | TRAINING OFFICER CONTACTED | Reporter | Role | Trainee |
+     Date | Shift | Category | What Happened | Action Taken |
+     RESOLUTION (TCO) | DATE CLOSED | STATUS | OWNER
+   so column 3 is the REPORTER'S ROLE, not the trainee, and column 4 is the
+   trainee's NAME, not the account of what happened. Every case on the
+   physician's screen named the wrong thing as the person and printed a name
+   where the narrative should be.
+
+   Three more, found with it: the twenty shown were the twenty OLDEST, so
+   nothing recent ever appeared; concerns already closed kept appearing, since
+   nothing read DATE CLOSED or STATUS; and the key saying which book a row came
+   from was declared twice in the same object literal, so it was overwritten
+   and lost every time.
+
+   A physician is the last person in this system who should be handed a
+   mislabelled record. Every column is resolved once, by name, and a column
+   that is not there is said out loud rather than answered with a neighbour. */
+
+var URGENT_TRAINEE_HEADERS_V1  = ['TRAINEE', 'TRAINEE INVOLVED', 'TRAINEE NAME', 'NAME'];
+var URGENT_REPORTER_HEADERS_V1 = ['REPORTER', 'REPORTED BY', 'YOUR NAME', 'FTO', 'TRAINING OFFICER'];
+var URGENT_WHAT_HEADERS_V1     = ['WHAT HAPPENED', 'DETAIL', 'DETAILS', 'DESCRIPTION', 'NARRATIVE'];
+var URGENT_WHEN_HEADERS_V1     = ['DATE', 'SHIFT DATE', 'TIMESTAMP'];
+var URGENT_CATEGORY_HEADERS_V1 = ['CATEGORY', 'CONCERN TYPE', 'TYPE'];
+var URGENT_STATUS_HEADERS_V1   = ['STATUS', 'RECORD STATUS'];
+var URGENT_CLOSED_HEADERS_V1   = ['DATE CLOSED', 'CLOSED'];
+
 function medicalPayloadV1_() {
   var t = readTabAllV1_(PORTAL.TAB.URGENT);
-  var cases = [];
-  if (t.ok) {
-    t.rows.forEach(function (r, i) {
-      var who = String(r[3] || '').trim();
-      if (!who) return;
-      cases.push({
-        row: realRowV1_(t, i),
-        from: rowSourceV1_(t, i),
-        trainee: who,
-        when: asDateV1_(r[0]) ? asDateV1_(r[0]).toDateString() : '',
-        from: String(r[2] || '').trim(),
-        what: String(r[4] || '').trim()
-      });
-    });
+  if (!t.ok) {
+    return { cases: [], total: 0, warnings: [PORTAL.TAB.URGENT +
+      ' is not in this spreadsheet, so nothing can be shown here.'] };
   }
-  return { cases: cases.slice(0, 20) };
+
+  var iWho  = headerIndexV1_(t, URGENT_TRAINEE_HEADERS_V1);
+  var iFrom = headerIndexV1_(t, URGENT_REPORTER_HEADERS_V1);
+  var iWhat = headerIndexV1_(t, URGENT_WHAT_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, URGENT_WHEN_HEADERS_V1);
+  var iCat  = headerIndexV1_(t, URGENT_CATEGORY_HEADERS_V1);
+  var iStat = headerIndexV1_(t, URGENT_STATUS_HEADERS_V1);
+  var iShut = headerIndexV1_(t, URGENT_CLOSED_HEADERS_V1);
+
+  var warnings = [];
+  if (iWho < 0) warnings.push(PORTAL.TAB.URGENT + ' has no column naming the trainee, ' +
+    'so nothing on this screen can be attributed to a person. Nothing is being guessed at.');
+  if (iWhat < 0) warnings.push(PORTAL.TAB.URGENT + ' has no column holding the account ' +
+    'of what happened, so these cases are shown without one.');
+
+  var cases = [];
+  t.rows.forEach(function (r, i) {
+    if (!rowHasAnythingV1_(r)) return;
+    var who = atV1_(r, iWho);
+    if (iWho >= 0 && !who) return;
+
+    // Already dealt with. A closed concern is history, not a question for you.
+    if (atV1_(r, iShut)) return;
+    if (/^(CLOSED|RESOLVED|COMPLETE|COMPLETED|NO ACTION)/.test(atV1_(r, iStat).toUpperCase())) return;
+
+    var when = iWhen < 0 ? null : asDateV1_(r[iWhen]);
+    cases.push({
+      row: realRowV1_(t, i),
+      book: rowSourceV1_(t, i),
+      trainee: who || '(nobody is named on this row)',
+      from: atV1_(r, iFrom) || '(the reporter is not named)',
+      category: atV1_(r, iCat),
+      when: when ? when.toDateString() : 'no date on the row',
+      at: when ? when.getTime() : 0,
+      what: atV1_(r, iWhat)
+    });
+  });
+
+  // Newest first. It showed the oldest twenty, which on a tab that only ever
+  // grows means the physician never saw anything that had just happened.
+  cases.sort(function (a, b) { return b.at - a.at; });
+  return { cases: cases.slice(0, 20), total: cases.length, warnings: warnings };
 }
 
 /* ---------------- forms, defensively ---------------- */

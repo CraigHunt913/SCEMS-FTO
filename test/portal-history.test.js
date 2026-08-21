@@ -394,8 +394,11 @@ world();
 as('chief@example.org');
 recordForV1_('Jamie Rivers');
 approveSignoffV1(HR + 1, 'Watched the last attempt myself and it was clean.');
-ok(readTabV1_(PORTAL.TAB.QUEUE).rows[0][11] === 'RECORDED',
+const qNow = readTabV1_(PORTAL.TAB.QUEUE);
+ok(String(qNow.rows[0][qNow.col['RATIONALE']]).indexOf('Watched the last attempt') === 0,
    'a read straight after a write sees the written value');
+ok(String(qNow.rows[0][qNow.col['RECORD STATUS']]) === 'OPEN',
+   'and the row is still OPEN, because the tracker is the only thing that may close it');
 
 // ---------------------------------------------------------------- //
 section('Skills are current per skill, not one winner overall');

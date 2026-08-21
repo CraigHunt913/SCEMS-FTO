@@ -241,11 +241,16 @@ function paintTrainee(d){
        '</div></div>';
 
   h += '<h2>Waiting on you</h2>';
-  // In staging the reflection is filed in the portal so the flow can be
-  // tried end to end. Against the live tracker the existing self-reflection
-  // form is the one that files it, because that form already has a trigger
-  // and a destination and this portal must not become a second writer.
-  if (canWrite()){
+  // In staging the reflection is filed in the portal so the flow can be tried
+  // end to end. Against the real tracker the existing self-reflection FORM is
+  // the one that files it - that form has the trigger and the destination, and
+  // this portal must not become a second writer into a tab it does not own.
+  //
+  // This used to read canWrite(), which meant STAGING when it was written and
+  // quietly came to mean STAGING or LIVE when the third mode was added. The
+  // button reappeared against the live tracker without anybody deciding it
+  // should. isPractice() cannot drift that way.
+  if (isPractice()){
     h += '<button class="card act" onclick="S.screen=\'reflect\';render()"><span class="dot due"></span>'+
          '<span class="bd"><span class="h">Weekly reflection</span>'+
          '<span class="m">Your own words. Takes about four minutes.</span></span><span class="go">&rsaquo;</span></button>';
@@ -322,6 +327,11 @@ function kv(k,v){ return '<div class="kv"><span class="k">'+esc(k)+'</span><span
    offered at all rather than offered and then refused, because a button that
    throws when you press it is worse than no button. */
 function canWrite(){ return BOOT.mode === 'STAGING' || BOOT.mode === 'LIVE'; }
+
+/* Made-up people, in a spreadsheet nobody's career depends on. Anything that
+   would put a second writer into a tab the forms own is offered here and
+   nowhere else. */
+function isPractice(){ return BOOT.mode === 'STAGING'; }
 
 /* A form card. The person sees a task, not a form: the registry has already
    picked which of the nine it is and filled in the names it knows. */
@@ -446,6 +456,23 @@ function paintDivision(d){
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
          ' mode, so sign-offs cannot be approved from here yet.</div>';
 
+  h += warnRow(d.warnings);
+
+  /* Decisions already made here, waiting on the tracker to make them
+     permanent. Not still waiting on you - and not silently gone either, which
+     is what they would be if the count above simply dropped them. */
+  var staged = d.staged || [];
+  if (staged.length){
+    h += '<div class="note n-info"><b>'+staged.length+' waiting on the tracker</b>'+
+         'You have decided '+(staged.length===1?'this one':'these')+' already. '+
+         'The tracker turns '+(staged.length===1?'it':'them')+' into permanent sign-offs: '+
+         'tick RECORD on the row, or run &ldquo;Record pending decisions&rdquo; from its menu.</div>';
+    h += picker('pick-staged', staged.length+' already decided\u2026', staged.map(function(x){
+      return { value: x.trainee,
+               label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
+    }), 'pickRecord');
+  }
+
   (d.retiredForms||[]).forEach(function(f){
     h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
          ' is no longer offered anywhere in this portal. '+esc(f.why)+
@@ -496,7 +523,7 @@ function paintDivision(d){
 function signoffCard(q){
   if (canWrite() && !q.from){
     return '<button class="card act" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
-      jsStr(q.skill)+','+jsStr(q.evidence)+')">'+
+      jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">'+
       '<span class="dot due"></span><span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
       '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span></span>'+
       '<span class="go">&rsaquo;</span></button>';
@@ -574,8 +601,8 @@ function paintPersonSheet(){
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
   paint(h);
 }
-function openSignoff(row,trainee,skill,evidence){
-  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence };
+function openSignoff(row,trainee,skill,evidence,requestId){
+  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'' };
   S.screen = 'signoff'; render();
 }
 function paintSignoff(){
@@ -587,17 +614,21 @@ function paintSignoff(){
     '<div class="panel"><div class="lab">Why are you approving this</div>'+
     '<textarea id="why" placeholder="This goes on the permanent record in your name."></textarea></div>'+
     '<button class="btn" id="ap" onclick="approve()">Approve sign-off</button>'+
-    '<div class="next"><b>No pre-filled wording</b>The old system wrote "Evidence thresholds met" without checking anything. You type it, or it is not recorded.</div>');
+    '<div class="next"><b>No pre-filled wording</b>The old system wrote "Evidence thresholds met" without checking anything. You type it, or nothing is written.</div>'+
+    '<div class="next"><b>Where this goes</b>Your decision, your name and your reason go onto the queue row. '+
+    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+
+    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only thing '+
+    'allowed to write the sign-off log, and it runs the authority and evidence checks on the way.</div>');
 }
 function approve(){
   if (S.busy) return;
   var why = el('why').value.trim();
   if (why.length < 8) { alert('Type why you are approving this.'); return; }
-  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Recording…';
+  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';
   google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
     .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approve sign-off';
       alert(e.message||e); })
-    .approveSignoffV1(S.ctx.row, why);
+    .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
 }
 
 /* ---------------- supervisor / medical ---------------- */
@@ -615,20 +646,36 @@ function paintSupervisor(d){
   paint(h);
 }
 function paintMedical(d){
-  var h = '<h1>Clinical review</h1><p class="sub">'+d.cases.length+
-    (d.cases.length===1?' case':' cases')+' for you. Nothing else.</p>';
-  if (!d.cases.length) h += '<div class="note n-ok"><b>Nothing pending</b>No cases require your authority.</div>';
-  d.cases.forEach(function(c){
+  var cases = d.cases || [];
+  var total = (d.total === undefined) ? cases.length : d.total;
+  var h = '<h1>Clinical review</h1><p class="sub">'+total+
+    (total===1?' open case':' open cases')+' for you. Nothing else.</p>';
+  h += warnRow(d.warnings);
+  if (!total) h += '<div class="note n-ok"><b>Nothing pending</b>No open concern requires your authority.</div>';
+  cases.forEach(function(c){
     h += '<button class="card act" style="border-left:4px solid var(--pmd)" '+
       'onclick="openRecord('+jsStr(c.trainee)+')">'+
       '<span class="dot due"></span><span class="bd">'+
-      '<span class="h">'+esc(c.trainee)+'</span>'+
-      '<span class="m">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+'</span>'+
-      '<span class="m" style="color:var(--ink-2);margin-top:7px">'+esc(c.what)+'</span></span>'+
-      '<span class="go">&rsaquo;</span></button>';
+      '<span class="h">'+esc(c.trainee)+(c.category ? ' &nbsp;<span class="chip c-pmd">'+esc(c.category)+'</span>' : '')+'</span>'+
+      '<span class="m">Raised by '+esc(c.from)+' &middot; '+esc(c.when)+
+      (c.book ? ' &middot; in '+esc(c.book) : '')+'</span>'+
+      (c.what ? '<span class="m" style="color:var(--ink-2);margin-top:7px">'+esc(c.what)+'</span>' : '')+
+      '</span><span class="go">&rsaquo;</span></button>';
   });
-  h += '<div class="next"><b>Only your cases</b>You never see routine evaluations, reflections, or other trainees.</div>';
+  if (total > cases.length)
+    h += '<p class="sub">Showing the '+cases.length+' most recent of '+total+'.</p>';
+  h += '<div class="next"><b>Only your cases</b>Concerns already closed are not shown, and you never see routine evaluations, reflections, or other trainees.</div>';
   paint(h);
+}
+
+/* A column this screen depends on is missing. Doctrine: that is a defect to
+   report, never permission to read the one next to it and hope. */
+function warnRow(list){
+  var h = '';
+  (list||[]).forEach(function(w){
+    h += '<div class="note n-stop"><b>Cannot read the record</b>'+esc(w)+'</div>';
+  });
+  return h;
 }
 
 /* ---------------- the record ---------------- */
