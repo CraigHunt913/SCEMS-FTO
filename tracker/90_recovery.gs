@@ -368,7 +368,7 @@ function stepI_fixAllFormLinks() {
 
 /** Backfill every hub form kind from its fullest response tab. */
 function stepJ_backfillAllHubTabs() {
-  var mirrors = [TAB.EVAL, TAB.REFLECT, TAB.URGENT, DECISIONS_TAB];
+  var mirrors = [TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS];
   var best = { eval: null, reflect: null, urgent: null, decision: null };
   ss().getSheets().forEach(function (sh) {
     if (mirrors.indexOf(sh.getName()) >= 0) return; // never read a mirror as a source
@@ -413,7 +413,7 @@ function backfillHubTabV20_1(tabName) {
     return 'Tab "' + src.getName() + '" is not a hub form tab (classified: ' + (kind || 'unknown') + '). Nothing done.';
   }
   var mirrorTab = kind === 'eval' ? TAB.EVAL : kind === 'reflect' ? TAB.REFLECT :
-                  kind === 'urgent' ? TAB.URGENT : DECISIONS_TAB;
+                  kind === 'urgent' ? TAB.URGENT : TAB.DECISIONS;
 
   var m = getSheetOrNullV20_1_(mirrorTab);
   var seen = {};

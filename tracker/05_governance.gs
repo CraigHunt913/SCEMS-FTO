@@ -447,7 +447,12 @@ function acceptFlagV20_2() {
 function protectRecordTabsV20_2() {
   if (!gateV20_2_('PROTECT RECORD TABS')) return;
   var DESC = 'SCEMS v20.2 record tab — script writes, people do not';
-  var tabs = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+  // 17 TRAINEE ARCHIVE was missing from this list. It holds the record of
+  // everybody who has been released, and nothing about an archive wants
+  // hand-editing. 13 AUDIT - EXCEPTION LOG is still deliberately absent:
+  // columns J and K on that tab exist to be ticked by a person, and full
+  // sheet protection would take that away.
+  var tabs = [TAB.DECISIONS, TAB.ARCHIVE, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
               TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS, TAB.LOG];
   var out = [];
   tabs.forEach(function (name) {

@@ -198,7 +198,7 @@ function purgeTestRows(confirmToken) {
   if (denyV20_2) return denyV20_2;
   var targets = [
     { tab: TAB.EVAL, col: 3 }, { tab: TAB.REFLECT, col: 2 },
-    { tab: TAB.URGENT, col: 5 }, { tab: DECISIONS_TAB, col: 4 },
+    { tab: TAB.URGENT, col: 5 }, { tab: TAB.DECISIONS, col: 4 },
     { tab: TAB.SKILL_EVIDENCE, col: 4 }
   ];
   var found = [];
@@ -703,12 +703,12 @@ function tabNameCheck() {
   var have = ss().getSheets().map(function (sh) { return sh.getName(); });
   var want = [];
   Object.keys(TAB).forEach(function (k) { want.push({ where: 'TAB.' + k, name: TAB[k] }); });
-  [['DECISIONS_TAB', typeof DECISIONS_TAB === 'string' ? DECISIONS_TAB : ''],
-   ['ARCHIVE_TAB', typeof ARCHIVE_TAB === 'string' ? ARCHIVE_TAB : ''],
-   ['SKILL_CATALOG_TAB', typeof SKILL_CATALOG_TAB === 'string' ? SKILL_CATALOG_TAB : ''],
-   ['FTO_ROSTER_TAB_V19', typeof FTO_ROSTER_TAB_V19 === 'string' ? FTO_ROSTER_TAB_V19 : ''],
-   ['TRAINEE_SKILLS_TAB_V19', typeof TRAINEE_SKILLS_TAB_V19 === 'string' ? TRAINEE_SKILLS_TAB_V19 : ''],
-   ['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : '']
+  // Everything else that names a tab. TAB used to have five shadows -
+  // DECISIONS_TAB, ARCHIVE_TAB, SKILL_CATALOG_TAB, FTO_ROSTER_TAB_V19 and
+  // TRAINEE_SKILLS_TAB_V19 - each a second name for a sheet TAB already
+  // named. They are gone; these are the ones that remain.
+  [['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : ''],
+   ['HOME (built by modernHome)', 'HOME']
   ].forEach(function (p2) { if (p2[1]) want.push({ where: p2[0], name: p2[1] }); });
 
   // one entry per distinct name; several constants point at the same tab
@@ -790,4 +790,185 @@ function nearestTabV20_6_(want, have) {
     if (s > score) { score = s; best = x; }
   });
   return score >= 4 ? best : '';
+}
+
+/* ---------------------------------------------------------------- *
+ *  The engine's key column, and what one deleted row did to it
+ * ---------------------------------------------------------------- */
+
+/** READ ONLY. What is broken on the derived tabs, and why.
+ *
+ *  06 PHASE - STATUS ENGINE is the tab every other view is built from. Its
+ *  column A is the key: every one of the twenty-three columns beside it opens
+ *  with IF($A{row}="","", ...). So if column A breaks on a row, that whole row
+ *  goes with it, on that tab and on every tab downstream of it.
+ *
+ *  One cell did exactly that. A row was deleted from 01 TRAINEE MASTER at some
+ *  point and Google rewrote the formula that pointed at it to
+ *
+ *      =IF(#REF!="","",#REF!)
+ *
+ *  which is not an error anybody sees. It is one cell. It took out one row on
+ *  seven tabs, and the only symptom is a trainee who is simply not on any of
+ *  the views and nothing anywhere saying a name is missing.
+ *
+ *  This finds it and says so. It changes nothing. */
+function engineHealthCheck() {
+  var L = ['ENGINE HEALTH CHECK — READ ONLY, nothing was changed', ''];
+
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  var mas = getSheetOrNullV20_1_(TAB.MASTER);
+  if (!eng || !mas) return 'Cannot run: ' + (!eng ? TAB.ENGINE : TAB.MASTER) + ' is not there.';
+
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+
+  var broken = [], crossed = [], fine = 0;
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    if (f.indexOf('#REF!') >= 0) { broken.push(row); return; }
+    // every one of these should read the SAME row of the master
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    if (!m) return;
+    if (Number(m[1]) !== row) crossed.push({ row: row, points: Number(m[1]) });
+    else fine++;
+  });
+
+  L.push('Column A of ' + TAB.ENGINE + ', which every other column keys off:');
+  L.push('  reading the row they should  : ' + fine);
+  L.push('  pointing at a different row  : ' + crossed.length);
+  L.push('  broken beyond repair (#REF!) : ' + broken.length);
+  L.push('');
+
+  if (!broken.length && !crossed.length) {
+    L.push('Nothing wrong with it. Every row reads its own row of the master.');
+  } else {
+    broken.forEach(function (row) {
+      L.push('  BROKEN   ' + TAB.ENGINE + ' A' + row + ' reads #REF!');
+      L.push('           A row was deleted from the master and this formula went with it.');
+      L.push('           Everything on row ' + row + ' of this tab, and of every tab built');
+      L.push('           from it, is #REF! because of this one cell.');
+    });
+    crossed.forEach(function (c) {
+      L.push('  CROSSED  ' + TAB.ENGINE + ' A' + c.row + ' reads master row ' + c.points +
+        ', not row ' + c.row + '.');
+      L.push('           That row of the engine is showing a different person.');
+    });
+    L.push('');
+    L.push('Run  previewEngineRepairV20_6()  to see the exact repair. It writes nothing.');
+  }
+
+  // and the master rows that are invisible whatever the formulas say
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (t.ok) {
+    var iName = t.col['TRAINEE'], iMail = t.col['TRAINEE EMAIL'], iStat = t.col['SET STATUS'];
+    var nameless = [];
+    t.rows.forEach(function (r, i) {
+      if (iName === undefined) return;
+      var nm = String(r[iName] || '').trim();
+      if (nm) return;
+      var anything = r.some(function (v) { return String(v == null ? '' : v).trim() !== ''; });
+      if (!anything) return;
+      nameless.push({ row: 5 + i,
+                      mail: iMail === undefined ? '' : String(r[iMail] || '').trim(),
+                      stat: iStat === undefined ? '' : String(r[iStat] || '').trim() });
+    });
+    if (nameless.length) {
+      L.push('');
+      L.push('AND ON ' + TAB.MASTER + ': ' + nameless.length + ' row(s) hold data and no name.');
+      L.push('Every formula on the engine opens with IF($A{row}="","", ...), so a row');
+      L.push('with no name is silently blank on every view. It is not missing — it is');
+      L.push('invisible, which looks the same from outside and is not the same thing.');
+      nameless.forEach(function (n) {
+        L.push('  row ' + n.row + ' : ' + (n.stat || '(no status)') +
+               (n.mail ? ' · ' + n.mail : ' · no address either'));
+      });
+      L.push('');
+      L.push('Putting a name back is a change to a personnel record. Nothing here does');
+      L.push('that for you, and nothing should.');
+    }
+  }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** What repairing the engine's key column would do. Writes nothing. */
+function previewEngineRepairV20_6() { return engineRepairV20_6_(''); }
+
+/** Repair it. Restores each cell of column A to read its own row of the
+ *  master, which is what every undamaged cell in that column already does.
+ *
+ *  It touches column A of one derived tab and nothing else. It does not go
+ *  near a record, a name, or an address — the twenty-three columns beside it
+ *  recalculate on their own once the key is right, and so do the seven tabs
+ *  downstream. */
+function applyEngineRepairV20_6(confirmToken) { return engineRepairV20_6_(confirmToken); }
+
+function engineRepairV20_6_(confirmToken) {
+  var TOKEN = 'REPAIR THE ENGINE KEY COLUMN';
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  if (!eng) return TAB.ENGINE + ' is not there. Nothing was changed.';
+
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+
+  var plan = [];
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    var want = "=IF('" + TAB.MASTER + "'!A" + row + '="","",\'' + TAB.MASTER + "'!A" + row + ')';
+    var broken = f.indexOf('#REF!') >= 0;
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    var crossed = m && Number(m[1]) !== row;
+    if (!broken && !crossed) return;
+    plan.push({ row: row, was: f, now: want, why: broken ? 'reads #REF!' : 'reads row ' + m[1] });
+  });
+
+  if (!plan.length) {
+    return 'Nothing to repair. Every cell in column A of ' + TAB.ENGINE +
+      ' already reads its own row of ' + TAB.MASTER + '.';
+  }
+
+  var L = ['ENGINE KEY COLUMN REPAIR', '', plan.length + ' cell(s) to put back:', ''];
+  plan.forEach(function (p) {
+    L.push('  A' + p.row + '  (' + p.why + ')');
+    L.push('     was : ' + p.was);
+    L.push('     now : ' + p.now);
+  });
+  L.push('');
+  L.push('Only column A of ' + TAB.ENGINE + ' is touched. The columns beside it and');
+  L.push('every tab built from them recalculate on their own.');
+
+  if (confirmToken !== TOKEN) {
+    L.push('');
+    L.push('NOTHING WAS WRITTEN. To do it:');
+    L.push('  applyEngineRepairV20_6("' + TOKEN + '")');
+    var pv = L.join('\n');
+    Logger.log(pv);
+    try { SpreadsheetApp.getUi().alert(pv.slice(0, 1400)); } catch (e) {}
+    return pv;
+  }
+
+  if (!gateV20_2_('REPAIR ENGINE KEY COLUMN')) return 'Refused: not authorised.';
+
+  plan.forEach(function (p) { eng.getRange(p.row, 1).setFormula(p.now); });
+  SpreadsheetApp.flush();
+  systemLog_('WARN', 'ENGINE KEY COLUMN REPAIRED',
+    plan.length + ' cell(s): ' + plan.map(function (p) { return 'A' + p.row; }).join(', '));
+
+  L.push('');
+  L.push('DONE. ' + plan.length + ' cell(s) repaired. Give the sheet a moment to');
+  L.push('recalculate, then run engineHealthCheck() again — it should come back clean.');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
 }

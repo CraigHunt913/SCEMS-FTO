@@ -256,15 +256,10 @@ var TAB = Object.freeze({
 
 /* Legacy constant aliases retained because ~200 existing call sites and
  * operator habits reference them. Same values, single source. */
-var DECISIONS_TAB = TAB.DECISIONS;
 
-var ARCHIVE_TAB = TAB.ARCHIVE;
 
-var SKILL_CATALOG_TAB = TAB.CATALOG;
 
-var FTO_ROSTER_TAB_V19 = TAB.FTO_ROSTER;
 
-var TRAINEE_SKILLS_TAB_V19 = TAB.TRAINEE_SKILLS;
 
 var TEST_PREFIX = 'ZZ TEST';
 

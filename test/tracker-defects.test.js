@@ -100,26 +100,26 @@ section('A decision is stamped on the right row, or on no row at all');
 // arriving together is ordinary. When it was wrong it put one trainee's phase
 // on another trainee's decision, and said nothing either way.
 reset();
-tab(DECISIONS_TAB, ['FILED', 'TRAINEE', 'ITEM', 'DECISION', 'PHASE'], [
+tab(TAB.DECISIONS, ['FILED', 'TRAINEE', 'ITEM', 'DECISION', 'PHASE'], [
   ['2026-08-01', 'Jamie Rivers', 'Advancement review', '', ''],
   ['2026-08-02', 'Alex Bramble', 'NRT outcome', '', '']
 ]);
 let out = stampDecisionPhaseV20_6_('Jamie Rivers', 'Phase 3');
 ok(out === 'stamped', 'it writes when it can find the person');
-const dt = SHEETS[DECISIONS_TAB].g;
+const dt = SHEETS[TAB.DECISIONS].g;
 ok(dt[4][4] === 'Phase 3', "and writes onto JAMIE's row, not the last one");
 ok(dt[5][4] === '', "leaving the row that happens to be last alone");
 ok(SYSLOG.length === 0, 'and says nothing, because nothing went wrong');
 
 reset();
-tab(DECISIONS_TAB, ['FILED', 'TRAINEE', 'ITEM', 'PHASE'], [['2026-08-01', 'Alex Bramble', 'x', '']]);
+tab(TAB.DECISIONS, ['FILED', 'TRAINEE', 'ITEM', 'PHASE'], [['2026-08-01', 'Alex Bramble', 'x', '']]);
 out = stampDecisionPhaseV20_6_('Jamie Rivers', 'Phase 3');
 ok(out === 'no row', 'a person with no decision row is refused');
-ok(SHEETS[DECISIONS_TAB].g[4][3] === '', 'nothing is written to somebody else');
+ok(SHEETS[TAB.DECISIONS].g[4][3] === '', 'nothing is written to somebody else');
 ok(SYSLOG.some(l => /NOT STAMPED/.test(l.kind)), 'and the refusal is logged, not swallowed');
 
 reset();
-tab(DECISIONS_TAB, ['FILED', 'TRAINEE', 'ITEM'], [['2026-08-01', 'Jamie Rivers', 'x']]);
+tab(TAB.DECISIONS, ['FILED', 'TRAINEE', 'ITEM'], [['2026-08-01', 'Jamie Rivers', 'x']]);
 out = stampDecisionPhaseV20_6_('Jamie Rivers', 'Phase 3');
 ok(out === 'no column', 'a missing PHASE column is refused');
 ok(SYSLOG.some(l => /no PHASE column/.test(l.detail)),
@@ -204,13 +204,95 @@ ok(/ZZ SOMETHING NOBODY ASKS FOR/.test(report),
 reset();
 // every name the check asks for, not only the ones on TAB
 Object.keys(TAB).forEach(k => tab(TAB[k], ['A'], []));
-[DECISIONS_TAB, ARCHIVE_TAB, SKILL_CATALOG_TAB, FTO_ROSTER_TAB_V19,
- TRAINEE_SKILLS_TAB_V19, TAB_CONSOLE_V20_3].forEach(n => {
+[TAB_CONSOLE_V20_3, 'HOME'].forEach(n => {
   if (n && !SHEETS[n]) tab(n, ['A'], []);
 });
 const clean2 = tabNameCheck();
 ok(/Every tab this code names is there under exactly that name/.test(clean2),
    'and when everything lines up it says so plainly');
+
+// ---------------------------------------------------------------- //
+section('One deleted row, eighty-eight broken cells, and the cell that did it');
+// ---------------------------------------------------------------- //
+// 06 PHASE - STATUS ENGINE column A is the key: all twenty-three columns
+// beside it open with IF($A{row}="","", ...). A row was deleted from the
+// trainee master and Google rewrote one formula to =IF(#REF!="","",#REF!).
+// That one cell takes out its whole row, on that tab and on the seven built
+// from it. Nothing anywhere says a name is missing.
+FakeSheet.prototype.getFormulas = function (r, c, nr, nc) { return this.f || []; };
+FakeSheet.prototype.setFormula = function () { return this; };
+
+function engineTab(formulas) {
+  const g = [[], [], [], ['TRAINEE']];
+  formulas.forEach(() => g.push(['']));
+  const sh = new FakeSheet(TAB.ENGINE, g);
+  sh.getRange = function (r, c, nr, nc) {
+    const api = {
+      getFormulas: () => formulas.slice(r - 5, (r - 5) + (nr || 1)).map(f => [f]),
+      setFormula: v => { formulas[r - 5] = v; return api; },
+      getValue: () => '', setValue: () => api, getValues: () => [[]], setValues: () => api
+    };
+    ['setFontWeight','setBackground','setFontColor'].forEach(m => api[m] = () => api);
+    return api;
+  };
+  sh.getLastRow = () => 4 + formulas.length;
+  SHEETS[TAB.ENGINE] = sh;
+  SHEET_LIST.push(TAB.ENGINE);
+  return formulas;
+}
+const good = n => "=IF('01 TRAINEE MASTER'!A" + n + '="","",\'01 TRAINEE MASTER\'!A' + n + ')';
+
+reset();
+tab(TAB.MASTER, ['TRAINEE', 'TRAINEE EMAIL', 'SET STATUS'], [
+  ['Anicia Scipp', 'a@example.org', 'Cleared'],
+  ['', 'nobody@example.org', 'Cleared to Independent Practice'],
+  ['Jamie More', 'j@example.org', 'Cleared']
+]);
+let F = engineTab([good(5), good(6), '=IF(#REF!="","",#REF!)', good(8), good(10)]);
+
+let health = engineHealthCheck();
+ok(/READ ONLY/.test(health), 'the health check says it changed nothing');
+ok(/broken beyond repair \(#REF!\) : 1/.test(health), 'it finds the one broken cell');
+ok(/A7 reads #REF!/.test(health), 'and names it exactly');
+ok(/A row was deleted from the master/.test(health), 'and says what did it');
+ok(/pointing at a different row  : 1/.test(health), 'it also finds the crossed one');
+ok(/A9 reads master row 10/.test(health), 'and says which row it is showing instead');
+ok(/1 row\(s\) hold data and no name/.test(health),
+   'and separately, the master row that has a clearance and no name');
+ok(/invisible, which looks the same from outside/.test(health),
+   'explaining why an unnamed row is not the same as a missing one');
+ok(/Putting a name back is a change to a personnel record/.test(health),
+   'and refusing to do anything about that one');
+
+const before = F.slice();
+const pv = previewEngineRepairV20_6();
+ok(/NOTHING WAS WRITTEN/.test(pv), 'the repair previews first');
+ok(/A7/.test(pv) && /A9/.test(pv), 'naming both cells');
+ok(/was :/.test(pv) && /now :/.test(pv), 'with the before and the after of each');
+ok(JSON.stringify(F) === JSON.stringify(before), 'and the sheet is untouched');
+
+ok(/NOTHING WAS WRITTEN/.test(applyEngineRepairV20_6('nope')),
+   'a wrong token writes nothing either');
+ok(JSON.stringify(F) === JSON.stringify(before), 'still untouched');
+
+// the right token is still not enough on its own
+ok(/not authorised/i.test(applyEngineRepairV20_6('REPAIR THE ENGINE KEY COLUMN')),
+   'the right token alone is refused — the authorisation gate is the other half');
+ok(JSON.stringify(F) === JSON.stringify(before), 'and nothing was written');
+
+const realGate = gateV20_2_;
+gateV20_2_ = function () { return true; };
+const done = applyEngineRepairV20_6('REPAIR THE ENGINE KEY COLUMN');
+gateV20_2_ = realGate;
+ok(/DONE\. 2 cell\(s\) repaired/.test(done), 'with both, it repairs both cells');
+ok(F[2] === good(7), 'the broken cell now reads its own row of the master');
+ok(F[4] === good(9), 'and so does the crossed one');
+ok(F[0] === good(5) && F[1] === good(6) && F[3] === good(8),
+   'and the cells that were already right were not touched');
+ok(SYSLOG.some(l => l.kind === 'ENGINE KEY COLUMN REPAIRED'), 'the repair is logged');
+
+ok(/Nothing to repair/.test(previewEngineRepairV20_6()),
+   'and running it again finds nothing to do');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

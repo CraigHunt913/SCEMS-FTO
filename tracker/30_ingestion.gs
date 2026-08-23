@@ -264,7 +264,7 @@ function onHubFormSubmit(e) {
         }
         urgentAlerts(vals);
       } else if (kind === 'decision') {
-        if (!alreadyMirrored) { mirror(DECISIONS_TAB, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
+        if (!alreadyMirrored) { mirror(TAB.DECISIONS, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
         decisionAlerts(vals);
       }
 

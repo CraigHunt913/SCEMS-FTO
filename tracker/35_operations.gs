@@ -33,17 +33,17 @@
  *  is reporting. It does not fail SILENTLY, which is the part that mattered. */
 function stampDecisionPhaseV20_6_(trainee, phaseNow) {
   try {
-    var t = readTableV20_1_(DECISIONS_TAB, 4);
+    var t = readTableV20_1_(TAB.DECISIONS, 4);
     if (!t.ok) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
+        TAB.DECISIONS + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
       return 'no tab';
     }
     var iWho = t.col['TRAINEE'];
     var iPhase = t.col['PHASE'] !== undefined ? t.col['PHASE'] : t.col['PHASE AT DECISION'];
     if (iWho === undefined || iPhase === undefined) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
+        TAB.DECISIONS + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
         ' column. Nothing was written, and nothing was written to the wrong column either.');
       return 'no column';
     }
@@ -54,7 +54,7 @@ function stampDecisionPhaseV20_6_(trainee, phaseNow) {
     }
     if (hit < 0) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        'No row on ' + DECISIONS_TAB + ' names ' + trainee + '. Nothing was written.');
+        'No row on ' + TAB.DECISIONS + ' names ' + trainee + '. Nothing was written.');
       return 'no row';
     }
     t.sheet.getRange(4 + 1 + hit, iPhase + 1).setValue(phaseNow);
@@ -663,7 +663,7 @@ function showAllTabsV19() {
 /* ---- ported from zz (effective winner) ---- */
 function refreshTraineeSkillsViewV19(name, view) {
   var S = ss();
-  var sh = S.getSheetByName(TRAINEE_SKILLS_TAB_V19);
+  var sh = S.getSheetByName(TAB.TRAINEE_SKILLS);
   if (!sh) return;
 
   var body = sh.getRange(6, 1, sh.getMaxRows() - 5, 8);
@@ -700,8 +700,8 @@ function refreshTraineeSkillsViewV19(name, view) {
 /* ---- ported from zz (effective winner) ---- */
 function buildTraineeSkillsViewV19() {
   var S = ss();
-  var sh = S.getSheetByName(TRAINEE_SKILLS_TAB_V19);
-  if (!sh) sh = S.insertSheet(TRAINEE_SKILLS_TAB_V19);
+  var sh = S.getSheetByName(TAB.TRAINEE_SKILLS);
+  if (!sh) sh = S.insertSheet(TAB.TRAINEE_SKILLS);
   sh.clear();
   sh.getDataRange().getMergedRanges().forEach(function (r) { r.breakApart(); });
   if (sh.getMaxRows() < 300) sh.insertRowsAfter(sh.getMaxRows(), 300 - sh.getMaxRows());
@@ -756,7 +756,7 @@ function buildTraineeSkillsViewV19() {
   refreshTraineeSkillsViewV19(String(sh.getRange('C4').getValue() || ''),
                              String(sh.getRange('E4').getValue() || ''));
 
-  var msg = TRAINEE_SKILLS_TAB_V19 + ' rebuilt with a view selector.\n\n' +
+  var msg = TAB.TRAINEE_SKILLS + ' rebuilt with a view selector.\n\n' +
     'C4 picks the trainee. E4 picks the view:\n' +
     TRAINEE_VIEWS_V19.map(function (v) { return '   ' + v; }).join('\n') +
     '\n\nChange either and the page redraws.';
@@ -1214,7 +1214,7 @@ function applySkillsLayoutV19_() {
 /** Catalog layout with the title moved off the badge. Column A stays
  *  visible: deploymentPreflight() validates that A4 reads SKILL ID. */
 function applyCatalogLayoutV19_() {
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID') return;
   ensureSheetCapacityV19_(sh, 500, 17);
   sh.getDataRange().getMergedRanges().forEach(function (r) { r.breakApart(); });
@@ -2148,7 +2148,7 @@ function dailyChecks() {
   }
 
   // ---- NEW: approved advancement not reflected on the master ----
-  var dec = S.getSheetByName(DECISIONS_TAB);
+  var dec = S.getSheetByName(TAB.DECISIONS);
   if (dec && dec.getLastRow() >= 5) {
     var dv = dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues();
     var stuck = [];

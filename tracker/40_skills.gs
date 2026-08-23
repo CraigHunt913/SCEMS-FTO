@@ -228,7 +228,7 @@ function catalogMapsV19_(includeUnapproved) {
 
 /* ---- ported from master (effective winner) ---- */
 function catalogObjectsV19_(includeUnapproved) {
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID' || sh.getLastRow() < 5) return [];
   return sh.getRange(5, 1, sh.getLastRow() - 4, 17).getValues()
     .filter(function (r) { return r[0] && r[2]; })
@@ -366,7 +366,7 @@ function rewriteEngineSkillMetricV19_() {
 
 function skillCatalogIssuesV19_() {
   var issues = [];
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID') {
     return ['Skills v19 catalog is not installed.'];
   }

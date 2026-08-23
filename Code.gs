@@ -1016,7 +1016,12 @@ function acceptFlagV20_2() {
 function protectRecordTabsV20_2() {
   if (!gateV20_2_('PROTECT RECORD TABS')) return;
   var DESC = 'SCEMS v20.2 record tab — script writes, people do not';
-  var tabs = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+  // 17 TRAINEE ARCHIVE was missing from this list. It holds the record of
+  // everybody who has been released, and nothing about an archive wants
+  // hand-editing. 13 AUDIT - EXCEPTION LOG is still deliberately absent:
+  // columns J and K on that tab exist to be ticked by a person, and full
+  // sheet protection would take that away.
+  var tabs = [TAB.DECISIONS, TAB.ARCHIVE, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
               TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS, TAB.LOG];
   var out = [];
   tabs.forEach(function (name) {
@@ -2467,7 +2472,7 @@ function onHubFormSubmit(e) {
         }
         urgentAlerts(vals);
       } else if (kind === 'decision') {
-        if (!alreadyMirrored) { mirror(DECISIONS_TAB, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
+        if (!alreadyMirrored) { mirror(TAB.DECISIONS, vals); mirroredThisAttempt = true; if (haveLedger) ledgerSetV20_1_(ledgerRow, 'VALIDATED', 'mirrored'); }
         decisionAlerts(vals);
       }
 
@@ -2659,17 +2664,17 @@ function ingestionExceptionReportV20_1() {
  *  is reporting. It does not fail SILENTLY, which is the part that mattered. */
 function stampDecisionPhaseV20_6_(trainee, phaseNow) {
   try {
-    var t = readTableV20_1_(DECISIONS_TAB, 4);
+    var t = readTableV20_1_(TAB.DECISIONS, 4);
     if (!t.ok) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
+        TAB.DECISIONS + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
       return 'no tab';
     }
     var iWho = t.col['TRAINEE'];
     var iPhase = t.col['PHASE'] !== undefined ? t.col['PHASE'] : t.col['PHASE AT DECISION'];
     if (iWho === undefined || iPhase === undefined) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
+        TAB.DECISIONS + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
         ' column. Nothing was written, and nothing was written to the wrong column either.');
       return 'no column';
     }
@@ -2680,7 +2685,7 @@ function stampDecisionPhaseV20_6_(trainee, phaseNow) {
     }
     if (hit < 0) {
       systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        'No row on ' + DECISIONS_TAB + ' names ' + trainee + '. Nothing was written.');
+        'No row on ' + TAB.DECISIONS + ' names ' + trainee + '. Nothing was written.');
       return 'no row';
     }
     t.sheet.getRange(4 + 1 + hit, iPhase + 1).setValue(phaseNow);
@@ -3289,7 +3294,7 @@ function showAllTabsV19() {
 /* ---- ported from zz (effective winner) ---- */
 function refreshTraineeSkillsViewV19(name, view) {
   var S = ss();
-  var sh = S.getSheetByName(TRAINEE_SKILLS_TAB_V19);
+  var sh = S.getSheetByName(TAB.TRAINEE_SKILLS);
   if (!sh) return;
 
   var body = sh.getRange(6, 1, sh.getMaxRows() - 5, 8);
@@ -3326,8 +3331,8 @@ function refreshTraineeSkillsViewV19(name, view) {
 /* ---- ported from zz (effective winner) ---- */
 function buildTraineeSkillsViewV19() {
   var S = ss();
-  var sh = S.getSheetByName(TRAINEE_SKILLS_TAB_V19);
-  if (!sh) sh = S.insertSheet(TRAINEE_SKILLS_TAB_V19);
+  var sh = S.getSheetByName(TAB.TRAINEE_SKILLS);
+  if (!sh) sh = S.insertSheet(TAB.TRAINEE_SKILLS);
   sh.clear();
   sh.getDataRange().getMergedRanges().forEach(function (r) { r.breakApart(); });
   if (sh.getMaxRows() < 300) sh.insertRowsAfter(sh.getMaxRows(), 300 - sh.getMaxRows());
@@ -3382,7 +3387,7 @@ function buildTraineeSkillsViewV19() {
   refreshTraineeSkillsViewV19(String(sh.getRange('C4').getValue() || ''),
                              String(sh.getRange('E4').getValue() || ''));
 
-  var msg = TRAINEE_SKILLS_TAB_V19 + ' rebuilt with a view selector.\n\n' +
+  var msg = TAB.TRAINEE_SKILLS + ' rebuilt with a view selector.\n\n' +
     'C4 picks the trainee. E4 picks the view:\n' +
     TRAINEE_VIEWS_V19.map(function (v) { return '   ' + v; }).join('\n') +
     '\n\nChange either and the page redraws.';
@@ -3840,7 +3845,7 @@ function applySkillsLayoutV19_() {
 /** Catalog layout with the title moved off the badge. Column A stays
  *  visible: deploymentPreflight() validates that A4 reads SKILL ID. */
 function applyCatalogLayoutV19_() {
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID') return;
   ensureSheetCapacityV19_(sh, 500, 17);
   sh.getDataRange().getMergedRanges().forEach(function (r) { r.breakApart(); });
@@ -4774,7 +4779,7 @@ function dailyChecks() {
   }
 
   // ---- NEW: approved advancement not reflected on the master ----
-  var dec = S.getSheetByName(DECISIONS_TAB);
+  var dec = S.getSheetByName(TAB.DECISIONS);
   if (dec && dec.getLastRow() >= 5) {
     var dv = dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues();
     var stuck = [];
@@ -5039,7 +5044,7 @@ function catalogMapsV19_(includeUnapproved) {
 
 /* ---- ported from master (effective winner) ---- */
 function catalogObjectsV19_(includeUnapproved) {
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID' || sh.getLastRow() < 5) return [];
   return sh.getRange(5, 1, sh.getLastRow() - 4, 17).getValues()
     .filter(function (r) { return r[0] && r[2]; })
@@ -5177,7 +5182,7 @@ function rewriteEngineSkillMetricV19_() {
 
 function skillCatalogIssuesV19_() {
   var issues = [];
-  var sh = ss().getSheetByName(SKILL_CATALOG_TAB);
+  var sh = ss().getSheetByName(TAB.CATALOG);
   if (!sh || String(sh.getRange('A4').getValue()) !== 'SKILL ID') {
     return ['Skills v19 catalog is not installed.'];
   }
@@ -6165,7 +6170,7 @@ function onSheetEdit(e) {
       return; // Edits to other queue cells never trigger recording.
     }
 
-    if (name === TRAINEE_SKILLS_TAB_V19 && e.range.getRow() === 4 &&
+    if (name === TAB.TRAINEE_SKILLS && e.range.getRow() === 4 &&
         (e.range.getColumn() === 3 || e.range.getColumn() === 5)) {
       refreshTraineeSkillsViewV19(
         String(sh.getRange('C4').getValue() || ''),
@@ -7002,7 +7007,7 @@ function refreshHomeNowV20_1() {
 function approveTraineeOnViewV20_1() {
   if (!gateV20_2_('WORK QUEUE')) return;
   var ui = SpreadsheetApp.getUi();
-  var view = ss().getSheetByName(TRAINEE_SKILLS_TAB_V19);
+  var view = ss().getSheetByName(TAB.TRAINEE_SKILLS);
   if (!view) { ui.alert('Tab 23 not found.'); return; }
   var picked = String(view.getRange('C4').getValue() || '').trim();
   if (!picked) {
@@ -7427,7 +7432,7 @@ function systemHeartbeat() {
 
   // 3. critical tabs present
   [TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS, TAB.ENGINE,
-   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', DECISIONS_TAB, ARCHIVE_TAB, 'HOME',
+   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', TAB.DECISIONS, TAB.ARCHIVE, 'HOME',
    TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF].forEach(function (n) {
     if (!S.getSheetByName(n)) problems.push('Tab missing: ' + n + '. FIX: run repairControlAndEngine() or the matching builder.');
   });
@@ -8007,7 +8012,7 @@ function viewSkillsRemainingV19_(sh, name, rec, row) {
 
 function signaturesOnFileV19_(trainee, itemType, sinceMs) {
   var out = {};
-  var dec = ss().getSheetByName(DECISIONS_TAB);
+  var dec = ss().getSheetByName(TAB.DECISIONS);
   if (!dec || dec.getLastRow() < 5) return out;
   dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues().forEach(function (r) {
     if (String(r[3]).trim() !== String(trainee).trim()) return;
@@ -8897,7 +8902,7 @@ function purgeTestRows(confirmToken) {
   if (denyV20_2) return denyV20_2;
   var targets = [
     { tab: TAB.EVAL, col: 3 }, { tab: TAB.REFLECT, col: 2 },
-    { tab: TAB.URGENT, col: 5 }, { tab: DECISIONS_TAB, col: 4 },
+    { tab: TAB.URGENT, col: 5 }, { tab: TAB.DECISIONS, col: 4 },
     { tab: TAB.SKILL_EVIDENCE, col: 4 }
   ];
   var found = [];
@@ -9402,12 +9407,12 @@ function tabNameCheck() {
   var have = ss().getSheets().map(function (sh) { return sh.getName(); });
   var want = [];
   Object.keys(TAB).forEach(function (k) { want.push({ where: 'TAB.' + k, name: TAB[k] }); });
-  [['DECISIONS_TAB', typeof DECISIONS_TAB === 'string' ? DECISIONS_TAB : ''],
-   ['ARCHIVE_TAB', typeof ARCHIVE_TAB === 'string' ? ARCHIVE_TAB : ''],
-   ['SKILL_CATALOG_TAB', typeof SKILL_CATALOG_TAB === 'string' ? SKILL_CATALOG_TAB : ''],
-   ['FTO_ROSTER_TAB_V19', typeof FTO_ROSTER_TAB_V19 === 'string' ? FTO_ROSTER_TAB_V19 : ''],
-   ['TRAINEE_SKILLS_TAB_V19', typeof TRAINEE_SKILLS_TAB_V19 === 'string' ? TRAINEE_SKILLS_TAB_V19 : ''],
-   ['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : '']
+  // Everything else that names a tab. TAB used to have five shadows -
+  // DECISIONS_TAB, ARCHIVE_TAB, SKILL_CATALOG_TAB, FTO_ROSTER_TAB_V19 and
+  // TRAINEE_SKILLS_TAB_V19 - each a second name for a sheet TAB already
+  // named. They are gone; these are the ones that remain.
+  [['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : ''],
+   ['HOME (built by modernHome)', 'HOME']
   ].forEach(function (p2) { if (p2[1]) want.push({ where: p2[0], name: p2[1] }); });
 
   // one entry per distinct name; several constants point at the same tab
@@ -9489,6 +9494,187 @@ function nearestTabV20_6_(want, have) {
     if (s > score) { score = s; best = x; }
   });
   return score >= 4 ? best : '';
+}
+
+/* ---------------------------------------------------------------- *
+ *  The engine's key column, and what one deleted row did to it
+ * ---------------------------------------------------------------- */
+
+/** READ ONLY. What is broken on the derived tabs, and why.
+ *
+ *  06 PHASE - STATUS ENGINE is the tab every other view is built from. Its
+ *  column A is the key: every one of the twenty-three columns beside it opens
+ *  with IF($A{row}="","", ...). So if column A breaks on a row, that whole row
+ *  goes with it, on that tab and on every tab downstream of it.
+ *
+ *  One cell did exactly that. A row was deleted from 01 TRAINEE MASTER at some
+ *  point and Google rewrote the formula that pointed at it to
+ *
+ *      =IF(#REF!="","",#REF!)
+ *
+ *  which is not an error anybody sees. It is one cell. It took out one row on
+ *  seven tabs, and the only symptom is a trainee who is simply not on any of
+ *  the views and nothing anywhere saying a name is missing.
+ *
+ *  This finds it and says so. It changes nothing. */
+function engineHealthCheck() {
+  var L = ['ENGINE HEALTH CHECK — READ ONLY, nothing was changed', ''];
+
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  var mas = getSheetOrNullV20_1_(TAB.MASTER);
+  if (!eng || !mas) return 'Cannot run: ' + (!eng ? TAB.ENGINE : TAB.MASTER) + ' is not there.';
+
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+
+  var broken = [], crossed = [], fine = 0;
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    if (f.indexOf('#REF!') >= 0) { broken.push(row); return; }
+    // every one of these should read the SAME row of the master
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    if (!m) return;
+    if (Number(m[1]) !== row) crossed.push({ row: row, points: Number(m[1]) });
+    else fine++;
+  });
+
+  L.push('Column A of ' + TAB.ENGINE + ', which every other column keys off:');
+  L.push('  reading the row they should  : ' + fine);
+  L.push('  pointing at a different row  : ' + crossed.length);
+  L.push('  broken beyond repair (#REF!) : ' + broken.length);
+  L.push('');
+
+  if (!broken.length && !crossed.length) {
+    L.push('Nothing wrong with it. Every row reads its own row of the master.');
+  } else {
+    broken.forEach(function (row) {
+      L.push('  BROKEN   ' + TAB.ENGINE + ' A' + row + ' reads #REF!');
+      L.push('           A row was deleted from the master and this formula went with it.');
+      L.push('           Everything on row ' + row + ' of this tab, and of every tab built');
+      L.push('           from it, is #REF! because of this one cell.');
+    });
+    crossed.forEach(function (c) {
+      L.push('  CROSSED  ' + TAB.ENGINE + ' A' + c.row + ' reads master row ' + c.points +
+        ', not row ' + c.row + '.');
+      L.push('           That row of the engine is showing a different person.');
+    });
+    L.push('');
+    L.push('Run  previewEngineRepairV20_6()  to see the exact repair. It writes nothing.');
+  }
+
+  // and the master rows that are invisible whatever the formulas say
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (t.ok) {
+    var iName = t.col['TRAINEE'], iMail = t.col['TRAINEE EMAIL'], iStat = t.col['SET STATUS'];
+    var nameless = [];
+    t.rows.forEach(function (r, i) {
+      if (iName === undefined) return;
+      var nm = String(r[iName] || '').trim();
+      if (nm) return;
+      var anything = r.some(function (v) { return String(v == null ? '' : v).trim() !== ''; });
+      if (!anything) return;
+      nameless.push({ row: 5 + i,
+                      mail: iMail === undefined ? '' : String(r[iMail] || '').trim(),
+                      stat: iStat === undefined ? '' : String(r[iStat] || '').trim() });
+    });
+    if (nameless.length) {
+      L.push('');
+      L.push('AND ON ' + TAB.MASTER + ': ' + nameless.length + ' row(s) hold data and no name.');
+      L.push('Every formula on the engine opens with IF($A{row}="","", ...), so a row');
+      L.push('with no name is silently blank on every view. It is not missing — it is');
+      L.push('invisible, which looks the same from outside and is not the same thing.');
+      nameless.forEach(function (n) {
+        L.push('  row ' + n.row + ' : ' + (n.stat || '(no status)') +
+               (n.mail ? ' · ' + n.mail : ' · no address either'));
+      });
+      L.push('');
+      L.push('Putting a name back is a change to a personnel record. Nothing here does');
+      L.push('that for you, and nothing should.');
+    }
+  }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** What repairing the engine's key column would do. Writes nothing. */
+function previewEngineRepairV20_6() { return engineRepairV20_6_(''); }
+
+/** Repair it. Restores each cell of column A to read its own row of the
+ *  master, which is what every undamaged cell in that column already does.
+ *
+ *  It touches column A of one derived tab and nothing else. It does not go
+ *  near a record, a name, or an address — the twenty-three columns beside it
+ *  recalculate on their own once the key is right, and so do the seven tabs
+ *  downstream. */
+function applyEngineRepairV20_6(confirmToken) { return engineRepairV20_6_(confirmToken); }
+
+function engineRepairV20_6_(confirmToken) {
+  var TOKEN = 'REPAIR THE ENGINE KEY COLUMN';
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  if (!eng) return TAB.ENGINE + ' is not there. Nothing was changed.';
+
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+
+  var plan = [];
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    var want = "=IF('" + TAB.MASTER + "'!A" + row + '="","",\'' + TAB.MASTER + "'!A" + row + ')';
+    var broken = f.indexOf('#REF!') >= 0;
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    var crossed = m && Number(m[1]) !== row;
+    if (!broken && !crossed) return;
+    plan.push({ row: row, was: f, now: want, why: broken ? 'reads #REF!' : 'reads row ' + m[1] });
+  });
+
+  if (!plan.length) {
+    return 'Nothing to repair. Every cell in column A of ' + TAB.ENGINE +
+      ' already reads its own row of ' + TAB.MASTER + '.';
+  }
+
+  var L = ['ENGINE KEY COLUMN REPAIR', '', plan.length + ' cell(s) to put back:', ''];
+  plan.forEach(function (p) {
+    L.push('  A' + p.row + '  (' + p.why + ')');
+    L.push('     was : ' + p.was);
+    L.push('     now : ' + p.now);
+  });
+  L.push('');
+  L.push('Only column A of ' + TAB.ENGINE + ' is touched. The columns beside it and');
+  L.push('every tab built from them recalculate on their own.');
+
+  if (confirmToken !== TOKEN) {
+    L.push('');
+    L.push('NOTHING WAS WRITTEN. To do it:');
+    L.push('  applyEngineRepairV20_6("' + TOKEN + '")');
+    var pv = L.join('\n');
+    Logger.log(pv);
+    try { SpreadsheetApp.getUi().alert(pv.slice(0, 1400)); } catch (e) {}
+    return pv;
+  }
+
+  if (!gateV20_2_('REPAIR ENGINE KEY COLUMN')) return 'Refused: not authorised.';
+
+  plan.forEach(function (p) { eng.getRange(p.row, 1).setFormula(p.now); });
+  SpreadsheetApp.flush();
+  systemLog_('WARN', 'ENGINE KEY COLUMN REPAIRED',
+    plan.length + ' cell(s): ' + plan.map(function (p) { return 'A' + p.row; }).join(', '));
+
+  L.push('');
+  L.push('DONE. ' + plan.length + ' cell(s) repaired. Give the sheet a moment to');
+  L.push('recalculate, then run engineHealthCheck() again — it should come back clean.');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
 }
 
 
@@ -11940,7 +12126,7 @@ function stepI_fixAllFormLinks() {
 
 /** Backfill every hub form kind from its fullest response tab. */
 function stepJ_backfillAllHubTabs() {
-  var mirrors = [TAB.EVAL, TAB.REFLECT, TAB.URGENT, DECISIONS_TAB];
+  var mirrors = [TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS];
   var best = { eval: null, reflect: null, urgent: null, decision: null };
   ss().getSheets().forEach(function (sh) {
     if (mirrors.indexOf(sh.getName()) >= 0) return; // never read a mirror as a source
@@ -11985,7 +12171,7 @@ function backfillHubTabV20_1(tabName) {
     return 'Tab "' + src.getName() + '" is not a hub form tab (classified: ' + (kind || 'unknown') + '). Nothing done.';
   }
   var mirrorTab = kind === 'eval' ? TAB.EVAL : kind === 'reflect' ? TAB.REFLECT :
-                  kind === 'urgent' ? TAB.URGENT : DECISIONS_TAB;
+                  kind === 'urgent' ? TAB.URGENT : TAB.DECISIONS;
 
   var m = getSheetOrNullV20_1_(mirrorTab);
   var seen = {};
@@ -12648,7 +12834,7 @@ function deploymentPreflight() {
     'HOME', TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT,
     TAB.SKILLS, TAB.ENGINE, TAB.WEEKLY, '08 FTO VIEW', '09 TRAINEE VIEW',
     '11 MEDICAL DIRECTOR VIEW', TAB.QUEUE, '13 AUDIT - EXCEPTION LOG',
-    '14 ANALYTICS', '15 SKILL CATALOG', DECISIONS_TAB, ARCHIVE_TAB, TAB.LOG,
+    '14 ANALYTICS', '15 SKILL CATALOG', TAB.DECISIONS, TAB.ARCHIVE, TAB.LOG,
     TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
   ];
   requiredTabs.forEach(function (name) {
@@ -12786,8 +12972,8 @@ function deploymentPreflight() {
   });
 
   var protectedNames = [
-    TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.ENGINE, DECISIONS_TAB, TAB.LOG,
-    TAB.SKILLS, SKILL_CATALOG_TAB, TAB.SKILL_EVIDENCE,
+    TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.ENGINE, TAB.DECISIONS, TAB.LOG,
+    TAB.SKILLS, TAB.CATALOG, TAB.SKILL_EVIDENCE,
     TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
   ];
   protectedNames.forEach(function (name) {
@@ -13237,15 +13423,10 @@ var TAB = Object.freeze({
 
 /* Legacy constant aliases retained because ~200 existing call sites and
  * operator habits reference them. Same values, single source. */
-var DECISIONS_TAB = TAB.DECISIONS;
 
-var ARCHIVE_TAB = TAB.ARCHIVE;
 
-var SKILL_CATALOG_TAB = TAB.CATALOG;
 
-var FTO_ROSTER_TAB_V19 = TAB.FTO_ROSTER;
 
-var TRAINEE_SKILLS_TAB_V19 = TAB.TRAINEE_SKILLS;
 
 var TEST_PREFIX = 'ZZ TEST';
 

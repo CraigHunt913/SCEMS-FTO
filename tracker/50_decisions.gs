@@ -255,7 +255,7 @@ function onSheetEdit(e) {
       return; // Edits to other queue cells never trigger recording.
     }
 
-    if (name === TRAINEE_SKILLS_TAB_V19 && e.range.getRow() === 4 &&
+    if (name === TAB.TRAINEE_SKILLS && e.range.getRow() === 4 &&
         (e.range.getColumn() === 3 || e.range.getColumn() === 5)) {
       refreshTraineeSkillsViewV19(
         String(sh.getRange('C4').getValue() || ''),
@@ -1092,7 +1092,7 @@ function refreshHomeNowV20_1() {
 function approveTraineeOnViewV20_1() {
   if (!gateV20_2_('WORK QUEUE')) return;
   var ui = SpreadsheetApp.getUi();
-  var view = ss().getSheetByName(TRAINEE_SKILLS_TAB_V19);
+  var view = ss().getSheetByName(TAB.TRAINEE_SKILLS);
   if (!view) { ui.alert('Tab 23 not found.'); return; }
   var picked = String(view.getRange('C4').getValue() || '').trim();
   if (!picked) {

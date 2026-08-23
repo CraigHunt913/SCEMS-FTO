@@ -153,23 +153,29 @@ footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
   has been changed.</p>
 
   <div class="counts">
-    <div><b>30</b><span>tabs the code knows about</span></div>
+    <div><b>52</b><span>tabs in the spreadsheet</span></div>
     <div><b>10</b><span>hold permanent records</span></div>
     <div><b>10</b><span>are derived from the others</span></div>
     <div><b>8</b><span>of the ten records are protected</span></div>
-    <div><b>5</b><span>tabs named by two constants each</span></div>
+    <div><b>22</b><span>the code has never heard of</span></div>
+    <div><b>88</b><span>broken cells, from one deleted row</span></div>
   </div>
 </header>
 
 <div class="prose">
 <p>This was assembled by reading every mention of every tab constant in the tracker's 13,373 lines and
-sorting them into who writes and who reads, then checking the result against the live spreadsheet.
-It is a description, not a plan — the plan is at the bottom, and none of it happens without your say-so.</p>
+sorting them into who writes and who reads, then downloading the live workbook and checking the answer
+against it. It is a description, not a plan — the plan is at the bottom, and none of it happens without
+your say-so.</p>
 
-<p><strong>The headline is that a third of this spreadsheet is not data.</strong> Ten of the thirty tabs
-are computed from the other twenty. Delete any one of them and the system regenerates it. That is not a
-criticism — derived views are how a spreadsheet stays useful — but it changes what "the tracker" is:
-twenty tabs of record, and ten of presentation sitting on top.</p>
+<p><strong>The code knows about thirty tabs. There are fifty-two.</strong> Twenty-two of them nothing in
+the tracker has ever heard of: five the portal made, two marked LEGACY V18, and
+<strong>fifteen called “Form Responses N”</strong> holding around 546 rows between them.</p>
+
+<p><strong>And one deleted row has been quietly breaking eight tabs.</strong> A single cell on the phase
+engine reads <code>=IF(#REF!="","",#REF!)</code>, and because every column on that tab keys off it, that
+one cell takes out its whole row on seven more. Eighty-eight broken cells, one cause, no error message
+anywhere. That is the “behaves unpredictably” complaint, and it is at the bottom of this page.</p>
 </div>
 
 <h2>The inventory</h2>
@@ -259,6 +265,40 @@ A tab with no writers is either filled by a spreadsheet formula or written from 
 <p class="lede">Four things about the spreadsheet itself, separate from the code defects already fixed.</p>
 
 <div class="finding">
+  <h3>One deleted row is breaking eighty-eight cells across eight tabs</h3>
+  <p><span class="mono">06 PHASE · STATUS ENGINE</span> is the tab every view is built from, and its
+  column A is the key — all twenty-three columns beside it open with
+  <code>IF($A{row}="","", …)</code>. One cell in that column reads
+  <code>=IF(#REF!="","",#REF!)</code>. A row was deleted from the trainee master at some point and
+  Google rewrote that formula; nothing said so.</p>
+  <p>One cell takes out its whole row on the engine, and then on tabs 07, 08, 09, 10, 11, 13 and HOME.
+  A second cell in the same column is crossed — it reads a different trainee's row than the one it
+  sits on.</p>
+  <p class="where">Now findable: <code>engineHealthCheck()</code> names both.
+  <code>previewEngineRepairV20_6()</code> shows the repair; <code>applyEngineRepairV20_6(token)</code>
+  does it, and touches nothing but that one column.</p>
+</div>
+
+<div class="finding">
+  <h3>Two rows on the trainee master hold a clearance and no name</h3>
+  <p>Every formula on the engine opens with <code>IF($A{row}="","", …)</code>, so a row with an empty
+  name column is silently blank on every view. Not missing — invisible, which looks identical from
+  outside and is not the same thing. One of the two carries an email address and a status of
+  “Cleared to Independent Practice”.</p>
+  <p>Putting a name back is a change to a personnel record. The health check reports it and does
+  nothing about it, which is the correct division of labour.</p>
+</div>
+
+<div class="finding soft">
+  <h3>Fifteen “Form Responses” tabs, around 546 rows</h3>
+  <p>Google mints one of these every time a form is relinked, and they accumulate. Four are
+  substantial — 138, 127, 117 and 115 rows. Nothing in the code reads them by name, which is correct
+  and deliberate, so nothing tells you what is in them or whether it also reached the record.</p>
+  <p>They are the Google-owned copy of responses, not necessarily lost data — but they are a second
+  copy of personnel information sitting unprotected under names nobody chose.</p>
+</div>
+
+<div class="finding">
   <h3>Tab 12's header row is a column short of its data</h3>
   <p>Column D is blank, so every label from D rightward names the column to its left. Anything reading
   that tab by header is reading a neighbour.</p>
@@ -268,7 +308,7 @@ A tab with no writers is either filled by a spreadsheet formula or written from 
 </div>
 
 <div class="finding">
-  <h3>Tab 17 holds permanent records and is not protected</h3>
+  <h3>Tab 17 held permanent records and was not protected <span class="mono">— fixed</span></h3>
   <p>Eight of the ten record tabs are locked so only the script may write them.
   <span class="mono">17 TRAINEE ARCHIVE</span> is not, and nothing about an archive of released trainees
   wants hand-editing. <span class="mono">13 AUDIT · EXCEPTION LOG</span> is also unprotected, but that
@@ -276,7 +316,7 @@ A tab with no writers is either filled by a spreadsheet formula or written from 
 </div>
 
 <div class="finding soft">
-  <h3>Five tabs are named by two constants each</h3>
+  <h3>Five tabs were named by two constants each <span class="mono">— fixed</span></h3>
   <p><span class="mono">15</span>, <span class="mono">16</span>, <span class="mono">17</span>,
   <span class="mono">22</span> and <span class="mono">23</span> each have two names in the code pointing
   at the same sheet. On its own that is untidy. Combined with the four names in doubt it is a trap:
@@ -284,13 +324,15 @@ A tab with no writers is either filled by a spreadsheet formula or written from 
   that still works hides the half that does not.</p>
 </div>
 
-<div class="finding soft">
-  <h3>Help text lives inside a data grid</h3>
-  <p>Tab 10 carries the sentence <em>“Now on the tab called 22 FTO ROSTER. Add or retire an FTO there,
-  then run Refresh form dropdowns.”</em> inside its cells. That is the exact string that ended up in
-  Latavia Cole's ASSIGNED FTO cell, where it read to every name-matching lookup in the system as an
-  officer nobody had heard of.</p>
-  <p>Instructions in a grid get copied like data, because they are stored like data.</p>
+<div class="finding done">
+  <h3>Withdrawn: the four tab names were fine all along</h3>
+  <p>The sheet <em>titles</em> read “03 TRAINEE SELF-REFLECTION RAW”, “07 WEEKLY TRAINEE STATUS
+  REPORT”, “10 TRAINING DIVISION DASHBOARD” and “13 AUDIT / EXCEPTION LOG”. Those are cell A1, not the
+  tab names. The workbook manifest settles it: all four constants match their tabs exactly.</p>
+  <p>Withdrawn too: the help text is not stored on tab 10. That cell is
+  <code>='00 README - CONTROL'!F5</code> — it already lives on tab 00, which is where I proposed
+  moving it to. It is only <em>shown</em> in the middle of the dashboard, which is how it got copied,
+  but there is nothing to move.</p>
 </div>
 
 <div class="callout">
@@ -312,42 +354,48 @@ every step is independently useful — you can stop after any of them.</p>
 <ol class="steps">
   <li>
     <span class="risk r-none">Reads only</span>
+    <h3>Run <code>engineHealthCheck()</code></h3>
+    <p>Names the broken cell, the crossed one, and the master rows that hold data and no name. This is
+    the one that explains the symptoms you have been living with.</p>
+  </li>
+  <li>
+    <span class="risk r-none">Reads only</span>
+    <h3>Run <code>previewEngineRepairV20_6()</code></h3>
+    <p>Shows the exact before and after of every cell it would change, and writes nothing.</p>
+  </li>
+  <li>
+    <span class="risk r-low">One column, one tab</span>
+    <h3>Apply the engine repair</h3>
+    <p>Restores each cell of the key column to read its own row of the master, which is what every
+    undamaged cell in it already does. Nothing else is touched — the columns beside it and the seven
+    tabs downstream recalculate themselves.</p>
+  </li>
+  <li>
+    <span class="risk r-real">Personnel record</span>
+    <h3>Decide what the two nameless rows are</h3>
+    <p>One has a clearance and an address and no name. Only you know who that is, and putting a name on
+    a personnel record is not something a tool should do on its own.</p>
+  </li>
+  <li>
+    <span class="risk r-none">Reads only</span>
     <h3>Run <code>tabNameCheck()</code></h3>
-    <p>Settles the four names in doubt in about a second, and tells you whether tabs exist that nothing
-    in the code asks for. Everything below depends on knowing the answer.</p>
+    <p>Now mostly a listing of the twenty-two tabs the code has never heard of — the fifteen
+    “Form Responses”, the two LEGACY V18, and the five the portal made.</p>
   </li>
   <li>
     <span class="risk r-none">Reads only</span>
     <h3>Run <code>repairDecisionQueueHeaderV20_4()</code> for its preview</h3>
-    <p>It reports before it writes. Read what it proposes for tab 12's blank column D, then decide.</p>
-  </li>
-  <li>
-    <span class="risk r-low">Adds a lock</span>
-    <h3>Protect tab 17</h3>
-    <p>One line added to the list <code>protectRecordTabsV20_2()</code> already works from. It stops
-    people editing an archive; it does not stop the script writing it.</p>
-  </li>
-  <li>
-    <span class="risk r-low">Code only</span>
-    <h3>One constant per tab</h3>
-    <p>Retire the second name on each of the five. Mechanical, provable the same way the refile was,
-    and it removes the trap where fixing one name leaves the other pointing at nothing.</p>
-  </li>
-  <li>
-    <span class="risk r-low">Moves text</span>
-    <h3>Move the help text out of tab 10 and into tab 00</h3>
-    <p>Tab 00 is the control and README tab and is read by label, so nothing breaks when prose lives
-    there. Nothing that reads tab 10 reads that cell.</p>
+    <p>Tab 12's blank column D. It reports before it writes.</p>
   </li>
   <li>
     <span class="risk r-real">Removes tabs</span>
     <h3>Decide whether tabs 08, 09 and 11 still earn their place</h3>
-    <p>They are the v19 per-role views: one for the FTO, one for the trainee, one for the Medical
-    Director. The portal now does exactly that job for each of those three roles, per person, with
-    access control the spreadsheet cannot enforce — tab 11 shows scores, and the portal's Medical
-    Director screen deliberately does not.</p>
-    <p>Two views of the same records that disagree is worse than one. But this is a judgement about
-    how you work, not a defect, so it is last and it is yours.</p>
+    <p>They are the v19 per-role views: FTO, trainee, Medical Director. The portal now does exactly
+    that job for each of those three, per person, with access control the spreadsheet cannot
+    enforce — tab 11 shows scores, and the portal's Medical Director screen deliberately does not.
+    They are also three of the eight tabs the broken cell reaches.</p>
+    <p>Two views of the same records that disagree is worse than one. But this is a judgement about how
+    you work, not a defect, so it is last and it is yours.</p>
   </li>
 </ol>
 
@@ -355,6 +403,9 @@ every step is independently useful — you can stop after any of them.</p>
   <h3>What I will not do without you saying so</h3>
   <ul>
     <li>Rename any tab. A form writes to three of them, and Google mints a new response tab on relink.</li>
+    <li>Touch the fifteen “Form Responses” tabs. Until something has read what is in them and matched it
+    against the ingestion ledger, deleting one could be deleting the only copy of a submission.</li>
+    <li>Put a name on a nameless row on the trainee master.</li>
     <li>Delete any tab, derived or not.</li>
     <li>Touch a record tab's contents by any route other than a previewed, token-gated tool.</li>
     <li>Change what tab 06 computes. It is the one derived tab the rest of the system reads back, so it
@@ -363,7 +414,8 @@ every step is independently useful — you can stop after any of them.</p>
 </div>
 
 <footer>
-  Assembled from the tracker's 13,373 lines and a read-only export of the live spreadsheet.<br>
+  Assembled from the tracker's 13,373 lines and a read-only download of the live workbook.<br>
+  Two findings in the first version were wrong and are marked withdrawn above rather than removed.<br>
   Counts are of functions, not of people. Nothing in the spreadsheet was changed to produce this.
 </footer>
 

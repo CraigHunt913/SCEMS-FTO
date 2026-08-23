@@ -303,7 +303,7 @@ function systemHeartbeat() {
 
   // 3. critical tabs present
   [TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS, TAB.ENGINE,
-   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', DECISIONS_TAB, ARCHIVE_TAB, 'HOME',
+   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', TAB.DECISIONS, TAB.ARCHIVE, 'HOME',
    TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF].forEach(function (n) {
     if (!S.getSheetByName(n)) problems.push('Tab missing: ' + n + '. FIX: run repairControlAndEngine() or the matching builder.');
   });
@@ -883,7 +883,7 @@ function viewSkillsRemainingV19_(sh, name, rec, row) {
 
 function signaturesOnFileV19_(trainee, itemType, sinceMs) {
   var out = {};
-  var dec = ss().getSheetByName(DECISIONS_TAB);
+  var dec = ss().getSheetByName(TAB.DECISIONS);
   if (!dec || dec.getLastRow() < 5) return out;
   dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues().forEach(function (r) {
     if (String(r[3]).trim() !== String(trainee).trim()) return;

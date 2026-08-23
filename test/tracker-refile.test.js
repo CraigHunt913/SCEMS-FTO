@@ -109,9 +109,11 @@ ok(orderNow.misordered.length === 0,
 
 const order = {};
 parse(built).filter(u => u.kind === 'decl').forEach((u, i) => { order[u.name] = i; });
-ok(order['TAB'] < order['DECISIONS_TAB'], 'TAB is declared before DECISIONS_TAB');
 ok(order['FORM_TITLES'] < order['EXPECTED_FORMS_V19'],
-   'and FORM_TITLES before EXPECTED_FORMS_V19');
+   'FORM_TITLES is declared before EXPECTED_FORMS_V19, which is built from it');
+ok(order['DECISIONS_TAB'] === undefined,
+   'and DECISIONS_TAB is gone entirely — one name per tab, so there is no second ' +
+   'constant left to drift out of step with the first');
 
 // ---------------------------------------------------------------- //
 section('The point of the exercise actually happened');
