@@ -69,7 +69,14 @@ var DIGEST_COPY_TO_V19 = '';
 var SKILL_MATRIX_BACKUP_V19 = '05 SKILLS PROGRESS LEGACY V18';
 
 /* ---- ported constant ---- */
-var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25, RFDETAIL:26, CS:27, NRT:29, PRIOR:30, NOTIMP:31, ADV:32, TOREV:33, CLIN:34 };
+// Column positions on 02 FTO SHIFT EVAL RAW, checked against the live header
+// row. DOCISSUE is 28 — "Documentation Issue", which sat between CS Issue (27)
+// and NRT (29) and was the one flag on that form nothing read. An FTO ticked
+// it and the system did nothing at all: no alert, no queue row, no audit
+// entry. It looked like it worked.
+var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25,
+           RFDETAIL:26, CS:27, DOCISSUE:28, NRT:29, PRIOR:30, NOTIMP:31,
+           ADV:32, TOREV:33, CLIN:34 };
 
 /* ---- ported constant ---- */
 var SKILL_LABEL_V19 = 'skill name only, no SK number';

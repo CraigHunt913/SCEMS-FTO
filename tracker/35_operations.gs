@@ -20,6 +20,53 @@
  *   No other behavior was changed in this file.
  */
 
+/** Write the phase-at-decision onto the decision row for this trainee.
+ *
+ *  Refuses rather than guessing. The row has to be one whose TRAINEE cell
+ *  actually holds this person's name; if the last row belongs to somebody
+ *  else, another submission landed in between and the right answer is to
+ *  say so, not to write anyway.
+ *
+ *  Returns a short string for the log. Never throws: this runs inside a form
+ *  submit handler, and taking the whole ingestion down because a derived
+ *  column could not be filled in would be a worse failure than the one it
+ *  is reporting. It does not fail SILENTLY, which is the part that mattered. */
+function stampDecisionPhaseV20_6_(trainee, phaseNow) {
+  try {
+    var t = readTableV20_1_(DECISIONS_TAB, 4);
+    if (!t.ok) {
+      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
+        DECISIONS_TAB + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
+      return 'no tab';
+    }
+    var iWho = t.col['TRAINEE'];
+    var iPhase = t.col['PHASE'] !== undefined ? t.col['PHASE'] : t.col['PHASE AT DECISION'];
+    if (iWho === undefined || iPhase === undefined) {
+      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
+        DECISIONS_TAB + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
+        ' column. Nothing was written, and nothing was written to the wrong column either.');
+      return 'no column';
+    }
+    // the newest row belonging to this person, not simply the newest row
+    var want = cleanNameV20_1_(trainee), hit = -1;
+    for (var i = t.rows.length - 1; i >= 0; i--) {
+      if (cleanNameV20_1_(t.rows[i][iWho]) === want) { hit = i; break; }
+    }
+    if (hit < 0) {
+      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
+        'No row on ' + DECISIONS_TAB + ' names ' + trainee + '. Nothing was written.');
+      return 'no row';
+    }
+    t.sheet.getRange(4 + 1 + hit, iPhase + 1).setValue(phaseNow);
+    return 'stamped';
+  } catch (e) {
+    systemLog_('ERROR', 'DECISION PHASE NOT STAMPED',
+      trainee + ' : ' + (e && e.message ? e.message : e));
+    return 'failed';
+  }
+}
+
+
 /* ---- ported from zz (effective winner) ---- */
 /** Override. Same behaviour as before for EMT and AEMT. Paramedic release
  *  now requires both the Division Chief of Training and the Medical
@@ -42,13 +89,25 @@ function decisionAlerts(v) {
   };
   var key = keyMap[itemType] || '';
 
-  // stamp phase at decision onto the row just mirrored to tab 16
+  // Stamp the phase at decision onto the row just mirrored to tab 16.
+  //
+  // This used to be three lines with three faults in them:
+  //
+  //   dec.getRange(dec.getLastRow(), 9).setValue(phaseNow)
+  //
+  // It assumed the row it wanted was the last one, which is only true if
+  // nothing else appended in between - and this runs from a form-submit
+  // trigger, where two responses arriving together is ordinary. When it was
+  // wrong it stamped one trainee's phase onto another trainee's decision.
+  // It addressed the column by number. And it swallowed every failure, so a
+  // decision recorded without the phase it was made at looked exactly like
+  // one recorded with it.
+  //
+  // Now: find the column by name, check the row is the one we mean before
+  // writing to it, and say so in the log when any of that does not hold.
   var rec = traineeRecordV19_(trainee);
   var phaseNow = rec ? rec.phase : '';
-  try {
-    var dec = S.getSheetByName(DECISIONS_TAB);
-    dec.getRange(dec.getLastRow(), 9).setValue(phaseNow);
-  } catch (e) {}
+  stampDecisionPhaseV20_6_(trainee, phaseNow);
 
   var qRow = key ? openQueueRowV19_(trainee, key) : -1;
   var dual = needsDualSignoffV19_(trainee, itemType);
@@ -1864,6 +1923,16 @@ function evalAlerts(v) {
     sendMail(CONFIG.TCO_EMAIL,
       'URGENT : Controlled-Substance Issue Reported : ' + t,
       'Reported by ' + fto + ' on ' + dt + '. See 02 FTO SHIFT EVAL RAW and SOP 402.1. Same-shift handling required.\nDetail: ' + (v[EV.RFDETAIL] || '(see evaluation row)'));
+  }
+  // The flag that used to go nowhere. Same shape as its siblings: the TCO
+  // hears about it, and nobody else does, because a documentation problem is
+  // a training matter and not a safety alert.
+  if (v[EV.DOCISSUE] === 'Yes') {
+    sendMail(CONFIG.TCO_EMAIL,
+      'Documentation Issue Reported : ' + t,
+      'Reported by ' + fto + ' on ' + dt + '.\nDetail: ' +
+      (v[EV.RFDETAIL] || '(none entered on the evaluation)') +
+      '\nFull entry on 02 FTO SHIFT EVAL RAW.');
   }
   if (v[EV.REDFLAG] === 'Yes') {
     sendMail(CONFIG.TCO_EMAIL + ',' + CONFIG.SUPERVISOR_EMAILS,

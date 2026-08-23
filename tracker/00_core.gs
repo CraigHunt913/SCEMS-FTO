@@ -485,7 +485,19 @@ function reportBulkTruncationV20_2_(purpose, sent, unsent) {
     'breach alerts can still send today. Consumer Google accounts allow 100 ' +
     'recipients a day; Workspace accounts allow 1,500.';
   systemLog_('ERROR', 'BULK MAIL TRUNCATED', purpose + ' | ' + unsent.length + ' unsent');
-  try { MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg); } catch (e) {}
+  // This is the message that exists to tell you a send was cut short, and it
+  // fires exactly when the daily quota is nearly gone - so the most likely
+  // thing to stop it is the very condition it is reporting. Swallowing that
+  // left the log saying the run was truncated and nothing saying the warning
+  // about it never arrived either.
+  try {
+    MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg);
+  } catch (e) {
+    systemLog_('ERROR', 'TRUNCATION ALERT UNDELIVERED',
+      'The warning about ' + purpose + ' could not be sent either: ' +
+      (e && e.message ? e.message : e) + '. The detail is in this log and in the ' +
+      'execution transcript, and nowhere else.');
+  }
   Logger.log(msg);
 }
 

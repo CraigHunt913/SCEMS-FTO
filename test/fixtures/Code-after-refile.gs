@@ -498,19 +498,7 @@ function reportBulkTruncationV20_2_(purpose, sent, unsent) {
     'breach alerts can still send today. Consumer Google accounts allow 100 ' +
     'recipients a day; Workspace accounts allow 1,500.';
   systemLog_('ERROR', 'BULK MAIL TRUNCATED', purpose + ' | ' + unsent.length + ' unsent');
-  // This is the message that exists to tell you a send was cut short, and it
-  // fires exactly when the daily quota is nearly gone - so the most likely
-  // thing to stop it is the very condition it is reporting. Swallowing that
-  // left the log saying the run was truncated and nothing saying the warning
-  // about it never arrived either.
-  try {
-    MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg);
-  } catch (e) {
-    systemLog_('ERROR', 'TRUNCATION ALERT UNDELIVERED',
-      'The warning about ' + purpose + ' could not be sent either: ' +
-      (e && e.message ? e.message : e) + '. The detail is in this log and in the ' +
-      'execution transcript, and nowhere else.');
-  }
+  try { MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg); } catch (e) {}
   Logger.log(msg);
 }
 
@@ -2646,53 +2634,6 @@ function ingestionExceptionReportV20_1() {
  *   No other behavior was changed in this file.
  */
 
-/** Write the phase-at-decision onto the decision row for this trainee.
- *
- *  Refuses rather than guessing. The row has to be one whose TRAINEE cell
- *  actually holds this person's name; if the last row belongs to somebody
- *  else, another submission landed in between and the right answer is to
- *  say so, not to write anyway.
- *
- *  Returns a short string for the log. Never throws: this runs inside a form
- *  submit handler, and taking the whole ingestion down because a derived
- *  column could not be filled in would be a worse failure than the one it
- *  is reporting. It does not fail SILENTLY, which is the part that mattered. */
-function stampDecisionPhaseV20_6_(trainee, phaseNow) {
-  try {
-    var t = readTableV20_1_(DECISIONS_TAB, 4);
-    if (!t.ok) {
-      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' could not be read. ' + trainee + ' has a decision row with no phase on it.');
-      return 'no tab';
-    }
-    var iWho = t.col['TRAINEE'];
-    var iPhase = t.col['PHASE'] !== undefined ? t.col['PHASE'] : t.col['PHASE AT DECISION'];
-    if (iWho === undefined || iPhase === undefined) {
-      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        DECISIONS_TAB + ' has no ' + (iWho === undefined ? 'TRAINEE' : 'PHASE') +
-        ' column. Nothing was written, and nothing was written to the wrong column either.');
-      return 'no column';
-    }
-    // the newest row belonging to this person, not simply the newest row
-    var want = cleanNameV20_1_(trainee), hit = -1;
-    for (var i = t.rows.length - 1; i >= 0; i--) {
-      if (cleanNameV20_1_(t.rows[i][iWho]) === want) { hit = i; break; }
-    }
-    if (hit < 0) {
-      systemLog_('WARN', 'DECISION PHASE NOT STAMPED',
-        'No row on ' + DECISIONS_TAB + ' names ' + trainee + '. Nothing was written.');
-      return 'no row';
-    }
-    t.sheet.getRange(4 + 1 + hit, iPhase + 1).setValue(phaseNow);
-    return 'stamped';
-  } catch (e) {
-    systemLog_('ERROR', 'DECISION PHASE NOT STAMPED',
-      trainee + ' : ' + (e && e.message ? e.message : e));
-    return 'failed';
-  }
-}
-
-
 /* ---- ported from zz (effective winner) ---- */
 /** Override. Same behaviour as before for EMT and AEMT. Paramedic release
  *  now requires both the Division Chief of Training and the Medical
@@ -2715,25 +2656,13 @@ function decisionAlerts(v) {
   };
   var key = keyMap[itemType] || '';
 
-  // Stamp the phase at decision onto the row just mirrored to tab 16.
-  //
-  // This used to be three lines with three faults in them:
-  //
-  //   dec.getRange(dec.getLastRow(), 9).setValue(phaseNow)
-  //
-  // It assumed the row it wanted was the last one, which is only true if
-  // nothing else appended in between - and this runs from a form-submit
-  // trigger, where two responses arriving together is ordinary. When it was
-  // wrong it stamped one trainee's phase onto another trainee's decision.
-  // It addressed the column by number. And it swallowed every failure, so a
-  // decision recorded without the phase it was made at looked exactly like
-  // one recorded with it.
-  //
-  // Now: find the column by name, check the row is the one we mean before
-  // writing to it, and say so in the log when any of that does not hold.
+  // stamp phase at decision onto the row just mirrored to tab 16
   var rec = traineeRecordV19_(trainee);
   var phaseNow = rec ? rec.phase : '';
-  stampDecisionPhaseV20_6_(trainee, phaseNow);
+  try {
+    var dec = S.getSheetByName(DECISIONS_TAB);
+    dec.getRange(dec.getLastRow(), 9).setValue(phaseNow);
+  } catch (e) {}
 
   var qRow = key ? openQueueRowV19_(trainee, key) : -1;
   var dual = needsDualSignoffV19_(trainee, itemType);
@@ -4549,16 +4478,6 @@ function evalAlerts(v) {
     sendMail(CONFIG.TCO_EMAIL,
       'URGENT : Controlled-Substance Issue Reported : ' + t,
       'Reported by ' + fto + ' on ' + dt + '. See 02 FTO SHIFT EVAL RAW and SOP 402.1. Same-shift handling required.\nDetail: ' + (v[EV.RFDETAIL] || '(see evaluation row)'));
-  }
-  // The flag that used to go nowhere. Same shape as its siblings: the TCO
-  // hears about it, and nobody else does, because a documentation problem is
-  // a training matter and not a safety alert.
-  if (v[EV.DOCISSUE] === 'Yes') {
-    sendMail(CONFIG.TCO_EMAIL,
-      'Documentation Issue Reported : ' + t,
-      'Reported by ' + fto + ' on ' + dt + '.\nDetail: ' +
-      (v[EV.RFDETAIL] || '(none entered on the evaluation)') +
-      '\nFull entry on 02 FTO SHIFT EVAL RAW.');
   }
   if (v[EV.REDFLAG] === 'Yes') {
     sendMail(CONFIG.TCO_EMAIL + ',' + CONFIG.SUPERVISOR_EMAILS,
@@ -9382,115 +9301,6 @@ function fullSystemReviewV20_1() {
   return msg;
 }
 
-/** Every tab this code names, against every tab that is actually there.
- *
- *  READ ONLY. It changes nothing and it is safe to run at any time.
- *
- *  Why it exists: getSheetByName is exact. There is no near-match, no
- *  trimming, no case folding. A constant reading '03 SELF-REFLECTION RAW'
- *  against a tab actually called '03 TRAINEE SELF-REFLECTION RAW' does not
- *  raise anything - it returns null, and whatever asked for it either does
- *  nothing or reports "not present yet", which reads like a state rather than
- *  a fault. Four of this system's constants differ from the titles printed on
- *  the sheets themselves, and there was no way to tell from the outside
- *  whether the sheets or the titles were the odd one out.
- *
- *  So: ask the spreadsheet. Anything named here that is not there is listed
- *  with its closest actual match, because the answer is almost always a word
- *  that was added to a tab later and never carried back into the code. */
-function tabNameCheck() {
-  var have = ss().getSheets().map(function (sh) { return sh.getName(); });
-  var want = [];
-  Object.keys(TAB).forEach(function (k) { want.push({ where: 'TAB.' + k, name: TAB[k] }); });
-  [['DECISIONS_TAB', typeof DECISIONS_TAB === 'string' ? DECISIONS_TAB : ''],
-   ['ARCHIVE_TAB', typeof ARCHIVE_TAB === 'string' ? ARCHIVE_TAB : ''],
-   ['SKILL_CATALOG_TAB', typeof SKILL_CATALOG_TAB === 'string' ? SKILL_CATALOG_TAB : ''],
-   ['FTO_ROSTER_TAB_V19', typeof FTO_ROSTER_TAB_V19 === 'string' ? FTO_ROSTER_TAB_V19 : ''],
-   ['TRAINEE_SKILLS_TAB_V19', typeof TRAINEE_SKILLS_TAB_V19 === 'string' ? TRAINEE_SKILLS_TAB_V19 : ''],
-   ['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : '']
-  ].forEach(function (p2) { if (p2[1]) want.push({ where: p2[0], name: p2[1] }); });
-
-  // one entry per distinct name; several constants point at the same tab
-  var byName = {};
-  want.forEach(function (w) {
-    (byName[w.name] = byName[w.name] || []).push(w.where);
-  });
-
-  var missing = [], present = 0;
-  Object.keys(byName).sort().forEach(function (name) {
-    if (have.indexOf(name) >= 0) { present++; return; }
-    missing.push({ name: name, by: byName[name], near: nearestTabV20_6_(name, have) });
-  });
-
-  var used = {};
-  Object.keys(byName).forEach(function (n) { used[n] = true; });
-  var unclaimed = have.filter(function (n) { return !used[n]; });
-
-  var L = ['TAB NAME CHECK — READ ONLY, nothing was changed', '',
-    'Sheets in this spreadsheet : ' + have.length,
-    'Names this code asks for   : ' + Object.keys(byName).length,
-    'Found                      : ' + present,
-    'NOT FOUND                  : ' + missing.length, ''];
-
-  if (!missing.length) {
-    L.push('Every tab this code names is there under exactly that name.');
-  } else {
-    L.push('These are asked for by name and are not there. getSheetByName');
-    L.push('returns null for each, and the code that asked either does nothing');
-    L.push('or says "not present yet", which reads like a state and is a fault.');
-    L.push('');
-    missing.forEach(function (m) {
-      L.push('  "' + m.name + '"');
-      L.push('     named by : ' + m.by.join(', '));
-      L.push('     closest  : ' + (m.near || '(nothing close)'));
-    });
-    L.push('');
-    L.push('If the sheet is the one that is right, the constant needs changing.');
-    L.push('If the constant is right, the tab was renamed and should be renamed');
-    L.push('back — do NOT do both, and do not rename a tab a form writes to.');
-  }
-
-  if (unclaimed.length) {
-    L.push('');
-    L.push('Tabs nothing in this code asks for by name (' + unclaimed.length + '):');
-    unclaimed.forEach(function (n) { L.push('  ' + n); });
-  }
-
-  var msg = L.join('\n');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** The existing tab name closest to one that was not found.
- *
- *  Scored for THESE tabs rather than in general. They are numbered, and the
- *  number is the identity: "03 SELF-REFLECTION RAW" and "03 TRAINEE
- *  SELF-REFLECTION RAW" are obviously the same sheet with a word added, and
- *  no amount of character-by-character comparison says so - the two strings
- *  agree on "03 " and then diverge immediately. So: the leading number
- *  decides, and shared words break ties. */
-function nearestTabV20_6_(want, have) {
-  var w = String(want).trim();
-  var wNum = (w.match(/^([0-9]{2})/) || [, ''])[1];
-  var wWords = w.toUpperCase().split(/[^A-Z0-9]+/).filter(function (x) { return x.length > 2; });
-
-  var best = '', score = 0;
-  have.forEach(function (h) {
-    var x = String(h).trim();
-    var xNum = (x.match(/^([0-9]{2})/) || [, ''])[1];
-    var xWords = x.toUpperCase().split(/[^A-Z0-9]+/).filter(function (y) { return y.length > 2; });
-
-    var shared = 0;
-    wWords.forEach(function (y) { if (xWords.indexOf(y) >= 0) shared++; });
-
-    // the number is worth more than any single word, because it IS the tab
-    var s = (wNum && wNum === xNum ? 10 : 0) + shared * 2;
-    if (s > score) { score = s; best = x; }
-  });
-  return score >= 4 ? best : '';
-}
-
 
 /* ====================================================================== */
 /**
@@ -13050,14 +12860,7 @@ var DIGEST_COPY_TO_V19 = '';
 var SKILL_MATRIX_BACKUP_V19 = '05 SKILLS PROGRESS LEGACY V18';
 
 /* ---- ported constant ---- */
-// Column positions on 02 FTO SHIFT EVAL RAW, checked against the live header
-// row. DOCISSUE is 28 — "Documentation Issue", which sat between CS Issue (27)
-// and NRT (29) and was the one flag on that form nothing read. An FTO ticked
-// it and the system did nothing at all: no alert, no queue row, no audit
-// entry. It looked like it worked.
-var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25,
-           RFDETAIL:26, CS:27, DOCISSUE:28, NRT:29, PRIOR:30, NOTIMP:31,
-           ADV:32, TOREV:33, CLIN:34 };
+var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25, RFDETAIL:26, CS:27, NRT:29, PRIOR:30, NOTIMP:31, ADV:32, TOREV:33, CLIN:34 };
 
 /* ---- ported constant ---- */
 var SKILL_LABEL_V19 = 'skill name only, no SK number';

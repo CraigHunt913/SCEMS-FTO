@@ -682,3 +682,112 @@ function fullSystemReviewV20_1() {
   Logger.log(msg);
   return msg;
 }
+
+/** Every tab this code names, against every tab that is actually there.
+ *
+ *  READ ONLY. It changes nothing and it is safe to run at any time.
+ *
+ *  Why it exists: getSheetByName is exact. There is no near-match, no
+ *  trimming, no case folding. A constant reading '03 SELF-REFLECTION RAW'
+ *  against a tab actually called '03 TRAINEE SELF-REFLECTION RAW' does not
+ *  raise anything - it returns null, and whatever asked for it either does
+ *  nothing or reports "not present yet", which reads like a state rather than
+ *  a fault. Four of this system's constants differ from the titles printed on
+ *  the sheets themselves, and there was no way to tell from the outside
+ *  whether the sheets or the titles were the odd one out.
+ *
+ *  So: ask the spreadsheet. Anything named here that is not there is listed
+ *  with its closest actual match, because the answer is almost always a word
+ *  that was added to a tab later and never carried back into the code. */
+function tabNameCheck() {
+  var have = ss().getSheets().map(function (sh) { return sh.getName(); });
+  var want = [];
+  Object.keys(TAB).forEach(function (k) { want.push({ where: 'TAB.' + k, name: TAB[k] }); });
+  [['DECISIONS_TAB', typeof DECISIONS_TAB === 'string' ? DECISIONS_TAB : ''],
+   ['ARCHIVE_TAB', typeof ARCHIVE_TAB === 'string' ? ARCHIVE_TAB : ''],
+   ['SKILL_CATALOG_TAB', typeof SKILL_CATALOG_TAB === 'string' ? SKILL_CATALOG_TAB : ''],
+   ['FTO_ROSTER_TAB_V19', typeof FTO_ROSTER_TAB_V19 === 'string' ? FTO_ROSTER_TAB_V19 : ''],
+   ['TRAINEE_SKILLS_TAB_V19', typeof TRAINEE_SKILLS_TAB_V19 === 'string' ? TRAINEE_SKILLS_TAB_V19 : ''],
+   ['TAB_CONSOLE_V20_3', typeof TAB_CONSOLE_V20_3 === 'string' ? TAB_CONSOLE_V20_3 : '']
+  ].forEach(function (p2) { if (p2[1]) want.push({ where: p2[0], name: p2[1] }); });
+
+  // one entry per distinct name; several constants point at the same tab
+  var byName = {};
+  want.forEach(function (w) {
+    (byName[w.name] = byName[w.name] || []).push(w.where);
+  });
+
+  var missing = [], present = 0;
+  Object.keys(byName).sort().forEach(function (name) {
+    if (have.indexOf(name) >= 0) { present++; return; }
+    missing.push({ name: name, by: byName[name], near: nearestTabV20_6_(name, have) });
+  });
+
+  var used = {};
+  Object.keys(byName).forEach(function (n) { used[n] = true; });
+  var unclaimed = have.filter(function (n) { return !used[n]; });
+
+  var L = ['TAB NAME CHECK — READ ONLY, nothing was changed', '',
+    'Sheets in this spreadsheet : ' + have.length,
+    'Names this code asks for   : ' + Object.keys(byName).length,
+    'Found                      : ' + present,
+    'NOT FOUND                  : ' + missing.length, ''];
+
+  if (!missing.length) {
+    L.push('Every tab this code names is there under exactly that name.');
+  } else {
+    L.push('These are asked for by name and are not there. getSheetByName');
+    L.push('returns null for each, and the code that asked either does nothing');
+    L.push('or says "not present yet", which reads like a state and is a fault.');
+    L.push('');
+    missing.forEach(function (m) {
+      L.push('  "' + m.name + '"');
+      L.push('     named by : ' + m.by.join(', '));
+      L.push('     closest  : ' + (m.near || '(nothing close)'));
+    });
+    L.push('');
+    L.push('If the sheet is the one that is right, the constant needs changing.');
+    L.push('If the constant is right, the tab was renamed and should be renamed');
+    L.push('back — do NOT do both, and do not rename a tab a form writes to.');
+  }
+
+  if (unclaimed.length) {
+    L.push('');
+    L.push('Tabs nothing in this code asks for by name (' + unclaimed.length + '):');
+    unclaimed.forEach(function (n) { L.push('  ' + n); });
+  }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** The existing tab name closest to one that was not found.
+ *
+ *  Scored for THESE tabs rather than in general. They are numbered, and the
+ *  number is the identity: "03 SELF-REFLECTION RAW" and "03 TRAINEE
+ *  SELF-REFLECTION RAW" are obviously the same sheet with a word added, and
+ *  no amount of character-by-character comparison says so - the two strings
+ *  agree on "03 " and then diverge immediately. So: the leading number
+ *  decides, and shared words break ties. */
+function nearestTabV20_6_(want, have) {
+  var w = String(want).trim();
+  var wNum = (w.match(/^([0-9]{2})/) || [, ''])[1];
+  var wWords = w.toUpperCase().split(/[^A-Z0-9]+/).filter(function (x) { return x.length > 2; });
+
+  var best = '', score = 0;
+  have.forEach(function (h) {
+    var x = String(h).trim();
+    var xNum = (x.match(/^([0-9]{2})/) || [, ''])[1];
+    var xWords = x.toUpperCase().split(/[^A-Z0-9]+/).filter(function (y) { return y.length > 2; });
+
+    var shared = 0;
+    wWords.forEach(function (y) { if (xWords.indexOf(y) >= 0) shared++; });
+
+    // the number is worth more than any single word, because it IS the tab
+    var s = (wNum && wNum === xNum ? 10 : 0) + shared * 2;
+    if (s > score) { score = s; best = x; }
+  });
+  return score >= 4 ? best : '';
+}

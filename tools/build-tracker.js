@@ -222,19 +222,27 @@ if (require.main === module) {
     console.log('split ' + ORIG + ' into ' + SRC);
   }
   const built = build();
-  const v = verify(ORIG, built);
-  if (!v.ok) {
-    if (v.lost.length)      console.error('LOST: ' + v.lost.join(', '));
-    if (v.gained.length)    console.error('GAINED: ' + v.gained.join(', '));
-    if (v.changed.length)   console.error('CHANGED: ' + v.changed.join(', '));
-    if (v.misordered.length)console.error('MISORDERED: ' + v.misordered.join(', '));
-    if (v.gone.length) {
-      console.error('LINES LOST (' + v.gone.length + '):');
-      v.gone.slice(0, 12).forEach(l => console.error('   ' + l.slice(0, 100)));
-    }
+
+  // The lossless check belongs to the REFILE, and it is a historical fact:
+  // the file before it and the file straight after it, both frozen, compared
+  // in test/tracker-refile.test.js. It is not a constraint on every edit made
+  // afterwards - a fix is supposed to change the code, and a build that
+  // refused to let it would be a build nobody could use.
+  //
+  // What the build still enforces is the part that stays true forever: no
+  // declaration may move above something it is built from.
+  const v = verify(path.join(__dirname, '..', 'test', 'fixtures', 'Code-after-refile.gs'), built);
+  if (v.misordered.length) {
+    console.error('A declaration moved above something it is built from: ' +
+      v.misordered.join(', ') + '\nNothing was written.');
     process.exit(1);
   }
   fs.writeFileSync(CODE, built);
+  const changes = v.lost.length + v.gained.length + v.changed.length;
   console.log('wrote Code.gs  (' + Math.round(built.length / 1024) + ' KB, ' +
-    built.split('\n').length + ' lines, ' + v.count + ' declarations, all identical)');
+    built.split('\n').length + ' lines, ' + v.count + ' declarations' +
+    (changes ? ', ' + changes + ' changed since the refile' : ', unchanged since the refile') + ')');
+  if (v.lost.length)    console.log('  removed: ' + v.lost.join(', '));
+  if (v.gained.length)  console.log('  added:   ' + v.gained.join(', '));
+  if (v.changed.length) console.log('  edited:  ' + v.changed.join(', '));
 }
