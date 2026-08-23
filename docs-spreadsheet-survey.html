@@ -1,0 +1,370 @@
+<title>Thirty Tabs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+:root{
+  --navy:#12233b; --paper:#ffffff; --ground:#f3f5f8; --line:#e0e5ec; --line-soft:#eef1f5;
+  --ink:#12233b; --ink-2:#44546b; --ink-3:#76839a; --ink-4:#9aa5b6;
+  --gold:#a8801f; --gold-soft:#f6efdc;
+  --raw:#1f5f9e; --record:#12233b; --working:#a8801f; --derived:#8a94a6; --control:#5c6b82;
+  --stop:#a8342b; --stop-soft:#fbeceb; --warn:#8a6a14; --warn-soft:#fdf5e2;
+  --ok:#2f7d4f; --ok-soft:#eaf4ee;
+  --chip-bg:#12233b; --chip-ink:#ffffff;
+  --shadow:0 1px 2px rgba(18,35,59,.05), 0 12px 28px -20px rgba(18,35,59,.45);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --navy:#0d1826; --paper:#161d27; --ground:#0e141c; --line:#29323f; --line-soft:#1f2731;
+  --ink:#e8edf4; --ink-2:#b3bfd0; --ink-3:#828fa2; --ink-4:#65717f;
+  --gold:#d3ac52; --gold-soft:#241e11;
+  --raw:#6aa8dd; --record:#e8edf4; --working:#d3ac52; --derived:#7b8697; --control:#8d9aae;
+  --stop:#e58f86; --stop-soft:#2a1816; --warn:#d3ac52; --warn-soft:#241f12;
+  --ok:#6bbd8a; --ok-soft:#152418;
+  --chip-bg:#e8edf4; --chip-ink:#0d1826;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 28px -20px rgba(0,0,0,.95);
+}}
+:root[data-theme="dark"]{
+  --navy:#0d1826; --paper:#161d27; --ground:#0e141c; --line:#29323f; --line-soft:#1f2731;
+  --ink:#e8edf4; --ink-2:#b3bfd0; --ink-3:#828fa2; --ink-4:#65717f;
+  --gold:#d3ac52; --gold-soft:#241e11;
+  --raw:#6aa8dd; --record:#e8edf4; --working:#d3ac52; --derived:#7b8697; --control:#8d9aae;
+  --stop:#e58f86; --stop-soft:#2a1816; --warn:#d3ac52; --warn-soft:#241f12;
+  --ok:#6bbd8a; --ok-soft:#152418;
+  --chip-bg:#e8edf4; --chip-ink:#0d1826;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 28px -20px rgba(0,0,0,.95);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16.5px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;}
+.page{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+.prose{max-width:64ch;}
+
+/* masthead */
+header{padding:56px 0 40px;border-bottom:2px solid var(--navy);margin-bottom:38px;}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--gold);font-weight:600;}
+h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:clamp(2.6rem,7vw,4.1rem);
+  line-height:.98;margin:.18em 0 0;letter-spacing:-.012em;text-wrap:balance;}
+.standfirst{font-size:1.14rem;color:var(--ink-2);margin:18px 0 0;max-width:56ch;}
+
+/* the count strip */
+.counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden;margin:34px 0 8px;}
+.counts div{background:var(--paper);padding:15px 16px;}
+.counts b{display:block;font-family:"IBM Plex Mono",monospace;font-size:1.75rem;font-weight:500;
+  line-height:1;font-variant-numeric:tabular-nums;}
+.counts span{display:block;font-size:.82rem;color:var(--ink-3);margin-top:7px;line-height:1.35;}
+
+h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.68rem;
+  line-height:1.15;margin:56px 0 6px;letter-spacing:-.004em;text-wrap:balance;}
+h2 + .lede{color:var(--ink-2);margin:0 0 22px;max-width:60ch;}
+h3{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.16rem;
+  margin:32px 0 4px;letter-spacing:.004em;}
+p{margin:0 0 15px;}
+a{color:var(--raw);}
+
+/* the inventory */
+.legend{display:flex;flex-wrap:wrap;gap:7px 18px;margin:0 0 20px;font-size:.85rem;color:var(--ink-2);}
+.legend i{font-style:normal;display:inline-flex;align-items:center;gap:7px;}
+.swatch{width:11px;height:11px;border-radius:2px;flex:none;}
+
+.group{margin:0 0 30px;}
+.grouphead{display:flex;align-items:baseline;gap:11px;padding:0 0 8px;border-bottom:1px solid var(--line);}
+.grouphead .tag{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.15em;
+  text-transform:uppercase;font-weight:600;}
+.grouphead .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.85rem;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;}
+.grouphead .what{font-size:.9rem;color:var(--ink-3);}
+
+.rows{border-bottom:1px solid var(--line-soft);}
+.row{display:grid;grid-template-columns:50px minmax(190px,1.5fr) 84px 84px minmax(180px,2fr);
+  gap:14px;align-items:baseline;padding:11px 0 11px 12px;border-bottom:1px solid var(--line-soft);
+  border-left:3px solid var(--rule,transparent);}
+.row:last-child{border-bottom:none;}
+.row .num{font-family:"IBM Plex Mono",monospace;font-size:.95rem;font-weight:600;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;}
+.row .name{font-weight:600;font-size:.97rem;line-height:1.3;}
+.row .met{font-family:"IBM Plex Mono",monospace;font-size:.82rem;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;}
+.row .note{font-size:.87rem;color:var(--ink-3);line-height:1.4;}
+.row .note em{font-style:normal;color:var(--stop);font-weight:600;}
+.row .note b{color:var(--warn);font-weight:600;}
+.colhead{display:grid;grid-template-columns:50px minmax(190px,1.5fr) 84px 84px minmax(180px,2fr);
+  gap:14px;padding:0 0 6px 15px;font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink-4);}
+.scroller{overflow-x:auto;}
+.scroller > *{min-width:720px;}
+
+/* findings */
+.finding{border-left:3px solid var(--stop);background:var(--stop-soft);border-radius:0 4px 4px 0;
+  padding:16px 18px;margin:0 0 14px;}
+.finding.soft{border-left-color:var(--warn);background:var(--warn-soft);}
+.finding.done{border-left-color:var(--ok);background:var(--ok-soft);}
+.finding h3{margin:0 0 6px;font-size:1.06rem;}
+.finding p{margin:0 0 8px;font-size:.94rem;color:var(--ink-2);}
+.finding p:last-child{margin-bottom:0;}
+.finding .where{font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:var(--ink-3);
+  letter-spacing:.02em;}
+
+code,.mono{font-family:"IBM Plex Mono",monospace;font-size:.88em;
+  background:var(--line-soft);padding:1px 5px;border-radius:3px;}
+
+/* proposal steps — a real sequence, so numbered */
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:22px 0 0;}
+ol.steps > li{counter-increment:s;position:relative;padding:0 0 26px 54px;
+  border-left:1px solid var(--line);margin-left:15px;}
+ol.steps > li:last-child{border-left-color:transparent;padding-bottom:0;}
+ol.steps > li::before{content:counter(s);position:absolute;left:-15px;top:-2px;width:30px;height:30px;
+  border-radius:50%;background:var(--chip-bg);color:var(--chip-ink);
+  font-family:"IBM Plex Mono",monospace;font-size:.86rem;font-weight:500;
+  display:flex;align-items:center;justify-content:center;}
+ol.steps h3{margin:0 0 5px;}
+ol.steps p{font-size:.95rem;color:var(--ink-2);margin:0 0 8px;}
+.risk{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  letter-spacing:.13em;text-transform:uppercase;font-weight:600;padding:2px 8px;border-radius:3px;
+  border:1px solid currentColor;margin-bottom:8px;}
+.r-none{color:var(--ok);}.r-low{color:var(--gold);}.r-real{color:var(--stop);}
+
+.callout{border:1px solid var(--line);background:var(--paper);border-radius:4px;padding:20px 22px;
+  margin:26px 0;box-shadow:var(--shadow);}
+.callout h3{margin-top:0;}
+.callout ul{margin:0;padding-left:20px;color:var(--ink-2);font-size:.95rem;}
+.callout li{margin-bottom:7px;}
+
+footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--ink-4);line-height:1.7;}
+::selection{background:var(--gold-soft);}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+@media (max-width:640px){
+  header{padding:38px 0 28px;}
+  .page{padding:0 18px 64px;}
+}
+</style>
+
+<div class="page">
+
+<header>
+  <div class="eyebrow">Sumter County EMS · Field Training · 22 August 2026</div>
+  <h1>Thirty Tabs</h1>
+  <p class="standfirst">A survey of the tracker spreadsheet: what writes each tab, what reads it, which
+  ones are permanent, and which third of it is derived and could be regenerated tomorrow. Nothing here
+  has been changed.</p>
+
+  <div class="counts">
+    <div><b>30</b><span>tabs the code knows about</span></div>
+    <div><b>10</b><span>hold permanent records</span></div>
+    <div><b>10</b><span>are derived from the others</span></div>
+    <div><b>8</b><span>of the ten records are protected</span></div>
+    <div><b>5</b><span>tabs named by two constants each</span></div>
+  </div>
+</header>
+
+<div class="prose">
+<p>This was assembled by reading every mention of every tab constant in the tracker's 13,373 lines and
+sorting them into who writes and who reads, then checking the result against the live spreadsheet.
+It is a description, not a plan — the plan is at the bottom, and none of it happens without your say-so.</p>
+
+<p><strong>The headline is that a third of this spreadsheet is not data.</strong> Ten of the thirty tabs
+are computed from the other twenty. Delete any one of them and the system regenerates it. That is not a
+criticism — derived views are how a spreadsheet stays useful — but it changes what "the tracker" is:
+twenty tabs of record, and ten of presentation sitting on top.</p>
+</div>
+
+<h2>The inventory</h2>
+<p class="lede">Writers and readers are counts of functions in the tracker's own code, not of people.
+A tab with no writers is either filled by a spreadsheet formula or written from the portal.</p>
+
+<div class="legend">
+  <i><span class="swatch" style="background:var(--raw)"></span> Raw — a form writes it</i>
+  <i><span class="swatch" style="background:var(--record)"></span> Record — permanent, append-only</i>
+  <i><span class="swatch" style="background:var(--working)"></span> Working — people and code both</i>
+  <i><span class="swatch" style="background:var(--derived)"></span> Derived — computed, disposable</i>
+  <i><span class="swatch" style="background:var(--control)"></span> Control</i>
+</div>
+
+<div class="scroller">
+<div>
+<div class="colhead"><span>Tab</span><span>Name</span><span>Writers</span><span>Readers</span><span></span></div>
+
+<div class="group">
+  <div class="grouphead"><span class="tag" style="color:var(--raw)">Raw</span>
+    <span class="what">a form writes it, nobody edits it</span><span class="n">3</span></div>
+  <div class="rows">
+    <div class="row" style="--rule:var(--raw)"><span class="num">02</span><span class="name">FTO SHIFT EVAL RAW</span><span class="met">6</span><span class="met">18</span><span class="note">35 columns. All fourteen positional reads verified correct.</span></div>
+    <div class="row" style="--rule:var(--raw)"><span class="num">03</span><span class="name">SELF-REFLECTION RAW</span><span class="met">2</span><span class="met">8</span><span class="note"><em>Name in doubt</em> — the sheet reads “03 TRAINEE SELF-REFLECTION RAW”.</span></div>
+    <div class="row" style="--rule:var(--raw)"><span class="num">04</span><span class="name">URGENT CONCERNS RAW</span><span class="met">4</span><span class="met">10</span><span class="note">14 columns. The portal was reading two of them wrongly; fixed.</span></div>
+  </div>
+</div>
+
+<div class="group">
+  <div class="grouphead"><span class="tag" style="color:var(--record)">Record</span>
+    <span class="what">permanent, append-only, never hand-edited</span><span class="n">10</span></div>
+  <div class="rows">
+    <div class="row" style="--rule:var(--record)"><span class="num">13</span><span class="name">AUDIT · EXCEPTION LOG</span><span class="met">4</span><span class="met">9</span><span class="note"><b>Not protected.</b> Columns J and K are meant to be ticked by hand, which is probably why. <em>Name in doubt.</em></span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">16</span><span class="name">DECISIONS RAW</span><span class="met">3</span><span class="met">15</span><span class="note">Protected. Two constants point at it.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">17</span><span class="name">TRAINEE ARCHIVE</span><span class="met">1</span><span class="met">8</span><span class="note"><em>Not protected.</em> Nothing about an archive wants hand-editing. Two constants.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">18</span><span class="name">SYSTEM LOG</span><span class="met">1</span><span class="met">4</span><span class="note">Protected.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">19</span><span class="name">SKILL EVIDENCE LOG</span><span class="met">3</span><span class="met">23</span><span class="note">Protected. Read by more of the system than any other record.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">21</span><span class="name">SKILL SIGN-OFF LOG</span><span class="met">4</span><span class="met">19</span><span class="note">Protected. One function is allowed to write it.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">90</span><span class="name">PERSON REGISTRY</span><span class="met">1</span><span class="met">8</span><span class="note">Protected.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">91</span><span class="name">INGESTION LEDGER</span><span class="met">3</span><span class="met">19</span><span class="note">Protected. This is what makes replaying a response safe.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">92</span><span class="name">ASSIGNMENT HISTORY</span><span class="met">1</span><span class="met">6</span><span class="note">Protected.</span></div>
+    <div class="row" style="--rule:var(--record)"><span class="num">93</span><span class="name">ACCESS LOG</span><span class="met">1</span><span class="met">8</span><span class="note">Protected. Every request to act, granted or refused.</span></div>
+  </div>
+</div>
+
+<div class="group">
+  <div class="grouphead"><span class="tag" style="color:var(--working)">Working</span>
+    <span class="what">people and code both touch these</span><span class="n">6</span></div>
+  <div class="rows">
+    <div class="row" style="--rule:var(--working)"><span class="num">01</span><span class="name">TRAINEE MASTER</span><span class="met">4</span><span class="met">20</span><span class="note">The spine. Everything joins on the name in here.</span></div>
+    <div class="row" style="--rule:var(--working)"><span class="num">05</span><span class="name">SKILLS PROGRESS</span><span class="met">9</span><span class="met">17</span><span class="note">Column G has no header.</span></div>
+    <div class="row" style="--rule:var(--working)"><span class="num">12</span><span class="name">DECISION QUEUE</span><span class="met">6</span><span class="met">13</span><span class="note"><em>Column D has no header</em> — every label from there rightward names the wrong column.</span></div>
+    <div class="row" style="--rule:var(--working)"><span class="num">15</span><span class="name">SKILL CATALOG</span><span class="met">1</span><span class="met">11</span><span class="note">Two constants.</span></div>
+    <div class="row" style="--rule:var(--working)"><span class="num">20</span><span class="name">SKILL VALIDATION QUEUE</span><span class="met">10</span><span class="met">25</span><span class="note">The busiest tab in the system by a distance.</span></div>
+    <div class="row" style="--rule:var(--working)"><span class="num">22</span><span class="name">FTO ROSTER</span><span class="met">0</span><span class="met">9</span><span class="note">The tracker only reads it. The portal writes it. Two constants.</span></div>
+  </div>
+</div>
+
+<div class="group">
+  <div class="grouphead"><span class="tag" style="color:var(--derived)">Derived</span>
+    <span class="what">computed from the tabs above; delete one and it comes back</span><span class="n">10</span></div>
+  <div class="rows">
+    <div class="row" style="--rule:var(--derived)"><span class="num">06</span><span class="name">PHASE · STATUS ENGINE</span><span class="met">5</span><span class="met">13</span><span class="note">The one derived tab the rest of the system reads back.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">07</span><span class="name">WEEKLY STATUS REPORT</span><span class="met">0</span><span class="met">4</span><span class="note">Spreadsheet formulas. <em>Name in doubt.</em></span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">08</span><span class="name">FTO VIEW</span><span class="met">0</span><span class="met">3</span><span class="note">Formulas. The portal's FTO screen now does this job.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">09</span><span class="name">TRAINEE VIEW</span><span class="met">0</span><span class="met">3</span><span class="note">Formulas. The portal's trainee screen does this job.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">10</span><span class="name">TRAINING DIVISION DASH</span><span class="met">0</span><span class="met">3</span><span class="note">Formulas. <em>Holds help text inside the data grid.</em> <em>Name in doubt.</em></span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">11</span><span class="name">MEDICAL DIRECTOR VIEW</span><span class="met">0</span><span class="met">3</span><span class="note">Formulas. Shows scores. The portal's version deliberately does not.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">14</span><span class="name">ANALYTICS</span><span class="met">2</span><span class="met">5</span><span class="note">Rebuilt on demand.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">23</span><span class="name">TRAINEE SKILLS</span><span class="met">3</span><span class="met">7</span><span class="note">Cleared and rebuilt from scratch each time. Two constants.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">—</span><span class="name">TRAINEES</span><span class="met">3</span><span class="met">4</span><span class="note">The v20.3 console. Not on the numbering scheme.</span></div>
+    <div class="row" style="--rule:var(--derived)"><span class="num">—</span><span class="name">HOME</span><span class="met">3</span><span class="met">1</span><span class="note">Deleted and recreated on every rebuild. Not on the numbering scheme.</span></div>
+  </div>
+</div>
+
+<div class="group">
+  <div class="grouphead"><span class="tag" style="color:var(--control)">Control</span>
+    <span class="what">settings the system reads at run time</span><span class="n">1</span></div>
+  <div class="rows">
+    <div class="row" style="--rule:var(--control)"><span class="num">00</span><span class="name">README · CONTROL</span><span class="met">4</span><span class="met">14</span><span class="note">Read by label, never by fixed row. Good.</span></div>
+  </div>
+</div>
+</div>
+</div>
+
+<h2>What the survey turned up</h2>
+<p class="lede">Four things about the spreadsheet itself, separate from the code defects already fixed.</p>
+
+<div class="finding">
+  <h3>Tab 12's header row is a column short of its data</h3>
+  <p>Column D is blank, so every label from D rightward names the column to its left. Anything reading
+  that tab by header is reading a neighbour.</p>
+  <p class="where">A previewed tool for this already exists — <code>repairDecisionQueueHeaderV20_4()</code> —
+  and has not been run. It checks for an OWNER column to decide whether it has already fixed things,
+  and the live sheet has none.</p>
+</div>
+
+<div class="finding">
+  <h3>Tab 17 holds permanent records and is not protected</h3>
+  <p>Eight of the ten record tabs are locked so only the script may write them.
+  <span class="mono">17 TRAINEE ARCHIVE</span> is not, and nothing about an archive of released trainees
+  wants hand-editing. <span class="mono">13 AUDIT · EXCEPTION LOG</span> is also unprotected, but that
+  one looks deliberate — columns J and K exist to be ticked by a person.</p>
+</div>
+
+<div class="finding soft">
+  <h3>Five tabs are named by two constants each</h3>
+  <p><span class="mono">15</span>, <span class="mono">16</span>, <span class="mono">17</span>,
+  <span class="mono">22</span> and <span class="mono">23</span> each have two names in the code pointing
+  at the same sheet. On its own that is untidy. Combined with the four names in doubt it is a trap:
+  change one constant to match a renamed tab and the other still points at the old name, and the half
+  that still works hides the half that does not.</p>
+</div>
+
+<div class="finding soft">
+  <h3>Help text lives inside a data grid</h3>
+  <p>Tab 10 carries the sentence <em>“Now on the tab called 22 FTO ROSTER. Add or retire an FTO there,
+  then run Refresh form dropdowns.”</em> inside its cells. That is the exact string that ended up in
+  Latavia Cole's ASSIGNED FTO cell, where it read to every name-matching lookup in the system as an
+  officer nobody had heard of.</p>
+  <p>Instructions in a grid get copied like data, because they are stored like data.</p>
+</div>
+
+<div class="callout">
+  <h3>And what is right, which is most of it</h3>
+  <ul>
+    <li>All fourteen positional reads into tab 02 check out against the live header row.</li>
+    <li>The urgent-concern and self-reflection alerts map every field correctly.</li>
+    <li>Every response written into a tab is passed through the formula-injection guard.</li>
+    <li>No caller of the sign-off writer holds a lock — the single-level lock rule holds.</li>
+    <li>Every destructive tool is token-gated and shows you what it would do first.</li>
+    <li>Tab 00 is read by label, never by fixed row, which is why moving a setting has never broken it.</li>
+  </ul>
+</div>
+
+<h2>What I would do, in this order</h2>
+<p class="lede">Cheapest and least reversible first is the wrong order. This is least risky first, and
+every step is independently useful — you can stop after any of them.</p>
+
+<ol class="steps">
+  <li>
+    <span class="risk r-none">Reads only</span>
+    <h3>Run <code>tabNameCheck()</code></h3>
+    <p>Settles the four names in doubt in about a second, and tells you whether tabs exist that nothing
+    in the code asks for. Everything below depends on knowing the answer.</p>
+  </li>
+  <li>
+    <span class="risk r-none">Reads only</span>
+    <h3>Run <code>repairDecisionQueueHeaderV20_4()</code> for its preview</h3>
+    <p>It reports before it writes. Read what it proposes for tab 12's blank column D, then decide.</p>
+  </li>
+  <li>
+    <span class="risk r-low">Adds a lock</span>
+    <h3>Protect tab 17</h3>
+    <p>One line added to the list <code>protectRecordTabsV20_2()</code> already works from. It stops
+    people editing an archive; it does not stop the script writing it.</p>
+  </li>
+  <li>
+    <span class="risk r-low">Code only</span>
+    <h3>One constant per tab</h3>
+    <p>Retire the second name on each of the five. Mechanical, provable the same way the refile was,
+    and it removes the trap where fixing one name leaves the other pointing at nothing.</p>
+  </li>
+  <li>
+    <span class="risk r-low">Moves text</span>
+    <h3>Move the help text out of tab 10 and into tab 00</h3>
+    <p>Tab 00 is the control and README tab and is read by label, so nothing breaks when prose lives
+    there. Nothing that reads tab 10 reads that cell.</p>
+  </li>
+  <li>
+    <span class="risk r-real">Removes tabs</span>
+    <h3>Decide whether tabs 08, 09 and 11 still earn their place</h3>
+    <p>They are the v19 per-role views: one for the FTO, one for the trainee, one for the Medical
+    Director. The portal now does exactly that job for each of those three roles, per person, with
+    access control the spreadsheet cannot enforce — tab 11 shows scores, and the portal's Medical
+    Director screen deliberately does not.</p>
+    <p>Two views of the same records that disagree is worse than one. But this is a judgement about
+    how you work, not a defect, so it is last and it is yours.</p>
+  </li>
+</ol>
+
+<div class="callout">
+  <h3>What I will not do without you saying so</h3>
+  <ul>
+    <li>Rename any tab. A form writes to three of them, and Google mints a new response tab on relink.</li>
+    <li>Delete any tab, derived or not.</li>
+    <li>Touch a record tab's contents by any route other than a previewed, token-gated tool.</li>
+    <li>Change what tab 06 computes. It is the one derived tab the rest of the system reads back, so it
+    behaves like a record even though it is not one.</li>
+  </ul>
+</div>
+
+<footer>
+  Assembled from the tracker's 13,373 lines and a read-only export of the live spreadsheet.<br>
+  Counts are of functions, not of people. Nothing in the spreadsheet was changed to produce this.
+</footer>
+
+</div>
