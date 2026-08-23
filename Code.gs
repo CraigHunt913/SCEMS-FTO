@@ -1,39 +1,41 @@
-/* ================================================================
- * SCEMS v20.1.0i — PART 1 of 5  (0i2 file set — supersedes any
- * earlier 0i files; use THESE five.)
- * PART 1 REPLACES everything in Code.gs (Select All, Delete, paste).
- * PARTS 2-5 are pasted at the very BOTTOM of Code.gs, in order.
- * Save after each part. After part 5: run versionReportV20_1 —
- * it must print:  SCEMS source version : v20.1.0i
- * ================================================================ */
-
-/************************************************************************
- * SCEMS FTPD v20.1.0i — CONSOLIDATED SINGLE-FILE BUILD — 2026-08-14
- * Everything from v20.1.0h plus every add-on shipped 8/13-8/14, folded
- * to exactly one definition of everything. Replaces ALL prior pastes.
- ************************************************************************/
-
-
-/* ==================== 00_core.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 00_core.gs
- * Foundation layer: delivery mode, logging, sheet access, header-verified
- * readers, batch writers, sanitization, locks, mail, identifiers, dates.
+/**
+ * SCEMS FIELD TRAINING TRACKER
  *
- * RULES THIS FILE ENFORCES PROJECT-WIDE
- *  - Delivery mode is read from the SCEMS_LIVE_MODE script property at the
- *    moment of every send. A Properties failure means TEST mode. No code
- *    path may consult a load-time snapshot for delivery decisions.
- *  - A header mismatch is a reported defect, never an authorization to
- *    clear a sheet. verifyHeadersV20_1_() reports; nothing here erases.
- *  - Every user-supplied string written to a sheet passes through
- *    sanitizeCellV20_1_() so `=`, `+`, `-`, `@` prefixes cannot become
- *    executable formulas.
- *  - Locks are single-level. Acquiring a script lock while one is already
- *    held by this execution throws immediately (misuse), instead of
- *    deadlocking or stacking.
- ************************************************************************/
+ * BUILT FILE. Do not edit this. Edit the files in tracker/ and run
+ *   node tools/build-tracker.js
+ * A test fails if this file and those sources disagree.
+ *
+ * This used to be one file ordered by when each thing was written, with
+ * fourteen blocks marked ADD-ON appended to the bottom across six versions.
+ * It is now ordered by what each thing does. No behaviour changed in the
+ * move, and a test proves every declaration came through byte for byte.
+ */
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 00_core
+ *
+ * Shared plumbing: the spreadsheet handle, dates, logging, locks, mail
+ * budget.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Foundation layer: delivery mode, logging, sheet access, header-verified
+ *   readers, batch writers, sanitization, locks, mail, identifiers, dates.
+ *   RULES THIS FILE ENFORCES PROJECT-WIDE
+ *   - Delivery mode is read from the SCEMS_LIVE_MODE script property at the
+ *   moment of every send. A Properties failure means TEST mode. No code
+ *   path may consult a load-time snapshot for delivery decisions.
+ *   - A header mismatch is a reported defect, never an authorization to
+ *   clear a sheet. verifyHeadersV20_1_() reports; nothing here erases.
+ *   - Every user-supplied string written to a sheet passes through
+ *   sanitizeCellV20_1_() so `=`, `+`, `-`, `@` prefixes cannot become
+ *   executable formulas.
+ *   - Locks are single-level. Acquiring a script lock while one is already
+ *   held by this execution throws immediately (misuse), instead of
+ *   deadlocking or stacking.
+ */
 
 /* ---------------------------------------------------------------- *
  *  Spreadsheet access
@@ -162,9 +164,6 @@ function whichMode() {
   return msg;
 }
 
-/* Muscle-memory aliases. Same single implementations. */
-function goLiveV19() { return goLive(); }
-function backToTestModeV19() { return backToTestMode(); }
 function whichModeV19() { return whichMode(); }
 
 /** Version report: source constant plus runtime facts. */
@@ -210,7 +209,6 @@ function systemLog_(severity, event, detail) {
 var STRAY_V19 = 'Â';
 
 function stripStrayV19_(s) { return String(s).split(STRAY_V19).join(''); }
-function hasStrayV19_(s) { return typeof s === 'string' && s.indexOf(STRAY_V19) >= 0; }
 
 /** Display cleanup: trims and collapses interior whitespace. */
 function cleanNameV20_1_(s) {
@@ -457,22 +455,856 @@ function controlDialV20_1_(label, fallback) {
 
 
 
-/* ==================== 10_identity.gs ==================== */
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 10_identity.gs
- * Stable identity: the person registry, name resolution, FTO scope,
- * authorization by verified email, and the read-only identity migration
- * preview.
+/* ---------------------------------------------------------------- *
+ *  Mail quota
+ * ---------------------------------------------------------------- */
+
+/** Recipients held back from bulk mail so that safety alerts can always
+ *  send. A consumer Google account allows 100 recipients a day; a Monday
+ *  run of traineeStatusCards plus supervisorDigest can consume most of it,
+ *  and the alerts that matter most — an unsafe skill outcome, a 72-hour
+ *  breach — are the ones that happen later in the day.
  *
- * DESIGN
- *  - Display names remain human-readable everywhere users look.
- *  - Code joins on PERSON IDs once the registry exists; before migration
- *    it falls back to normalized-name resolution that REFUSES ambiguity.
- *  - Two people are never merged because their names match. An ambiguous
- *    resolution returns the ambiguity for human review; it never guesses.
- *  - Historical rows are never rewritten here. The registry is additive.
- ************************************************************************/
+ *  Bulk senders call the guard below and stop when they would eat into the
+ *  reserve. Alert paths deliberately do NOT call it: the reserve exists for
+ *  them, and an alert that cannot send must fail loudly rather than politely
+ *  decline. */
+var MAIL_ALERT_RESERVE_V20_2 = 25;
+
+/** True when one more bulk message may be sent. Logs once when it starts
+ *  refusing, so a truncated run is never silent. */
+function mailBudgetOkV20_2_(purpose, alreadySent) {
+  var left = 0;
+  try { left = MailApp.getRemainingDailyQuota(); } catch (e) { return true; }
+  if (left > MAIL_ALERT_RESERVE_V20_2) return true;
+  if (!alreadySent || alreadySent === 1) {
+    systemLog_('ERROR', 'MAIL BUDGET EXHAUSTED',
+      purpose + ' stopped: ' + left + ' recipient(s) left, holding ' +
+      MAIL_ALERT_RESERVE_V20_2 + ' back for safety alerts.');
+  }
+  return false;
+}
+
+/** Wraps a bulk run: reports what did not go out instead of failing silently
+ *  part-way through. */
+function reportBulkTruncationV20_2_(purpose, sent, unsent) {
+  if (!unsent.length) return;
+  var msg = purpose + ' sent ' + sent + ' message(s) and STOPPED. ' + unsent.length +
+    ' did not go out because the daily mail quota is nearly gone:\n\n  ' +
+    unsent.slice(0, 30).join('\n  ') +
+    (unsent.length > 30 ? '\n  …and ' + (unsent.length - 30) + ' more' : '') +
+    '\n\nThe remaining quota is held back so unsafe-outcome and 72-hour ' +
+    'breach alerts can still send today. Consumer Google accounts allow 100 ' +
+    'recipients a day; Workspace accounts allow 1,500.';
+  systemLog_('ERROR', 'BULK MAIL TRUNCATED', purpose + ' | ' + unsent.length + ' unsent');
+  try { MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg); } catch (e) {}
+  Logger.log(msg);
+}
+
+/* ---- ported from master (effective winner) ---- */
+function parseDateV19_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  var parsed = new Date(String(value || ''));
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/* ---- ported from master (effective winner) ---- */
+function dateKeyV19_(value) {
+  if (!(value instanceof Date) || isNaN(value.getTime())) return '';
+  return Utilities.formatDate(value, 'America/New_York', 'yyyy-MM-dd');
+}
+
+/* ---- ported from master (effective winner) ---- */
+function dateMsV19_(value) {
+  return value instanceof Date && !isNaN(value.getTime()) ? value.getTime() : 0;
+}
+
+/* ---- ported from master (effective winner) ---- */
+function ensureSheetCapacityV19_(sh, rows, cols) {
+  if (sh.getMaxRows() < rows) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
+  if (sh.getMaxColumns() < cols) sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
+}
+
+function definedV19_(name) {
+  try { return typeof eval(name) === 'function'; } catch (e) { return false; }
+}
+
+function uniqueCountV19_(values) {
+  var seen = {};
+  values.forEach(function (v) {
+    var key = String(v || '').trim();
+    if (key) seen[key] = true;
+  });
+  return Object.keys(seen).length;
+}
+
+function yesV19_(value) {
+  return /^(yes|true|y|1)$/i.test(String(value || '').trim());
+}
+
+function positiveIntV19_(value) {
+  var n = Number(value);
+  return isFinite(n) && n >= 1 && Math.floor(n) === n;
+}
+
+function rangesIntersect_(a, b) {
+  return a.getRow() <= b.getLastRow() && a.getLastRow() >= b.getRow() &&
+    a.getColumn() <= b.getLastColumn() && a.getLastColumn() >= b.getColumn();
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 05_governance
+ *
+ * Who is allowed to do what, and the gates every mutating path passes
+ * through.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   THE RULE THIS FILE ENFORCES
+ *   Anything that becomes part of a person's permanent record has exactly
+ *   one way in, and that way is never bulk, never defaulted, and never
+ *   self-attested. Everything else may be as convenient as we can make it.
+ *   Full reasoning, scope and acceptance checks: SPEC-v20.2.md.
+ *   Nothing in this file deletes a row from any tab.
+ */
+
+var OVERRIDE_MARKER_V20_2 = '[THRESHOLD OVERRIDE]';
+
+/* ---------------------------------------------------------------- *
+ *  Identity  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** Script property holding the one account allowed to operate this system
+ *  when the platform will not name the session. Set it with
+ *  setOperatorAccountV20_2(); it is deliberately not editable from a sheet
+ *  cell, because a value a form or a formula can reach is not a credential. */
+var OPERATOR_PROP_V20_2 = 'SCEMS_OPERATOR_EMAIL';
+
+/** How sure we are about who is running this, strongest first.
+ *
+ *  ACTIVE     Session.getActiveUser(). The platform names the human at the
+ *             keyboard. Only reliable on Workspace accounts.
+ *  EFFECTIVE  Session.getEffectiveUser(). The account the script RUNS AS.
+ *             For a container-bound script invoked from its own menu, that
+ *             is the person clicking, and on a consumer account it is
+ *             usually the only answer available. Inside an installable
+ *             trigger it is the trigger's owner rather than whoever caused
+ *             the event, so it is attested, not verified.
+ *  OPERATOR   The account configured in script properties. A deliberate,
+ *             one-time declaration by whoever owns the script, stored where
+ *             no sheet formula or form response can reach it.
+ *
+ *  All three are the platform or the owner answering. None of them is the
+ *  thing v20.2 removed: reading a name a user typed into a spreadsheet cell
+ *  at decision time and treating it as authority. */
+var IDENTITY_TIERS_V20_2 = ['ACTIVE', 'EFFECTIVE', 'OPERATOR'];
+
+/** Resolves who is acting. Returns { email, tier, verified, note }.
+ *  email is '' only when nothing could identify the session at all. */
+function identityV20_2_() {
+  var e1 = '';
+  try { e1 = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (e1) {
+    return { email: e1, tier: 'ACTIVE', verified: true, note: '' };
+  }
+
+  var e2 = '';
+  try { e2 = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (e2) {
+    return { email: e2, tier: 'EFFECTIVE', verified: false,
+      note: 'the account this script runs as, not confirmed as the person at the keyboard' };
+  }
+
+  var e3 = '';
+  try {
+    e3 = String(PropertiesService.getScriptProperties()
+      .getProperty(OPERATOR_PROP_V20_2) || '').trim().toLowerCase();
+  } catch (e) {}
+  if (e3 && isValidEmailV20_1_(e3)) {
+    return { email: e3, tier: 'OPERATOR', verified: false,
+      note: 'the configured operator account; the platform named nobody' };
+  }
+
+  return { email: '', tier: '', verified: false,
+    note: 'the platform named nobody and no operator account is configured' };
+}
+
+/** The label stamped beside a decider on a permanent record. Empty when the
+ *  identity was actually verified, so clean records stay clean. */
+function identityStampV20_2_(id) {
+  if (!id || !id.email) return ' [IDENTITY UNKNOWN]';
+  if (id.verified) return '';
+  return ' [IDENTITY ' + id.tier + ', ATTESTED]';
+}
+
+/** Declares the account that may operate this system when Google will not
+ *  name the session. Run once, from the script editor, by the person who
+ *  owns the script.
+ *
+ *  This is the consumer-account accommodation, and it is narrower than it
+ *  looks: it names ONE address, it is stored in script properties where no
+ *  sheet or form can reach it, every use of it is logged, and every record
+ *  written under it carries [IDENTITY OPERATOR, ATTESTED] permanently. It
+ *  does not restore the v20.1 hole, which let anyone who typed "Medical
+ *  Director" into a cell sign off a clinical competency. */
+function setOperatorAccountV20_2(email) {
+  var e = String(email || '').trim().toLowerCase();
+  if (!e) {
+    var cur = PropertiesService.getScriptProperties().getProperty(OPERATOR_PROP_V20_2) || '(none)';
+    var m0 = 'Operator account is currently: ' + cur +
+      '\n\nTo set it:  setOperatorAccountV20_2("you@example.com")' +
+      '\nTo clear it: setOperatorAccountV20_2("CLEAR")';
+    Logger.log(m0); return m0;
+  }
+  if (e === 'clear') {
+    PropertiesService.getScriptProperties().deleteProperty(OPERATOR_PROP_V20_2);
+    systemLog_('WARN', 'OPERATOR ACCOUNT CLEARED', 'fallback identity removed');
+    var m1 = 'Operator account cleared. If Google does not name the session, every ' +
+             'gated action will now refuse.';
+    Logger.log(m1); return m1;
+  }
+  if (!isValidEmailV20_1_(e)) {
+    var m2 = 'Refused: "' + email + '" is not a valid email address. Nothing was set.';
+    Logger.log(m2); return m2;
+  }
+  PropertiesService.getScriptProperties().setProperty(OPERATOR_PROP_V20_2, e);
+  systemLog_('WARN', 'OPERATOR ACCOUNT SET', e);
+  var msg = 'Operator account set to ' + e + '.\n\n' +
+    'This is used ONLY when Google will not name the session. Every record ' +
+    'written that way is stamped [IDENTITY OPERATOR, ATTESTED] permanently, ' +
+    'and every use is logged to 93 ACCESS LOG.\n\n' +
+    'It is an accommodation for consumer Google accounts, not a substitute ' +
+    'for Workspace accounts. The health check will keep saying so.';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e2) {}
+  return msg;
+}
+
+/** Which roles may perform which action. Anything not listed is director-only
+ *  by default, so a new action fails closed rather than open. */
+var ACTION_ROLES_V20_2 = Object.freeze({
+  'ADVANCE TRAINEE':        ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'CLOSE TRAINEE':          ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'WORK QUEUE':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'RECORD WITNESSED SKILL': ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'ACCEPT AUDIT FLAG':      ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
+  'CHANGE DELIVERY MODE':   ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'READ PROGRAM REPORT':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'COMMAND', 'MEDICAL_DIRECTOR'],
+  'RUN BACKUP':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'PROTECT RECORD TABS':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
+  'DELETE TEST ROWS':       ['PROGRAM_DIRECTOR']
+});
+
+/** Writes one row to the access log, and always to the system log. The access
+ *  log may not exist before migration; that must never lose the entry. */
+function logAccessV20_2_(action, email, authorized, detail) {
+  systemLog_(authorized ? 'INFO' : 'WARN',
+    'ACCESS ' + (authorized ? 'GRANTED' : 'REFUSED'),
+    action + ' | ' + (email || '(unidentified)') + ' | ' + String(detail || '').slice(0, 300));
+  try {
+    appendRowsHeaderMappedV20_1_(TAB.ACCESS, 4, [{
+      'ACCESS ID': newIdV20_1_('AC'), 'TIMESTAMP': new Date(), 'KIND': action,
+      'REQUESTED BY': email || '(unidentified)', 'VERIFIED EMAIL': email || '(none)',
+      'AUTHORIZED': authorized ? 'YES' : 'NO', 'SUBJECT': '', 'DELIVERED TO': '',
+      'REASON': '', 'DETAIL': String(detail || '').slice(0, 400)
+    }], ['ACCESS ID']);
+  } catch (e) { /* system log above already holds it */ }
+}
+
+/** THE GATE. Returns { ok, actor, email, message }.
+ *
+ *  Refuses outright when the platform cannot identify the session. There is
+ *  deliberately no fallback to a typed name: a record that cannot say who
+ *  made it is worse than an operator who is briefly locked out. When this
+ *  refuses on a consumer Google account, that is the Workspace move becoming
+ *  urgent rather than optional — the message says so. */
+function requireActorV20_2_(action, allowedRoles) {
+  var act = String(action || '').toUpperCase();
+  var roles = allowedRoles || ACTION_ROLES_V20_2[act] || ['PROGRAM_DIRECTOR'];
+  var id = identityV20_2_();
+  var email = id.email;
+  var out = { ok: false, actor: null, email: email, identity: id, message: '' };
+
+  if (!email) {
+    out.message =
+      'REFUSED : ' + act + '\n\n' +
+      'Nothing identifies who is running this, so the action could not be\n' +
+      'attributed to anyone. Nothing was written.\n\n' +
+      'Google names the session on Workspace accounts. On a consumer account\n' +
+      'it often will not, and this script has no operator account configured\n' +
+      'either.\n\n' +
+      'FIX: open the script editor and run\n' +
+      '     setOperatorAccountV20_2("' + (CONFIG.TCO_EMAIL || 'you@example.com') + '")\n' +
+      'once. Records written that way are permanently stamped\n' +
+      '[IDENTITY OPERATOR, ATTESTED].\n\n' +
+      'Earlier versions instead read whatever name was typed into the\n' +
+      'DECIDED BY cell. That is what produced sign-offs credited to people\n' +
+      'who never made them, and it is not coming back.';
+    logAccessV20_2_(act, '', false, 'no identity at any tier');
+    return out;
+  }
+
+  var actor = resolveAuthorizedActorV20_1_(email);
+  var granted = actor.ok && roles.some(function (r) { return actor.roles.indexOf(r) >= 0; });
+  out.actor = actor;
+  if (!granted) {
+    out.message =
+      'REFUSED : ' + act + '\n\n' +
+      'Signed in as ' + email + '  [' + id.tier + (id.verified ? '' : ', attested') + ']\n' +
+      'Roles held  : ' + (actor.roles.length ? actor.roles.join(', ') : 'none') + '\n' +
+      'Roles needed: ' + roles.join(', ') + '\n\n' +
+      'Nothing was written. If this is wrong, the fix is on 22 FTO ROSTER or\n' +
+      '90 PERSON REGISTRY, not here.';
+    logAccessV20_2_(act, email, false, 'held [' + actor.roles.join(',') + '] needed [' + roles.join(',') + ']');
+    return out;
+  }
+
+  out.ok = true;
+  logAccessV20_2_(act, email, true,
+    'roles [' + actor.roles.join(',') + '] | identity ' + id.tier +
+    (id.verified ? ' (verified)' : ' (attested: ' + id.note + ')'));
+  return out;
+}
+
+/** Returns '' when the action is allowed, or the refusal message (already
+ *  logged and shown) when it is not. Lets a string-returning function refuse
+ *  with `var deny = denyV20_2_('X'); if (deny) return deny;`. */
+function denyV20_2_(action, allowedRoles) {
+  var g = requireActorV20_2_(action, allowedRoles);
+  if (g.ok) return '';
+  Logger.log(g.message);
+  try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
+  return g.message;
+}
+
+/** Gate helper for the menu flows: refuses, tells the operator why, returns
+ *  false. Callers do `if (!gateV20_2_('WORK QUEUE')) return;`. */
+function gateV20_2_(action, allowedRoles) {
+  var g = requireActorV20_2_(action, allowedRoles);
+  if (!g.ok) {
+    Logger.log(g.message);
+    try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
+    return false;
+  }
+  return true;
+}
+
+/** The identity to stamp on a record, or '' when unknown. Never invents one. */
+function deciderIdentityV20_2_() {
+  return sessionEmailV20_1_();
+}
+
+/* ---------------------------------------------------------------- *
+ *  Evidence gate
+ * ---------------------------------------------------------------- */
+
+/** Current READINESS for one trainee/skill straight off the matrix, or ''
+ *  when the pair is not on it. Read-only. */
+function skillReadinessNowV20_2_(trainee, skillId) {
+  var t = readTableV20_1_(TAB.SKILLS, 4);
+  if (!t.ok) return '';
+  var cT = t.col['TRAINEE'], cS = t.col['SKILL ID'], cR = t.col['READINESS'];
+  if (cT === undefined || cS === undefined || cR === undefined) return '';
+  var tn = normalizeNameV20_1_(trainee);
+  var sid = String(skillId || '').trim();
+  for (var i = 0; i < t.rows.length; i++) {
+    if (normalizeNameV20_1_(t.rows[i][cT]) !== tn) continue;
+    if (String(t.rows[i][cS] || '').trim() !== sid) continue;
+    return String(t.rows[i][cR] || '').trim();
+  }
+  return '';
+}
+
+/** SPEC-v20.2.md #3 — an approval needs a reason a human actually chose.
+ *
+ *  The old code filled in "Evidence thresholds met, FTO recommendation
+ *  accepted" on a keystroke. That is a factual claim about evidence, written
+ *  under a named decider, that nothing had checked. This asks instead, and
+ *  when the matrix disagrees with the approval it says so BEFORE the reason is
+ *  typed, so the override is a decision rather than a surprise error.
+ *
+ *  Returns '' when the operator backs out — callers treat that as a skip.
+ */
+function approvalRationalePromptV20_2_(ui, title, trainee, skillId) {
+  var readiness = skillReadinessNowV20_2_(trainee, skillId);
+  var ready = (readiness === 'READY FOR VALIDATION');
+
+  if (!ready) {
+    var warn = ui.alert('Evidence gate : ' + title,
+      'The matrix reads "' + (readiness || 'not on the matrix') + '" for this skill, ' +
+      'not READY FOR VALIDATION.\n\n' +
+      'You may still approve — your judgement is the point of this role — but the ' +
+      'record will be permanently stamped ' + OVERRIDE_MARKER_V20_2 + ' so the ' +
+      'exception is visible to anyone who reads it later.\n\n' +
+      'Approve anyway?', ui.ButtonSet.YES_NO);
+    if (warn !== ui.Button.YES) return '';
+  }
+
+  var r = ui.prompt('Approve : ' + title,
+    'Why is this competency signed off? This becomes the official reason on a ' +
+    'permanent record, in your name.\n\n' +
+    (ready ? 'Examples: "Evidence thresholds met, FTO recommendation accepted", ' +
+             '"Directly observed and verified".'
+           : 'Say what you relied on instead of the thresholds.') +
+    '\n\n(Blank cancels this one and moves on.)',
+    ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return '';
+  var text = String(r.getResponseText() || '').trim();
+  if (!text) return '';
+  if (!ready && text.indexOf(OVERRIDE_MARKER_V20_2) < 0) {
+    text = OVERRIDE_MARKER_V20_2 + ' ' + text;
+  }
+  return text;
+}
+
+/** Evidence gate for an Approve sign-off. Returns a problem string, or ''.
+ *  An approval below threshold is not forbidden — it is required to be
+ *  DISTINGUISHABLE, by carrying the override marker into the permanent
+ *  record. Returns and revokes are never gated. */
+function evidenceGateProblemV20_2_(decision, trainee, skillId, rationale) {
+  if (decision !== 'Approve sign-off') return '';
+  var readiness = skillReadinessNowV20_2_(trainee, skillId);
+  if (readiness === 'READY FOR VALIDATION') return '';
+  if (String(rationale || '').indexOf(OVERRIDE_MARKER_V20_2) >= 0) return '';
+  return 'evidence gate: this skill reads "' + (readiness || 'not on the matrix') +
+    '", not READY FOR VALIDATION. Approving anyway is allowed but must be ' +
+    'deliberate — add the override through the menu so the record shows it';
+}
+
+/* ---------------------------------------------------------------- *
+ *  Audit flags : an honest acceptance path
+ * ---------------------------------------------------------------- */
+
+var FLAG_ACCEPT_STATUS_V20_2 = 'Accepted';
+
+var FLAG_ACCEPT_DAYS_V20_2 = 90;
+
+/** Locates the FLAG REVIEW LOG on tab 13. Returns { headerRow, firstEntry,
+ *  lastEntry } or null. Same scan the existing tools use. */
+function flagReviewLogV20_2_(sh) {
+  var scanN = Math.max(sh.getLastRow(), 60);
+  var scan = sh.getRange(1, 1, scanN, 2).getValues();
+  for (var i = 44; i < scan.length; i++) {
+    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
+        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) {
+      return { headerRow: i + 2, firstEntry: i + 3, lastEntry: i + 22 };
+    }
+  }
+  return null;
+}
+
+/** Every currently burning flag on tab 13, read-only. */
+function burningFlagsV20_2_() {
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  var out = [];
+  if (!sh) return out;
+  var heads = sh.getRange(4, 2, 1, 6).getDisplayValues()[0];
+  var names = sh.getRange(5, 1, 40, 1).getDisplayValues();
+  var vals = sh.getRange(5, 2, 40, 6).getDisplayValues();
+  for (var i = 0; i < 40; i++) {
+    var who = String(names[i][0] || '').trim();
+    if (!who) continue;
+    for (var c = 0; c < 6; c++) {
+      if (String(vals[i][c]).trim() !== 'FLAG') continue;
+      out.push({ trainee: who, flagType: heads[c] || ('column ' + (c + 2)), row: 5 + i });
+    }
+  }
+  return out;
+}
+
+/** ACCEPT ONE FLAG. One flag, one named human, one typed reason, one date.
+ *
+ *  The flag STAYS VISIBLE and keeps reading FLAG — acceptance is recorded
+ *  beside it, never instead of it, and no detection formula is touched. The
+ *  acceptance expires, so it is a decision with a shelf life rather than a
+ *  permanent silence. This is the supported replacement for the bulk
+ *  silencing that v20.1 shipped and v20.2 retires. */
+function acceptFlagV20_2() {
+  if (!gateV20_2_('ACCEPT AUDIT FLAG')) return;
+  var ui = SpreadsheetApp.getUi();
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) { ui.alert('Tab 13 not found.'); return; }
+
+  var burning = burningFlagsV20_2_();
+  if (!burning.length) { ui.alert('No flags are burning. Nothing to accept.'); return; }
+
+  var log = flagReviewLogV20_2_(sh);
+  if (!log) { ui.alert('FLAG REVIEW LOG not found on tab 13. Run redoAuditTabV20_1 once first.'); return; }
+
+  var listing = burning.slice(0, 20).map(function (f, i) {
+    return (i + 1) + '  ' + f.trainee + ' — ' + f.flagType; }).join('\n');
+  var r1 = ui.prompt('Accept one flag  (1 of 2)',
+    burning.length + ' flag(s) burning. Type the number of the ONE you are accepting:\n\n' +
+    listing + (burning.length > 20 ? '\n   …and ' + (burning.length - 20) + ' more' : ''),
+    ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  var pick = parseInt(String(r1.getResponseText() || '').trim(), 10);
+  if (!(pick >= 1 && pick <= Math.min(burning.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
+  var flag = burning[pick - 1];
+
+  var r2 = ui.prompt('Accept one flag  (2 of 2)',
+    flag.trainee + ' — ' + flag.flagType + '\n\n' +
+    'Why is this acceptable? This goes on the record in your name.\n' +
+    'There is no default: a blank answer cancels.',
+    ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  var reason = String(r2.getResponseText() || '').trim();
+  if (!reason) { ui.alert('No reason given. Nothing recorded.'); return; }
+
+  var reviewBy = new Date();
+  reviewBy.setDate(reviewBy.getDate() + FLAG_ACCEPT_DAYS_V20_2);
+  var who = deciderIdentityV20_2_();
+
+  var existing = sh.getRange(log.firstEntry, 1, log.lastEntry - log.firstEntry + 1, 6).getValues();
+  var free = -1;
+  for (var i = 0; i < existing.length; i++) {
+    if (!String(existing[i][1] || '').trim()) { free = log.firstEntry + i; break; }
+  }
+  if (free < 0) { ui.alert('The FLAG REVIEW LOG is full. Add rows beneath it, then try again.'); return; }
+
+  sh.getRange(free, 1, 1, 6).setValues([[
+    new Date(), flag.trainee, flag.flagType, who,
+    sanitizeCellV20_1_('Accepted until ' + dateKeyV20_1_(reviewBy) + ' — ' + reason),
+    FLAG_ACCEPT_STATUS_V20_2
+  ]]);
+
+  // Keep the STATUS dropdown honest about the value we just wrote.
+  try {
+    sh.getRange(log.firstEntry, 6, log.lastEntry - log.firstEntry + 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(
+        ['Under review', 'Action taken — awaiting data', 'Resolved', FLAG_ACCEPT_STATUS_V20_2], true)
+        .setAllowInvalid(true).build());
+  } catch (e) {}
+
+  var msg = 'Accepted.\n\n' + flag.trainee + ' — ' + flag.flagType +
+    '\nAccepted by : ' + who +
+    '\nReview by   : ' + dateKeyV20_1_(reviewBy) +
+    '\nReason      : ' + reason +
+    '\n\nThe flag stays visible and still counts as outstanding. Acceptance is ' +
+    'recorded beside it, not instead of it, and it expires on the review date. ' +
+    'No detection formula was changed.';
+  systemLog_('WARN', 'AUDIT FLAG ACCEPTED',
+    flag.trainee + ' | ' + flag.flagType + ' | by ' + who + ' | review by ' + dateKeyV20_1_(reviewBy));
+  ui.alert(msg);
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Record-tab protections : immutability as a control
+ * ---------------------------------------------------------------- */
+
+/** Applies sheet protection to the tabs that hold permanent records, so
+ *  "append-only" stops being a convention that seven code paths ignore.
+ *  Reports rather than forces, and is safe to re-run. */
+function protectRecordTabsV20_2() {
+  if (!gateV20_2_('PROTECT RECORD TABS')) return;
+  var DESC = 'SCEMS v20.2 record tab — script writes, people do not';
+  var tabs = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+              TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS, TAB.LOG];
+  var out = [];
+  tabs.forEach(function (name) {
+    var sh = getSheetOrNullV20_1_(name);
+    if (!sh) { out.push('  ' + name + ' : absent, skipped'); return; }
+    try {
+      var existing = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+        .filter(function (p) { return String(p.getDescription() || '') === DESC; });
+      var p = existing.length ? existing[0] : sh.protect().setDescription(DESC);
+      var editors = p.getEditors();
+      if (editors.length) p.removeEditors(editors.map(function (u) { return u.getEmail(); }));
+      if (p.canDomainEdit && p.canDomainEdit()) p.setDomainEdit(false);
+      p.setWarningOnly(false);
+      out.push('  ' + name + ' : protected (' + (existing.length ? 'refreshed' : 'new') + ')');
+    } catch (e) {
+      out.push('  ' + name + ' : NOT protected — ' + e);
+    }
+  });
+  var msg = 'RECORD TAB PROTECTION\n\n' + out.join('\n') +
+    '\n\nOnly this account and the script may now write to these tabs.\n' +
+    'Everything the system does still works: the script writes as you.\n' +
+    'Re-run this after adding an editor to the spreadsheet.';
+  systemLog_('INFO', 'RECORD TABS PROTECTED', out.join(' | ').slice(0, 400));
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Health check : the one diagnostic that names the next action
+ * ---------------------------------------------------------------- */
+
+var HEALTH_RANK_V20_2 = { BLOCKER: 0, WARN: 1, INFO: 2, CLEAR: 3 };
+
+/** Runs the cheap read-only detectors and returns what needs attention,
+ *  worst first, each naming the exact function to run. This exists because
+ *  every gap-detector in this system is otherwise editor-only and invisible:
+ *  the checks were already written, nobody could find them. Writes nothing. */
+function healthCheckV20_2() {
+  var items = [];
+  function add(sev, headline, run) { items.push({ sev: sev, headline: headline, run: run || '' }); }
+  function guard(fn) { try { fn(); } catch (e) { add('WARN', 'A check could not run: ' + e, ''); } }
+
+  guard(function () {
+    if (isTestMode_()) {
+      add('BLOCKER', 'Delivery is in TEST MODE. Every alert — including unsafe scores and ' +
+        '72-hour breaches — reroutes to ' + CONFIG.TEST_INBOX + ' and reaches nobody else.', 'goLive');
+    }
+  });
+
+  guard(function () {
+    var n = masterTraineeRowsV20_1_().length;
+    if (n > 40) {
+      add('BLOCKER', n + ' trainees on the master, but most readers only see the first 40. ' +
+        'Trainee 41 onward gets no reminder, no status card, no digest line and no skill matrix.', '');
+    }
+  });
+
+  guard(function () {
+    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+    var missing = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
+    if (missing.length) add('BLOCKER', 'Trigger(s) not installed: ' + missing.join(', '), 'repairAllTriggersNow');
+  });
+
+  // A form-bound trigger cannot be checked by handler name alone: one handler
+  // serves four forms, so "onSkillsGridSubmitV20 exists" says nothing about
+  // WHICH forms reach it. This is exactly how the combined skills form went
+  // unbound while every trigger check in the system reported healthy.
+  guard(function () {
+    var bound = {};
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      var src = '';
+      try { src = String(t.getTriggerSourceId() || ''); } catch (e) {}
+      if (src) bound[src] = true;
+    });
+    var unbound = [];
+    formBoundTriggerPlanV20_2_().forEach(function (p) {
+      var f = getStoredFormV19_(p.title);
+      if (!f) return;                       // absent form is a different problem
+      if (!bound[f.getId()]) unbound.push(p.title);
+    });
+    if (unbound.length) {
+      add('BLOCKER', unbound.length + ' live form(s) have NO trigger bound: ' + unbound.join(', ') +
+        '. Submissions to them are dropped — onHubFormSubmit refuses them as form-trigger-owned, ' +
+        'and the ledger records the loss as SKIPPED_OWNED. Nothing reaches the evidence log.',
+        'repairAllTriggersNow');
+    }
+  });
+
+  guard(function () {
+    var dq = getSheetOrNullV20_1_(TAB.QUEUE);
+    if (!dq) return;
+    var used = dq.getRange(5, 1, 296, 1).getValues().filter(function (r) { return r[0]; }).length;
+    if (used >= 296) {
+      add('BLOCKER', 'Decision queue is FULL (296/296). queueAdd now throws, which blocks ' +
+        'shift-evaluation ingestion entirely.', '');
+    } else if (used > 250) {
+      add('WARN', 'Decision queue is ' + used + '/296 full. At 296 it throws and blocks ingestion.', '');
+    }
+  });
+
+  guard(function () {
+    var led = readTableV20_1_(TAB.LEDGER, 4);
+    if (!led.ok) return;
+    var terminal = ['PROCESSED', 'SKIPPED_OWNED', 'SKIPPED_DUPLICATE', 'RECONCILED'];
+    var bad = 0;
+    led.rows.forEach(function (r) {
+      var st = String(r[led.col['STATE']] || '');
+      if (st && terminal.indexOf(st) < 0) bad++;
+    });
+    if (bad) add('WARN', bad + ' form submission(s) never reached a terminal state.', 'ingestionExceptionReportV20_1');
+  });
+
+  guard(function () {
+    var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+    if (!q.ok) return;
+    var open = 0, stranded = 0;
+    q.rows.forEach(function (r) {
+      if (!String(r[q.col['TRAINEE']] || '').trim()) return;
+      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+      open++;
+      if (String(r[q.col['DECISION']] || '').trim()) stranded++;
+    });
+    if (stranded) add('WARN', stranded + ' queue row(s) hold a decision that was never recorded.',
+      'previewStrandedDecisionsV20_1');
+    if (open) add('INFO', open + ' skill request(s) waiting on you.', 'workMyQueueV20_1');
+  });
+
+  guard(function () {
+    var f = burningFlagsV20_2_();
+    if (f.length) {
+      add('WARN', f.length + ' audit flag(s) burning. Fix the condition, or accept one on the ' +
+        'record with a reason and a review date.', 'acceptFlagV20_2');
+    }
+  });
+
+  guard(function () {
+    var unprotected = [];
+    [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].forEach(function (n) {
+      var sh = getSheetOrNullV20_1_(n);
+      if (sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) unprotected.push(n);
+    });
+    if (unprotected.length) {
+      add('WARN', 'Any editor can still overwrite these record tabs: ' + unprotected.join(', '),
+        'protectRecordTabsV20_2');
+    }
+  });
+
+  guard(function () {
+    var left = MailApp.getRemainingDailyQuota();
+    if (left <= MAIL_ALERT_RESERVE_V20_2) {
+      add('BLOCKER', 'Mail quota is down to ' + left + ' recipient(s). Bulk digests are now ' +
+        'held back, but if this reaches zero an unsafe-outcome or 72-hour breach alert will ' +
+        'not send either. Consumer accounts allow 100/day; Workspace allows 1,500.', '');
+    } else if (left < MAIL_ALERT_RESERVE_V20_2 * 2) {
+      add('WARN', 'Mail quota is at ' + left + ' recipient(s) for the rest of today.', '');
+    }
+  });
+
+  guard(function () {
+    var last = PropertiesService.getScriptProperties().getProperty('LAST_FULL_BACKUP') || '';
+    if (!last) { add('WARN', 'No full backup package has ever been created.', 'fullBackupV20_1'); return; }
+    var d = parseDateSafeV20_1_(last.slice(0, 10));
+    if (d && (new Date() - d) / 86400000 > 40) {
+      add('WARN', 'Newest full backup is ' + Math.round((new Date() - d) / 86400000) +
+        ' days old (' + last + ').', 'fullBackupV20_1');
+    }
+  });
+
+  guard(function () {
+    var id = identityV20_2_();
+    if (!id.email) {
+      add('BLOCKER', 'Nothing identifies who is running this script, so every gated action ' +
+        'will refuse and no decision can be attributed. Run setOperatorAccountV20_2() once ' +
+        'from the script editor, or move the program to Workspace accounts.',
+        'setOperatorAccountV20_2');
+    } else if (id.tier === 'OPERATOR') {
+      add('WARN', 'Running as the configured operator account (' + id.email + '). Google is ' +
+        'naming nobody, so every record written is stamped [IDENTITY OPERATOR, ATTESTED]. ' +
+        'That is honest, but it is not the same as a verified signature — Workspace accounts ' +
+        'are what make attribution real.', '');
+    } else if (!id.verified) {
+      add('WARN', 'Identity is ' + id.tier + ' rather than verified (' + id.email + '): ' +
+        id.note + '. Records are stamped accordingly.', '');
+    }
+  });
+
+  items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
+
+  var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
+  if (!items.length) {
+    L.push('CLEAR. Nothing needs you.');
+  } else {
+    items.forEach(function (it) {
+      L.push(it.sev + '  ' + it.headline);
+      if (it.run) L.push('        run: ' + it.run + '()');
+      L.push('');
+    });
+    var blockers = items.filter(function (i) { return i.sev === 'BLOCKER'; }).length;
+    L.push(blockers ? blockers + ' blocker(s) first — the rest can wait.'
+                    : 'No blockers. Work the list top down.');
+  }
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Menu : six verbs, everything else behind Admin
+ * ---------------------------------------------------------------- */
+
+/** THE ONLY onOpen IN THIS PROJECT. The two earlier definitions were deleted
+ *  in v20.2 — the first had been dead since the second was appended, which is
+ *  exactly the failure mode of editing by pasting at the bottom. */
+function onOpen(e) {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.createMenu('SCEMS')
+      .addItem('Trainees (start here)', 'openTraineeConsoleV20_3')
+      .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
+      .addSeparator()
+      .addItem('Work my queue', 'workMyQueueV20_1')
+      .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
+      .addItem('Advance a trainee', 'advanceTraineeNow')
+      .addItem('Close / release a trainee', 'closeTraineeV20_1')
+      .addSeparator()
+      .addItem('Health check', 'healthCheckV20_2')
+      .addItem('Backup now', 'fullBackupV20_1')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Admin')
+        .addItem('Health check', 'healthCheckV20_2')
+        .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+        .addSeparator()
+        .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
+        .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
+        .addItem('Make everything simpler', 'SIMPLIFY_EVERYTHING')
+        .addItem('Fix and polish the sheet headers', 'POLISH_SHEETS')
+        .addItem('Check entry profiles (read-only)', 'auditEntryProfilesV20_4')
+        .addItem('Show every hidden column', 'showAllColumnsV20_4')
+        .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
+        .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
+        .addItem('Tidy up the tabs', 'organizeTabsV20_2')
+        .addItem('Show every tab', 'showAllTabsV20_2')
+        .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
+        .addSeparator()
+        .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
+        .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
+        .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
+        .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
+        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
+        .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
+        .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+        .addSeparator()
+        .addItem('Which mode am I in?', 'whichMode')
+        .addItem('Version report', 'versionReportV20_1')
+        .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
+        .addSeparator()
+        .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
+        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
+        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
+        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
+        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
+        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
+        .addSeparator()
+        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
+        .addItem('System review — core (read-only)', 'reviewCoreV20_1')
+        .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
+        .addItem('Migration preview (read-only)', 'previewMigrationV20_1'))
+      .addSubMenu(ui.createMenu('Go live / test')
+        .addItem('Go LIVE', 'goLive')
+        .addItem('Back to TEST mode', 'backToTestMode'))
+      .addToUi();
+  } catch (err) {
+    Logger.log('onOpen menu skipped: ' + err);
+  }
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 10_identity
+ *
+ * Resolving a person to a role, and the roster behind it.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Stable identity: the person registry, name resolution, FTO scope,
+ *   authorization by verified email, and the read-only identity migration
+ *   preview.
+ *   DESIGN
+ *   - Display names remain human-readable everywhere users look.
+ *   - Code joins on PERSON IDs once the registry exists; before migration
+ *   it falls back to normalized-name resolution that REFUSES ambiguity.
+ *   - Two people are never merged because their names match. An ambiguous
+ *   resolution returns the ambiguity for human review; it never guesses.
+ *   - Historical rows are never rewritten here. The registry is additive.
+ */
 
 /* ---------------------------------------------------------------- *
  *  Registry access
@@ -914,23 +1746,117 @@ function previewIdentityMigrationV20_1() {
   return { text: msg, proposed: proposed, flagged: flagged, issues: issues };
 }
 
+/* ---- ported from zz (effective winner) ---- */
+/** Who is using the sheet, as a name rather than an address. */
+function currentDeciderV19_() {
+  var email = '';
+  try { email = String(Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
+  if (!email) {
+    try { email = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
+  }
+  var map = {
+    'kstuckey@sumtercountysc.gov':  'K. Stuckey',
+    'craighunt913@gmail.com':       'C. Hunt',
+    'leeturnermd@gmail.com':        'Dr. J. Turner',
+    'kehall@sumtercountysc.gov':    'Chief K. Hall',
+    'jparnell@sumtercountysc.gov':  'A/C J. Parnell'
+  };
+  if (map[email]) return map[email];
+  if (!email) return 'unidentified user';
+  return email;
+}
 
-/* ==================== 20_forms.gs ==================== */
+/* ---- ported from master (effective winner) ---- */
+function masterTraineeMapV19_() {
+  var map = {};
+  var sh = ss().getSheetByName(TAB.MASTER);
+  if (!sh) return map;
+  sh.getRange(5, 1, 40, 10).getValues().forEach(function (r) {
+    var name = String(r[0] || '').trim();
+    if (!name || name.indexOf('EXAMPLE') === 0) return;
+    map[name] = {
+      level: String(r[2] || '').trim(),
+      phase: String(r[6] || '').trim(),
+      status: String(r[7] || '').trim()
+    };
+  });
+  return map;
+}
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 20_forms.gs
- * Form estate management: stored-form access, level-safe choice sync,
- * response destinations, and the authorized Handover Card.
+/* ---- ported from zz (effective winner) ---- */
+function traineeRecordV19_(name) {
+  var sh = ss().getSheetByName(TAB.MASTER);
+  if (!sh) return null;
+  var rows = sh.getRange(5, 1, 40, 10).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === String(name).trim()) {
+      return {
+        row: i + 5,
+        name: String(rows[i][0]).trim(),
+        level: String(rows[i][2] || '').trim(),
+        entry: String(rows[i][3] || '').trim(),
+        fto: String(rows[i][4] || '').trim(),
+        phase: String(rows[i][6] || '').trim(),
+        status: String(rows[i][7] || '').trim(),
+        email: String(rows[i][8] || '').trim()
+      };
+    }
+  }
+  return null;
+}
+
+/* ---- ported from zz (effective winner) ---- */
+/** Maps a grid column back to the single-letter stage the system stores. */
+function stageLetterV19_(columnLabel) {
+  var map = {
+    'Observed': 'O',
+    'Assisted': 'A',
+    'Performed with coaching': 'P',
+    'Performed independently': 'I'
+  };
+  return map[String(columnLabel).trim()] || '';
+}
+
+/* ---- ported from zz (effective winner) ---- */
+/** Prompting, derived from the stage rather than asked. */
+function promptingForStageV19_(letter) {
+  if (letter === 'I') return 'None';
+  if (letter === 'P') return 'Moderate coaching';
+  if (letter === 'A') return 'Full takeover';
+  return 'Minimal verbal cue';
+}
+
+function stageRankV19_(stage) {
+  return { '': 0, O: 1, A: 2, P: 3, I: 4 }[String(stage || '').toUpperCase()] || 0;
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 20_forms
  *
- * PRESERVATION RULES
- *  - Existing forms are updated in place. Nothing here creates a new form
- *    when a stored form with the expected title exists, and nothing here
- *    deletes a form or its response history.
- *  - Choice refresh is SCOPED: hub-wide forms receive the full active
- *    list; each level form receives only its own level's active trainees
- *    and only FTOs whose roster scope covers that level. No code path
- *    can write the full roster into a level form.
- ************************************************************************/
+ * The nine forms: their ids, their dropdowns, their links.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Form estate management: stored-form access, level-safe choice sync,
+ *   response destinations, and the authorized Handover Card.
+ *   PRESERVATION RULES
+ *   - Existing forms are updated in place. Nothing here creates a new form
+ *   when a stored form with the expected title exists, and nothing here
+ *   deletes a form or its response history.
+ *   - Choice refresh is SCOPED: hub-wide forms receive the full active
+ *   list; each level form receives only its own level's active trainees
+ *   and only FTOs whose roster scope covers that level. No code path
+ *   can write the full roster into a level form.
+ */
+
+/* Muscle-memory aliases. Same single implementations. */
+function goLiveV19() { return goLive(); }
+
+function backToTestModeV19() { return backToTestMode(); }
 
 /* ---------------------------------------------------------------- *
  *  Stored form access
@@ -1262,29 +2188,33 @@ function hardenLevelFormsV20_1() {
 }
 
 
-/* ==================== 30_ingestion.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 30_ingestion.gs
- * Durable response ingestion: the processing ledger, idempotency on
- * form ID + response ID (never sheet row numbers), the form-submit
- * routers, replay, and scheduled reconciliation.
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 30_ingestion
  *
- * TWO EVENT SHAPES EXIST AND ARE HANDLED EXPLICITLY
- *  - Spreadsheet-destination forms (eval, reflection, urgent, decision,
- *    combined skills history) fire onHubFormSubmit with e.range/e.values.
- *    Sheets events carry no response ID, so the ledger key is a
- *    deterministic content key: formId (resolved from the destination
- *    sheet) + submission timestamp + a digest of the values. A trigger
- *    retry reproduces the identical key and is skipped.
- *  - Form-bound triggers (level skills forms, handover) fire with
- *    e.response and use the real FormApp response ID.
+ * A form response arriving, and the ledger that makes replaying one safe.
  *
- *  The double-processing defect is closed here: onHubFormSubmit consults
- *  the form-ownership map and REFUSES to process a submission whose form
- *  is owned by a form-bound handler, recording SKIPPED_OWNED instead of
- *  writing junk REJECTED rows.
- ************************************************************************/
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Durable response ingestion: the processing ledger, idempotency on
+ *   form ID + response ID (never sheet row numbers), the form-submit
+ *   routers, replay, and scheduled reconciliation.
+ *   TWO EVENT SHAPES EXIST AND ARE HANDLED EXPLICITLY
+ *   - Spreadsheet-destination forms (eval, reflection, urgent, decision,
+ *   combined skills history) fire onHubFormSubmit with e.range/e.values.
+ *   Sheets events carry no response ID, so the ledger key is a
+ *   deterministic content key: formId (resolved from the destination
+ *   sheet) + submission timestamp + a digest of the values. A trigger
+ *   retry reproduces the identical key and is skipped.
+ *   - Form-bound triggers (level skills forms, handover) fire with
+ *   e.response and use the real FormApp response ID.
+ *   The double-processing defect is closed here: onHubFormSubmit consults
+ *   the form-ownership map and REFUSES to process a submission whose form
+ *   is owned by a form-bound handler, recording SKIPPED_OWNED instead of
+ *   writing junk REJECTED rows.
+ */
 
 var LEDGER_STATES_V20_1 = ['RECEIVED', 'VALIDATED', 'PROCESSED', 'FAILED', 'RETRIED',
                            'RECONCILED', 'SKIPPED_DUPLICATE', 'SKIPPED_OWNED', 'QUARANTINED',
@@ -1681,23 +2611,28 @@ function ingestionExceptionReportV20_1() {
 }
 
 
-/* ==================== 35_operations_ported.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 35_operations_ported.gs
- * Working operational machinery carried forward from v19/v20 — each
- * function below is the single EFFECTIVE implementation identified by the
- * override-precedence map (Report 2). Shadowed duplicates were dropped.
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 35_operations
  *
- * PATCHES APPLIED DURING PORTING (each marked in place):
- *  1. Every CONFIG.TEST_MODE read became isTestMode_() — delivery mode is
- *     decided at send time from the stored flag, never a load-time value.
- *  2. The queue refresh no longer re-sorts while any OPEN row holds a
- *     draft decision (the mid-selection row-swap defect).
- *  3. checkPortalV19 derives its expected link count from PORTAL_CARDS.
- *  4. EXPECTED_FORMS_V19 derives from FORM_TITLES (all nine forms).
- * No other behavior was changed in this file.
- ************************************************************************/
+ * The day-to-day machinery carried forward from v19 and v20.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Working operational machinery carried forward from v19/v20 — each
+ *   function below is the single EFFECTIVE implementation identified by the
+ *   override-precedence map (Report 2). Shadowed duplicates were dropped.
+ *   PATCHES APPLIED DURING PORTING (each marked in place):
+ *   1. Every CONFIG.TEST_MODE read became isTestMode_() — delivery mode is
+ *   decided at send time from the stored flag, never a load-time value.
+ *   2. The queue refresh no longer re-sorts while any OPEN row holds a
+ *   draft decision (the mid-selection row-swap defect).
+ *   3. checkPortalV19 derives its expected link count from PORTAL_CARDS.
+ *   4. EXPECTED_FORMS_V19 derives from FORM_TITLES (all nine forms).
+ *   No other behavior was changed in this file.
+ */
 
 /* ---- ported from zz (effective winner) ---- */
 /** Override. Same behaviour as before for EMT and AEMT. Paramedic release
@@ -2620,114 +3555,6 @@ function handoverSkillsV19_(name) {
 }
 
 /* ---- ported from zz (effective winner) ---- */
-/** Builds the snapshot for one trainee. */
-function handoverCardBodyV19_(traineeName) {
-  var S = ss();
-  var name = String(traineeName || '').trim();
-  var rec = traineeRecordV19_(name);
-  if (!rec) return null;
-
-  var L = [];
-  L.push('TRAINEE HANDOVER CARD');
-  L.push('');
-  L.push(name + '   ' + (rec.level || 'level not set'));
-  L.push('Usual FTO : ' + (rec.fto || 'unassigned'));
-  L.push('');
-
-  // ---- where they are ----
-  var eng = S.getSheetByName(TAB.ENGINE);
-  var e = null;
-  if (eng) {
-    var rows = eng.getRange(5, 1, 40, 22).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === name) { e = rows[i]; break; }
-    }
-  }
-  L.push('WHERE THEY ARE');
-  L.push('  Phase        : ' + (rec.phase || 'not set') +
-         (e && e[20] ? ', day ' + e[20] : ''));
-  if (e) {
-    L.push('  Shifts       : ' + (e[19] || 'not recorded'));
-    L.push('  Evaluations  : ' + (e[6] || 0) +
-           (e[8] !== '' && e[8] !== null ? ', last one ' + e[8] + ' day(s) ago' : ', none yet'));
-    if (e[9]) L.push('  Average      : ' + e[9] + (e[11] ? '   trend ' + e[11] : ''));
-    L.push('  Status       : ' + (e[17] || 'not set'));
-  }
-  L.push('');
-
-  // ---- what they are working on ----
-  var focus = '';
-  try {
-    var v9 = S.getSheetByName('09 TRAINEE VIEW');
-    if (v9) {
-      var vr = v9.getRange(5, 1, 40, 9).getValues();
-      for (var j = 0; j < vr.length; j++) {
-        if (String(vr[j][0]).trim() === name) { focus = String(vr[j][8] || ''); break; }
-      }
-    }
-  } catch (err) {}
-  L.push('WHAT THEY ARE WORKING ON');
-  L.push('  ' + (focus || 'Not set. Agree a focus with them at the start of the shift.'));
-  L.push('');
-
-  // ---- skills ----
-  var matrix = S.getSheetByName(TAB.SKILLS);
-  var signed = [], progress = [], ready = [];
-  if (matrix && matrix.getLastRow() >= 5) {
-    matrix.getRange(5, 1, matrix.getLastRow() - 4, 20).getValues().forEach(function (r) {
-      if (String(r[0]).trim() !== name) return;
-      var skill = String(r[1] || '');
-      var readiness = String(r[6] || '');
-      var signoff = String(r[7] || '');
-      if (signoff === 'SIGNED OFF') signed.push(skill);
-      else if (readiness === 'READY FOR VALIDATION') ready.push(skill);
-      else if (readiness === 'IN PROGRESS') progress.push(skill);
-    });
-  }
-  L.push('SKILLS');
-  L.push('  Signed off (' + signed.length + ')');
-  if (signed.length) {
-    signed.slice(0, 12).forEach(function (s) { L.push('     ' + s); });
-    if (signed.length > 12) L.push('     and ' + (signed.length - 12) + ' more');
-  } else {
-    L.push('     none yet');
-  }
-  L.push('');
-  L.push('  In progress (' + progress.length + ')');
-  if (progress.length) {
-    progress.slice(0, 12).forEach(function (s) { L.push('     ' + s); });
-    if (progress.length > 12) L.push('     and ' + (progress.length - 12) + ' more');
-  } else {
-    L.push('     none recorded');
-  }
-  if (ready.length) {
-    L.push('');
-    L.push('  Awaiting validation (' + ready.length + ')');
-    ready.forEach(function (s) { L.push('     ' + s); });
-    L.push('     These are with leadership. Do not sign them off yourself.');
-  }
-  L.push('');
-
-  L.push('ON SHIFT');
-  L.push('  Submit a Shift Evaluation before you go home, the same as their');
-  L.push('  usual FTO would. Score what you actually saw. If a skill');
-  L.push('  progressed, log it.');
-  L.push('');
-  L.push('  You are covering, so you are not expected to judge their whole');
-  L.push('  progression. Record the shift you had with them.');
-  L.push('');
-  L.push('  Anything unsafe is a call to Division Chief Stuckey the same');
-  L.push('  shift, then the Urgent Concern form.');
-  L.push('');
-  L.push('No patient names, dates of birth, or addresses. Call numbers only.');
-  L.push('');
-  L.push('This card is an operational snapshot. It does not carry concerns,');
-  L.push('decisions, or another FTO\'s assessment of this trainee.');
-
-  return L.join('\n');
-}
-
-/* ---- ported from zz (effective winner) ---- */
 /** Reads the portal file raw and injects the badge whichever way it can.
  *  Returns an object so the checker can report what happened. */
 function portalHtmlV19_() {
@@ -3629,41 +4456,6 @@ function cleanupReportV19() {
   return msg;
 }
 
-/* ---- ported from zz (effective winner) ---- */
-/** Who is using the sheet, as a name rather than an address. */
-function currentDeciderV19_() {
-  var email = '';
-  try { email = String(Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
-  if (!email) {
-    try { email = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
-  }
-  var map = {
-    'kstuckey@sumtercountysc.gov':  'K. Stuckey',
-    'craighunt913@gmail.com':       'C. Hunt',
-    'leeturnermd@gmail.com':        'Dr. J. Turner',
-    'kehall@sumtercountysc.gov':    'Chief K. Hall',
-    'jparnell@sumtercountysc.gov':  'A/C J. Parnell'
-  };
-  if (map[email]) return map[email];
-  if (!email) return 'unidentified user';
-  return email;
-}
-
-/* ---- ported from zz (effective winner) ---- */
-/** Four numbers instead of a paragraph. */
-function compactEvidenceV19_(trainee, skillId) {
-  var m = ss().getSheetByName(TAB.SKILLS);
-  if (!m || m.getLastRow() < 5) return '';
-  var data = m.getRange(5, 1, m.getLastRow() - 4, 20).getValues();
-  for (var i = 0; i < data.length; i++) {
-    if (String(data[i][0]).trim() !== String(trainee).trim()) continue;
-    if (String(data[i][9]).trim() !== String(skillId).trim()) continue;
-    return (Number(data[i][10]) || 0) + '  /  ' + (Number(data[i][11]) || 0) +
-           '  /  ' + (Number(data[i][12]) || 0) + '  /  ' + (Number(data[i][13]) || 0);
-  }
-  return '';
-}
-
 /* ---- ported from master (effective winner) ---- */
 function evalAlerts(v) {
   var t = v[EV.TRAINEE], fto = v[EV.FTO], dt = v[EV.SHIFTDATE];
@@ -3933,2157 +4725,53 @@ function dailyChecks() {
 
 
 
-/* ================================================================
- * SCEMS v20.5 : the badge, and a masthead on every page
- *
- * The badge is a black shield with a white star of life. It disappears
- * on a dark band, so the masthead is light — cream ground, charcoal
- * type, a gold rule underneath. That is also the right way round for a
- * document people print.
- *
- * Rows 1 to 3 are the masthead on every sheet. Row 4 is the header row,
- * which is where the data has always started, so nothing below moves.
- * ================================================================ */
 
-var BRAND_V20_5 = Object.freeze({
-  INK:      '#1d1b18',   // the shield's black
-  INK_SOFT: '#4a453d',
-  MUTE:     '#6f6859',
-  GOLD:     '#c9a227',   // the county gold, used only as a rule and for accents
-  PAPER:    '#faf8f3',
-  RULE:     '#e0dace',
-  HEAD_BG:  '#1d1b18',   // the column-header band
-  HEAD_FG:  '#f4f1ea',
-  FONT:     'Arial'
-});
 
-/** What each sheet is FOR, in one line, under its title. A masthead that
- *  only repeats the tab name is decoration; this earns its space. */
-function sheetPurposeV20_5_() {
-  var m = {};
-  m['TRAINEES']              = ['Trainees', 'Everyone in training. Tick a box to open someone’s file or release them.'];
-  m['HOME']                  = ['Field Training Programme', 'Where things stand today.'];
-  m[TAB.CONTROL]             = ['Mission Control', 'Programme settings, forms and reference data.'];
-  m[TAB.MASTER]              = ['Trainee Master', 'One row per person: level, phase, who trains them, how they came in.'];
-  m[TAB.SKILLS]              = ['Skills Progress', 'One row per person per skill. The system keeps this current — do not type in it.'];
-  m[TAB.SKILL_VALIDATION]    = ['Sign-off Queue', 'Skills that have met their evidence and are waiting on a decision from you.'];
-  m[TAB.QUEUE]               = ['Decision Queue', 'Advancements, reviews and programme decisions awaiting an outcome.'];
-  m[TAB.AUDIT]               = ['Audit and Exceptions', 'Conditions the system has flagged. Fix the cause, or accept a flag with a reason.'];
-  m[TAB.WEEKLY]              = ['Weekly Status', 'The programme at a glance, rebuilt each Monday.'];
-  m[TAB.FTO_VIEW]            = ['FTO View', 'What each training officer is carrying.'];
-  m[TAB.TRAINEE_VIEW]        = ['Trainee View', 'Each trainee’s own picture of where they are.'];
-  m[TAB.DASH]                = ['Training Division Dashboard', 'Programme-level numbers for the Division Chief.'];
-  m[TAB.MD_VIEW]             = ['Medical Director View', 'Clinical competency and anything needing medical review.'];
-  m[TAB.CATALOG]             = ['Skill Catalog', 'Every skill, who must do it, and how much evidence it takes. Edited by hand.'];
-  m[TAB.FTO_ROSTER]          = ['FTO Roster', 'Training officers, their levels, and what they may sign off.'];
-  m[TAB.TRAINEE_SKILLS]      = ['Trainee Skills', 'One trainee’s skills, for reading and for approving in place.'];
-  m[TAB.SKILL_EVIDENCE]      = ['Skill Evidence Log', 'Every repetition an FTO has logged. Append-only — a permanent record.'];
-  m[TAB.SKILL_SIGNOFF]       = ['Skill Sign-off Log', 'Every sign-off decision ever made. Append-only — a permanent record.'];
-  m[TAB.DECISIONS]           = ['Decisions', 'Programme decisions as filed. Append-only — a permanent record.'];
-  m[TAB.ARCHIVE]             = ['Trainee Archive', 'People who have completed or left the programme.'];
-  m[TAB.EVAL]                = ['Shift Evaluations', 'Every submitted shift evaluation, exactly as the FTO wrote it.'];
-  m[TAB.REFLECT]             = ['Self-Reflections', 'Every trainee reflection, in their own words.'];
-  m[TAB.URGENT]              = ['Urgent Concerns', 'Concerns raised from the field. Read these first.'];
-  m[TAB.ANALYTICS]           = ['Analytics', 'Trends across the programme.'];
-  m[TAB.ENGINE]              = ['Phase and Status Engine', 'Working sheet. The system reads and writes this — do not edit it.'];
-  m[TAB.LOG]                 = ['System Log', 'What the system did, and when. Diagnostic.'];
-  m[TAB.REGISTRY]            = ['Person Registry', 'Identity and role for everyone the system knows.'];
-  m[TAB.LEDGER]              = ['Ingestion Ledger', 'Every form submission received, and what became of it.'];
-  m[TAB.ASSIGNMENTS]         = ['Assignment History', 'Who was assigned to whom, and when.'];
-  m[TAB.ACCESS]              = ['Access Log', 'Every request to act, granted or refused, with the identity behind it.'];
-  return m;
-}
-
-/** The badge as an image blob, or null when it is missing or a stub.
- *  A 1x1 placeholder is treated as absent — better no badge than an
- *  invisible pixel that looks like a bug. */
-function badgeBlobV20_5_() {
-  try {
-    var b64 = String(BADGE_B64 || '');
-    if (b64.length < 1000) return null;          // placeholder, not a real badge
-    return Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', 'scems_badge.png');
-  } catch (e) { return null; }
-}
-
-/** True when BADGE_B64 holds a real image rather than a placeholder. */
-function badgeIsRealV20_5_() {
-  return String(BADGE_B64 || '').length >= 1000;
-}
-
-/** Puts the masthead on one sheet: badge, title, what the sheet is for,
- *  and a gold rule. Formatting only — it writes rows 1 to 3, which have
- *  always been chrome, and never touches row 4 or below. */
-function brandSheetV20_5_(sheetName, title, subtitle, width) {
-  var sh = getSheetOrNullV20_1_(sheetName);
-  if (!sh) return false;
-  var B = BRAND_V20_5;
-  var cols = Math.max(width || sh.getLastColumn(), 6);
-
-  // one badge, not one per run
-  try {
-    (sh.getImages() || []).forEach(function (img) { try { img.remove(); } catch (e) {} });
-  } catch (e) {}
-
-  sh.getRange(1, 1, 3, cols).setBackground(B.PAPER).setFontFamily(B.FONT);
-  try { sh.setRowHeight(1, 54); sh.setRowHeight(2, 20); sh.setRowHeight(3, 6); } catch (e) {}
-
-  sh.getRange(1, 1, 1, cols).clearContent();
-  sh.getRange(2, 1, 1, cols).clearContent();
-
-  sh.getRange(1, 2)
-    .setValue(title)
-    .setFontSize(16).setFontWeight('bold').setFontColor(B.INK)
-    .setVerticalAlignment('bottom').setHorizontalAlignment('left');
-  sh.getRange(2, 2)
-    .setValue(subtitle)
-    .setFontSize(10).setFontColor(B.MUTE)
-    .setVerticalAlignment('top').setHorizontalAlignment('left');
-
-  // county mark, right-aligned, quiet
-  sh.getRange(1, Math.max(cols - 1, 3))
-    .setValue('SUMTER COUNTY EMS')
-    .setFontSize(9).setFontWeight('bold').setFontColor(B.GOLD)
-    .setHorizontalAlignment('right').setVerticalAlignment('bottom');
-  sh.getRange(2, Math.max(cols - 1, 3))
-    .setValue(String(CONFIG.POLICY_VERSION || ''))
-    .setFontSize(8).setFontColor(B.MUTE)
-    .setHorizontalAlignment('right').setVerticalAlignment('top');
-
-  // the gold rule
-  sh.getRange(3, 1, 1, cols).setBackground(B.GOLD);
-
-  // the badge sits over column A, clear of the text in column B
-  var blob = badgeBlobV20_5_();
-  if (blob) {
-    try { sh.insertImage(blob, 1, 1, 6, 5).setWidth(43).setHeight(47); } catch (e) {}
-    try { if (sh.getColumnWidth(1) < 56) sh.setColumnWidth(1, 56); } catch (e) {}
-  }
-
-  // the column-header band, so every sheet reads the same way
-  try {
-    sh.getRange(4, 1, 1, cols)
-      .setBackground(B.HEAD_BG).setFontColor(B.HEAD_FG)
-      .setFontWeight('bold').setFontSize(10)
-      .setVerticalAlignment('middle').setWrap(true);
-    sh.setRowHeight(4, 38);
-    sh.setFrozenRows(4);
-  } catch (e) {}
-  return true;
-}
-
-/** Puts the masthead on every sheet that has one defined. */
-function brandAllSheetsV20_5() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  if (!badgeIsRealV20_5_()) {
-    var warn = 'The badge image is missing from this build.\n\n' +
-      'BADGE_B64 holds a placeholder rather than the county shield, so the ' +
-      'masthead would go on without it. Everything else still applies.\n\n' +
-      'Recover the real badge from an older copy of the script before running ' +
-      'this, or accept a masthead with no shield.';
-    systemLog_('WARN', 'BADGE MISSING', 'BADGE_B64 is a placeholder');
-    Logger.log(warn);
-    try { SpreadsheetApp.getUi().alert(warn); } catch (e) {}
-  }
-
-  var purpose = sheetPurposeV20_5_();
-  var done = [], skipped = [];
-  ss().getSheets().forEach(function (sh) {
-    var name = sh.getName();
-    var p = purpose[name];
-    if (!p) { skipped.push(name); return; }
-    var width = name === 'TRAINEES' ? CONSOLE_HEADERS_V20_3.length : sh.getLastColumn();
-    if (brandSheetV20_5_(name, p[0], p[1], width)) done.push(name);
-  });
-
-  var msg = 'MASTHEAD APPLIED\n\n' +
-    done.length + ' sheet(s) branded:\n  ' + done.join('\n  ') +
-    (skipped.length ? '\n\nNo masthead defined for (left alone):\n  ' + skipped.join('\n  ') : '') +
-    '\n\nEach page now carries the county shield, its name, and one line saying\n' +
-    'what it is for. Rows 1 to 3 only — no data moved.' +
-    (badgeIsRealV20_5_() ? '' : '\n\nNOTE: the shield is missing from this build, see the warning above.');
-  systemLog_('INFO', 'MASTHEAD APPLIED', done.length + ' sheet(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** Everything, end to end: fix what is wrong, say it in English, put the
- *  badge on it, and tidy up. This is the one to run. */
-function MAKE_IT_PROFESSIONAL() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SCEMS ' + SCEMS_VERSION + ' — full pass', ''];
-  function step(n, what, fn) {
-    try {
-      var r = fn();
-      L.push(n + '. ' + what + ' : OK');
-      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
-        if (x.trim()) L.push('      ' + x.trim().slice(0, 105)); });
-    } catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180)); }
-  }
-  step(1, 'Name the unnamed column on the decision queue', repairDecisionQueueHeaderV20_4);
-  step(2, 'Check entry profiles agree with their key', auditEntryProfilesV20_4);
-  step(3, 'Lift the legend out of the data table', tidyEntryProfileLegendV20_4);
-  step(4, 'Rewrite headers in plain English', renameHeadersV20_4);
-  step(5, 'Put thresholds beside the counts', rewriteEvidenceSummariesV20_4);
-  step(6, 'Build the TRAINEES console', buildTraineeConsoleV20_3);
-  step(7, 'Widen what holds words', makeSheetsReadableV20_3);
-  step(8, 'Tuck the machine columns away', groupPlumbingColumnsV20_4);
-  step(9, 'Put the badge and a masthead on every page', brandAllSheetsV20_5);
-  step(10, 'Order the tabs and hide the machinery', organizeTabsV20_2);
-  L.push('');
-  L.push('Open TRAINEES. That is the page you work from.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'FULL PASS RUN', SCEMS_VERSION);
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ================================================================
- * SCEMS v20.4 : plain English, correct headers, plumbing out of sight
- *
- * The problem this solves, in the order it hurts:
- *
- *   1. 12 DECISION QUEUE's header row is one column SHORT of its data,
- *      so every label from column D rightward names the wrong column.
- *   2. 01 TRAINEE MASTER carries an ENTRY PROFILE KEY legend inside the
- *      data table, and on at least one row it contradicts the code
- *      beside it.
- *   3. Header rows cannot decide between Title Case and SHOUTING CASE.
- *   4. Up to 44% of the columns on a record sheet are machine plumbing.
- *   5. Raw counters sit far from the thresholds that give them meaning.
- *   6. Action checkboxes are interleaved with data and IDs.
- *
- * The thing that made this hard: 235 places in this file look a column
- * up BY ITS HEADER TEXT. Renaming a header on the sheet would break all
- * of them at once. So the rename is made safe first, by teaching the
- * table reader that a display label and a canonical name are the same
- * column. Nothing downstream changes.
- * ================================================================ */
-
-/** Display label -> canonical header name, PER SHEET.
- *
- *  Derived from the rename plan below, reversed, so there is exactly one
- *  place that says what a column is called. It has to be per sheet: the
- *  evidence log has its own PHASE column that is not the master's CURRENT
- *  PHASE, and the access log has a REASON that is not a queue RATIONALE.
- *  A global alias table would have quietly wired those together.
- *
- *  This is what makes the rename safe. readTableV20_1_ registers both the
- *  literal header and its canonical name, so all 235 lookups by canonical
- *  name keep resolving after a column is relabelled.
- */
-var HEADER_ALIAS_CACHE_V20_4 = null;
-
-function headerAliasesForV20_4_(sheetName) {
-  if (!HEADER_ALIAS_CACHE_V20_4) {
-    HEADER_ALIAS_CACHE_V20_4 = {};
-    var plan = headerRenamesV20_4_();
-    Object.keys(plan).forEach(function (sheet) {
-      var back = {};
-      Object.keys(plan[sheet]).forEach(function (canon) {
-        back[String(plan[sheet][canon]).toUpperCase().replace(/\s+/g, ' ')] = canon;
-      });
-      HEADER_ALIAS_CACHE_V20_4[sheet] = back;
-    });
-  }
-  return HEADER_ALIAS_CACHE_V20_4[sheetName] || {};
-}
-
-/** The canonical name for a header on a given sheet, or '' when it is
- *  already canonical or unknown. Case and spacing insensitive. */
-function canonicalHeaderV20_4_(header, sheetName) {
-  var k = String(header || '').trim().toUpperCase().replace(/\s+/g, ' ');
-  if (!k) return '';
-  return headerAliasesForV20_4_(sheetName)[k] || '';
-}
-
-/* ---------------------------------------------------------------- *
- *  The renames, per sheet
- * ---------------------------------------------------------------- */
-
-/** What each sheet's headers should say. Canonical name on the left,
- *  what a person reads on the right. A sheet not listed is left alone. */
-function headerRenamesV20_4_() {
-  var m = {};
-  m[TAB.MASTER] = {
-    'SET STATUS': 'Program status',
-    'PHASE START DATE': 'Phase started',
-    'NRT DATE': 'Not-responding-to-training date',
-    'CLEARANCE DATE': 'Cleared date',
-    'ENTRY PROFILE': 'How they came in',
-    'ASSIGNED FTO': 'Training officer',
-    'START DATE': 'Started',
-    'TRAINEE EMAIL': 'Email address'
-  };
-  m[TAB.SKILLS] = {
-    'READINESS': 'Where this skill stands',
-    'SIGN-OFF': 'Signed off?',
-    'SUCCESSFUL REPS': 'Successful',
-    'INDEPENDENT REPS': 'Independent',
-    'DISTINCT DATES': 'Separate days',
-    'DISTINCT FTOS': 'Different FTOs',
-    'DECISION / EVIDENCE NOTE': 'Note',
-    'LAST DATE': 'Last logged',
-    'LAST OUTCOME': 'How it went',
-    'LAST CONTEXT': 'Where it happened'
-  };
-  m[TAB.SKILL_VALIDATION] = {
-    'EVIDENCE SUMMARY': 'Evidence so far',
-    'RATIONALE': 'Reason for the decision',
-    'READY DATE': 'Ready since',
-    'LAST EVIDENCE DATE': 'Last evidence'
-  };
-  m[TAB.SKILL_EVIDENCE] = {
-    'VALIDATION RESULT': 'Accepted?',
-    'EVIDENCE NOTE': 'What the FTO wrote',
-    'CALL / SCENARIO REF': 'Call number',
-    'PROMPTING': 'Prompting needed',
-    'LEVEL AT EVENT': 'Level then'
-  };
-  m[TAB.SKILL_SIGNOFF] = {
-    'RATIONALE': 'Reason given',
-    'STANDARD / CATALOG VERSION': 'Standard used'
-  };
-  m[TAB.QUEUE] = {
-    'FILED': 'Raised',
-    'ITEM': 'What it is',
-    'DECISION DUE': 'Due',
-    'DATED': 'Decided on'
-  };
-  return m;
-}
-
-/** Columns nobody reading the sheet ever needs: IDs, provenance,
- *  writer stamps. Correct, necessary, and not for human eyes. */
-function plumbingColumnsV20_4_() {
-  var m = {};
-  m[TAB.SKILL_EVIDENCE] = ['EVENT ID', 'SOURCE FORM', 'SOURCE ROW', 'SOURCE FORM ID',
-                           'SOURCE RESPONSE ID', 'WRITER VERSION', 'PERSON ID', 'ASSIGNMENT ID'];
-  m[TAB.SKILL_SIGNOFF] = ['DECISION ID', 'SOURCE QUEUE ROW', 'STANDARD / CATALOG VERSION',
-                          'REQUEST ID', 'SUPERSEDES', 'DECIDED BY PERSON ID', 'WRITER VERSION'];
-  m[TAB.SKILL_VALIDATION] = ['REQUEST ID', 'SKILL ID'];
-  m[TAB.SKILLS] = ['SKILL ID', 'SUCCESSFUL REPS', 'INDEPENDENT REPS',
-                   'DISTINCT DATES', 'DISTINCT FTOS'];
-  m[TAB.MASTER] = ['ENTRY PROFILE KEY'];
-  m[TAB.LEDGER] = ['LEDGER KEY', 'FORM ID', 'RESPONSE ID', 'WRITER VERSION'];
-  m[TAB.REGISTRY] = ['PERSON ID'];
-  return m;
-}
-
-/* ---------------------------------------------------------------- *
- *  1. The broken header row
- * ---------------------------------------------------------------- */
-
-/** 12 DECISION QUEUE's header names 8 columns; its rows carry 9. The
- *  owner column — who the item sits with — was never given a name, so
- *  DECISION DUE ended up over a person's name and every label after it
- *  described its neighbour.
- *
- *  Inserts the missing name. Touches the header row only; not one data
- *  cell moves, because the data was never wrong — only its labels. */
-function repairDecisionQueueHeaderV20_4() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var t = readTableV20_1_(TAB.QUEUE, 4);
-  if (!t.ok) return 'Tab "' + TAB.QUEUE + '" not found.';
-
-  var named = t.headers.filter(function (h) { return String(h || '').trim(); }).length;
-  var widest = 0;
-  t.rows.forEach(function (r) {
-    var last = 0;
-    r.forEach(function (v, i) { if (v !== '' && v != null) last = i + 1; });
-    if (last > widest) widest = last;
-  });
-
-  if (widest <= named) {
-    return 'No repair needed: ' + named + ' header(s) for ' + widest + ' column(s) of data.';
-  }
-  if (t.col['OWNER'] !== undefined) {
-    return 'Already repaired — an OWNER column is named.';
-  }
-
-  // The unnamed column is the one after ITEM. Shift the labels right by one
-  // and give it its name.
-  var idxItem = t.col['ITEM'];
-  if (idxItem === undefined) {
-    return 'Refusing to repair: no ITEM column to anchor on. Header row needs a look by hand.';
-  }
-  var fixed = t.headers.slice(0, idxItem + 1)
-    .concat(['OWNER'])
-    .concat(t.headers.slice(idxItem + 1));
-  fixed = fixed.slice(0, Math.max(widest, fixed.length));
-  while (fixed.length < widest) fixed.push('');
-
-  t.sheet.getRange(4, 1, 1, fixed.length).setValues([fixed]);
-  var msg = 'DECISION QUEUE HEADER REPAIRED\n\n' +
-    'Was : ' + t.headers.filter(String).join(' | ') + '\n\n' +
-    'Now : ' + fixed.filter(String).join(' | ') + '\n\n' +
-    'An unnamed column sat after ITEM — the person the item is with. Every\n' +
-    'label to its right was describing its neighbour. Only the header row\n' +
-    'changed; no data moved, because the data was never wrong.';
-  systemLog_('WARN', 'DECISION QUEUE HEADER REPAIRED',
-    named + ' header(s) -> ' + fixed.filter(String).length + ' for ' + widest + ' data column(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  2. The entry-profile contradiction
- * ---------------------------------------------------------------- */
-
-/** ENTRY PROFILE holds a bare letter; ENTRY PROFILE KEY holds a legend
- *  like "C : Experienced transfer" — filled in on some rows, blank on
- *  others, and on at least one row naming a different letter than the
- *  code beside it.
- *
- *  This REPORTS rather than resolves. Which of the two is right is a
- *  fact about a person's training history, and v20.2's rule holds: the
- *  system does not guess at a record. It names every disagreement, and
- *  writes the legend once, properly, above the table. */
-function auditEntryProfilesV20_4() {
-  var t = readTableV20_1_(TAB.MASTER, 4);
-  if (!t.ok) return 'Trainee master not found.';
-  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'], cName = t.col['TRAINEE'];
-  if (cCode === undefined || cName === undefined) return 'No ENTRY PROFILE column to audit.';
-
-  var clash = [], missing = [], legend = {};
-  t.rows.forEach(function (r, i) {
-    var name = cleanNameV20_1_(r[cName]);
-    if (!name) return;
-    var code = String(r[cCode] || '').trim().toUpperCase();
-    var key = cKey === undefined ? '' : String(r[cKey] || '').trim();
-    if (key) {
-      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
-      if (m) legend[m[1].toUpperCase()] = m[2].trim();
-    }
-    if (!code) { missing.push(name + ' (row ' + (t.firstDataRow + i) + ') — no entry profile'); return; }
-    if (key) {
-      var keyLetter = (key.match(/^([A-Z])/i) || [])[1];
-      if (keyLetter && keyLetter.toUpperCase() !== code) {
-        clash.push(name + ' (row ' + (t.firstDataRow + i) + ') — profile says "' + code +
-                   '" but the key beside it says "' + key + '"');
-      }
-    }
-  });
-
-  var L = ['ENTRY PROFILE AUDIT — read only', ''];
-  if (clash.length) {
-    L.push('DISAGREEMENTS — these need your decision, not mine:');
-    clash.forEach(function (x) { L.push('  ' + x); });
-    L.push('');
-    L.push('Which is correct is a fact about that person\'s history. Fix the one');
-    L.push('that is wrong on 01 TRAINEE MASTER, then run this again.');
-    L.push('');
-  } else {
-    L.push('No profile/key disagreements.');
-    L.push('');
-  }
-  if (missing.length) {
-    L.push('NO ENTRY PROFILE SET:');
-    missing.forEach(function (x) { L.push('  ' + x); });
-    L.push('');
-  }
-  var letters = Object.keys(legend).sort();
-  if (letters.length) {
-    L.push('The legend, as found in the data:');
-    letters.forEach(function (k) { L.push('  ' + k + '  =  ' + legend[k]); });
-    L.push('');
-    L.push('Run tidyEntryProfileLegendV20_4() to move this out of the data table');
-    L.push('and into a note on the column heading, where a legend belongs.');
-  }
-  var msg = L.join('\n');
-  systemLog_(clash.length ? 'WARN' : 'INFO', 'ENTRY PROFILE AUDIT',
-    clash.length + ' disagreement(s), ' + missing.length + ' unset');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** Lifts the entry-profile legend out of the data table and attaches it
- *  to the column heading as a note, then hides the now-redundant column.
- *  The column keeps its contents — nothing is deleted. */
-function tidyEntryProfileLegendV20_4() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var t = readTableV20_1_(TAB.MASTER, 4);
-  if (!t.ok) return 'Trainee master not found.';
-  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'];
-  if (cCode === undefined) return 'No ENTRY PROFILE column.';
-
-  var legend = {};
-  if (cKey !== undefined) {
-    t.rows.forEach(function (r) {
-      var key = String(r[cKey] || '').trim();
-      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
-      if (m) legend[m[1].toUpperCase()] = m[2].trim();
-    });
-  }
-  var letters = Object.keys(legend).sort();
-  if (!letters.length) return 'No legend entries found to lift.';
-
-  var note = 'How they came in\n\n' +
-    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
-    '\n\nThis legend used to live in a column of its own inside the data.';
-  t.sheet.getRange(4, cCode + 1).setNote(note);
-  systemLog_('INFO', 'ENTRY PROFILE LEGEND LIFTED', letters.join(', '));
-  var msg = 'The entry-profile legend is now a note on the column heading:\n\n' +
-    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
-    '\n\nHover the heading to read it. The old ENTRY PROFILE KEY column keeps\n' +
-    'its contents and is grouped away with the other machinery — nothing was\n' +
-    'deleted.';
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  3. Plain English headers
- * ---------------------------------------------------------------- */
-
-/** Rewrites header text into words, consistently cased. Safe because
- *  headerAliasesForV20_4_ teaches the table reader that the new label and
- *  the canonical name are the same column. */
-function renameHeadersV20_4() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var plan = headerRenamesV20_4_();
-  var out = [], total = 0;
-  Object.keys(plan).forEach(function (sheetName) {
-    var t = readTableV20_1_(sheetName, 4);
-    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
-    var renames = plan[sheetName];
-    var headers = t.headers.slice();
-    var n = 0;
-    headers.forEach(function (h, i) {
-      var canon = String(h || '').trim().toUpperCase();
-      var already = canonicalHeaderV20_4_(h, sheetName);
-      var key = already || canon;
-      if (renames[key] && headers[i] !== renames[key]) { headers[i] = renames[key]; n++; }
-    });
-    if (n) {
-      t.sheet.getRange(4, 1, 1, headers.length).setValues([headers]);
-      total += n;
-    }
-    out.push('  ' + sheetName + ' : ' + n + ' header(s) renamed');
-  });
-
-  // the stray value that leaked into the matrix header row
-  var m = readTableV20_1_(TAB.SKILLS, 4);
-  if (m.ok) {
-    var strayAt = -1;
-    m.headers.forEach(function (h, i) {
-      if (i >= 20 && String(h || '').trim()) strayAt = i;
-    });
-    if (strayAt >= 0) {
-      m.sheet.getRange(4, strayAt + 1).clearContent();
-      out.push('  ' + TAB.SKILLS + ' : cleared a stray value out of the header row (column ' +
-               (strayAt + 1) + ', "' + m.headers[strayAt] + '")');
-    }
-  }
-
-  var msg = 'HEADERS REWRITTEN IN PLAIN ENGLISH\n\n' + out.join('\n') +
-    '\n\n' + total + ' header(s) changed in total.\n\n' +
-    'Nothing behind the scenes changed: every one of the 235 places this\n' +
-    'system looks a column up by name still finds it, because the old name\n' +
-    'and the new label are registered as the same column.';
-  systemLog_('WARN', 'HEADERS RENAMED', total + ' header(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  4. Plumbing out of sight
- * ---------------------------------------------------------------- */
-
-/** Groups the machine columns and collapses the group, so they are one
- *  click away instead of in your eyeline. Nothing is deleted, nothing
- *  moves, and every one of them still receives data. */
-function groupPlumbingColumnsV20_4() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var plan = plumbingColumnsV20_4_();
-  var out = [];
-  Object.keys(plan).forEach(function (sheetName) {
-    var t = readTableV20_1_(sheetName, 4);
-    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
-    var hidden = 0;
-    plan[sheetName].forEach(function (canon) {
-      var i = t.col[canon];
-      if (i === undefined) return;
-      try { t.sheet.hideColumns(i + 1); hidden++; } catch (e) {}
-    });
-    out.push('  ' + sheetName + ' : ' + hidden + ' machine column(s) tucked away');
-  });
-  var msg = 'MACHINE COLUMNS HIDDEN\n\n' + out.join('\n') +
-    '\n\nIDs, provenance and writer stamps are still there and still being\n' +
-    'written — they are just not in front of you any more. Select the\n' +
-    'columns either side and choose Unhide to see them again.';
-  systemLog_('INFO', 'PLUMBING COLUMNS HIDDEN', out.length + ' sheet(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** Puts every hidden column back. */
-function showAllColumnsV20_4() {
-  var plan = plumbingColumnsV20_4_();
-  var n = 0;
-  Object.keys(plan).forEach(function (sheetName) {
-    var sh = getSheetOrNullV20_1_(sheetName);
-    if (!sh) return;
-    try { sh.showColumns(1, sh.getMaxColumns()); n++; } catch (e) {}
-  });
-  var msg = 'Every column is visible again on ' + n + ' sheet(s).';
-  systemLog_('INFO', 'ALL COLUMNS SHOWN', n + ' sheet(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  5. Counters that mean something where they sit
- * ---------------------------------------------------------------- */
-
-/** "5 / 3 / 3 / 2" against thresholds on a different sheet is not
- *  information. This turns the queue's evidence summary into a sentence
- *  that carries its own thresholds. */
-function evidenceSentenceV20_4_(counts, catalogEntry) {
-  var c = catalogEntry || {};
-  function part(have, need, word) {
-    have = Number(have) || 0;
-    need = Number(need) || 0;
-    if (!need) return have + ' ' + word;
-    return have + ' of ' + need + ' ' + word + (have >= need ? '' : '  (short)');
-  }
-  return [
-    part(counts.successful, c.minSuccessful, 'successful'),
-    part(counts.independent, c.minIndependent, 'independent'),
-    part(counts.dates, c.minDates, 'separate days'),
-    part(counts.ftos, c.minFtos, 'different FTOs')
-  ].join('   ·   ');
-}
-
-/** Rewrites the evidence summary on every OPEN queue row into that
- *  sentence. Reads the catalog for the thresholds. Writes one column. */
-function rewriteEvidenceSummariesV20_4() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var t = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
-  if (!t.ok) return 'Queue not found.';
-  var cSum = t.col['EVIDENCE SUMMARY'], cSkill = t.col['SKILL ID'], cTrainee = t.col['TRAINEE'];
-  if (cSum === undefined || cSkill === undefined) return 'Queue is missing its evidence columns.';
-
-  var byId = {};
-  try { byId = catalogMapsV19_(true).byId || {}; } catch (e) {}
-
-  var m = readTableV20_1_(TAB.SKILLS, 4);
-  var counts = {};
-  if (m.ok && m.col['TRAINEE'] !== undefined) {
-    m.rows.forEach(function (r) {
-      var k = normalizeNameV20_1_(cleanNameV20_1_(r[m.col['TRAINEE']])) + '||' +
-              String(r[m.col['SKILL ID']] || '').trim();
-      counts[k] = {
-        successful: r[m.col['SUCCESSFUL REPS']],
-        independent: r[m.col['INDEPENDENT REPS']],
-        dates: r[m.col['DISTINCT DATES']],
-        ftos: r[m.col['DISTINCT FTOS']]
-      };
-    });
-  }
-
-  var n = 0;
-  t.rows.forEach(function (r, i) {
-    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-    var skillId = String(r[cSkill] || '').trim();
-    var key = normalizeNameV20_1_(cleanNameV20_1_(r[cTrainee])) + '||' + skillId;
-    var c = counts[key];
-    if (!c) return;
-    t.sheet.getRange(t.firstDataRow + i, cSum + 1)
-      .setValue(evidenceSentenceV20_4_(c, byId[skillId]));
-    n++;
-  });
-  var msg = n + ' evidence summary(ies) rewritten as "3 of 5 successful · 2 of 2 independent · …"\n' +
-    'so the thresholds are beside the counts instead of on another sheet.';
-  systemLog_('INFO', 'EVIDENCE SUMMARIES REWRITTEN', n + ' row(s)');
-  Logger.log(msg);
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Everything, in the right order
- * ---------------------------------------------------------------- */
-
-/** Fixes what is wrong, then makes the rest readable. Correctness first:
- *  a mislabelled column is a different kind of problem from an ugly one. */
-function POLISH_SHEETS() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SHEET POLISH — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try {
-      var r = fn();
-      L.push(n + '. ' + what + ' : OK');
-      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
-        if (x.trim()) L.push('      ' + x.trim().slice(0, 110)); });
-    } catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  L.push('CORRECTNESS');
-  step(1, 'Name the unnamed column on the decision queue', repairDecisionQueueHeaderV20_4);
-  step(2, 'Check entry profiles agree with their key', auditEntryProfilesV20_4);
-  step(3, 'Lift the legend out of the data table', tidyEntryProfileLegendV20_4);
-  L.push('');
-  L.push('READABILITY');
-  step(4, 'Rewrite headers in plain English', renameHeadersV20_4);
-  step(5, 'Put thresholds beside the counts', rewriteEvidenceSummariesV20_4);
-  step(6, 'Tuck the machine columns away', groupPlumbingColumnsV20_4);
-  step(7, 'Widen what holds words, narrow what holds dates', makeSheetsReadableV20_3);
-  L.push('');
-  L.push('If step 2 found disagreements, they are yours to settle — which entry');
-  L.push('profile is right is a fact about that person, and this will not guess.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ================================================================
- * SCEMS v20.3 : the readable release
- *
- *   "if im the division chief and i open the spreadsheet i should be
- *    able to see any submissions, where the trainee is at, and have a
- *    simple button to press on each trainee ... once someone is ready
- *    to be released this should be a simple check box ... it should
- *    take all the information gathered on that trainee, create a file
- *    of everything done from day 1 until release, and i should be able
- *    to get that information any time i like ... i want to view any
- *    comments in their entirety, not having to constantly wrap the
- *    text because the cells aren't big enough."
- *
- * Three things, and nothing else:
- *   1. TRAINEES  — one row per person, plain words, two checkboxes
- *   2. the file  — everything from day one, as a document you can keep
- *   3. readable  — narrative columns wide enough to actually read
- * ================================================================ */
-
-var TAB_CONSOLE_V20_3 = 'TRAINEES';
-
-var CONSOLE_HEADERS_V20_3 = [
-  'Trainee', 'Level', 'Phase', 'Weeks in phase', 'Last evaluation',
-  'Evaluations', 'Skills signed off', 'Waiting on you', 'Concerns',
-  'Open file', 'Release', 'Their file'
-];
-
-/* Column numbers on TRAINEES, so the edit handler and the builder agree. */
-var CONSOLE_COL_V20_3 = Object.freeze({
-  NAME: 1, LEVEL: 2, PHASE: 3, WEEKS: 4, LAST_EVAL: 5, EVALS: 6,
-  SIGNED: 7, WAITING: 8, CONCERNS: 9, OPEN: 10, RELEASE: 11, FILE: 12
-});
-var CONSOLE_FIRST_ROW_V20_3 = 3;
-
-/* ---------------------------------------------------------------- *
- *  1. The console
- * ---------------------------------------------------------------- */
-
-
-/** Opens the TRAINEES tab, building it first if it is not there yet. */
-function openTraineeConsoleV20_3() {
-  var S = ss();
-  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
-  if (!sh) { buildTraineeConsoleV20_3(); sh = S.getSheetByName(TAB_CONSOLE_V20_3); }
-  if (sh) {
-    try { if (sh.isSheetHidden()) sh.showSheet(); } catch (e) {}
-    S.setActiveSheet(sh);
-    try { S.moveActiveSheet(1); } catch (e2) {}
-  }
-  return 'TRAINEES is open.';
-}
-
-/** Builds or refreshes TRAINEES: one row per person, in words rather
- *  than codes. Reads everything, decides nothing, writes no record. */
-function buildTraineeConsoleV20_3() {
-  var S = ss();
-  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
-  if (!sh) sh = S.insertSheet(TAB_CONSOLE_V20_3, 0);
-
-  var people = masterTraineeRowsV20_1_().filter(function (p) { return !p.closed; });
-  var closed = masterTraineeRowsV20_1_().filter(function (p) { return p.closed; });
-
-  // ---- gather, once, rather than per person ----
-  var evalRows = [], reflectRows = [], urgentRows = [];
-  try { var e = readTableV20_1_(TAB.EVAL, 4); if (e.ok) evalRows = e.rows.map(function (r) {
-    return { when: parseDateSafeV20_1_(r[0]), trainee: cleanNameV20_1_(r[2]) }; }); } catch (e1) {}
-  try { var u = readTableV20_1_(TAB.URGENT, 4); if (u.ok) urgentRows = u.rows.map(function (r) {
-    return { trainee: cleanNameV20_1_(r[3]) }; }); } catch (e2) {}
-
-  var matrix = readTableV20_1_(TAB.SKILLS, 4);
-  var signedBy = {}, applicableBy = {}, readyBy = {};
-  if (matrix.ok && matrix.col['TRAINEE'] !== undefined) {
-    matrix.rows.forEach(function (r) {
-      var who = normalizeNameV20_1_(cleanNameV20_1_(r[matrix.col['TRAINEE']]));
-      if (!who) return;
-      applicableBy[who] = (applicableBy[who] || 0) + 1;
-      var readiness = String(r[matrix.col['READINESS']] || '').trim();
-      if (readiness === 'SIGNED OFF' || String(r[matrix.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF') {
-        signedBy[who] = (signedBy[who] || 0) + 1;
-      }
-      if (readiness === 'READY FOR VALIDATION') readyBy[who] = (readyBy[who] || 0) + 1;
-    });
-  }
-
-  var waitingBy = {};
-  var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
-  if (q.ok && q.col['TRAINEE'] !== undefined) {
-    q.rows.forEach(function (r) {
-      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-      var who = normalizeNameV20_1_(cleanNameV20_1_(r[q.col['TRAINEE']]));
-      if (who) waitingBy[who] = (waitingBy[who] || 0) + 1;
-    });
-  }
-
-  function countFor(list, norm) {
-    var n = 0;
-    list.forEach(function (x) { if (normalizeNameV20_1_(x.trainee) === norm) n++; });
-    return n;
-  }
-  function lastEvalFor(norm) {
-    var latest = null;
-    evalRows.forEach(function (x) {
-      if (normalizeNameV20_1_(x.trainee) !== norm) return;
-      if (x.when && (!latest || x.when.getTime() > latest.getTime())) latest = x.when;
-    });
-    return latest;
-  }
-
-  var fileLinks = consoleFileLinksV20_3_(sh);   // keep any links already on the sheet
-
-  var body = people.map(function (p) {
-    var norm = p.norm;
-    var last = lastEvalFor(norm);
-    var days = last ? Math.floor((new Date() - last) / 86400000) : null;
-    var weeks = p.phaseStart ? Math.max(0, Math.floor((new Date() - p.phaseStart) / (7 * 86400000))) : '';
-    var waiting = waitingBy[norm] || 0;
-    var ready = readyBy[norm] || 0;
-    var concerns = countFor(urgentRows, norm);
-    return [
-      p.name,
-      p.level || '',
-      p.phase || '',
-      weeks === '' ? '' : weeks,
-      last ? (days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago') : 'never',
-      countFor(evalRows, norm),
-      (signedBy[norm] || 0) + ' of ' + (applicableBy[norm] || 0),
-      waiting ? waiting + ' waiting' : (ready ? ready + ' nearly ready' : ''),
-      concerns ? concerns : '',
-      false,
-      false,
-      fileLinks[norm] || ''
-    ];
-  });
-
-  // ---- write ----
-  var width = CONSOLE_HEADERS_V20_3.length;
-  ensureSheetCapacityV19_(sh, Math.max(body.length + CONSOLE_FIRST_ROW_V20_3 + 10, 60), width + 2);
-  sh.getRange(1, 1, sh.getMaxRows(), width).clearContent().clearDataValidations();
-
-  sh.getRange(1, 1).setValue('TRAINEES')
-    .setFontSize(20).setFontWeight('bold').setFontColor('#1d1b18');
-  sh.getRange(1, 3).setValue(people.length + ' active   ·   ' + closed.length +
-    ' released   ·   updated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE d MMM, h:mm a'))
-    .setFontColor('#6f6859').setFontSize(10);
-
-  sh.getRange(2, 1, 1, width).setValues([CONSOLE_HEADERS_V20_3])
-    .setFontWeight('bold').setFontSize(11)
-    .setBackground('#1d1b18').setFontColor('#f4f1ea')
-    .setVerticalAlignment('middle').setWrap(true);
-
-  if (body.length) {
-    sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, body.length, width).setValues(body);
-    sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.OPEN, body.length, 2)
-      .insertCheckboxes();
-  }
-
-  applyConsoleLookV20_3_(sh, body.length);
-  systemLog_('INFO', 'TRAINEE CONSOLE BUILT', people.length + ' active trainee(s)');
-  return 'TRAINEES refreshed: ' + people.length + ' active, ' + closed.length + ' released.';
-}
-
-/** Existing file links, keyed by normalized name, so a rebuild never
- *  loses a document that was already generated. */
-function consoleFileLinksV20_3_(sh) {
-  var out = {};
-  try {
-    if (sh.getLastRow() < CONSOLE_FIRST_ROW_V20_3) return out;
-    var n = sh.getLastRow() - CONSOLE_FIRST_ROW_V20_3 + 1;
-    var names = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.NAME, n, 1).getValues();
-    var links = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.FILE, n, 1).getValues();
-    for (var i = 0; i < n; i++) {
-      var nm = normalizeNameV20_1_(cleanNameV20_1_(names[i][0]));
-      if (nm && links[i][0]) out[nm] = links[i][0];
-    }
-  } catch (e) {}
-  return out;
-}
-
-/** Readable by default: room for words, no squinting. */
-function applyConsoleLookV20_3_(sh, rows) {
-  var W = { 1: 210, 2: 110, 3: 120, 4: 110, 5: 130, 6: 100, 7: 140, 8: 150, 9: 90, 10: 90, 11: 90, 12: 260 };
-  Object.keys(W).forEach(function (c) { try { sh.setColumnWidth(Number(c), W[c]); } catch (e) {} });
-  try { sh.setFrozenRows(2); sh.setFrozenColumns(1); } catch (e) {}
-  try { sh.setRowHeight(1, 40); sh.setRowHeight(2, 38); } catch (e) {}
-  if (rows > 0) {
-    var r = sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, rows, CONSOLE_HEADERS_V20_3.length);
-    r.setVerticalAlignment('middle').setWrap(true).setFontSize(11);
-    for (var i = 0; i < rows; i++) {
-      try { sh.setRowHeight(CONSOLE_FIRST_ROW_V20_3 + i, 34); } catch (e) {}
-    }
-    sh.setConditionalFormatRules([
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenTextContains('waiting')
-        .setBackground('#fdf3d6').setFontColor('#7a5c00').setBold(true)
-        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.WAITING, rows, 1)]).build(),
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(0)
-        .setBackground('#fbeeec').setFontColor('#a62a21').setBold(true)
-        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.CONCERNS, rows, 1)]).build(),
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenTextContains('never')
-        .setBackground('#fbeeec').setFontColor('#a62a21')
-        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.LAST_EVAL, rows, 1)]).build()
-    ]);
-  }
-  try { sh.getRange(1, 1, sh.getMaxRows(), 40).setFontFamily('Arial'); } catch (e) {}
-}
-
-/* ---------------------------------------------------------------- *
- *  2. The file
- * ---------------------------------------------------------------- */
-
-/** Everything recorded about one trainee, from the first day to now, as
- *  a document. Narratives appear in full — this is the thing the
- *  spreadsheet cannot show you.
- *
- *  Read-only with respect to the record: it copies, it never changes. */
-function buildTraineeFileV20_3(traineeName) {
-  var name = cleanNameV20_1_(traineeName);
-  if (!name) throw new Error('No trainee name given.');
-  var norm = normalizeNameV20_1_(name);
-  var resolved = resolveTraineeV20_1_(name);
-  var rec = resolved.record;
-
-  var doc = DocumentApp.create('SCEMS Training File — ' + name + ' — ' +
-    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'));
-  var b = doc.getBody();
-  b.setMarginTop(48).setMarginBottom(48).setMarginLeft(56).setMarginRight(56);
-
-  function H1(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING1); }
-  function H2(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING2); }
-  function P(t) { return b.appendParagraph(String(t == null ? '' : t)); }
-  function small(t) { P(t).setFontSize(9).setForegroundColor('#666666'); }
-  function kv(k, v) { P(k + ':  ' + (v === '' || v == null ? '—' : v)); }
-  function rule() { b.appendHorizontalRule(); }
-
-  // ---- cover ----
-  b.appendParagraph('SUMTER COUNTY EMS').setFontSize(10).setBold(true).setForegroundColor('#a8811a');
-  b.appendParagraph('Field Training Record').setHeading(DocumentApp.ParagraphHeading.TITLE);
-  b.appendParagraph(name).setFontSize(20).setBold(true);
-  small('Generated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEEE d MMMM yyyy, h:mm a') +
-        '  ·  ' + SCEMS_VERSION + '  ·  ' + String(CONFIG.POLICY_VERSION || ''));
-  rule();
-
-  H1('Who this is');
-  if (rec) {
-    kv('Certification level', rec.level);
-    kv('Entry profile', rec.entryProfile);
-    kv('Employee ID', rec.employeeId);
-    kv('Assigned FTO', rec.fto);
-    kv('Started', rec.startDate ? dateKeyV20_1_(rec.startDate) : '');
-    kv('Current phase', rec.phase);
-    kv('Phase started', rec.phaseStart ? dateKeyV20_1_(rec.phaseStart) : '');
-    kv('Program status', rec.setStatus);
-    if (rec.startDate) {
-      kv('Time in program', Math.floor((new Date() - rec.startDate) / 86400000) + ' days');
-    }
-  } else {
-    P('No master record found for this name. The evidence below is everything filed under it.');
-  }
-
-  // ---- shift evaluations, in full ----
-  H1('Shift evaluations');
-  var ev = readTableV20_1_(TAB.EVAL, 4);
-  var evN = 0;
-  if (ev.ok) {
-    var evMine = ev.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[2])) === norm; });
-    evMine.sort(function (a, b) {
-      var da = parseDateSafeV20_1_(a[0]), db = parseDateSafeV20_1_(b[0]);
-      return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
-    });
-    evN = evMine.length;
-    if (!evN) P('None recorded.');
-    evMine.forEach(function (r) {
-      var when = parseDateSafeV20_1_(r[0]);
-      H2((when ? dateKeyV20_1_(when) : 'undated') + '  ·  FTO ' + (cleanNameV20_1_(r[1]) || 'unnamed'));
-      ev.headers.forEach(function (h, i) {
-        var head = String(h || '').trim();
-        if (!head || i <= 2) return;
-        var val = r[i];
-        if (val === '' || val == null) return;
-        P(head + ':  ' + String(val));      // full text, never truncated
-      });
-    });
-  } else { P('The evaluation mirror is not present.'); }
-
-  // ---- self-reflections ----
-  H1('The trainee in their own words');
-  var rf = readTableV20_1_(TAB.REFLECT, 4);
-  var rfN = 0;
-  if (rf.ok) {
-    var rfMine = rf.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[1])) === norm; });
-    rfN = rfMine.length;
-    if (!rfN) P('None submitted.');
-    rfMine.forEach(function (r) {
-      var when = parseDateSafeV20_1_(r[0]);
-      H2(when ? dateKeyV20_1_(when) : 'undated');
-      rf.headers.forEach(function (h, i) {
-        var head = String(h || '').trim();
-        if (!head || i <= 1) return;
-        if (r[i] === '' || r[i] == null) return;
-        P(head + ':  ' + String(r[i]));
-      });
-    });
-  }
-
-  // ---- skills ----
-  H1('Skills — every logged repetition');
-  var sk = readTableV20_1_(TAB.SKILL_EVIDENCE, 4);
-  var skN = 0, skAccepted = 0;
-  if (sk.ok && sk.col['TRAINEE'] !== undefined) {
-    var skMine = sk.rows.filter(function (r) {
-      return normalizeNameV20_1_(cleanNameV20_1_(r[sk.col['TRAINEE']])) === norm; });
-    skN = skMine.length;
-    if (!skN) P('None recorded.');
-    skMine.forEach(function (r) {
-      var val = String(r[sk.col['VALIDATION RESULT']] || '');
-      if (val === 'ACCEPTED') skAccepted++;
-      var when = parseDateSafeV20_1_(r[sk.col['SHIFT DATE']]);
-      var line = (when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' +
-        String(r[sk.col['SKILL']] || '') + '  ·  ' + String(r[sk.col['OUTCOME']] || '') +
-        '  ·  FTO ' + String(r[sk.col['FTO']] || '') +
-        (val === 'ACCEPTED' ? '' : '  ·  [' + val + ']');
-      P(line);
-      var note = String(r[sk.col['EVIDENCE NOTE']] || '').trim();
-      if (note) P('       ' + note).setFontSize(10).setForegroundColor('#444444');
-    });
-  }
-
-  // ---- decisions ----
-  H1('Sign-off decisions');
-  var so = readTableV20_1_(TAB.SKILL_SIGNOFF, 4);
-  var soN = 0;
-  if (so.ok && so.col['TRAINEE'] !== undefined) {
-    var soMine = so.rows.filter(function (r) {
-      return normalizeNameV20_1_(cleanNameV20_1_(r[so.col['TRAINEE']])) === norm; });
-    soN = soMine.length;
-    if (!soN) P('None recorded.');
-    soMine.forEach(function (r) {
-      var when = parseDateSafeV20_1_(r[so.col['DECISION DATE']]);
-      P((when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' + String(r[so.col['SKILL']] || '') +
-        '  ·  ' + String(r[so.col['DECISION']] || ''));
-      P('       by ' + String(r[so.col['DECIDED BY']] || '') + ' — ' +
-        String(r[so.col['RATIONALE']] || '')).setFontSize(10).setForegroundColor('#444444');
-    });
-  }
-
-  // ---- concerns ----
-  H1('Urgent concerns');
-  var ur = readTableV20_1_(TAB.URGENT, 4);
-  var urN = 0;
-  if (ur.ok) {
-    var urMine = ur.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[3])) === norm; });
-    urN = urMine.length;
-    if (!urN) P('None filed.');
-    urMine.forEach(function (r) {
-      var when = parseDateSafeV20_1_(r[0]);
-      H2(when ? dateKeyV20_1_(when) : 'undated');
-      ur.headers.forEach(function (h, i) {
-        var head = String(h || '').trim();
-        if (!head || r[i] === '' || r[i] == null) return;
-        P(head + ':  ' + String(r[i]));
-      });
-    });
-  }
-
-  // ---- decisions raw / phase history ----
-  H1('Phase and programme decisions');
-  var dr = readTableV20_1_(TAB.DECISIONS, 4);
-  var drN = 0;
-  if (dr.ok) {
-    var drMine = dr.rows.filter(function (r) {
-      return r.some(function (c) { return normalizeNameV20_1_(cleanNameV20_1_(c)) === norm; }); });
-    drN = drMine.length;
-    if (!drN) P('None recorded.');
-    drMine.forEach(function (r) {
-      var parts = [];
-      dr.headers.forEach(function (h, i) {
-        if (String(h || '').trim() && r[i] !== '' && r[i] != null) parts.push(h + ': ' + r[i]);
-      });
-      P(parts.join('   ·   '));
-    });
-  }
-
-  rule();
-  H1('What this file contains');
-  kv('Shift evaluations', evN);
-  kv('Self-reflections', rfN);
-  kv('Skill repetitions logged', skN + ' (' + skAccepted + ' accepted into the record)');
-  kv('Sign-off decisions', soN);
-  kv('Urgent concerns', urN);
-  kv('Programme decisions', drN);
-  small('Compiled by ' + (deciderIdentityV20_2_() || 'an unidentified session') +
-        ' from the SCEMS Field Training record on ' +
-        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy') +
-        '. Source of truth is the tracker; this document is a copy made at that moment. ' +
-        'Retention: ' + String(CONFIG.RETENTION_STATEMENT || 'per county policy') + '.');
-
-  doc.saveAndClose();
-
-  // file it next to the tracker
-  try {
-    var f = DriveApp.getFileById(doc.getId());
-    var parents = DriveApp.getFileById(ss().getId()).getParents();
-    if (parents.hasNext()) parents.next().addFile(f);
-  } catch (e) {}
-
-  var url = doc.getUrl();
-  systemLog_('WARN', 'TRAINEE FILE BUILT', name + ' | ' + url);
-  return { url: url, name: name, counts: { evals: evN, reflections: rfN, skills: skN,
-           accepted: skAccepted, signoffs: soN, concerns: urN, decisions: drN } };
-}
-
-/* ---------------------------------------------------------------- *
- *  3. The checkboxes
- * ---------------------------------------------------------------- */
-
-/** Handles a tick on TRAINEES. Called from onSheetEdit; returns true when
- *  it owned the edit, so the rest of the handler is skipped. */
-function consoleEditV20_3_(e, sh) {
-  if (sh.getName() !== TAB_CONSOLE_V20_3) return false;
-  var row = e.range.getRow(), col = e.range.getColumn();
-  if (row < CONSOLE_FIRST_ROW_V20_3) return false;
-  if (col !== CONSOLE_COL_V20_3.OPEN && col !== CONSOLE_COL_V20_3.RELEASE) return false;
-  if (e.range.getValue() !== true) return true;         // unticking does nothing
-
-  var ui = null; try { ui = SpreadsheetApp.getUi(); } catch (e0) {}
-  var name = cleanNameV20_1_(sh.getRange(row, CONSOLE_COL_V20_3.NAME).getValue());
-  e.range.setValue(false);                              // a checkbox is a button, not a state
-  if (!name) return true;
-
-  if (col === CONSOLE_COL_V20_3.OPEN) {
-    try {
-      var built = buildTraineeFileV20_3(name);
-      sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(built.url);
-      if (ui) ui.alert('File ready — ' + name,
-        'Everything on record from day one, in full.\n\n' +
-        built.counts.evals + ' shift evaluation(s)\n' +
-        built.counts.reflections + ' self-reflection(s)\n' +
-        built.counts.skills + ' skill repetition(s), ' + built.counts.accepted + ' accepted\n' +
-        built.counts.signoffs + ' sign-off decision(s)\n' +
-        built.counts.concerns + ' urgent concern(s)\n\n' +
-        'The link is in the last column. The document stays in Drive — open it any time.',
-        ui.ButtonSet.OK);
-    } catch (err) {
-      if (ui) ui.alert('Could not build the file for ' + name + '.\n\n' + err);
-      systemLog_('ERROR', 'TRAINEE FILE FAILED', name + ' | ' + err);
-    }
-    return true;
-  }
-
-  // ---- release ----
-  if (!gateV20_2_('CLOSE TRAINEE')) return true;
-  if (ui) {
-    var waiting = String(sh.getRange(row, CONSOLE_COL_V20_3.WAITING).getValue() || '');
-    var ok = ui.alert('Release ' + name + '?',
-      'This closes their training record and builds their complete file.\n\n' +
-      (waiting ? 'NOTE: ' + waiting + ' — releasing does not decide those.\n\n' : '') +
-      'The file covers day one to today and stays in Drive for good.\n\nRelease?',
-      ui.ButtonSet.YES_NO);
-    if (ok !== ui.Button.YES) return true;
-  }
-  var report = [];
-  try { report.push(String(closeTraineeV20_1(name))); }
-  catch (err2) { report.push('Close step failed: ' + err2); }
-  try {
-    var file = buildTraineeFileV20_3(name);
-    sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(file.url);
-    report.push('File built: ' + file.url);
-  } catch (err3) { report.push('File build failed: ' + err3); }
-
-  systemLog_('WARN', 'TRAINEE RELEASED VIA CONSOLE', name + ' | ' + report.join(' | ').slice(0, 300));
-  if (ui) ui.alert('Released — ' + name, report.join('\n\n').slice(0, 1400), ui.ButtonSet.OK);
-  try { buildTraineeConsoleV20_3(); } catch (e4) {}
-  return true;
-}
-
-/* ---------------------------------------------------------------- *
- *  4. Room to read
- * ---------------------------------------------------------------- */
-
-/** Column widths by what the column HOLDS, not by position.
- *  Anything whose name suggests prose gets real width and wrapping;
- *  dates and counts stay narrow so the prose has somewhere to go. */
-function readableWidthForV20_3_(header) {
-  var h = String(header || '').toLowerCase();
-  if (!h) return 100;
-  if (/note|narrative|detail|comment|rationale|summary|reason|concern|what |why|situation|justif|strength|improve|focus|feedback|action|plan|evidence/.test(h)) return 460;
-  if (/name|trainee|fto|skill|decided by|signed by|assigned/.test(h)) return 190;
-  if (/date|timestamp|when|expiration/.test(h)) return 110;
-  if (/id$|^id| id /.test(h)) return 150;
-  if (/status|decision|outcome|level|phase|stage|context|domain|result|prompting|attestation/.test(h)) return 165;
-  return 130;
-}
-
-/** Makes the record sheets readable: wide narrative columns, wrapping on,
- *  taller rows, frozen headers. Formatting only — no cell value changes. */
-function makeSheetsReadableV20_3() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var targets = [TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS,
-                 TAB.SKILL_VALIDATION, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
-                 TAB.CATALOG, TAB.FTO_ROSTER, TAB.DECISIONS];
-  var done = [];
-  targets.forEach(function (name) {
-    var t = readTableV20_1_(name, 4);
-    if (!t.ok || !t.headers.length) { done.push('  ' + name + ' : not present'); return; }
-    var sh = t.sheet;
-    try {
-      t.headers.forEach(function (h, i) {
-        if (!String(h || '').trim()) return;
-        sh.setColumnWidth(i + 1, readableWidthForV20_3_(h));
-      });
-      sh.getRange(4, 1, 1, Math.max(t.headers.length, 1))
-        .setWrap(true).setVerticalAlignment('middle').setFontWeight('bold');
-      var lastRow = Math.max(sh.getLastRow(), 5);
-      sh.getRange(5, 1, lastRow - 4, Math.max(t.headers.length, 1))
-        .setWrap(true).setVerticalAlignment('top');
-      sh.setFrozenRows(4);
-      sh.setFrozenColumns(name === TAB.SKILLS || name === TAB.SKILL_VALIDATION ? 2 : 1);
-      try { sh.setRowHeights(5, Math.max(lastRow - 4, 1), 46); } catch (e2) {}
-      try { sh.setRowHeight(4, 40); } catch (e3) {}
-      done.push('  ' + name + ' : ' + t.headers.filter(String).length + ' column(s) sized');
-    } catch (e) {
-      done.push('  ' + name + ' : ' + e);
-    }
-  });
-  var msg = 'READABLE LAYOUT APPLIED\n\n' + done.join('\n') +
-    '\n\nNarrative columns are now wide and wrapping; dates and counts stay narrow.\n' +
-    'Header rows are frozen so they stay put when you scroll.\n' +
-    'Nothing was moved, renamed or deleted — this is formatting only.';
-  systemLog_('INFO', 'READABLE LAYOUT APPLIED', done.length + ' sheet(s)');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** One command: build the console, make everything readable, tidy the tabs. */
-function SIMPLIFY_EVERYTHING() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
-    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
-  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
-  L.push('');
-  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
-  L.push('history as a document; tick "Release" when they are done. Nothing else is');
-  L.push('needed day to day.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ================================================================
- *  Post-upgrade repair  (v20.2)
- * ================================================================ */
-
-/** Re-opens sign-off requests that the old queue sweep cancelled by mistake.
- *
- *  v20.1's sweep cancelled every OPEN queue row whose skill was not on the
- *  matrix. Because a matrix rebuild that produced nothing left the matrix
- *  empty, one bad rebuild stamped "CANCELLED : CRITERIA CHANGED" across the
- *  whole pending queue. v20.2 stops that happening again; this undoes what
- *  already happened.
- *
- *  A row is re-opened only when the matrix NOW says the skill qualifies and
- *  nothing else is already open for the same trainee and skill. Anything
- *  else is left exactly as it is and reported. No row is deleted, and no
- *  decision, rationale or date is touched. */
-function repairCancelledQueueRowsV20_2() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-
-  var t = queueTableV20_1_();
-  if (!t.ok) return 'Queue tab not found.';
-  var need = ['TRAINEE', 'SKILL ID', 'SKILL', 'RECORD STATUS'];
-  var missing = need.filter(function (h) { return t.col[h] === undefined; });
-  if (missing.length) {
-    return 'Refusing to touch the queue: missing header(s) ' + missing.join(', ') + '.';
-  }
-
-  var QUALIFY = ['READY FOR VALIDATION', 'SIGNED OFF - REVIEW REQUIRED',
-                 'LEGACY SIGN-OFF REVIEW REQUIRED'];
-
-  // Anything already open owns its (trainee, skill) — never create a second ask.
-  var openKeys = {};
-  t.rows.forEach(function (r) {
-    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-    openKeys[normalizeNameV20_1_(cleanNameV20_1_(r[t.col['TRAINEE']])) + '||' +
-             String(r[t.col['SKILL ID']] || '').trim()] = true;
-  });
-
-  var reopened = [], leftAlone = [], scanned = 0;
-  t.rows.forEach(function (r, i) {
-    var status = String(r[t.col['RECORD STATUS']] || '').trim();
-    if (status.indexOf('CANCELLED : CRITERIA CHANGED') !== 0) return;
-    scanned++;
-    var row = t.firstDataRow + i;
-    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
-    var skillId = String(r[t.col['SKILL ID']] || '').trim();
-    var skill = String(r[t.col['SKILL']] || '').trim();
-    var key = normalizeNameV20_1_(trainee) + '||' + skillId;
-
-    if (openKeys[key]) {
-      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — already open elsewhere');
-      return;
-    }
-    var readiness = skillReadinessNowV20_2_(trainee, skillId);
-    if (QUALIFY.indexOf(readiness) < 0) {
-      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — matrix reads "' +
-        (readiness || 'not on the matrix') + '"');
-      return;
-    }
-    t.sheet.getRange(row, t.col['RECORD STATUS'] + 1).setValue('OPEN');
-    openKeys[key] = true;
-    reopened.push(trainee + ' / ' + skill + ' (row ' + row + ')');
-    systemLog_('WARN', 'QUEUE ROW RE-OPENED',
-      'row ' + row + ' | ' + trainee + ' / ' + skillId +
-      ' | was CANCELLED : CRITERIA CHANGED, matrix now reads ' + readiness);
-  });
-
-  var msg = 'CANCELLED QUEUE REPAIR\n\n' +
-    'Cancelled rows examined : ' + scanned + '\n' +
-    'Re-opened               : ' + reopened.length + '\n' +
-    'Left as they were       : ' + leftAlone.length + '\n' +
-    (reopened.length ? '\nBack in your queue:\n  ' + reopened.slice(0, 25).join('\n  ') +
-      (reopened.length > 25 ? '\n  …and ' + (reopened.length - 25) + ' more' : '') : '') +
-    (leftAlone.length ? '\n\nLeft alone (the matrix does not support re-opening these):\n  ' +
-      leftAlone.slice(0, 15).join('\n  ') +
-      (leftAlone.length > 15 ? '\n  …and ' + (leftAlone.length - 15) + ' more' : '') : '') +
-    '\n\nNothing was deleted. No decision, rationale or date was changed.';
-  systemLog_('WARN', 'CANCELLED QUEUE REPAIR',
-    scanned + ' examined, ' + reopened.length + ' re-opened');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Tab order and visibility  (v20.2)
- * ---------------------------------------------------------------- */
-
-/** Left-to-right order: the things you use, then the things you consult,
- *  then the machinery. Anything not listed keeps its place at the end. */
-function tabOrderV20_2_() {
-  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
-          TAB.ANALYTICS, TAB.ENGINE,
-          TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
-          TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
-          TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
-}
-
-/** The tabs a person actually opens. Everything else is machinery: still
- *  live, still receiving data, just not in your way. */
-function dailyTabsV20_2_() {
-  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
-}
-
-/** Puts the tabs in a sensible order and hides the machinery.
- *
- *  Hiding is tidiness, not security — a hidden tab still receives data and
- *  is one menu click from visible. Nothing is deleted or renamed.
- *  showAllTabsV20_2() puts everything back. */
-function organizeTabsV20_2() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var S = ss();
-  var order = tabOrderV20_2_();
-  var daily = dailyTabsV20_2_();
-
-  var moved = 0, pos = 1;
-  order.forEach(function (name) {
-    var sh = S.getSheetByName(name);
-    if (!sh) return;
-    try {
-      if (sh.isSheetHidden()) sh.showSheet();   // cannot move a hidden sheet
-      S.setActiveSheet(sh);
-      S.moveActiveSheet(pos);
-      pos++; moved++;
-    } catch (e) {}
-  });
-
-  var visible = [], hidden = [];
-  S.getSheets().forEach(function (sh) {
-    var name = sh.getName();
-    if (daily.indexOf(name) >= 0) {
-      try { sh.showSheet(); visible.push(name); } catch (e) {}
-    } else {
-      try { sh.hideSheet(); hidden.push(name); } catch (e) { visible.push(name); }
-    }
-  });
-
-  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
-  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
-
-  var msg = 'TABS ORGANIZED\n\n' +
-    'Ordered : ' + moved + ' tab(s)\n' +
-    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
-    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
-    '\n  ' + hidden.join('\n  ') +
-    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
-  systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** Unhides everything, for when you are working on the system itself. */
-function showAllTabsV20_2() {
-  var S = ss(), n = 0;
-  S.getSheets().forEach(function (sh) {
-    try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
-  });
-  var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
-    'Admin > Tidy up the tabs puts the machinery away.';
-  systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  One button for "my sheets look wrong"
- * ---------------------------------------------------------------- */
-
-/** Rebuild, repair, re-tidy — in that order, because each depends on the
- *  one before it. Reads and rewrites derived views; never touches a record.
- *
- *  Order matters:
- *    1. matrix  — readiness must be current before anything reads it
- *    2. repair  — re-open requests the old sweep cancelled by mistake
- *    3. layout  — formatting, dropdowns, home panel
- *    4. tabs    — order and hide the machinery
- *    5. health  — what still needs you
- */
-function FIX_MY_SHEETS() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SHEET REPAIR — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try {
-      var r = fn();
-      L.push(n + '. ' + what + ' : OK');
-      if (r) String(r).split('\n').slice(0, 5).forEach(function (x) {
-        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
-      });
-    } catch (e) {
-      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
-    }
-  }
-
-  step(1, 'Rebuild the skills matrix', function () {
-    rebuildSkillMatrixV19_(); return 'readiness recalculated from the evidence log';
-  });
-  step(2, 'Re-open wrongly cancelled requests', function () {
-    return repairCancelledQueueRowsV20_2();
-  });
-  step(3, 'Re-tidy the queue and home panel', function () {
-    var bits = [];
-    try { bits.push(String(makeQueueReadableV20_1())); } catch (e) { bits.push('queue formatting: ' + e); }
-    try { refreshHomeNowV20_1(); bits.push('home panel refreshed'); } catch (e) { bits.push('home: ' + e); }
-    return bits.join(' | ');
-  });
-  step(4, 'Order the tabs and hide the machinery', function () {
-    return organizeTabsV20_2();
-  });
-
-  L.push('');
-  L.push('Nothing was deleted. Records were not modified — only derived views,');
-  L.push('formatting, and the status of requests the old sweep cancelled by mistake.');
-  L.push('');
-  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
-
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SHEET REPAIR RUN', 'FIX_MY_SHEETS completed');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ================================================================
- *  START HERE
- * ================================================================ */
-
-/** The one function to run after pasting v20.2.
- *
- *  It takes NO arguments on purpose. The Apps Script editor's Run button
- *  cannot pass any, so goLiveChecklistV20_2("someone@example.com") is not
- *  actually runnable from the editor — a detail that matters more than it
- *  should, because it is the first thing anyone does.
- *
- *  It works out who you are from the session, so there is nothing to type.
- *  Falls back to the configured program director if Google says nothing.
- *
- *  Safe to run again at any time. It writes no records and deletes nothing.
- */
-function START_HERE() {
-  var who = '';
-  try { who = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
-  if (!who) {
-    try { who = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e2) {}
-  }
-  if (!who) who = String(CONFIG.FTO_PROGRAM_DIRECTOR || CONFIG.TCO_EMAIL || '').toLowerCase();
-  return goLiveChecklistV20_2(who);
-}
-
-/* ---------------------------------------------------------------- *
- *  Deployment  (v20.2)
- * ---------------------------------------------------------------- */
-
-/** ONE COMMAND. Run this from the script editor after pasting v20.2, and it
- *  takes the project from "code is present" to "system is running".
- *
- *  Every step is one that already existed and is safe to repeat. This adds
- *  no new behaviour of its own; it removes the need to remember an order.
- *  It writes no records and deletes nothing.
- *
- *  Pass the account that will operate the system:
- *      goLiveChecklistV20_2("you@example.com")
- *
- *  Steps, in dependency order:
- *    1. operator account   — so the gate can attribute anything at all
- *    2. form IDs           — so triggers have forms to bind to
- *    3. triggers           — including the combined skills form v20.1 missed
- *    4. migration top-up   — REQUEST ID and the v20.1 system tabs
- *    5. matrix rebuild     — so readiness is current before anyone decides
- *    6. tab protections    — so immutability is a control, not a convention
- *    7. health check       — the standing to-do list
- *
- *  It stops at the first step that fails and tells you which one, because a
- *  later step run against a broken earlier one is how you get a mess. */
-function goLiveChecklistV20_2(operatorEmail) {
-  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT CHECKLIST', ''];
-  var failed = '';
-
-  function step(n, what, fn) {
-    if (failed) { L.push(n + '. ' + what + ' : SKIPPED (step ' + failed + ' failed)'); return; }
-    try {
-      var r = fn();
-      L.push(n + '. ' + what + ' : OK');
-      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
-        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
-      });
-    } catch (e) {
-      failed = String(n);
-      L.push(n + '. ' + what + ' : FAILED');
-      L.push('      ' + String(e).slice(0, 300));
-    }
-  }
-
-  step(1, 'Operator account', function () {
-    var id = identityV20_2_();
-    if (id.tier === 'ACTIVE') {
-      return 'Google names the session directly (' + id.email + '). No operator account needed.';
-    }
-    if (operatorEmail) return setOperatorAccountV20_2(operatorEmail);
-    if (id.email) return 'Identity available as ' + id.tier + ' (' + id.email + ').';
-    throw new Error('Nothing identifies this session and no operator email was passed. ' +
-      'Call goLiveChecklistV20_2("you@example.com").');
-  });
-
-  step(2, 'Form IDs', function () { return rebuildFormIdsNow(); });
-  step(3, 'Triggers', function () { return repairAllTriggersNow(); });
-  step(4, 'Migration top-up', function () { return applyMigrationV20_1('APPLY V20_1'); });
-  step(5, 'Skill matrix rebuild', function () { rebuildSkillMatrixV19_(); return 'matrix rebuilt'; });
-  step(6, 'Record tab protection', function () { return protectRecordTabsV20_2(); });
-
-  L.push('');
-  if (failed) {
-    L.push('STOPPED at step ' + failed + '. Fix that, then run this again — every step is');
-    L.push('safe to repeat.');
-  } else {
-    L.push('All steps completed. The health check below is your standing to-do list;');
-    L.push('run healthCheckV20_2() from the SCEMS menu any time.');
-    L.push('');
-    try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
-  }
-
-  var msg = L.join('\n');
-  systemLog_(failed ? 'ERROR' : 'INFO', 'DEPLOYMENT CHECKLIST',
-    failed ? 'stopped at step ' + failed : 'completed');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** Read-only companion: what would the checklist find right now? Runs
- *  nothing, changes nothing, and is safe on a live system at any time. */
-function deploymentStatusV20_2() {
-  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT STATUS (read only)', ''];
-
-  var id = identityV20_2_();
-  L.push('Identity   : ' + (id.email || 'NOBODY') +
-    (id.tier ? '  [' + id.tier + (id.verified ? ', verified' : ', attested') + ']' : ''));
-  if (!id.email) L.push('             → run setOperatorAccountV20_2("you@example.com")');
-
-  try {
-    var ids = storedFormIdsV20_1_();
-    L.push('Form IDs   : ' + ids.length + ' stored of ' + EXPECTED_FORMS_V19.length + ' expected');
-    if (ids.length < EXPECTED_FORMS_V19.length) L.push('             → run rebuildFormIdsNow()');
-  } catch (e) { L.push('Form IDs   : unreadable — ' + e); }
-
-  try {
-    var bound = {};
-    ScriptApp.getProjectTriggers().forEach(function (t) {
-      var src = ''; try { src = String(t.getTriggerSourceId() || ''); } catch (e2) {}
-      if (src) bound[src] = true;
-    });
-    var unbound = [];
-    formBoundTriggerPlanV20_2_().forEach(function (p) {
-      var f = getStoredFormV19_(p.title);
-      if (f && !bound[f.getId()]) unbound.push(p.title);
-    });
-    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
-    var miss = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
-    L.push('Triggers   : ' + (miss.length ? miss.length + ' handler(s) missing' : 'all handlers present') +
-      (unbound.length ? ', ' + unbound.length + ' form(s) UNBOUND' : ', all forms bound'));
-    if (miss.length || unbound.length) L.push('             → run repairAllTriggersNow()');
-  } catch (e) { L.push('Triggers   : unreadable — ' + e); }
-
-  var sysTabs = [TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
-  var absent = sysTabs.filter(function (n) { return !getSheetOrNullV20_1_(n); });
-  L.push('v20.1 tabs : ' + (absent.length ? absent.length + ' missing (' + absent.join(', ') + ')'
-                                          : 'all present'));
-  if (absent.length) L.push('             → run applyMigrationV20_1("APPLY V20_1")');
-
-  try {
-    var m = getSheetOrNullV20_1_(TAB.SKILLS);
-    var rows = m && m.getLastRow() >= 5 ? m.getLastRow() - 4 : 0;
-    L.push('Matrix     : ' + rows + ' row(s)');
-    if (!rows) L.push('             → run rebuildSkillMatrixV19_()');
-  } catch (e) { L.push('Matrix     : unreadable — ' + e); }
-
-  var unprot = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].filter(function (n) {
-    var sh = getSheetOrNullV20_1_(n);
-    return sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length;
-  });
-  L.push('Protection : ' + (unprot.length ? unprot.length + ' record tab(s) unprotected'
-                                          : 'record tabs protected'));
-  if (unprot.length) L.push('             → run protectRecordTabsV20_2()');
-
-  L.push('Mode       : ' + (isLiveMode_() ? 'LIVE' : 'TEST — alerts reach nobody but the test inbox'));
-  L.push('');
-  L.push('To do all of the above in order: goLiveChecklistV20_2("you@example.com")');
-
-  var msg = L.join('\n');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Mail quota
- * ---------------------------------------------------------------- */
-
-/** Recipients held back from bulk mail so that safety alerts can always
- *  send. A consumer Google account allows 100 recipients a day; a Monday
- *  run of traineeStatusCards plus supervisorDigest can consume most of it,
- *  and the alerts that matter most — an unsafe skill outcome, a 72-hour
- *  breach — are the ones that happen later in the day.
- *
- *  Bulk senders call the guard below and stop when they would eat into the
- *  reserve. Alert paths deliberately do NOT call it: the reserve exists for
- *  them, and an alert that cannot send must fail loudly rather than politely
- *  decline. */
-var MAIL_ALERT_RESERVE_V20_2 = 25;
-
-/** True when one more bulk message may be sent. Logs once when it starts
- *  refusing, so a truncated run is never silent. */
-function mailBudgetOkV20_2_(purpose, alreadySent) {
-  var left = 0;
-  try { left = MailApp.getRemainingDailyQuota(); } catch (e) { return true; }
-  if (left > MAIL_ALERT_RESERVE_V20_2) return true;
-  if (!alreadySent || alreadySent === 1) {
-    systemLog_('ERROR', 'MAIL BUDGET EXHAUSTED',
-      purpose + ' stopped: ' + left + ' recipient(s) left, holding ' +
-      MAIL_ALERT_RESERVE_V20_2 + ' back for safety alerts.');
-  }
-  return false;
-}
-
-/** Wraps a bulk run: reports what did not go out instead of failing silently
- *  part-way through. */
-function reportBulkTruncationV20_2_(purpose, sent, unsent) {
-  if (!unsent.length) return;
-  var msg = purpose + ' sent ' + sent + ' message(s) and STOPPED. ' + unsent.length +
-    ' did not go out because the daily mail quota is nearly gone:\n\n  ' +
-    unsent.slice(0, 30).join('\n  ') +
-    (unsent.length > 30 ? '\n  …and ' + (unsent.length - 30) + ' more' : '') +
-    '\n\nThe remaining quota is held back so unsafe-outcome and 72-hour ' +
-    'breach alerts can still send today. Consumer Google accounts allow 100 ' +
-    'recipients a day; Workspace accounts allow 1,500.';
-  systemLog_('ERROR', 'BULK MAIL TRUNCATED', purpose + ' | ' + unsent.length + ' unsent');
-  try { MailApp.sendEmail(CONFIG.TCO_EMAIL, 'SCEMS : ' + purpose + ' was truncated', msg); } catch (e) {}
-  Logger.log(msg);
-}
-
-function traineeStatusCards() {
-  var S = ss();
-  var master = S.getSheetByName(TAB.MASTER).getRange(5, 1, 40, 9).getValues();
-  var emailByTrainee = {};
-  master.forEach(function (r) { if (r[0] && r[8]) emailByTrainee[r[0]] = r[8]; });
-  var skipped = [];
-  master.forEach(function (r) {
-    if (r[0] && !r[8] && String(r[0]).indexOf('EXAMPLE') !== 0) skipped.push(r[0]);
-  });
-  var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 12).getValues();
-  var sentN = 0, unsent = [];
-  view.forEach(function (r) {
-    if (!r[0] || !emailByTrainee[r[0]] || String(r[0]).indexOf('EXAMPLE') === 0) return;
-    if (!mailBudgetOkV20_2_('Trainee status cards', sentN + 1)) { unsent.push(String(r[0])); return; }
-    var due = r[10] instanceof Date ? Utilities.formatDate(r[10], 'America/New_York', 'yyyy-MM-dd') : 'none scheduled';
-    var body =
-      'Your field training status, ' + r[0] + ':\n\n' +
-      'Level: ' + r[1] + '  |  Entry Profile: ' + r[2] + '  |  ' + r[3] + '\n' +
-      'Training shifts logged: ' + r[4] + '  |  Trend: ' + r[5] + '\n\n' +
-      'A recent strength your FTO documented: ' + (r[6] || 'none logged yet') + '\n' +
-      'Current improvement focus: ' + (r[7] || 'none logged yet') + '\n' +
-      'Next shift focus: ' + (r[8] || 'set with your FTO') + '\n' +
-      'Skills ready for leadership validation: ' + r[9] + '\n' +
-      'Next decision due: ' + due + '\n' +
-      'Note: ' + (r[11] || '') + '\n\n' +
-      'Questions about your status go to your FTO or the Training and Compliance Officer.';
-    sendMail(emailByTrainee[r[0]], 'Your Field Training Status : Week of ' +
-      Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd'), body);
-    sentN++;
-  });
-  reportBulkTruncationV20_2_('Trainee status cards', sentN, unsent);
-  if (skipped.length) {
-    sendMail(CONFIG.TCO_EMAIL,
-      'Trainee Cards : ' + skipped.length + ' Trainee(s) Have No Email on File',
-      'These trainees received no status card because column I on 01 TRAINEE MASTER is blank:\n\n' +
-      skipped.join('\n') + '\n\nAdd their email addresses so they get their Monday card.');
-  }
-}
-
-/* ---- ported from master (effective winner) ---- */
-/** v3: branded HTML snapshot. */
-function supervisorDigest() {
-  var S = ss();
-  var ctl = S.getSheetByName(TAB.CONTROL);
-  var threshold = ctl.getRange('B5').getValue();
-
-  var roster = ctl.getRange(5, 6, 25, 2).getValues();
-  var shiftByFto = {};
-  roster.forEach(function (r) { if (r[0]) shiftByFto[String(r[0])] = String(r[1]); });
-
-  var sup = ctl.getRange(5, 13, 4, 3).getValues();
-  var supByShift = {};
-  sup.forEach(function (r) { if (r[0]) supByShift[String(r[0])] = { name: r[1], email: r[2] }; });
-
-  var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 9).getValues();
-  var extras = {};
-  view.forEach(function (r) { if (r[0]) extras[r[0]] = { strength: r[6], focus: r[8] }; });
-
-  var ev = S.getSheetByName(TAB.EVAL);
-  var firstEval = {};
-  if (ev.getLastRow() >= 5) {
-    ev.getRange(5, 1, ev.getLastRow() - 4, 7).getValues().forEach(function (r) {
-      var t = r[2], dt = r[6];
-      if (!t || !(dt instanceof Date)) return;
-      if (!firstEval[t] || dt < firstEval[t]) firstEval[t] = dt;
-    });
-  }
-
-  var byShift = {};
-  engineRows().forEach(function (r) {
-    var name = r[0];
-    if (!name || String(name).indexOf(TEST_PREFIX) === 0) return;
-    var shift = shiftByFto[String(r[3] || '')] || 'UNASSIGNED';
-    (byShift[shift] = byShift[shift] || []).push(r);
-  });
-
-  var now = new Date();
-  var week = Utilities.formatDate(now, 'America/New_York', 'MMMM d, yyyy');
-
-  var digestSent = 0, digestUnsent = [];
-  Object.keys(byShift).forEach(function (shift) {
-    if (!mailBudgetOkV20_2_('Supervisor digest', digestSent + 1)) {
-      digestUnsent.push(shift + ' shift');
-      return;
-    }
-    var cards = [], textBlocks = [];
-    byShift[shift].forEach(function (r) {
-      var name = r[0], level = r[1], fto = r[3] || 'unassigned', phase = String(r[4] || ''),
-          evals = r[6] || 0, daysSince = r[8], avg = r[9], trend = r[11], status = r[17];
-      var ex = extras[name] || {};
-      var weeksIn = firstEval[name]
-        ? Math.max(1, Math.round((now - firstEval[name]) / (7 * 86400000))) : 0;
-      var overdue = (typeof daysSince === 'number') && daysSince > threshold;
-      var ftoText;
-      if (typeof daysSince !== 'number') ftoText = fto + ' : no evaluations submitted yet';
-      else if (overdue) ftoText = fto + ' : PAPERWORK OVERDUE, last evaluation ' + daysSince + ' days ago';
-      else ftoText = fto + ' : paperwork current';
-      var trendWord = trend === 'Rising' ? 'improving' : trend === 'Falling' ? 'slipping' : trend === 'Steady' ? 'holding steady' : '';
-
-      var o = {
-        name: name, level: level, phaseNum: phase.replace('Phase ', '') || '?',
-        weeksIn: weeksIn, evals: evals, avg: avg, trendWord: trendWord,
-        strength: ex.strength || 'nothing documented yet',
-        focus: ex.focus || 'set at the start of each shift',
-        fto: fto, ftoText: ftoText, ftoOverdue: overdue,
-        daysSince: daysSince, status: status
-      };
-      cards.push(traineeCard_(o));
-      textBlocks.push(name + ' (' + level + ', ' + phase + '): ' + evals + ' shifts, avg ' +
-        (avg || 'n/a') + ', ' + (trendWord || 'no trend') + '. ' + ftoText + '. ' +
-        statusMeta_(status, daysSince, fto).line);
-    });
-
-    var html = '' +
-    '<div style="max-width:640px;margin:0 auto;background:#f4f1ea;font-family:Arial,Helvetica,sans-serif;padding-bottom:8px;">' +
-      '<div style="background:#1d1b18;padding:22px 22px 18px 22px;border-bottom:4px solid #c9a227;">' +
-        '<div style="color:#c9a227;font-size:12px;font-weight:bold;letter-spacing:2px;">SUMTER COUNTY EMS</div>' +
-        '<div style="color:#f7f3ea;font-size:22px;font-weight:bold;margin-top:4px;">' + shift + ' SHIFT; FIELD TRAINING SNAPSHOT</div>' +
-        '<div style="color:#b4ac9c;font-size:12px;margin-top:4px;">Week of ' + week + ' &nbsp;&middot;&nbsp; ' + byShift[shift].length + ' trainee(s) on your shift</div>' +
-      '</div>' +
-      '<div style="height:16px;"></div>' +
-      cards.join('') +
-      '<div style="margin:4px 16px 16px 16px;padding:12px 16px;background:#1d1b18;border-radius:8px;color:#b4ac9c;font-size:11px;line-height:1.5;">' +
-        'Questions or concerns about a trainee or an FTO go to the <b style="color:#c9a227;">Division Chief of Training</b>. ' +
-        'A safety concern is a same-shift call or text, then the Urgent Concern form on the Hub.' +
-      '</div>' +
-    '</div>';
-
-    var text = shift + ' SHIFT; FIELD TRAINING SNAPSHOT : Week of ' + week + '\n\n' + textBlocks.join('\n\n');
-    var target = supByShift[shift];
-    if (shift === 'UNASSIGNED' || !target) {
-      sendHtmlMail(CONFIG.TCO_EMAIL, 'Supervisor Snapshot : trainees with no shift mapping', text, html);
-    } else {
-      sendHtmlMail(String(target.email), shift + ' Shift; Field Training Snapshot : ' + week, text, html);
-    }
-    digestSent++;
-  });
-  reportBulkTruncationV20_2_('Supervisor digest', digestSent, digestUnsent);
-  Logger.log('HTML supervisor snapshots sent: ' + digestSent +
-    (digestUnsent.length ? ' (' + digestUnsent.length + ' held back for quota)' : '') + '.');
-}
-
-/* ---- ported from master (effective winner) ---- */
-function systemHeartbeat() {
-  var problems = [];
-  var S = ss();
-
-  // 1. triggers armed
-  var need = MANAGED_TRIGGER_HANDLERS;
-  var have = {};
-  ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
-  need.forEach(function (n) {
-    if (!have[n]) problems.push('Trigger missing: ' + n + '. FIX: run installTriggers() once.');
-  });
-
-  // 2. forms alive, accepting, and feeding this workbook
-  var ids = JSON.parse(PropertiesService.getScriptProperties().getProperty('FORM_IDS') || '[]');
-  if (!ids.length) problems.push('No stored form IDs. FIX: forms may have been rebuilt outside the system.');
-  ids.forEach(function (id) {
-    try {
-      var f = FormApp.openById(id);
-      if (!f.isAcceptingResponses()) problems.push('Form not accepting responses: ' + f.getTitle() + '. FIX: open the form, Responses, toggle Accepting responses on.');
-      var dest = '';
-      try { dest = f.getDestinationId(); } catch (d) {}
-      if (dest && dest !== S.getId()) problems.push('Form feeding the WRONG workbook: ' + f.getTitle() + '. FIX: relink via Form, Responses, destination.');
-      if (!dest) problems.push('Form has no response destination: ' + f.getTitle() + '. FIX: relink to the tracker.');
-    } catch (e) {
-      problems.push('Form unreachable (deleted or permissions): id ' + id);
-    }
-  });
-
-  // 3. critical tabs present
-  [TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS, TAB.ENGINE,
-   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', DECISIONS_TAB, ARCHIVE_TAB, 'HOME',
-   TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF].forEach(function (n) {
-    if (!S.getSheetByName(n)) problems.push('Tab missing: ' + n + '. FIX: run repairControlAndEngine() or the matching builder.');
-  });
-
-  // 4. the engine is breathing
-  try {
-    var eng = S.getSheetByName(TAB.ENGINE);
-    if (eng && !eng.getRange('R5').getFormula()) {
-      problems.push('Status engine formulas are gone (R5 empty). FIX: run repairControlAndEngine(), then fixEngineOrder().');
-    }
-  } catch (e) {}
-
-  // 5. backups current
-  try {
-    var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
-    if (!folders.hasNext()) {
-      problems.push('Backup folder missing. FIX: run monthlySnapshot() once.');
-    } else {
-      var files = folders.next().getFilesByType(MimeType.MICROSOFT_EXCEL);
-      var newest = null;
-      while (files.hasNext()) {
-        var f2 = files.next();
-        if (!newest || f2.getDateCreated() > newest) newest = f2.getDateCreated();
-      }
-      if (!newest) problems.push('No backup snapshot exists yet. FIX: SCEMS menu, Run backup snapshot now.');
-      else if ((new Date() - newest) / 86400000 > 40) {
-        problems.push('Newest backup is over 40 days old. FIX: run monthlySnapshot() and confirm the monthly trigger with installTriggers().');
-      }
-    }
-  } catch (e) {}
-
-  if (problems.length) {
-    sendMail(CONFIG.TCO_EMAIL + ',' + CONFIG.SUPERVISOR_EMAILS,
-      'SYSTEM HEALTH : ' + problems.length + ' Issue(s) Need Attention : Field Training Tracker',
-      'The weekly self-test found problems. Alerts and automation may not be reliable until these are fixed:\n\n' +
-      problems.map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n') +
-      '\n\nThe system stays silent when healthy; this email only exists because something is broken.');
-  }
-  Logger.log('Heartbeat: ' + (problems.length ? problems.length + ' problem(s), email sent.' : 'all healthy, silent.'));
-}
-
-/* ---- ported from master (effective winner) ---- */
-/**********************  5. MONTHLY BACKUP SNAPSHOT  **********************/
-function monthlySnapshot() {
-  var S = ss();
-  var url = 'https://docs.google.com/spreadsheets/d/' + S.getId() + '/export?format=xlsx';
-  var blob = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
-  }).getBlob();
-  var name = 'SCEMS_Tracker_Backup_' +
-    Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm') + '.xlsx';
-  blob.setName(name);
-  var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
-  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
-  var file = folder.createFile(blob);
-  sendMail(CONFIG.SUPERVISOR_EMAILS,
-    'SCEMS Tracker Backup Complete : ' + name,
-    'Full workbook snapshot saved:\n' + file.getUrl());
-  Logger.log('Backup saved: ' + file.getUrl());
-}
-
-/* ---- ported from master (effective winner) ---- */
+/* ====================================================================== */
 /**
- * Mandatory go-live gate. Read-only except for writing the result to the log.
- * Returns true only when the core workbook, rosters, forms, recipients,
- * supervisor routing, phase minimums, and test-mode setting are deployment-safe.
+ * SCEMS Field Training Tracker — 40_skills
  *
- * TEST_MODE=true is reported as a blocker by design. Resolve every other blocker,
- * run a complete ZZ TEST workflow, then change TEST_MODE to false with the
- * Division Chief of Training present and run this function again.
+ * The skill catalogue, the evidence, the matrix, and what readiness means.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Skill-evidence ingestion: server-side validation, the batched
+ *   idempotent evidence writer, and the grid-form submit handler.
+ *   INTEGRITY RULES ENFORCED HERE
+ *   - Idempotency: form ID + response ID. A retried trigger writes ZERO
+ *   additional events.
+ *   - Every event carries source form ID and title, source response ID,
+ *   and writer version (columns added by migration; the writer refuses
+ *   to write when they are missing rather than writing partial rows).
+ *   - Validation runs BEFORE any ACCEPTED value exists. Rejected
+ *   submissions retain their full payload with VALIDATION RESULT
+ *   'REJECTED : reason' — quarantined data, never a skeleton row.
+ *   - All events for one response are written in ONE batch, and derived
+ *   views rebuild ONCE per response.
+ *   - No fuzzy repetition matching: a repetitions line that does not match
+ *   exactly one tapped skill counts as one and is reported.
+ *   SCEMS v20.1.0h ADD-ON : Record a skill I witnessed
+ *   Tab 20 was only ever fed by the form pipeline, so there was no
+ *   legal way for the director to put a directly-observed skill on
+ *   the record. This adds that door — through the FULL validated
+ *   path, not around it.
  */
-function deploymentPreflight() {
-  var S = ss();
-  var blockers = [];
-  var warnings = [];
-  var requiredTabs = [
-    'HOME', TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT,
-    TAB.SKILLS, TAB.ENGINE, TAB.WEEKLY, '08 FTO VIEW', '09 TRAINEE VIEW',
-    '11 MEDICAL DIRECTOR VIEW', TAB.QUEUE, '13 AUDIT - EXCEPTION LOG',
-    '14 ANALYTICS', '15 SKILL CATALOG', DECISIONS_TAB, ARCHIVE_TAB, TAB.LOG,
-    TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
-  ];
-  requiredTabs.forEach(function (name) {
-    if (!S.getSheetByName(name)) blockers.push('Missing required tab: ' + name);
-  });
 
-  if (S.getSpreadsheetTimeZone() !== 'America/New_York') {
-    blockers.push('Workbook timezone must be America/New_York.');
+/* ---- ported from zz (effective winner) ---- */
+/** Four numbers instead of a paragraph. */
+function compactEvidenceV19_(trainee, skillId) {
+  var m = ss().getSheetByName(TAB.SKILLS);
+  if (!m || m.getLastRow() < 5) return '';
+  var data = m.getRange(5, 1, m.getLastRow() - 4, 20).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0]).trim() !== String(trainee).trim()) continue;
+    if (String(data[i][9]).trim() !== String(skillId).trim()) continue;
+    return (Number(data[i][10]) || 0) + '  /  ' + (Number(data[i][11]) || 0) +
+           '  /  ' + (Number(data[i][12]) || 0) + '  /  ' + (Number(data[i][13]) || 0);
   }
-  if (!ftoList().length) blockers.push('No approved FTO roster is loaded on tab 00 column F.');
-  if (!traineeList().length) warnings.push('No active trainees are loaded on tab 01.');
-
-  ['TEST_INBOX','TCO_EMAIL','CHIEF_EMAIL','ACHIEF_EMAIL','MD_EMAIL'].forEach(function (key) {
-    var value = String(CONFIG[key] || '').trim();
-    if (!value || value.indexOf('@') < 1 || value.indexOf('SET_ME') >= 0) {
-      blockers.push('Invalid or unset CONFIG.' + key + '.');
-    }
-  });
-  ['POLICY_VERSION','SKILL_STANDARD','RECORD_RETENTION_STANDARD'].forEach(function (key) {
-    var value = String(CONFIG[key] || '').trim();
-    if (!value || value.indexOf('SET_ME') >= 0) blockers.push('Human governance field CONFIG.' + key + ' is not approved.');
-  });
-  if (!CONFIG.UAT_APPROVED) blockers.push('CONFIG.UAT_APPROVED is false; all five forms and routing branches need a recorded ZZ TEST pass.');
-  if (!CONFIG.GO_LIVE_APPROVED) blockers.push('CONFIG.GO_LIVE_APPROVED is false; the program owner has not authorized launch.');
-
-  var routed = [
-    CONFIG.TCO_EMAIL, CONFIG.CHIEF_EMAIL, CONFIG.ACHIEF_EMAIL,
-    CONFIG.MD_EMAIL, CONFIG.SUPERVISOR_EMAILS
-  ].join(',').split(',').map(function (v) { return String(v || '').trim(); }).filter(String);
-  var external = routed.filter(function (address) {
-    return !/@sumtercountysc\.gov$/i.test(address);
-  });
-  if (external.length && !CONFIG.EXTERNAL_RECIPIENTS_APPROVED) {
-    blockers.push('External operational recipients require explicit approval: ' + external.join(', ') + '.');
-  }
-
-  var ids = [];
-  try { ids = JSON.parse(PropertiesService.getScriptProperties().getProperty('FORM_IDS') || '[]'); }
-  catch (e) { blockers.push('FORM_IDS is not valid JSON.'); }
-  if (ids.length !== 5) blockers.push('Expected five stored forms; found ' + ids.length + '.');
-  if (ids.length !== ids.filter(function (id, i, a) { return a.indexOf(id) === i; }).length) {
-    blockers.push('FORM_IDS contains duplicate IDs.');
-  }
-  var expectedForms = {
-    'SCEMS FTO Shift Evaluation': false,
-    'SCEMS Trainee Self-Reflection': false,
-    'SCEMS Urgent Concern Report': false,
-    'SCEMS Training Decision Record': false,
-    'SCEMS Skills Quick Log': false
-  };
-  ids.forEach(function (id) {
-    try {
-      var form = FormApp.openById(id);
-      var title = form.getTitle();
-      if (Object.prototype.hasOwnProperty.call(expectedForms, title)) expectedForms[title] = true;
-      else blockers.push('Unexpected stored form: ' + title + '.');
-      if (!form.isAcceptingResponses()) blockers.push('Form is closed: ' + title + '.');
-      if (form.getDestinationId() !== S.getId()) blockers.push('Form feeds the wrong workbook: ' + title + '.');
-    } catch (e) { blockers.push('Stored form is unavailable: ' + id + '.'); }
-  });
-  Object.keys(expectedForms).forEach(function (title) {
-    if (!expectedForms[title]) blockers.push('Required form is missing: ' + title + '.');
-  });
-
-  var ctl = S.getSheetByName(TAB.CONTROL);
-  if (ctl) {
-    var supervisors = ctl.getRange('M5:O8').getDisplayValues();
-    supervisors.forEach(function (r, i) {
-      if (!r[0] || !r[1] || !r[2] || r.join(' ').indexOf('SET_ME') >= 0 || r[2].indexOf('@') < 1) {
-        blockers.push('Shift ' + String.fromCharCode(65 + i) + ' supervisor routing is incomplete on tab 00.');
-      }
-    });
-    var mins = ctl.getRange('B14:B16').getValues();
-    ['EMT','Advanced EMT','Paramedic'].forEach(function (level, i) {
-      if (typeof mins[i][0] !== 'number' || mins[i][0] <= 0) {
-        blockers.push(level + ' total shift floor is not approved on tab 00.');
-      }
-    });
-  }
-
-  var engine = S.getSheetByName(TAB.ENGINE);
-  if (engine && (!engine.getRange('A5').getFormula() || !engine.getRange('R5').getFormula())) {
-    blockers.push('Status-engine formulas are missing from row 5.');
-  }
-  var queue = S.getSheetByName(TAB.QUEUE);
-  if (queue && !queue.getRange('I5').getFormula()) blockers.push('Decision Queue status formulas are missing.');
-  var urgent = S.getSheetByName(TAB.URGENT);
-  if (urgent && urgent.getLastRow() >= 5) {
-    urgent.getRange(5, 1, urgent.getLastRow() - 4, 14).getDisplayValues().forEach(function (r, i) {
-      if (!r[0]) return;
-      var sheetRow = i + 5;
-      if (!r[10] && !r[13]) blockers.push('Open urgent concern has no owner on tab 04 row ' + sheetRow + '.');
-      if (r[10] && !r[11]) blockers.push('Closed urgent concern has no closure date on tab 04 row ' + sheetRow + '.');
-    });
-  }
-  var catalog = S.getSheetByName('15 SKILL CATALOG');
-  if (catalog && catalog.getLastRow() >= 5) {
-    var statusCol = String(catalog.getRange('A4').getValue()) === 'SKILL ID' ? 17 : 3;
-    var pending = catalog.getRange(5, statusCol, catalog.getLastRow() - 4, 1).getDisplayValues()
-      .some(function (r) { return !r[0] || /DRAFT|PENDING/i.test(r[0]); });
-    if (pending) blockers.push('Skill Catalog still contains blank, DRAFT, or PENDING approval status.');
-  }
-  if (catalog && String(catalog.getRange('A4').getValue()) !== 'SKILL ID') {
-    blockers.push('Skill Catalog has not been upgraded to the v19 controlled schema.');
-  }
-  var skillEvidence = S.getSheetByName(TAB.SKILL_EVIDENCE);
-  if (skillEvidence && String(skillEvidence.getRange('A4').getValue()) !== 'EVENT ID') {
-    blockers.push('Skill Evidence Log schema is missing or damaged.');
-  }
-  var skillQueue = S.getSheetByName(TAB.SKILL_VALIDATION);
-  if (skillQueue && String(skillQueue.getRange('A4').getValue()) !== 'READY DATE') {
-    blockers.push('Skill Validation Queue schema is missing or damaged.');
-  }
-  var skillSignoff = S.getSheetByName(TAB.SKILL_SIGNOFF);
-  if (skillSignoff && String(skillSignoff.getRange('A4').getValue()) !== 'DECISION ID') {
-    blockers.push('Skill Sign-Off Log schema is missing or damaged.');
-  }
-  try {
-    skillCatalogIssuesV19_().forEach(function (issue) { blockers.push(issue); });
-    skillDeploymentIssuesV19_().forEach(function (issue) { blockers.push(issue); });
-  } catch (e) {
-    blockers.push('Skills v19 deployment validation failed: ' + e + '.');
-  }
-
-  var triggerCounts = {};
-  MANAGED_TRIGGER_HANDLERS.forEach(function (h) { triggerCounts[h] = 0; });
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    var h = t.getHandlerFunction();
-    if (Object.prototype.hasOwnProperty.call(triggerCounts, h)) triggerCounts[h]++;
-  });
-  Object.keys(triggerCounts).forEach(function (handler) {
-    if (triggerCounts[handler] !== 1) {
-      blockers.push('Expected exactly one managed trigger for ' + handler + '; found ' + triggerCounts[handler] + '.');
-    }
-  });
-
-  var protectedNames = [
-    TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.ENGINE, DECISIONS_TAB, TAB.LOG,
-    TAB.SKILLS, SKILL_CATALOG_TAB, TAB.SKILL_EVIDENCE,
-    TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
-  ];
-  protectedNames.forEach(function (name) {
-    var sh = S.getSheetByName(name);
-    if (sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) {
-      blockers.push('Required sheet protection is missing: ' + name + '.');
-    }
-  });
-  mergedRuleConflicts_().forEach(function (conflict) {
-    blockers.push('Conditional-format rule intersects a merged range: ' + conflict + '.');
-  });
-
-  try {
-    var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
-    if (!folders.hasNext()) blockers.push('Backup folder is missing; run monthlySnapshot().');
-    else {
-      var files = folders.next().getFilesByType(MimeType.MICROSOFT_EXCEL);
-      var newest = null;
-      while (files.hasNext()) {
-        var f = files.next();
-        if (!newest || f.getDateCreated() > newest) newest = f.getDateCreated();
-      }
-      if (!newest) blockers.push('No workbook backup snapshot exists.');
-      else if ((new Date() - newest) / 86400000 > 40) blockers.push('Newest workbook backup is over 40 days old.');
-    }
-  } catch (e) { warnings.push('Backup age could not be verified: ' + e); }
-
-  if (isTestMode_()) {
-    blockers.push('isTestMode_() is true; outbound messages are still rerouted. Clear only after every other blocker is resolved.');
-  }
-
-  var result = blockers.length ? 'NOT READY' : 'READY FOR GO-LIVE';
-  var report = result + '\nBLOCKERS:\n' + (blockers.join('\n') || 'None') +
-    '\nWARNINGS:\n' + (warnings.join('\n') || 'None');
-  Logger.log(report);
-  systemLog_(blockers.length ? 'BLOCKER' : 'INFO', 'DEPLOYMENT PREFLIGHT',
-    blockers.length + ' blocker(s); ' + warnings.length + ' warning(s).');
-  try {
-    SpreadsheetApp.getUi().alert(result + '\n\nBlockers:\n' +
-      (blockers.join('\n') || 'None') + '\n\nWarnings:\n' + (warnings.join('\n') || 'None'));
-  } catch (e) {}
-  return !blockers.length;
+  return '';
 }
 
 /* ---- ported from master (effective winner) ---- */
@@ -6329,95 +5017,6 @@ function skillApplicableV19_(catalog, level) {
 }
 
 /* ---- ported from master (effective winner) ---- */
-function masterTraineeMapV19_() {
-  var map = {};
-  var sh = ss().getSheetByName(TAB.MASTER);
-  if (!sh) return map;
-  sh.getRange(5, 1, 40, 10).getValues().forEach(function (r) {
-    var name = String(r[0] || '').trim();
-    if (!name || name.indexOf('EXAMPLE') === 0) return;
-    map[name] = {
-      level: String(r[2] || '').trim(),
-      phase: String(r[6] || '').trim(),
-      status: String(r[7] || '').trim()
-    };
-  });
-  return map;
-}
-
-/* ---- ported from zz (effective winner) ---- */
-function traineeRecordV19_(name) {
-  var sh = ss().getSheetByName(TAB.MASTER);
-  if (!sh) return null;
-  var rows = sh.getRange(5, 1, 40, 10).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === String(name).trim()) {
-      return {
-        row: i + 5,
-        name: String(rows[i][0]).trim(),
-        level: String(rows[i][2] || '').trim(),
-        entry: String(rows[i][3] || '').trim(),
-        fto: String(rows[i][4] || '').trim(),
-        phase: String(rows[i][6] || '').trim(),
-        status: String(rows[i][7] || '').trim(),
-        email: String(rows[i][8] || '').trim()
-      };
-    }
-  }
-  return null;
-}
-
-/* ---- ported from master (effective winner) ---- */
-function traineeList() { return getList(TAB.MASTER, 1, 5); }
-
-/* ---- ported from master (effective winner) ---- */
-function getList(sheetName, col, startRow) {
-  var vals = ss().getSheetByName(sheetName).getRange(startRow, col, 60, 1).getValues();
-  var out = [];
-  vals.forEach(function (r) { if (r[0] && String(r[0]).trim() !== '') out.push(String(r[0])); });
-  return out;
-}
-
-/* ---- ported from zz (effective winner) ---- */
-/** Maps a grid column back to the single-letter stage the system stores. */
-function stageLetterV19_(columnLabel) {
-  var map = {
-    'Observed': 'O',
-    'Assisted': 'A',
-    'Performed with coaching': 'P',
-    'Performed independently': 'I'
-  };
-  return map[String(columnLabel).trim()] || '';
-}
-
-/* ---- ported from zz (effective winner) ---- */
-/** Prompting, derived from the stage rather than asked. */
-function promptingForStageV19_(letter) {
-  if (letter === 'I') return 'None';
-  if (letter === 'P') return 'Moderate coaching';
-  if (letter === 'A') return 'Full takeover';
-  return 'Minimal verbal cue';
-}
-
-/* ---- ported from master (effective winner) ---- */
-function parseDateV19_(value) {
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
-  var parsed = new Date(String(value || ''));
-  return isNaN(parsed.getTime()) ? null : parsed;
-}
-
-/* ---- ported from master (effective winner) ---- */
-function dateKeyV19_(value) {
-  if (!(value instanceof Date) || isNaN(value.getTime())) return '';
-  return Utilities.formatDate(value, 'America/New_York', 'yyyy-MM-dd');
-}
-
-/* ---- ported from master (effective winner) ---- */
-function dateMsV19_(value) {
-  return value instanceof Date && !isNaN(value.getTime()) ? value.getTime() : 0;
-}
-
-/* ---- ported from master (effective winner) ---- */
 function applySkillMatrixFilterV19_(trainee) {
   var sh = ss().getSheetByName(TAB.SKILLS);
   if (!sh) return;
@@ -6429,12 +5028,6 @@ function applySkillMatrixFilterV19_(trainee) {
   } else {
     filter.setColumnFilterCriteria(1, null);
   }
-}
-
-/* ---- ported from master (effective winner) ---- */
-function ensureSheetCapacityV19_(sh, rows, cols) {
-  if (sh.getMaxRows() < rows) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
-  if (sh.getMaxColumns() < cols) sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
 }
 
 /* ---- ported from master (effective winner) ---- */
@@ -6457,645 +5050,10 @@ function syncSkillQuickLogFormV19_() {
 
 /* ---- ported constant ---- */
 /* NOTE FOR REVIEWERS: the original source embeds an ~8KB base64 PNG here.
+
    It is inert image data and was replaced with a short placeholder so the
+
    file stays readable. Every code path that touches it is unchanged. */
-var BADGE_B64 = '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';
-
-/* ---- ported constant ---- */
-var SEV_V19 = {
-  OVERDUE:      { rank: 1, bg: '#c43a28', fg: '#ffffff' },
-  BREACHED:     { rank: 1, bg: '#c43a28', fg: '#ffffff' },
-  FLAG:         { rank: 2, bg: '#8f1f12', fg: '#ffffff' },
-  'NOT STARTED':{ rank: 3, bg: '#c9a227', fg: '#1d1b18' },
-  DUE:          { rank: 4, bg: '#f5df99', fg: '#6d5318' },
-  SKILL:        { rank: 5, bg: '#3f6a94', fg: '#ffffff' },
-  CLEAR:        { rank: 9, bg: '#3f8f5a', fg: '#ffffff' }
-};
-
-/* ---- ported constant ---- */
-var TV = {
-  INK: '#1d1b18', GOLD: '#c9a227', GOLDD: '#8a6a1f', GREEN: '#3f8f5a',
-  RED: '#c43a28', BLUE: '#1f5673', MUTE: '#847d6d', HAIR: '#e8e4da'
-};
-
-/* ---- ported constant ---- */
-var PANEL_FIRST_ROW_V19  = 11;
-
-/* ---- ported constant ---- */
-var PANEL_ROWS_V19       = 14;
-
-/* ---- ported constant ---- */
-var START_GRACE_DAYS_V19 = 7;
-
-/* ---- ported constant ---- */
-var QUEUE_REASONS_V19 = [
-  'Evidence thresholds met, FTO recommendation accepted',
-  'Observed directly by leadership, competency confirmed',
-  'Evidence sufficient for level and phase',
-  'Returned, needs more repetitions across separate shifts',
-  'Returned, needs observation by a second FTO',
-  'Returned, evidence note insufficient',
-  'Revoked, safety concern documented',
-  'Revoked, evidence no longer current'
-];
-
-/* [var EXPECTED_FORMS_V19 : moved to 99_config.gs — it derives from FORM_TITLES,
-   which loads after this file; deriving it here was a load-order fault] */
-
-/* ---- ported constant ---- */
-var DIGEST_COPY_TO_V19 = '';
-
-/* ---- ported constant ---- */
-var SKILL_MATRIX_BACKUP_V19 = '05 SKILLS PROGRESS LEGACY V18';
-
-/* ---- ported constant ---- */
-var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25, RFDETAIL:26, CS:27, NRT:29, PRIOR:30, NOTIMP:31, ADV:32, TOREV:33, CLIN:34 };
-
-/* ---- ported constant ---- */
-var SKILL_LABEL_V19 = 'skill name only, no SK number';
-
-/* ---- ported constant ---- */
-var HUB_ASSETS_FOLDER_V19 = 'SCEMS Hub Assets';
-
-/* ---- ported constant ---- */
-var PORTAL_FILE_V19 = 'portal';
-
-/* ---- ported constant ---- */
-var DUAL_SIGNOFF_LEVELS_V19 = ['Advanced EMT', 'Paramedic'];
-
-/* ---- ported constant ---- */
-var DUAL_SIGNOFF_LEVEL_V19 = 'Paramedic';
-
-/* ---- ported constant ---- */
-var DUAL_SIGNOFF_PHASE_V19 = 'Phase 4';
-
-/* ---- ported constant ---- */
-var DUAL_ROLE_TRAINING_V19 = 'Division Chief of Training';
-
-/* ---- ported constant ---- */
-var DUAL_ROLE_MEDICAL_V19  = 'Medical Director';
-
-/* ---- ported constant ---- */
-var MANAGED_TRIGGER_HANDLERS = [
-  'onHubFormSubmit', 'onSheetEdit', 'dailyChecks', 'weeklyRollup',
-  'traineeStatusCards', 'supervisorDigest', 'systemHeartbeat', 'monthlySnapshot'
-];
-
-
-/* ---- ported round 2 : HOME panel, rollup, trainee-skills views, consts ---- */
-
-function collectActionItemsV19_() {
-  var S = ss();
-  var items = [];
-
-  var threshold = 5;
-  try {
-    var t = S.getSheetByName(TAB.CONTROL).getRange('B5').getValue();
-    if (Number(t) > 0) threshold = Number(t);
-  } catch (e) {}
-
-  // ---- trainees: overdue, and never started ----
-  var eng = S.getSheetByName(TAB.ENGINE);
-  if (eng) {
-    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
-      var name = String(r[0] || '').trim();
-      if (!name) return;
-      if (String(r[21] || '').toUpperCase() === 'SNOOZED') return;
-
-      var fto      = String(r[3] || '').trim() || 'no FTO assigned';
-      var evals    = Number(r[6]) || 0;
-      var daysSince= r[8] === '' || r[8] === null ? null : Number(r[8]);
-      var dayInPhase = Number(r[20]) || 0;
-
-      if (evals > 0 && daysSince !== null && daysSince > threshold) {
-        items.push({
-          sev: 'OVERDUE', sort: 10000 - daysSince, who: name,
-          detail: daysSince + ' days since last evaluation',
-          owner: fto, action: 'Chase the FTO for a shift evaluation'
-        });
-      } else if (evals === 0 && dayInPhase > START_GRACE_DAYS_V19) {
-        items.push({
-          sev: 'NOT STARTED', sort: 10000 - dayInPhase, who: name,
-          detail: 'day ' + dayInPhase + ', no evaluation ever filed',
-          owner: fto, action: 'Confirm training has actually begun'
-        });
-      }
-
-      var review = String(r[17] || '');
-      if (review.indexOf('Due') >= 0) {
-        items.push({
-          sev: 'DUE', sort: 5000, who: name, detail: review,
-          owner: fto, action: 'File on the Decision Record form'
-        });
-      }
-    });
-  }
-
-  // ---- decision queue ----
-  var q = S.getSheetByName(TAB.QUEUE);
-  if (q && q.getLastRow() >= 5) {
-    var now = new Date();
-    q.getRange(5, 1, Math.min(q.getLastRow() - 4, 296), 8).getValues().forEach(function (r) {
-      var who = String(r[1] || '').trim();
-      if (!who || r[5]) return;
-      var due = r[4] instanceof Date ? r[4] : null;
-      var breached = due && due.getTime() < now.getTime();
-      var hrs = due ? Math.round((due.getTime() - now.getTime()) / 3600000) : null;
-      items.push({
-        sev: breached ? 'BREACHED' : 'DUE',
-        sort: breached ? 100 : 4000,
-        who: who,
-        detail: String(r[2] || 'decision') +
-                (breached ? ', PAST DEADLINE' : hrs !== null ? ', ' + hrs + 'h left' : ''),
-        owner: 'Division Chief of Training',
-        action: 'File on the Decision Record form'
-      });
-    });
-  }
-
-  // ---- audit flags ----
-  var au = S.getSheetByName('13 AUDIT - EXCEPTION LOG');
-  if (au) {
-    var labels = ['advancement vs score', 'reflection vs score',
-                  'extreme score without narrative', 'silent record',
-                  'FTO scope', 'phase mismatch'];
-    au.getRange(5, 1, 40, 7).getValues().forEach(function (r) {
-      var who = String(r[0] || '').trim();
-      if (!who) return;
-      var lit = [];
-      for (var c = 1; c <= 6; c++) {
-        if (String(r[c]).trim().toUpperCase() === 'FLAG') lit.push(labels[c - 1]);
-      }
-      if (!lit.length) return;
-      items.push({
-        sev: 'FLAG', sort: 200 - lit.length, who: who,
-        detail: lit.join(', '),
-        owner: 'Division Chief of Training',
-        action: 'Review on tab 13 and log the reviewer and action'
-      });
-    });
-  }
-
-  // ---- skills ready for validation ----
-  var sq = S.getSheetByName(TAB.SKILL_VALIDATION);
-  if (sq && sq.getLastRow() >= 5) {
-    sq.getRange(5, 1, Math.min(sq.getLastRow() - 4, 500), 12).getValues().forEach(function (r) {
-      var who = String(r[1] || '').trim();
-      if (!who || String(r[11]) !== 'OPEN') return;
-      items.push({
-        sev: 'SKILL', sort: 6000, who: who,
-        detail: String(r[4] || 'skill ready for validation'),
-        owner: 'Division Chief of Training',
-        action: 'Record the decision on tab 20'
-      });
-    });
-  }
-
-  items.sort(function (a, b) {
-    var ra = SEV_V19[a.sev].rank, rb = SEV_V19[b.sev].rank;
-    if (ra !== rb) return ra - rb;
-    return a.sort - b.sort;
-  });
-  return items;
-}
-
-function statusMeta_(status, daysSince, fto) {
-  var s = String(status || '');
-  if (s.indexOf('NRT') >= 0) return { color: '#8f1f12',
-    line: 'Formal Not Responding to Training concern filed. Decision in progress with the Division Chief of Training.' };
-  if (s.indexOf('Delayed') >= 0) return { color: '#c43a28',
-    line: 'NEEDS ATTENTION: no evaluation in ' + daysSince + ' days. Check in with ' + (fto || 'the assigned FTO') + '.' };
-  if (s.indexOf('Advancement') >= 0) return { color: '#c9a227',
-    line: 'Up for advancement review. Decision due within 72 hours.' };
-  if (s.indexOf('Needs Attention') >= 0) return { color: '#e0a11a',
-    line: 'Scores running below standard. Coaching in progress; your awareness helps.' };
-  if (s.indexOf('No Evals') >= 0) return { color: '#6f6a61',
-    line: 'Just getting started. No evaluations on file yet.' };
-  return { color: '#3f8f5a', line: 'On track. Nothing needs your attention.' };
-}
-
-function traineeCard_(o) {
-  var meta = statusMeta_(o.status, o.daysSince, o.fto);
-  var ftoDot = o.ftoOverdue ? '#c43a28' : (o.evals > 0 ? '#3f8f5a' : '#6f6a61');
-  var avgPct = o.avg ? Math.round((o.avg / 5) * 100) : 0;
-  var chip = function (txt, bg, fg) {
-    return '<span style="display:inline-block;background:' + bg + ';color:' + fg +
-      ';font-size:11px;font-weight:bold;padding:3px 10px;border-radius:10px;margin-right:6px;">' + txt + '</span>';
-  };
-  return '' +
-  '<div style="background:#ffffff;border-left:7px solid ' + meta.color + ';border-radius:8px;' +
-       'margin:0 16px 16px 16px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.12);">' +
-    '<div style="font-size:19px;font-weight:bold;color:#1d1b18;letter-spacing:0.5px;">' + o.name + '</div>' +
-    '<div style="margin:8px 0 10px 0;">' +
-      chip(o.level, '#1d1b18', '#c9a227') +
-      chip('Phase ' + o.phaseNum + ' of 4', '#c9a227', '#1d1b18') +
-      (o.weeksIn ? chip('Week ' + o.weeksIn, '#efe9db', '#6f6a61') : '') +
-    '</div>' +
-    '<div style="font-size:13px;color:#444;margin-bottom:10px;">' +
-      '<b>' + o.evals + '</b> training shift' + (o.evals === 1 ? '' : 's') + ' evaluated' +
-      (o.avg ? ' &nbsp;&middot;&nbsp; averaging <b>' + o.avg + ' / 5</b>' : '') +
-      (o.trendWord ? ' &nbsp;&middot;&nbsp; ' + o.trendWord : '') +
-    '</div>' +
-    (o.avg ?
-    '<div style="background:#efe9db;border-radius:6px;height:10px;margin:0 0 12px 0;">' +
-      '<div style="background:' + meta.color + ';width:' + avgPct + '%;height:10px;border-radius:6px;"></div>' +
-    '</div>' : '') +
-    '<table style="font-size:13px;color:#333;border-collapse:collapse;width:100%;">' +
-      '<tr><td style="color:#3f8f5a;font-weight:bold;width:110px;padding:3px 0;vertical-align:top;">Doing well</td>' +
-          '<td style="padding:3px 0;">' + o.strength + '</td></tr>' +
-      '<tr><td style="color:#8a6a1f;font-weight:bold;padding:3px 0;vertical-align:top;">Working on</td>' +
-          '<td style="padding:3px 0;">' + o.focus + '</td></tr>' +
-      '<tr><td style="color:#555;font-weight:bold;padding:3px 0;vertical-align:top;">FTO</td>' +
-          '<td style="padding:3px 0;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + ftoDot + ';margin-right:6px;"></span>' + o.ftoText + '</td></tr>' +
-    '</table>' +
-    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #eee;' +
-         'font-size:13px;font-weight:bold;color:' + meta.color + ';">' + meta.line + '</div>' +
-  '</div>';
-}
-
-function rollupCardV19_(f) {
-  var INK = '#1d1b18', GOLD = '#c9a227', GOLDD = '#8a6a1f',
-      RED = '#c43a28', GREEN = '#3f8f5a', MUTE = '#847d6d', HAIR = '#e8e4da';
-  var attention = f.overdue;
-  var edge = attention ? RED : (f.evals === 0 ? GOLD : GREEN);
-  var pct = f.avg ? Math.round((f.avg / 5) * 100) : 0;
-  var bar = attention ? RED : (f.avg && f.avg < 3 ? GOLD : GREEN);
-
-  function badge(t, bg, fg) {
-    if (!t) return '';
-    return '<span style="display:inline-block;background:' + bg + ';color:' + fg +
-      ';font:600 10px Arial,sans-serif;padding:3px 9px;border-radius:10px;' +
-      'margin:0 5px 0 0;">' + escHtmlV19_(t) + '</span>';
-  }
-
-  var h = [];
-  h.push('<div style="background:#ffffff;border:1px solid ' + HAIR +
-    ';border-left:5px solid ' + edge + ';border-radius:8px;padding:15px 18px;margin:0 0 12px 0;">');
-
-  h.push('<table cellpadding="0" cellspacing="0" style="width:100%;"><tr>');
-  h.push('<td style="vertical-align:top;">');
-  h.push('<div style="font:700 17px Arial,sans-serif;color:' + INK + ';">' +
-    escHtmlV19_(f.name) + '</div>');
-  h.push('<div style="margin:7px 0 0 0;">' +
-    badge(f.level, INK, '#ffffff') +
-    badge(f.phase ? f.phase + ' of 4' : '', GOLD, INK) +
-    badge(f.fto, '#f1ede2', GOLDD) + '</div>');
-  h.push('</td>');
-  h.push('<td style="width:150px;text-align:right;vertical-align:top;">');
-  if (f.evals > 0) {
-    h.push('<div style="font:700 20px Arial,sans-serif;color:' + INK + ';">' +
-      (f.avg ? f.avg : '-') + '<span style="font:400 12px Arial,sans-serif;color:' +
-      MUTE + ';"> / 5</span></div>');
-    h.push('<div style="font:11px Arial,sans-serif;color:' + MUTE + ';">' +
-      f.evals + ' shift' + (f.evals === 1 ? '' : 's') +
-      (f.trend ? ', ' + escHtmlV19_(f.trend.toLowerCase()) : '') + '</div>');
-  } else {
-    h.push('<div style="font:12px Arial,sans-serif;color:' + MUTE + ';">no shifts yet</div>');
-  }
-  h.push('</td></tr></table>');
-
-  if (f.evals > 0) {
-    h.push('<div style="background:#eee9dc;height:7px;border-radius:4px;overflow:hidden;margin:11px 0 0 0;">' +
-      '<div style="background:' + bar + ';height:7px;width:' + pct + '%;"></div></div>');
-  }
-
-  h.push('<div style="margin:12px 0 0 0;padding:9px 12px;background:#faf8f2;' +
-    'border-radius:5px;font:12px Arial,sans-serif;color:#4a453c;">' +
-    '<b style="color:' + GOLDD + ';">Shift progress</b> &nbsp; ' +
-    escHtmlV19_(f.progress) + '</div>');
-
-  if (attention) {
-    h.push('<div style="margin:10px 0 0 0;font:700 12px Arial,sans-serif;color:' + RED + ';">' +
-      'NEEDS ATTENTION: no evaluation in ' + f.days + ' days, FTO ' +
-      escHtmlV19_(f.fto) + '</div>');
-  }
-  h.push('</div>');
-  return h.join('');
-}
-
-function snapshotFactsV19_(name) {
-  var rec = traineeRecordV19_(name) || {};
-  var eng = ss().getSheetByName(TAB.ENGINE);
-  var e = null;
-  if (eng) {
-    var rows = eng.getRange(5, 1, 40, 22).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === name) { e = rows[i]; break; }
-    }
-  }
-  var days = e && e[8] !== '' && e[8] !== null ? Number(e[8]) : null;
-  var dayInPhase = e ? Number(e[20]) || 0 : 0;
-  var threshold = 5;
-  try {
-    var t = ss().getSheetByName(TAB.CONTROL).getRange('B5').getValue();
-    if (Number(t) > 0) threshold = Number(t);
-  } catch (err) {}
-
-  return {
-    name: name,
-    level: rec.level || '',
-    phase: rec.phase || '',
-    week: dayInPhase > 0 ? 'Week ' + Math.ceil(dayInPhase / 7) : '',
-    fto: rec.fto || 'unassigned',
-    evals: e ? Number(e[6]) || 0 : 0,
-    avg: e && e[9] ? Number(e[9]) : null,
-    trend: e ? String(e[11] || '') : '',
-    days: days,
-    overdue: days !== null && days > threshold,
-    strength: latestStrengthV19_(name),
-    focus: latestFocusV19_(name)
-  };
-}
-
-function progressLineV19_(name) {
-  var p = shiftProgressV19_(name);
-  if (!p.ok) return 'Progress unavailable : ' + p.why;
-  if (p.evals === 0) {
-    return 'No training shifts evaluated yet. ' + p.perPhase +
-           ' required in ' + (p.phase || 'this phase') + '.';
-  }
-  var line = p.evals + ' training shift' + (p.evals === 1 ? '' : 's') +
-             ' evaluated in total';
-  if (p.phaseProgress) {
-    line += '. ' + (p.phase || 'Current phase') + ': ' + p.phaseProgress;
-  } else {
-    line += '. ' + p.perPhase + ' required per phase.';
-  }
-  line += '.';
-  if (p.metPhaseMin) {
-    line += ' Minimum met, eligible to advance on competency.';
-  }
-  return line.replace(/\.\./g, '.');
-}
-
-function viewOverviewV19_(sh, name, rec, row) {
-  var sk = traineeSkillsV19_(name);
-  var events = traineeEventsV19_(name);
-
-  var counts = [
-    ['SIGNED OFF', sk.signed.length, TV.GREEN],
-    ['READY', sk.ready.length, TV.GOLD],
-    ['IN PROGRESS', sk.progress.length, TV.GOLDD],
-    ['NOT STARTED', sk.notStarted.length, TV.MUTE]
-  ];
-  counts.forEach(function (c, i) {
-    var col = 2 + i * 2;
-    sh.getRange(row, col, 1, 2).merge().setValue(c[1])
-      .setFontFamily('Oswald').setFontWeight('bold').setFontSize(22)
-      .setFontColor(c[2]).setHorizontalAlignment('center')
-      .setVerticalAlignment('middle').setBackground('#ffffff')
-      .setBorder(true, true, false, true, false, false, TV.HAIR,
-                 SpreadsheetApp.BorderStyle.SOLID);
-    sh.getRange(row + 1, col, 1, 2).merge().setValue(c[0])
-      .setFontFamily('Oswald').setFontSize(8).setFontColor(TV.MUTE)
-      .setHorizontalAlignment('center').setVerticalAlignment('top')
-      .setBackground('#ffffff')
-      .setBorder(false, true, true, true, false, false, TV.HAIR,
-                 SpreadsheetApp.BorderStyle.SOLID);
-  });
-  sh.setRowHeight(row, 34); sh.setRowHeight(row + 1, 18);
-  row += 3;
-
-  row = tvBandV19_(sh, row, 'WHERE THEY ARE', TV.BLUE);
-  var facts = [];
-  try {
-    var f = snapshotFactsV19_(name);
-    facts.push(['Shifts evaluated', String(f.evals)]);
-    if (f.avg) facts.push(['Average score', f.avg + ' / 5' + (f.trend ? ', ' + f.trend.toLowerCase() : '')]);
-    facts.push(['Last evaluation', f.days === null ? 'none yet' : f.days + ' day(s) ago']);
-    if (f.strength) facts.push(['Doing well', f.strength]);
-    if (f.focus) facts.push(['Working on', f.focus]);
-  } catch (e) {}
-  try { facts.push(['Shift progress', progressLineV19_(name)]); } catch (e) {}
-  facts.push(['Skill events logged', String(events.length)]);
-
-  facts.forEach(function (f) {
-    sh.getRange(row, 3).setValue(f[0])
-      .setFontFamily('Inter').setFontWeight('bold').setFontSize(9)
-      .setFontColor(TV.MUTE).setVerticalAlignment('middle');
-    sh.getRange(row, 4, 1, 5).merge().setValue(f[1])
-      .setFontFamily('Inter').setFontSize(10).setVerticalAlignment('middle')
-      .setWrap(true);
-    sh.setRowHeight(row, 22);
-    row++;
-  });
-  row++;
-
-  row = tvBandV19_(sh, row, 'WHAT HAPPENS NEXT', TV.GOLD);
-  var next = [];
-  if (sk.ready.length) {
-    next.push(sk.ready.length + ' skill(s) are ready for validation. That is ' +
-      'with leadership on tab 20, not with the trainee.');
-  }
-  if (sk.progress.length) {
-    next.push(sk.progress.length + ' skill(s) in progress. See Skills remaining ' +
-      'for how far off each one is.');
-  }
-  if (sk.notStarted.length) {
-    next.push(sk.notStarted.length + ' skill(s) not started yet.');
-  }
-  if (!events.length) {
-    next.push('No skill events logged at all. If they have been on shift, the ' +
-      'Skills Quick Log is not being submitted.');
-  }
-  if (!next.length) next.push('Nothing outstanding on skills.');
-
-  next.forEach(function (t) {
-    sh.getRange(row, 3, 1, 6).merge().setValue(t)
-      .setFontFamily('Inter').setFontSize(10).setWrap(true)
-      .setVerticalAlignment('middle');
-    sh.setRowHeight(row, 24);
-    row++;
-  });
-}
-
-function viewActivityV19_(sh, name, row) {
-  var events = traineeEventsV19_(name);
-  var shown = events.slice(0, 60);
-
-  row = tvBandV19_(sh, row, 'SKILL EVENTS   ' + events.length +
-    ' total, showing ' + shown.length + ', newest first', TV.BLUE);
-
-  row = tvTableV19_(sh, row,
-    ['DATE', 'SKILL', 'STAGE', 'OUTCOME', 'FTO', 'CALL REF'],
-    shown.map(function (e) {
-      return [e.date, e.skill, e.stage, e.outcome, e.fto, e.callRef];
-    }), [2, 2]);
-
-  if (shown.length) {
-    sh.getRange(row - shown.length - 1, 3, shown.length, 1)
-      .setNumberFormat('yyyy-mm-dd');
-  }
-
-  sh.getRange(row, 2, 1, 7).merge()
-    .setValue('The full permanent record is on 19 SKILL EVIDENCE LOG. ' +
-              'This page reads it and never writes to it.')
-    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
-    .setFontColor(TV.MUTE);
-}
-
-function viewSkillsByPhaseV19_(sh, name, row) {
-  var events = traineeEventsV19_(name);
-  if (!events.length) {
-    sh.getRange(row, 3).setValue('No skill events recorded for this trainee yet.')
-      .setFontFamily('Inter').setFontSize(10).setFontColor(TV.MUTE);
-    return;
-  }
-
-  var byPhase = {}, order = [];
-  events.forEach(function (e) {
-    var p = e.phase || 'Phase not recorded';
-    if (!byPhase[p]) { byPhase[p] = {}; order.push(p); }
-    if (!byPhase[p][e.skill]) {
-      byPhase[p][e.skill] = { skill: e.skill, count: 0, stages: {}, last: null, ftos: {} };
-    }
-    var s = byPhase[p][e.skill];
-    s.count++;
-    s.stages[e.stage] = (s.stages[e.stage] || 0) + 1;
-    if (e.fto) s.ftos[e.fto] = true;
-    if (!s.last || (e.date && e.date > s.last)) s.last = e.date;
-  });
-  order.sort();
-
-  order.forEach(function (p) {
-    var skills = Object.keys(byPhase[p]).sort().map(function (k) { return byPhase[p][k]; });
-    row = tvBandV19_(sh, row, p.toUpperCase() + '   ' + skills.length +
-      ' skill(s), ' + skills.reduce(function (a, s) { return a + s.count; }, 0) +
-      ' event(s)', TV.BLUE);
-
-    var rows = skills.map(function (s) {
-      var stageStr = ['O', 'A', 'P', 'I'].filter(function (k) { return s.stages[k]; })
-        .map(function (k) { return k + ' x' + s.stages[k]; }).join('  ');
-      return [s.skill, s.count, stageStr,
-              Object.keys(s.ftos).length, s.last || '', ''];
-    });
-    row = tvTableV19_(sh, row,
-      ['SKILL', 'EVENTS', 'STAGES SEEN', 'FTOs', 'LAST SEEN', ''],
-      rows, [1, 3]);
-  });
-
-  sh.getRange(row, 2, 1, 7).merge()
-    .setValue('Stages: O observed, A assisted, P performed with coaching, ' +
-              'I performed independently.')
-    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
-    .setFontColor(TV.MUTE);
-}
-
-function viewSkillsCompletedV19_(sh, name, row) {
-  var sk = traineeSkillsV19_(name);
-
-  row = tvBandV19_(sh, row, 'SIGNED OFF   ' + sk.signed.length + ' skill(s)', TV.GREEN);
-  row = tvTableV19_(sh, row,
-    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'SIGNED BY', 'SIGNED ON'],
-    sk.signed.map(function (s) {
-      return [s.skill, s.successful, s.independent, s.dates, s.signedBy, s.signedOn];
-    }), [1, 3]);
-
-  row = tvBandV19_(sh, row,
-    'EVIDENCE COMPLETE, AWAITING VALIDATION   ' + sk.ready.length + ' skill(s)', TV.GOLD);
-  sh.getRange(row, 3, 1, 6).merge()
-    .setValue(sk.ready.length
-      ? 'The trainee has done their part on these. They are waiting on a ' +
-        'validation decision on tab 20, not on further work.'
-      : 'Nothing waiting on a validation decision.')
-    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
-  sh.setRowHeight(row, 24);
-  row++;
-  row = tvTableV19_(sh, row,
-    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'FTOs', ''],
-    sk.ready.map(function (s) {
-      return [s.skill, s.successful, s.independent, s.dates, s.ftos, ''];
-    }), [1, 4]);
-
-  var total = sk.signed.length + sk.ready.length;
-  var all = sk.all.length;
-  sh.getRange(row, 2, 1, 7).merge()
-    .setValue(total + ' of ' + all + ' skill(s) complete or awaiting validation. ' +
-      'Meeting the evidence thresholds makes a skill eligible for validation. ' +
-      'It does not sign it off. Sign-off is a documented human decision against ' +
-      'the approved standard.')
-    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
-    .setFontColor(TV.MUTE).setWrap(true);
-}
-
-function viewSkillsRemainingV19_(sh, name, rec, row) {
-  var sk = traineeSkillsV19_(name);
-
-  row = tvBandV19_(sh, row, 'SHIFTS', TV.BLUE);
-  var line = '';
-  try { line = progressLineV19_(name); } catch (e) { line = 'not available'; }
-  sh.getRange(row, 3, 1, 6).merge().setValue(line)
-    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
-  sh.setRowHeight(row, 24);
-  row += 2;
-
-  row = tvBandV19_(sh, row,
-    'IN PROGRESS   ' + sk.progress.length + ' skill(s)', TV.GOLDD);
-  sh.getRange(row, 3, 1, 6).merge()
-    .setValue(sk.progress.length
-      ? 'Started, but not yet enough evidence. The counts show how far along each one is.'
-      : 'Nothing part way through.')
-    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
-  sh.setRowHeight(row, 24);
-  row++;
-  row = tvTableV19_(sh, row,
-    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'FTOs', 'STAGE REACHED'],
-    sk.progress.map(function (s) {
-      return [s.skill, s.successful, s.independent, s.dates, s.ftos, s.stage];
-    }), [1, 4]);
-
-  row = tvBandV19_(sh, row,
-    'NOT STARTED   ' + sk.notStarted.length + ' skill(s)', TV.RED);
-  row = tvTableV19_(sh, row, ['SKILL', '', '', '', '', ''],
-    sk.notStarted.map(function (s) { return [s.skill, '', '', '', '', '']; }), null);
-
-  var left = sk.progress.length + sk.notStarted.length;
-  sh.getRange(row, 2, 1, 7).merge()
-    .setValue(left + ' of ' + sk.all.length + ' skill(s) still to complete. ' +
-      'Anything already sitting with leadership appears under Skills completed, ' +
-      'not here, because the trainee has done their part on those.')
-    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
-    .setFontColor(TV.MUTE).setWrap(true);
-}
-
-function signaturesOnFileV19_(trainee, itemType, sinceMs) {
-  var out = {};
-  var dec = ss().getSheetByName(DECISIONS_TAB);
-  if (!dec || dec.getLastRow() < 5) return out;
-  dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues().forEach(function (r) {
-    if (String(r[3]).trim() !== String(trainee).trim()) return;
-    if (String(r[4]) !== String(itemType)) return;
-    var ts = r[0] instanceof Date ? r[0].getTime() : 0;
-    if (sinceMs && ts < sinceMs) return;
-    var role = String(r[2] || '').trim();
-    if (role === DUAL_ROLE_TRAINING_V19 || role === DUAL_ROLE_MEDICAL_V19) {
-      if (!out[role] || ts > out[role].ts) {
-        out[role] = { ts: ts, by: String(r[1] || '').trim(), decision: String(r[5] || '').trim(),
-                      rationale: String(r[6] || '').trim(), effective: r[7] };
-      }
-    }
-  });
-  return out;
-}
-
-function openQueueRowV19_(trainee, key) {
-  var q = ss().getSheetByName(TAB.QUEUE);
-  if (!q) return -1;
-  var rows = q.getRange(5, 1, 296, 6).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][1]) === String(trainee) && !rows[i][5] &&
-        String(rows[i][2]).indexOf(key) >= 0) return 5 + i;
-  }
-  return -1;
-}
-
-function needsDualSignoffV19_(trainee, itemType) {
-  if (String(itemType) !== 'Advancement review') return false;
-  var rec = traineeRecordV19_(trainee);
-  if (!rec) return false;
-  if (DUAL_SIGNOFF_LEVELS_V19.indexOf(rec.level) < 0) return false;
-  return rec.phase === DUAL_SIGNOFF_PHASE_V19;
-}
 
 function hideSkillIdColumnV19_(sh) {
   if (!sh) return;
@@ -7105,254 +5063,6 @@ function hideSkillIdColumnV19_(sh) {
   map[TAB.SKILL_SIGNOFF] = 4;
   var col = map[sh.getName()];
   if (col) { try { sh.hideColumns(col); } catch (e) {} }
-}
-
-function definedV19_(name) {
-  try { return typeof eval(name) === 'function'; } catch (e) { return false; }
-}
-
-function engineRows() {
-  var sh = ss().getSheetByName(TAB.ENGINE);
-  return sh.getRange(5, 1, 40, 19).getValues().filter(function (r) { return r[0]; });
-}
-
-var OPERATIONAL_TABS_V19 = [
-  'HOME',
-  '01 TRAINEE MASTER',
-  '04 URGENT CONCERNS RAW',
-  '12 DECISION QUEUE',
-  '23 TRAINEE SKILLS'
-];
-
-var SKILL_MATRIX_HEADERS_V19 = [
-  'TRAINEE','SKILL','STAGE','LAST DATE','LAST FTO','LEVEL','READINESS','SIGN-OFF',
-  'DOMAIN','SKILL ID','SUCCESSFUL REPS','INDEPENDENT REPS','DISTINCT DATES',
-  'DISTINCT FTOS','LAST OUTCOME','LAST CONTEXT','SIGNED BY','SIGNED DATE',
-  'EXPIRATION','DECISION / EVIDENCE NOTE'
-];
-
-var SKILL_CATALOG_HEADERS_V19 = [
-  'SKILL ID','DOMAIN','SKILL','EMT REQUIRED','AEMT REQUIRED','PARAMEDIC REQUIRED',
-  'ACTIVE','ALLOWED CONTEXT','MIN SUCCESSFUL REPS','MIN INDEPENDENT REPS',
-  'MIN DISTINCT DATES','MIN DISTINCT FTOS','SIGN-OFF AUTHORITY','STANDARD / SOURCE',
-  'EFFECTIVE DATE','RETIRE DATE','APPROVAL STATUS'
-];
-
-var TRAINEE_VIEWS_V19 = [
-  'Overview',
-  'Skills completed',
-  'Skills remaining',
-  'Skills by phase',
-  'Recent activity'
-];
-
-var SNOOZE_DAYS = 3;
-
-var DOMAIN_NAMES = ['Assessment','Treatment','Communication','Documentation','Scene Leadership','Professionalism'];
-
-var HUB_URL = 'https://sites.google.com/view/scemsfieldtraininghub/home';
-
-var BACKUP_FOLDER = 'SCEMS Tracker Backups';
-
-var SKILL_BURST_LIMIT_V20   = 6;
-
-var SKILL_INFLATION_MIN_V20 = 10;
-
-var SKILL_INFLATION_PCT_V20 = 0.9;
-
-var KEEP_TOOLS_V19 = [
-  'cleanupReportV19', 'auditResponseTabsV19', 'cleanResponseTabsV19',
-  'checkEvidenceIntegrityV19', 'tidyForOperationsV19', 'showAllTabsV19',
-  'checkAllFormsV19', 'checkRosterV19', 'checkProgressV19',
-  'checkSupervisorRoutingV19', 'checkPhaseHandlingV19', 'checkReleaseGateV19',
-  'auditDatesV19', 'auditSkillValidationsV19', 'whichModeV19',
-  'refreshActionPanelV19', 'buildTraineeSkillsViewV19', 'previewRollupV19',
-  'previewHandoverV19', 'previewSkillsFormV19'
-];
-
-var ONE_TIME_TOOLS_V19 = [
-  { fn: 'traceLastEvalV19',        why: 'traced the first rejected submission' },
-  { fn: 'skillEventStateV19',      why: 'traced the phase repair' },
-  { fn: 'listSkillsFormFieldsV19', why: 'found the phase field name' },
-  { fn: 'traceDigestV19',          why: 'found the digest routing fault' },
-  { fn: 'previewRosterMoveV19',    why: 'previewed the roster move' },
-  { fn: 'whereIsEverythingV19',    why: 'found the assets after the account mix-up' },
-  { fn: 'diagnoseMenuButtonV19',   why: 'diagnosed the HOME menu box' },
-  { fn: 'previewPhaseRepairV19',   why: 'previewed the phase repair' }
-];
-
-var SUPERSEDED_BLOCKS_V19 = [
-  { marker: 'buildSkillEvidenceLogV19_', block: 'v19.0.5 / 19.0.6 / 19.0.7 validation purge',
-    by: 'the GO-LIVE block v19.1.0 and later', note: 'keep only the newest copy' },
-  { marker: 'fixPhaseQuestionV19', block: 'v19.5.0 phase handling',
-    by: 'still current', note: 'keep' },
-  { marker: 'previewSnapshotV19', block: 'v19.12.2 supervisor snapshot',
-    by: 'v19.14.0 emails, complete', note: 'delete if v19.14.0 is present' },
-  { marker: 'checkProjectionsV19', block: 'v19.13.0 roll-up with projections',
-    by: 'v19.13.1 and then v19.14.0', note: 'delete, the projected date was dropped' },
-  { marker: 'sendHandoverCardV19', block: 'v19.10.0 handover, plain text',
-    by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
-];
-
-/* [var DIGEST_COPY_TO_V19 : defined above] */
-
-
-/* ---- ported round 3 : trainee-view card helpers ---- */
-
-function latestFocusV19_(traineeName) {
-  try {
-    var v9 = ss().getSheetByName('09 TRAINEE VIEW');
-    if (!v9) return '';
-    var rows = v9.getRange(5, 1, 40, 9).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === String(traineeName).trim()) {
-        return String(rows[i][8] || '').trim();
-      }
-    }
-  } catch (e) {}
-  return '';
-}
-
-function latestStrengthV19_(traineeName) {
-  var ev = ss().getSheetByName(TAB.EVAL);
-  if (!ev || ev.getLastRow() < 5) return '';
-  var rows = ev.getRange(5, 1, ev.getLastRow() - 4, 24).getValues();
-  for (var i = rows.length - 1; i >= 0; i--) {
-    if (String(rows[i][2]).trim() !== String(traineeName).trim()) continue;
-    var s = String(rows[i][21] || '').trim();
-    if (s) return s;
-  }
-  return '';
-}
-
-function shiftProgressV19_(name) {
-  var rec = traineeRecordV19_(name);
-  if (!rec) return { ok: false, why: 'not on the Trainee Master' };
-
-  var mins = phaseMinimumsV19_();
-  var perPhase = mins[rec.level];
-  if (!perPhase) {
-    return { ok: false, why: 'no minimum set for ' + (rec.level || 'this level') };
-  }
-
-  var eng = ss().getSheetByName(TAB.ENGINE);
-  var evals = 0, phaseProgress = '';
-  if (eng) {
-    var rows = eng.getRange(5, 1, 40, 22).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === name) {
-        evals = Number(rows[i][6]) || 0;
-        phaseProgress = String(rows[i][19] || '').trim();
-        break;
-      }
-    }
-  }
-
-  return {
-    ok: true,
-    level: rec.level,
-    phase: rec.phase,
-    evals: evals,
-    perPhase: perPhase,
-    phaseProgress: phaseProgress,
-    metPhaseMin: /^Met/i.test(phaseProgress)
-  };
-}
-
-function traineeEventsV19_(name) {
-  var out = [];
-  var ev = ss().getSheetByName(TAB.SKILL_EVIDENCE);
-  if (!ev || ev.getLastRow() < 5) return out;
-  ev.getRange(5, 1, ev.getLastRow() - 4, 20).getValues().forEach(function (r) {
-    if (String(r[3]).trim() !== String(name).trim()) return;
-    out.push({
-      date: r[2], phase: String(r[5] || ''), fto: String(r[6] || ''),
-      domain: String(r[7] || ''), skill: String(r[9] || ''),
-      context: String(r[10] || ''), stage: String(r[11] || ''),
-      outcome: String(r[12] || ''), callRef: String(r[15] || '')
-    });
-  });
-  return out.reverse();
-}
-
-function traineeSkillsV19_(name) {
-  var out = { signed: [], ready: [], progress: [], notStarted: [], all: [] };
-  var m = ss().getSheetByName(TAB.SKILLS);
-  if (!m || m.getLastRow() < 5) return out;
-  m.getRange(5, 1, m.getLastRow() - 4, 20).getValues().forEach(function (r) {
-    if (String(r[0]).trim() !== String(name).trim()) return;
-    var item = {
-      skill: String(r[1] || ''),
-      stage: String(r[2] || ''),
-      readiness: String(r[6] || ''),
-      signoff: String(r[7] || ''),
-      successful: Number(r[10]) || 0,
-      independent: Number(r[11]) || 0,
-      dates: Number(r[12]) || 0,
-      ftos: Number(r[13]) || 0,
-      signedBy: String(r[16] || ''),
-      signedOn: r[17] || ''
-    };
-    out.all.push(item);
-    if (item.signoff === 'SIGNED OFF') out.signed.push(item);
-    else if (item.readiness === 'READY FOR VALIDATION') out.ready.push(item);
-    else if (item.readiness === 'IN PROGRESS') out.progress.push(item);
-    else out.notStarted.push(item);
-  });
-  return out;
-}
-
-function tvBandV19_(sh, row, text, colour) {
-  sh.getRange(row, 2, 1, 7).merge().setValue(text)
-    .setFontFamily('Oswald').setFontWeight('bold').setFontSize(10)
-    .setFontColor('#ffffff').setBackground(colour).setVerticalAlignment('middle');
-  sh.setRowHeight(row, 22);
-  return row + 1;
-}
-
-function tvTableV19_(sh, row, headers, rows, widthsCentre) {
-  sh.getRange(row, 3, 1, headers.length).setValues([headers])
-    .setFontFamily('Oswald').setFontWeight('bold').setFontSize(8)
-    .setFontColor(TV.MUTE)
-    .setBorder(false, false, true, false, false, false, TV.HAIR,
-               SpreadsheetApp.BorderStyle.SOLID);
-  sh.setRowHeight(row, 18);
-  row++;
-  if (!rows.length) {
-    sh.getRange(row, 3).setValue('none')
-      .setFontFamily('Inter').setFontSize(9).setFontColor(TV.MUTE);
-    return row + 2;
-  }
-  sh.getRange(row, 3, rows.length, headers.length).setValues(rows)
-    .setFontFamily('Inter').setFontSize(9).setVerticalAlignment('middle');
-  if (widthsCentre) {
-    sh.getRange(row, 3 + widthsCentre[0], rows.length, widthsCentre[1])
-      .setHorizontalAlignment('center');
-  }
-  for (var i = 0; i < rows.length; i++) sh.setRowHeight(row + i, 20);
-  return row + rows.length + 1;
-}
-
-
-/* ---- ported round 4 : preflight + matrix metric helpers ---- */
-
-function mergedRuleConflicts_() {
-  var conflicts = [];
-  ss().getSheets().forEach(function (sh) {
-    var merged = sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).getMergedRanges();
-    if (!merged.length) return;
-    sh.getConditionalFormatRules().forEach(function (rule) {
-      rule.getRanges().forEach(function (ruleRange) {
-        merged.forEach(function (mergedRange) {
-          if (rangesIntersect_(ruleRange, mergedRange)) {
-            conflicts.push(sh.getName() + ' : ' + ruleRange.getA1Notation() +
-              ' intersects merged ' + mergedRange.getA1Notation());
-          }
-        });
-      });
-    });
-  });
-  return conflicts;
 }
 
 function phaseMinimumsV19_() {
@@ -7477,24 +5187,6 @@ function skillDeploymentIssuesV19_() {
   return issues;
 }
 
-function stageRankV19_(stage) {
-  return { '': 0, O: 1, A: 2, P: 3, I: 4 }[String(stage || '').toUpperCase()] || 0;
-}
-
-function uniqueCountV19_(values) {
-  var seen = {};
-  values.forEach(function (v) {
-    var key = String(v || '').trim();
-    if (key) seen[key] = true;
-  });
-  return Object.keys(seen).length;
-}
-
-function yesV19_(value) {
-  return /^(yes|true|y|1)$/i.test(String(value || '').trim());
-}
-
-
 /* ---- ported round 5 : final closure helpers ---- */
 
 function catalogContextsV19_(value) {
@@ -7502,39 +5194,6 @@ function catalogContextsV19_(value) {
     .map(function (v) { return v.trim(); })
     .filter(function (v) { return v; });
 }
-
-function positiveIntV19_(value) {
-  var n = Number(value);
-  return isFinite(n) && n >= 1 && Math.floor(n) === n;
-}
-
-function rangesIntersect_(a, b) {
-  return a.getRow() <= b.getLastRow() && a.getLastRow() >= b.getRow() &&
-    a.getColumn() <= b.getLastColumn() && a.getLastColumn() >= b.getColumn();
-}
-
-
-/* ==================== 40_skills.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 40_skills.gs
- * Skill-evidence ingestion: server-side validation, the batched
- * idempotent evidence writer, and the grid-form submit handler.
- *
- * INTEGRITY RULES ENFORCED HERE
- *  - Idempotency: form ID + response ID. A retried trigger writes ZERO
- *    additional events.
- *  - Every event carries source form ID and title, source response ID,
- *    and writer version (columns added by migration; the writer refuses
- *    to write when they are missing rather than writing partial rows).
- *  - Validation runs BEFORE any ACCEPTED value exists. Rejected
- *    submissions retain their full payload with VALIDATION RESULT =
- *    'REJECTED : reason' — quarantined data, never a skeleton row.
- *  - All events for one response are written in ONE batch, and derived
- *    views rebuild ONCE per response.
- *  - No fuzzy repetition matching: a repetitions line that does not match
- *    exactly one tapped skill counts as one and is reported.
- ************************************************************************/
 
 /* ---------------------------------------------------------------- *
  *  Validation
@@ -8035,34 +5694,218 @@ function verifySkillsV20_1() {
   return msg;
 }
 
+/* Legacy menu names → safe no-ops (pattern retained from v19.0.4). */
+function buildSkillsSystem() { return installSkillsV19(); }
 
-/* ==================== 50_decisions.gs ==================== */
+function recordSkillDirectV20_1() {
+  if (!gateV20_2_('RECORD WITNESSED SKILL')) return;
+  var ui = SpreadsheetApp.getUi();
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 50_decisions.gs
- * The skill-validation queue, explicit decision recording, decision
- * reconciliation by stable IDs, the stranded-decision migration, and
- * atomic lifecycle changes (advancement, close/release).
+  var r1 = ui.prompt('Record a skill (1 of 4)',
+    'Trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  var resolved = resolveTraineeV20_1_(String(r1.getResponseText() || '').trim());
+  if (!resolved.ok || !resolved.record) {
+    ui.alert('Could not resolve that trainee: ' + resolved.reason +
+      (resolved.ambiguous && resolved.ambiguous.length
+        ? '\nCandidates: ' + resolved.ambiguous.join(', ') : ''));
+    return;
+  }
+  var rec = resolved.record;
+  if (rec.closed) { ui.alert(rec.name + ' is closed/released. Nothing recorded.'); return; }
+
+  var all = catalogObjectsV19_(false);
+  var pool = all.filter(function (c) { return skillApplicableV19_(c, rec.level); });
+  if (!pool.length) pool = all; // unknown level string: offer the whole approved catalog
+
+  var r2 = ui.prompt('Record a skill (2 of 4)',
+    rec.name + ' (' + rec.level + ')\n\nSkill name or SKILL ID (example SK-EMT-014):',
+    ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  var wanted = String(r2.getResponseText() || '').trim();
+  if (!wanted) return;
+
+  var chosen = null;
+  var wantedId = wanted.toUpperCase();
+  var wantedName = normalizeSkillNameV19_(wanted);
+  pool.forEach(function (c) {
+    if (c.id.toUpperCase() === wantedId) chosen = c;
+  });
+  if (!chosen) {
+    pool.forEach(function (c) {
+      if (normalizeSkillNameV19_(c.skill) === wantedName) chosen = c;
+    });
+  }
+  if (!chosen) {
+    var hits = pool.filter(function (c) {
+      return normalizeSkillNameV19_(c.skill).indexOf(wantedName) >= 0;
+    });
+    if (hits.length === 1) {
+      chosen = hits[0];
+    } else if (hits.length > 1 && hits.length <= 8) {
+      var listing = hits.map(function (c, i) {
+        return (i + 1) + ' = ' + c.skill + '  (' + c.id + ')'; }).join('\n');
+      var r2b = ui.prompt('Which one?',
+        '"' + wanted + '" matches ' + hits.length + ' skills.\nType the number:\n\n' + listing,
+        ui.ButtonSet.OK_CANCEL);
+      if (r2b.getSelectedButton() !== ui.Button.OK) return;
+      var pick = parseInt(String(r2b.getResponseText() || '').trim(), 10);
+      if (pick >= 1 && pick <= hits.length) chosen = hits[pick - 1];
+    } else if (hits.length > 8) {
+      ui.alert('"' + wanted + '" matches ' + hits.length + ' skills — be more specific.\n\nFirst few:\n' +
+        hits.slice(0, 10).map(function (c) { return '  ' + c.skill + ' (' + c.id + ')'; }).join('\n'));
+      return;
+    }
+  }
+  if (!chosen) {
+    ui.alert('No approved skill matched "' + wanted + '" for ' + rec.level + '.\n\nExamples from the catalog:\n' +
+      pool.slice(0, 12).map(function (c) { return '  ' + c.skill + ' (' + c.id + ')'; }).join('\n') +
+      (pool.length > 12 ? '\n  …and ' + (pool.length - 12) + ' more on 15 SKILL CATALOG' : ''));
+    return;
+  }
+
+  var r3 = ui.prompt('Record a skill (3 of 4)',
+    'Date you observed it (example 8/14/2026).\nLeave BLANK for today:', ui.ButtonSet.OK_CANCEL);
+  if (r3.getSelectedButton() !== ui.Button.OK) return;
+  var dText = String(r3.getResponseText() || '').trim();
+  var when = dText ? parseDateSafeV20_1_(dText) : new Date();
+  if (!when) { ui.alert('Could not read that date. Nothing recorded. Try 8/14/2026.'); return; }
+
+  var r4 = ui.prompt('Record a skill (4 of 4)',
+    'Rationale for the record.\nLeave BLANK for: "Directly observed and verified by the FTO Program Director"',
+    ui.ButtonSet.OK_CANCEL);
+  if (r4.getSelectedButton() !== ui.Button.OK) return;
+  var rationale = String(r4.getResponseText() || '').trim() ||
+    'Directly observed and verified by the FTO Program Director';
+  if (rationale.indexOf('[direct entry]') < 0) rationale += ' [direct entry]';
+
+  // honest duplicate check across the whole sign-off log, IDs or not
+  var idx = signoffIndexV20_1_();
+  var already = idx.rows.filter(function (a) {
+    return normalizeNameV20_1_(a.trainee) === normalizeNameV20_1_(rec.name) &&
+           a.skillId === chosen.id && a.decision === 'Approve sign-off';
+  });
+  if (already.length) {
+    var warn = rec.name + ' already has an Approve sign-off for ' + chosen.skill +
+      ' (' + already[0].decisionId + (already[0].decisionDate ? ', ' + dateKeyV20_1_(already[0].decisionDate) : '') +
+      ').\n\nRecord another one anyway?';
+    if (ui.alert('Already signed off', warn, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
+      return;
+    }
+  }
+
+  var decider = sessionEmailV20_1_() || 'C. Hunt';
+  var confirmMsg = rec.name + ' (' + rec.level + ')\n' + chosen.skill + '  [' + chosen.id + ']' +
+    '\n\nApprove sign-off\nObserved : ' + dateKeyV20_1_(when) +
+    '\nDecided by : ' + decider + '\nRationale : ' + rationale +
+    '\n\nThis writes a permanent record. Proceed?';
+  if (ui.alert('Confirm', confirmMsg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var qr = newIdV20_1_('QR');
+  appendRowsHeaderMappedV20_1_(TAB.SKILL_VALIDATION, 4, [{
+    'TRAINEE': rec.name, 'SKILL': chosen.skill, 'SKILL ID': chosen.id,
+    'DECISION': 'Approve sign-off', 'DECIDED BY': decider, 'DECISION DATE': when,
+    'RATIONALE': rationale, 'RECORD STATUS': 'OPEN', 'REQUEST ID': qr
+  }], ['TRAINEE', 'SKILL', 'SKILL ID', 'RECORD STATUS', 'REQUEST ID']);
+
+  var t = queueTableV20_1_(), rowNum = 0;
+  if (t.ok) {
+    t.rows.forEach(function (r, i) {
+      if (String(r[t.col['REQUEST ID']] || '').trim() === qr) rowNum = t.firstDataRow + i;
+    });
+  }
+  if (!rowNum) {
+    ui.alert('The request row was created (' + qr + ') but could not be found again — ' +
+      'nothing recorded yet. Tell Claude; nothing is lost.');
+    return;
+  }
+  var out = recordDecisionForRowV20_1_(rowNum);
+  var homeNote = '';
+  try { refreshHomeNowV20_1(); homeNote = '\nHOME page updated.'; } catch (eH) {}
+  ui.alert(out + homeNote);
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 50_decisions
  *
- * THE EXPLICIT-ACTION MODEL (replaces the per-cell race)
- *  1. Leadership picks DECISION and RATIONALE from the armed dropdowns.
- *     The edit handler stamps DECIDED BY and DECISION DATE for display
- *     and arms the RECORD checkbox. NOTHING IS RECORDED YET.
- *  2. Leadership ticks RECORD on the row (or runs "Record pending skill
- *     decisions" from the SCEMS menu to process every completed row).
- *  3. The server validates authority, queue state, completeness, dates,
- *     and duplicates against the row's REQUEST ID, then writes ONE
- *     immutable sign-off record and updates queue, matrix, audit, and
- *     notification state together.
+ * The validation queue, the authority to decide, and the permanent
+ * sign-off log.
  *
- * IDENTITY OF WORK
- *  - Every queue row carries a REQUEST ID (QR-…), assigned when the row
- *    is created and backfilled by migration for existing rows.
- *  - Every decision carries a DECISION ID (SD-…) and the REQUEST ID it
- *    answers. Reconciliation matches request-to-decision by ID and
- *    decision type — an older Approval can never satisfy a newer Return
- *    or Revoke.
- ************************************************************************/
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   The skill-validation queue, explicit decision recording, decision
+ *   reconciliation by stable IDs, the stranded-decision migration, and
+ *   atomic lifecycle changes (advancement, close/release).
+ *   THE EXPLICIT-ACTION MODEL (replaces the per-cell race)
+ *   1. Leadership picks DECISION and RATIONALE from the armed dropdowns.
+ *   The edit handler stamps DECIDED BY and DECISION DATE for display
+ *   and arms the RECORD checkbox. NOTHING IS RECORDED YET.
+ *   2. Leadership ticks RECORD on the row (or runs "Record pending skill
+ *   decisions" from the SCEMS menu to process every completed row).
+ *   3. The server validates authority, queue state, completeness, dates,
+ *   and duplicates against the row's REQUEST ID, then writes ONE
+ *   immutable sign-off record and updates queue, matrix, audit, and
+ *   notification state together.
+ *   IDENTITY OF WORK
+ *   - Every queue row carries a REQUEST ID (QR-…), assigned when the row
+ *   is created and backfilled by migration for existing rows.
+ *   - Every decision carries a DECISION ID (SD-…) and the REQUEST ID it
+ *   answers. Reconciliation matches request-to-decision by ID and
+ *   decision type — an older Approval can never satisfy a newer Return
+ *   or Revoke.
+ *   SCEMS v20.1.0h ADD-ON : advanceTraineeNow
+ *   Prompt-driven wrapper for applyAdvancementV20_1 so a phase
+ *   advancement can be applied without editing code. Everything it
+ *   does goes through the existing atomic path: master phase +
+ *   phase-start date + assignment history + audit log + notification
+ *   under one lock. It refuses closed trainees, unknown phases,
+ *   future dates, and anything past Phase 4 (governance, not code).
+ *   SCEMS v20.1.0h ADD-ON : "Work my queue"
+ */
+
+function openQueueRowV19_(trainee, key) {
+  var q = ss().getSheetByName(TAB.QUEUE);
+  if (!q) return -1;
+  var rows = q.getRange(5, 1, 296, 6).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][1]) === String(trainee) && !rows[i][5] &&
+        String(rows[i][2]).indexOf(key) >= 0) return 5 + i;
+  }
+  return -1;
+}
+
+function needsDualSignoffV19_(trainee, itemType) {
+  if (String(itemType) !== 'Advancement review') return false;
+  var rec = traineeRecordV19_(trainee);
+  if (!rec) return false;
+  if (DUAL_SIGNOFF_LEVELS_V19.indexOf(rec.level) < 0) return false;
+  return rec.phase === DUAL_SIGNOFF_PHASE_V19;
+}
+
+/* ---- ported round 4 : preflight + matrix metric helpers ---- */
+
+function mergedRuleConflicts_() {
+  var conflicts = [];
+  ss().getSheets().forEach(function (sh) {
+    var merged = sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).getMergedRanges();
+    if (!merged.length) return;
+    sh.getConditionalFormatRules().forEach(function (rule) {
+      rule.getRanges().forEach(function (ruleRange) {
+        merged.forEach(function (mergedRange) {
+          if (rangesIntersect_(ruleRange, mergedRange)) {
+            conflicts.push(sh.getName() + ' : ' + ruleRange.getA1Notation() +
+              ' intersects merged ' + mergedRange.getA1Notation());
+          }
+        });
+      });
+    });
+  });
+  return conflicts;
+}
 
 /* ---------------------------------------------------------------- *
  *  Queue helpers
@@ -8771,7 +6614,6 @@ function closeTraineeV20_1() {
 /** Legacy menu name preserved; same safe implementation. */
 function archiveTrainee() { return closeTraineeV20_1(); }
 
-
 /* ---------------------------------------------------------------- *
  *  Legacy decision linker : labels pre-v20.1 sign-off rows with the
  *  REQUEST ID of the queue row they answered. One-time, previewed,
@@ -8857,7 +6699,6 @@ function applyLinkDecisionsV20_1(confirmToken) {
   });
 }
 
-
 /* ---------------------------------------------------------------- *
  *  Solo-operator fast path : approve everything that is ready
  * ---------------------------------------------------------------- */
@@ -8885,22 +6726,1362 @@ function approveAllReadyV20_1() {
   Logger.log(m); return m;
 }
 
+function advanceTraineeNow() {
+  if (!gateV20_2_('ADVANCE TRAINEE')) return;
+  var ui = SpreadsheetApp.getUi();
 
-/* ==================== 60_reporting.gs ==================== */
+  var r1 = ui.prompt('Advance a trainee (1 of 3)',
+    'Exact trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  var name = String(r1.getResponseText() || '').trim();
+  if (!name) return;
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 60_reporting.gs
- * Trustworthy analytics: canonical recomputation, DATA ERROR surfacing,
- * reconciliation totals, and the read-only analytics verifier.
+  var resolved = resolveTraineeV20_1_(name);
+  if (!resolved.ok || !resolved.record) {
+    ui.alert('Could not resolve "' + name + '": ' + resolved.reason +
+      (resolved.ambiguous && resolved.ambiguous.length
+        ? '\nCandidates: ' + resolved.ambiguous.join(', ') : ''));
+    return;
+  }
+  var rec = resolved.record;
+  var i = PHASES_V20_1.indexOf(rec.phase);
+  if (rec.closed) { ui.alert(rec.name + ' is closed/released. No advancement.'); return; }
+  if (i < 0) { ui.alert('Current phase "' + rec.phase + '" is not a known phase. Fix the master row first.'); return; }
+  if (i === PHASES_V20_1.length - 1) {
+    ui.alert(rec.name + ' is already in ' + rec.phase + '.\n\nClearance beyond Phase 4 is a ' +
+      'governance action — use SCEMS menu > Close / release a trainee when the program is complete.');
+    return;
+  }
+  var nextPhase = PHASES_V20_1[i + 1];
+
+  var r2 = ui.prompt('Advance a trainee (2 of 3)',
+    'Effective date (example 8/13/2026).\nLeave BLANK for today:', ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  var effText = String(r2.getResponseText() || '').trim();
+  var eff = effText ? parseDateSafeV20_1_(effText) : new Date();
+  if (!eff) { ui.alert('Could not read that date. Nothing was changed. Try again like 8/13/2026.'); return; }
+
+  var r3 = ui.prompt('Advance a trainee (3 of 3)',
+    'Rationale for the record.\nLeave BLANK for: "Phase requirements met, FTO handover accepted"',
+    ui.ButtonSet.OK_CANCEL);
+  if (r3.getSelectedButton() !== ui.Button.OK) return;
+  var rationale = String(r3.getResponseText() || '').trim() ||
+    'Phase requirements met, FTO handover accepted';
+
+  var decider = sessionEmailV20_1_() || 'C. Hunt';
+  var confirmMsg = rec.name + '\n\n' + rec.phase + '  ->  ' + nextPhase +
+    '\nEffective : ' + dateKeyV20_1_(eff) +
+    '\nDecided by : ' + decider +
+    '\nRationale : ' + rationale +
+    '\n\nMaster row, phase-start date, assignment history, audit log and ' +
+    'notification all update together. Proceed?';
+  if (ui.alert('Confirm advancement', confirmMsg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
+    return;
+  }
+
+  try {
+    var out = applyAdvancementV20_1(rec.name, decider, eff, rationale);
+    ui.alert(out);
+  } catch (e) {
+    ui.alert('NOT APPLIED.\n\n' + String(e && e.message ? e.message : e));
+  }
+}
+
+function workMyQueueV20_1() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var ui = SpreadsheetApp.getUi();
+  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
+  var t = queueTableV20_1_();
+  if (!t.ok) { ui.alert('Queue tab not found.'); return; }
+
+  var closed = {}, onMaster = {};
+  masterTraineeRowsV20_1_().forEach(function (m) {
+    onMaster[m.norm] = true;
+    if (m.closed) closed[m.norm] = true;
+  });
+
+  var items = [], drafts = [];
+  t.rows.forEach(function (r, i) {
+    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
+    if (!trainee) return;
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var tn = normalizeNameV20_1_(trainee);
+    if (closed[tn] || !onMaster[tn]) return; // stranded workflow owns these
+    var row = t.firstDataRow + i;
+    var skill = String(r[t.col['SKILL']] || '').slice(0, 40);
+    if (String(r[t.col['DECISION']] || '').trim()) {
+      drafts.push(trainee + ' — ' + skill + ' (row ' + row + ' already has a draft decision; ' +
+        'finish it on the tab with the RECORD checkbox, or clear it)');
+      return;
+    }
+    items.push({ row: row, trainee: trainee, skill: skill,
+                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
+                 requestId: t.col['REQUEST ID'] !== undefined
+                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
+  });
+
+  if (!items.length) {
+    ui.alert('Queue is clear. Nothing needs you.' +
+      (drafts.length ? '\n\nDraft(s) in progress:\n' + drafts.join('\n') : ''));
+    return;
+  }
+
+  var decider = sessionEmailV20_1_() || 'C. Hunt';
+  var approved = 0, returned = 0, skippedN = 0, results = [], stopped = false;
+
+  for (var k = 0; k < items.length; k++) {
+    var it = items[k];
+    var choice = '';
+    for (var tries = 0; tries < 3; tries++) {
+      var resp = ui.prompt(
+        'Work my queue  (' + (k + 1) + ' of ' + items.length + ')',
+        it.trainee + ' — ' + it.skill +
+        '\n\nType one letter, then OK:' +
+        '\n  A = Approve sign-off' +
+        '\n  R = Return for more evidence' +
+        '\n  S = Skip for now' +
+        '\n\n(Cancel stops here; everything already answered stays recorded.)',
+        ui.ButtonSet.OK_CANCEL);
+      if (resp.getSelectedButton() !== ui.Button.OK) { stopped = true; break; }
+      choice = String(resp.getResponseText() || '').trim().toUpperCase().charAt(0);
+      if (choice === 'A' || choice === 'R' || choice === 'S') break;
+      choice = '';
+    }
+    if (stopped) break;
+    if (!choice || choice === 'S') { skippedN++; continue; }
+
+    var rationale;
+    if (choice === 'A') {
+      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
+        it.trainee, it.skillId);
+      if (!rationale) { skippedN++; continue; }
+    } else {
+      var r2 = ui.prompt('Return : ' + it.trainee,
+        'What should the FTO add? (this becomes the official reason on the record)\n' +
+        'Leave blank for: "Additional documented evidence required before sign-off"',
+        ui.ButtonSet.OK_CANCEL);
+      if (r2.getSelectedButton() !== ui.Button.OK) { skippedN++; continue; }
+      rationale = String(r2.getResponseText() || '').trim() ||
+        'Additional documented evidence required before sign-off';
+    }
+
+    // Recording rebuilds the matrix, which re-sorts the queue, so the row
+    // captured before this loop may now belong to a different request.
+    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
+    if (!liveRow) {
+      skippedN++;
+      results.push(it.trainee + ' — ' + it.skill + ' SKIPPED: request ' +
+        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
+      continue;
+    }
+    try {
+      writeQueueDecisionV20_1_(liveRow,
+        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
+        decider, new Date(), rationale);
+      results.push(recordDecisionForRowV20_1_(liveRow));
+      if (choice === 'A') approved++; else returned++;
+    } catch (e) {
+      results.push(it.trainee + ' — ' + it.skill + ' FAILED: ' + e);
+    }
+  }
+
+  var homeNote = '';
+  if (approved + returned > 0) {
+    try { refreshHomeNowV20_1(); homeNote = '\nHOME page updated.'; } catch (eH) {}
+  }
+
+  var summary = 'DONE.\n\nApproved : ' + approved + '\nReturned : ' + returned +
+    '\nSkipped : ' + skippedN + homeNote +
+    (drafts.length ? '\n\nDraft(s) left for the tab:\n' + drafts.join('\n') : '') +
+    (results.length ? '\n\n' + results.join('\n').slice(0, 900) : '');
+  systemLog_('INFO', 'GUIDED QUEUE SESSION',
+    approved + ' approved, ' + returned + ' returned, ' + skippedN + ' skipped via workMyQueueV20_1');
+  ui.alert(summary);
+}
+
+/** Rebuild the HOME action panel + counter tiles right now. */
+function refreshHomeNowV20_1() {
+  var out = [];
+  try { out.push(String(refreshActionPanelV19())); }
+  catch (e1) { out.push('Action panel refresh failed: ' + e1); }
+  try { out.push(String(homeCountersV20_1())); }
+  catch (e2) { out.push('Counter tiles refresh failed: ' + e2); }
+  try {
+    if (PropertiesService.getScriptProperties().getProperty('QUEUE_LIVE_VIEW') === '1') {
+      queueLiveFilterApplyV20_1_();
+      out.push('Queue live view re-applied.');
+    }
+  } catch (e3) {}
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** Approve everything waiting for the trainee selected on tab 23. */
+function approveTraineeOnViewV20_1() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var ui = SpreadsheetApp.getUi();
+  var view = ss().getSheetByName(TRAINEE_SKILLS_TAB_V19);
+  if (!view) { ui.alert('Tab 23 not found.'); return; }
+  var picked = String(view.getRange('C4').getValue() || '').trim();
+  if (!picked) {
+    ui.alert('Pick a trainee in the dropdown at the top of tab 23 first, then run this again.');
+    return;
+  }
+  var resolved = resolveTraineeV20_1_(picked);
+  if (!resolved.ok || !resolved.record) {
+    ui.alert('Could not resolve "' + picked + '": ' + resolved.reason);
+    return;
+  }
+  var rec = resolved.record;
+  if (rec.closed) { ui.alert(rec.name + ' is closed/released. Nothing to decide.'); return; }
+
+  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
+  var t = queueTableV20_1_();
+  if (!t.ok) { ui.alert('Queue tab not found.'); return; }
+  var items = [], drafts = [];
+  t.rows.forEach(function (r, i) {
+    if (normalizeNameV20_1_(cleanNameV20_1_(r[t.col['TRAINEE']])) !== normalizeNameV20_1_(rec.name)) return;
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var row = t.firstDataRow + i;
+    var skill = String(r[t.col['SKILL']] || '').slice(0, 40);
+    if (String(r[t.col['DECISION']] || '').trim()) {
+      drafts.push(skill + ' (row ' + row + ' has a draft decision — finish it on tab 20)');
+      return;
+    }
+    items.push({ row: row, skill: skill, trainee: rec.name,
+                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
+                 requestId: t.col['REQUEST ID'] !== undefined
+                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
+  });
+
+  if (!items.length) {
+    ui.alert('Nothing is waiting for ' + rec.name + '.\n\nEvery skill is either not at its evidence ' +
+      'threshold yet, or already decided.' +
+      (drafts.length ? '\n\nDraft(s) in progress:\n' + drafts.join('\n') : ''));
+    return;
+  }
+
+  var decider = sessionEmailV20_1_() || 'C. Hunt';
+  var approved = 0, returned = 0, skippedN = 0, results = [], stopped = false;
+
+  for (var k = 0; k < items.length; k++) {
+    var it = items[k];
+    var choice = '';
+    for (var tries = 0; tries < 3; tries++) {
+      var resp = ui.prompt(
+        rec.name + '  (' + (k + 1) + ' of ' + items.length + ')',
+        it.skill +
+        '\n\nType one letter, then OK:' +
+        '\n  A = Approve sign-off' +
+        '\n  R = Return for more evidence' +
+        '\n  S = Skip for now' +
+        '\n\n(Cancel stops here; everything already answered stays recorded.)',
+        ui.ButtonSet.OK_CANCEL);
+      if (resp.getSelectedButton() !== ui.Button.OK) { stopped = true; break; }
+      choice = String(resp.getResponseText() || '').trim().toUpperCase().charAt(0);
+      if (choice === 'A' || choice === 'R' || choice === 'S') break;
+      choice = '';
+    }
+    if (stopped) break;
+    if (!choice || choice === 'S') { skippedN++; continue; }
+
+    var rationale;
+    if (choice === 'A') {
+      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
+        it.trainee, it.skillId);
+      if (!rationale) { skippedN++; continue; }
+    } else {
+      var r2 = ui.prompt('Return : ' + it.skill,
+        'What should the FTO add? (this becomes the official reason on the record)\n' +
+        'Leave blank for: "Additional documented evidence required before sign-off"',
+        ui.ButtonSet.OK_CANCEL);
+      if (r2.getSelectedButton() !== ui.Button.OK) { skippedN++; continue; }
+      rationale = String(r2.getResponseText() || '').trim() ||
+        'Additional documented evidence required before sign-off';
+    }
+
+    // Recording rebuilds the matrix, which re-sorts the queue, so the row
+    // captured before this loop may now belong to a different request.
+    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
+    if (!liveRow) {
+      skippedN++;
+      results.push(it.skill + ' SKIPPED: request ' +
+        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
+      continue;
+    }
+    try {
+      writeQueueDecisionV20_1_(liveRow,
+        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
+        decider, new Date(), rationale);
+      results.push(recordDecisionForRowV20_1_(liveRow));
+      if (choice === 'A') approved++; else returned++;
+    } catch (e) {
+      results.push(it.skill + ' FAILED: ' + e);
+    }
+  }
+
+  var homeNote = '';
+  if (approved + returned > 0) {
+    try { refreshHomeNowV20_1(); homeNote = '\nTab 20 live view and HOME updated.'; } catch (eH) {}
+  }
+  try {
+    refreshTraineeSkillsViewV19(picked, String(view.getRange('E4').getValue() || ''));
+    if (approved + returned > 0) homeNote += '\nTab 23 repainted.';
+  } catch (eV) {}
+
+  var summary = rec.name + ' — DONE.\n\nApproved : ' + approved + '\nReturned : ' + returned +
+    '\nSkipped : ' + skippedN + homeNote +
+    (drafts.length ? '\n\nDraft(s) left on tab 20:\n' + drafts.join('\n') : '') +
+    (results.length ? '\n\n' + results.join('\n').slice(0, 800) : '');
+  systemLog_('INFO', 'TRAINEE VIEW APPROVAL SESSION',
+    rec.name + ' : ' + approved + ' approved, ' + returned + ' returned, ' + skippedN + ' skipped');
+  ui.alert(summary);
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 60_reporting
  *
- * PRINCIPLES
- *  - Metrics are computed from validated canonical data in code, not from
- *    IFERROR-wrapped mega-formulas. A failed prerequisite yields the
- *    literal string 'DATA ERROR' plus a health note — never a silent 0.
- *  - Bounds are dynamic: readers use header-mapped tables and last-row
- *    logic, never $5:$44-style fixed windows.
- *  - verifyAnalyticsV20_1() recomputes and COMPARES; it never writes.
- ************************************************************************/
+ * Digests, scoreboards, snapshots and cards. Everything that gets read,
+ * nothing that decides.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   5. MONTHLY BACKUP SNAPSHOT
+ *   Trustworthy analytics: canonical recomputation, DATA ERROR surfacing,
+ *   reconciliation totals, and the read-only analytics verifier.
+ *   PRINCIPLES
+ *   - Metrics are computed from validated canonical data in code, not from
+ *   IFERROR-wrapped mega-formulas. A failed prerequisite yields the
+ *   literal string 'DATA ERROR' plus a health note — never a silent 0.
+ *   - Bounds are dynamic: readers use header-mapped tables and last-row
+ *   logic, never $5:$44-style fixed windows.
+ *   - verifyAnalyticsV20_1() recomputes and COMPARES; it never writes.
+ *   SCEMS v20.1.0i ADD-ON : FTO scoreboard
+ *   SCEMS v20.1.0i ADD-ON : tab 13 redo
+ */
+
+/* ---- ported from zz (effective winner) ---- */
+/** Builds the snapshot for one trainee. */
+function handoverCardBodyV19_(traineeName) {
+  var S = ss();
+  var name = String(traineeName || '').trim();
+  var rec = traineeRecordV19_(name);
+  if (!rec) return null;
+
+  var L = [];
+  L.push('TRAINEE HANDOVER CARD');
+  L.push('');
+  L.push(name + '   ' + (rec.level || 'level not set'));
+  L.push('Usual FTO : ' + (rec.fto || 'unassigned'));
+  L.push('');
+
+  // ---- where they are ----
+  var eng = S.getSheetByName(TAB.ENGINE);
+  var e = null;
+  if (eng) {
+    var rows = eng.getRange(5, 1, 40, 22).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === name) { e = rows[i]; break; }
+    }
+  }
+  L.push('WHERE THEY ARE');
+  L.push('  Phase        : ' + (rec.phase || 'not set') +
+         (e && e[20] ? ', day ' + e[20] : ''));
+  if (e) {
+    L.push('  Shifts       : ' + (e[19] || 'not recorded'));
+    L.push('  Evaluations  : ' + (e[6] || 0) +
+           (e[8] !== '' && e[8] !== null ? ', last one ' + e[8] + ' day(s) ago' : ', none yet'));
+    if (e[9]) L.push('  Average      : ' + e[9] + (e[11] ? '   trend ' + e[11] : ''));
+    L.push('  Status       : ' + (e[17] || 'not set'));
+  }
+  L.push('');
+
+  // ---- what they are working on ----
+  var focus = '';
+  try {
+    var v9 = S.getSheetByName('09 TRAINEE VIEW');
+    if (v9) {
+      var vr = v9.getRange(5, 1, 40, 9).getValues();
+      for (var j = 0; j < vr.length; j++) {
+        if (String(vr[j][0]).trim() === name) { focus = String(vr[j][8] || ''); break; }
+      }
+    }
+  } catch (err) {}
+  L.push('WHAT THEY ARE WORKING ON');
+  L.push('  ' + (focus || 'Not set. Agree a focus with them at the start of the shift.'));
+  L.push('');
+
+  // ---- skills ----
+  var matrix = S.getSheetByName(TAB.SKILLS);
+  var signed = [], progress = [], ready = [];
+  if (matrix && matrix.getLastRow() >= 5) {
+    matrix.getRange(5, 1, matrix.getLastRow() - 4, 20).getValues().forEach(function (r) {
+      if (String(r[0]).trim() !== name) return;
+      var skill = String(r[1] || '');
+      var readiness = String(r[6] || '');
+      var signoff = String(r[7] || '');
+      if (signoff === 'SIGNED OFF') signed.push(skill);
+      else if (readiness === 'READY FOR VALIDATION') ready.push(skill);
+      else if (readiness === 'IN PROGRESS') progress.push(skill);
+    });
+  }
+  L.push('SKILLS');
+  L.push('  Signed off (' + signed.length + ')');
+  if (signed.length) {
+    signed.slice(0, 12).forEach(function (s) { L.push('     ' + s); });
+    if (signed.length > 12) L.push('     and ' + (signed.length - 12) + ' more');
+  } else {
+    L.push('     none yet');
+  }
+  L.push('');
+  L.push('  In progress (' + progress.length + ')');
+  if (progress.length) {
+    progress.slice(0, 12).forEach(function (s) { L.push('     ' + s); });
+    if (progress.length > 12) L.push('     and ' + (progress.length - 12) + ' more');
+  } else {
+    L.push('     none recorded');
+  }
+  if (ready.length) {
+    L.push('');
+    L.push('  Awaiting validation (' + ready.length + ')');
+    ready.forEach(function (s) { L.push('     ' + s); });
+    L.push('     These are with leadership. Do not sign them off yourself.');
+  }
+  L.push('');
+
+  L.push('ON SHIFT');
+  L.push('  Submit a Shift Evaluation before you go home, the same as their');
+  L.push('  usual FTO would. Score what you actually saw. If a skill');
+  L.push('  progressed, log it.');
+  L.push('');
+  L.push('  You are covering, so you are not expected to judge their whole');
+  L.push('  progression. Record the shift you had with them.');
+  L.push('');
+  L.push('  Anything unsafe is a call to Division Chief Stuckey the same');
+  L.push('  shift, then the Urgent Concern form.');
+  L.push('');
+  L.push('No patient names, dates of birth, or addresses. Call numbers only.');
+  L.push('');
+  L.push('This card is an operational snapshot. It does not carry concerns,');
+  L.push('decisions, or another FTO\'s assessment of this trainee.');
+
+  return L.join('\n');
+}
+
+function traineeStatusCards() {
+  var S = ss();
+  var master = S.getSheetByName(TAB.MASTER).getRange(5, 1, 40, 9).getValues();
+  var emailByTrainee = {};
+  master.forEach(function (r) { if (r[0] && r[8]) emailByTrainee[r[0]] = r[8]; });
+  var skipped = [];
+  master.forEach(function (r) {
+    if (r[0] && !r[8] && String(r[0]).indexOf('EXAMPLE') !== 0) skipped.push(r[0]);
+  });
+  var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 12).getValues();
+  var sentN = 0, unsent = [];
+  view.forEach(function (r) {
+    if (!r[0] || !emailByTrainee[r[0]] || String(r[0]).indexOf('EXAMPLE') === 0) return;
+    if (!mailBudgetOkV20_2_('Trainee status cards', sentN + 1)) { unsent.push(String(r[0])); return; }
+    var due = r[10] instanceof Date ? Utilities.formatDate(r[10], 'America/New_York', 'yyyy-MM-dd') : 'none scheduled';
+    var body =
+      'Your field training status, ' + r[0] + ':\n\n' +
+      'Level: ' + r[1] + '  |  Entry Profile: ' + r[2] + '  |  ' + r[3] + '\n' +
+      'Training shifts logged: ' + r[4] + '  |  Trend: ' + r[5] + '\n\n' +
+      'A recent strength your FTO documented: ' + (r[6] || 'none logged yet') + '\n' +
+      'Current improvement focus: ' + (r[7] || 'none logged yet') + '\n' +
+      'Next shift focus: ' + (r[8] || 'set with your FTO') + '\n' +
+      'Skills ready for leadership validation: ' + r[9] + '\n' +
+      'Next decision due: ' + due + '\n' +
+      'Note: ' + (r[11] || '') + '\n\n' +
+      'Questions about your status go to your FTO or the Training and Compliance Officer.';
+    sendMail(emailByTrainee[r[0]], 'Your Field Training Status : Week of ' +
+      Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd'), body);
+    sentN++;
+  });
+  reportBulkTruncationV20_2_('Trainee status cards', sentN, unsent);
+  if (skipped.length) {
+    sendMail(CONFIG.TCO_EMAIL,
+      'Trainee Cards : ' + skipped.length + ' Trainee(s) Have No Email on File',
+      'These trainees received no status card because column I on 01 TRAINEE MASTER is blank:\n\n' +
+      skipped.join('\n') + '\n\nAdd their email addresses so they get their Monday card.');
+  }
+}
+
+/* ---- ported from master (effective winner) ---- */
+/** v3: branded HTML snapshot. */
+function supervisorDigest() {
+  var S = ss();
+  var ctl = S.getSheetByName(TAB.CONTROL);
+  var threshold = ctl.getRange('B5').getValue();
+
+  var roster = ctl.getRange(5, 6, 25, 2).getValues();
+  var shiftByFto = {};
+  roster.forEach(function (r) { if (r[0]) shiftByFto[String(r[0])] = String(r[1]); });
+
+  var sup = ctl.getRange(5, 13, 4, 3).getValues();
+  var supByShift = {};
+  sup.forEach(function (r) { if (r[0]) supByShift[String(r[0])] = { name: r[1], email: r[2] }; });
+
+  var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 9).getValues();
+  var extras = {};
+  view.forEach(function (r) { if (r[0]) extras[r[0]] = { strength: r[6], focus: r[8] }; });
+
+  var ev = S.getSheetByName(TAB.EVAL);
+  var firstEval = {};
+  if (ev.getLastRow() >= 5) {
+    ev.getRange(5, 1, ev.getLastRow() - 4, 7).getValues().forEach(function (r) {
+      var t = r[2], dt = r[6];
+      if (!t || !(dt instanceof Date)) return;
+      if (!firstEval[t] || dt < firstEval[t]) firstEval[t] = dt;
+    });
+  }
+
+  var byShift = {};
+  engineRows().forEach(function (r) {
+    var name = r[0];
+    if (!name || String(name).indexOf(TEST_PREFIX) === 0) return;
+    var shift = shiftByFto[String(r[3] || '')] || 'UNASSIGNED';
+    (byShift[shift] = byShift[shift] || []).push(r);
+  });
+
+  var now = new Date();
+  var week = Utilities.formatDate(now, 'America/New_York', 'MMMM d, yyyy');
+
+  var digestSent = 0, digestUnsent = [];
+  Object.keys(byShift).forEach(function (shift) {
+    if (!mailBudgetOkV20_2_('Supervisor digest', digestSent + 1)) {
+      digestUnsent.push(shift + ' shift');
+      return;
+    }
+    var cards = [], textBlocks = [];
+    byShift[shift].forEach(function (r) {
+      var name = r[0], level = r[1], fto = r[3] || 'unassigned', phase = String(r[4] || ''),
+          evals = r[6] || 0, daysSince = r[8], avg = r[9], trend = r[11], status = r[17];
+      var ex = extras[name] || {};
+      var weeksIn = firstEval[name]
+        ? Math.max(1, Math.round((now - firstEval[name]) / (7 * 86400000))) : 0;
+      var overdue = (typeof daysSince === 'number') && daysSince > threshold;
+      var ftoText;
+      if (typeof daysSince !== 'number') ftoText = fto + ' : no evaluations submitted yet';
+      else if (overdue) ftoText = fto + ' : PAPERWORK OVERDUE, last evaluation ' + daysSince + ' days ago';
+      else ftoText = fto + ' : paperwork current';
+      var trendWord = trend === 'Rising' ? 'improving' : trend === 'Falling' ? 'slipping' : trend === 'Steady' ? 'holding steady' : '';
+
+      var o = {
+        name: name, level: level, phaseNum: phase.replace('Phase ', '') || '?',
+        weeksIn: weeksIn, evals: evals, avg: avg, trendWord: trendWord,
+        strength: ex.strength || 'nothing documented yet',
+        focus: ex.focus || 'set at the start of each shift',
+        fto: fto, ftoText: ftoText, ftoOverdue: overdue,
+        daysSince: daysSince, status: status
+      };
+      cards.push(traineeCard_(o));
+      textBlocks.push(name + ' (' + level + ', ' + phase + '): ' + evals + ' shifts, avg ' +
+        (avg || 'n/a') + ', ' + (trendWord || 'no trend') + '. ' + ftoText + '. ' +
+        statusMeta_(status, daysSince, fto).line);
+    });
+
+    var html = '' +
+    '<div style="max-width:640px;margin:0 auto;background:#f4f1ea;font-family:Arial,Helvetica,sans-serif;padding-bottom:8px;">' +
+      '<div style="background:#1d1b18;padding:22px 22px 18px 22px;border-bottom:4px solid #c9a227;">' +
+        '<div style="color:#c9a227;font-size:12px;font-weight:bold;letter-spacing:2px;">SUMTER COUNTY EMS</div>' +
+        '<div style="color:#f7f3ea;font-size:22px;font-weight:bold;margin-top:4px;">' + shift + ' SHIFT; FIELD TRAINING SNAPSHOT</div>' +
+        '<div style="color:#b4ac9c;font-size:12px;margin-top:4px;">Week of ' + week + ' &nbsp;&middot;&nbsp; ' + byShift[shift].length + ' trainee(s) on your shift</div>' +
+      '</div>' +
+      '<div style="height:16px;"></div>' +
+      cards.join('') +
+      '<div style="margin:4px 16px 16px 16px;padding:12px 16px;background:#1d1b18;border-radius:8px;color:#b4ac9c;font-size:11px;line-height:1.5;">' +
+        'Questions or concerns about a trainee or an FTO go to the <b style="color:#c9a227;">Division Chief of Training</b>. ' +
+        'A safety concern is a same-shift call or text, then the Urgent Concern form on the Hub.' +
+      '</div>' +
+    '</div>';
+
+    var text = shift + ' SHIFT; FIELD TRAINING SNAPSHOT : Week of ' + week + '\n\n' + textBlocks.join('\n\n');
+    var target = supByShift[shift];
+    if (shift === 'UNASSIGNED' || !target) {
+      sendHtmlMail(CONFIG.TCO_EMAIL, 'Supervisor Snapshot : trainees with no shift mapping', text, html);
+    } else {
+      sendHtmlMail(String(target.email), shift + ' Shift; Field Training Snapshot : ' + week, text, html);
+    }
+    digestSent++;
+  });
+  reportBulkTruncationV20_2_('Supervisor digest', digestSent, digestUnsent);
+  Logger.log('HTML supervisor snapshots sent: ' + digestSent +
+    (digestUnsent.length ? ' (' + digestUnsent.length + ' held back for quota)' : '') + '.');
+}
+
+/* ---- ported from master (effective winner) ---- */
+function systemHeartbeat() {
+  var problems = [];
+  var S = ss();
+
+  // 1. triggers armed
+  var need = MANAGED_TRIGGER_HANDLERS;
+  var have = {};
+  ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
+  need.forEach(function (n) {
+    if (!have[n]) problems.push('Trigger missing: ' + n + '. FIX: run installTriggers() once.');
+  });
+
+  // 2. forms alive, accepting, and feeding this workbook
+  var ids = JSON.parse(PropertiesService.getScriptProperties().getProperty('FORM_IDS') || '[]');
+  if (!ids.length) problems.push('No stored form IDs. FIX: forms may have been rebuilt outside the system.');
+  ids.forEach(function (id) {
+    try {
+      var f = FormApp.openById(id);
+      if (!f.isAcceptingResponses()) problems.push('Form not accepting responses: ' + f.getTitle() + '. FIX: open the form, Responses, toggle Accepting responses on.');
+      var dest = '';
+      try { dest = f.getDestinationId(); } catch (d) {}
+      if (dest && dest !== S.getId()) problems.push('Form feeding the WRONG workbook: ' + f.getTitle() + '. FIX: relink via Form, Responses, destination.');
+      if (!dest) problems.push('Form has no response destination: ' + f.getTitle() + '. FIX: relink to the tracker.');
+    } catch (e) {
+      problems.push('Form unreachable (deleted or permissions): id ' + id);
+    }
+  });
+
+  // 3. critical tabs present
+  [TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS, TAB.ENGINE,
+   TAB.QUEUE, '13 AUDIT - EXCEPTION LOG', DECISIONS_TAB, ARCHIVE_TAB, 'HOME',
+   TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF].forEach(function (n) {
+    if (!S.getSheetByName(n)) problems.push('Tab missing: ' + n + '. FIX: run repairControlAndEngine() or the matching builder.');
+  });
+
+  // 4. the engine is breathing
+  try {
+    var eng = S.getSheetByName(TAB.ENGINE);
+    if (eng && !eng.getRange('R5').getFormula()) {
+      problems.push('Status engine formulas are gone (R5 empty). FIX: run repairControlAndEngine(), then fixEngineOrder().');
+    }
+  } catch (e) {}
+
+  // 5. backups current
+  try {
+    var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+    if (!folders.hasNext()) {
+      problems.push('Backup folder missing. FIX: run monthlySnapshot() once.');
+    } else {
+      var files = folders.next().getFilesByType(MimeType.MICROSOFT_EXCEL);
+      var newest = null;
+      while (files.hasNext()) {
+        var f2 = files.next();
+        if (!newest || f2.getDateCreated() > newest) newest = f2.getDateCreated();
+      }
+      if (!newest) problems.push('No backup snapshot exists yet. FIX: SCEMS menu, Run backup snapshot now.');
+      else if ((new Date() - newest) / 86400000 > 40) {
+        problems.push('Newest backup is over 40 days old. FIX: run monthlySnapshot() and confirm the monthly trigger with installTriggers().');
+      }
+    }
+  } catch (e) {}
+
+  if (problems.length) {
+    sendMail(CONFIG.TCO_EMAIL + ',' + CONFIG.SUPERVISOR_EMAILS,
+      'SYSTEM HEALTH : ' + problems.length + ' Issue(s) Need Attention : Field Training Tracker',
+      'The weekly self-test found problems. Alerts and automation may not be reliable until these are fixed:\n\n' +
+      problems.map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n') +
+      '\n\nThe system stays silent when healthy; this email only exists because something is broken.');
+  }
+  Logger.log('Heartbeat: ' + (problems.length ? problems.length + ' problem(s), email sent.' : 'all healthy, silent.'));
+}
+
+/* ---- ported from master (effective winner) ---- */
+
+function monthlySnapshot() {
+  var S = ss();
+  var url = 'https://docs.google.com/spreadsheets/d/' + S.getId() + '/export?format=xlsx';
+  var blob = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
+  }).getBlob();
+  var name = 'SCEMS_Tracker_Backup_' +
+    Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm') + '.xlsx';
+  blob.setName(name);
+  var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  var file = folder.createFile(blob);
+  sendMail(CONFIG.SUPERVISOR_EMAILS,
+    'SCEMS Tracker Backup Complete : ' + name,
+    'Full workbook snapshot saved:\n' + file.getUrl());
+  Logger.log('Backup saved: ' + file.getUrl());
+}
+
+/* ---- ported round 2 : HOME panel, rollup, trainee-skills views, consts ---- */
+
+function collectActionItemsV19_() {
+  var S = ss();
+  var items = [];
+
+  var threshold = 5;
+  try {
+    var t = S.getSheetByName(TAB.CONTROL).getRange('B5').getValue();
+    if (Number(t) > 0) threshold = Number(t);
+  } catch (e) {}
+
+  // ---- trainees: overdue, and never started ----
+  var eng = S.getSheetByName(TAB.ENGINE);
+  if (eng) {
+    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
+      var name = String(r[0] || '').trim();
+      if (!name) return;
+      if (String(r[21] || '').toUpperCase() === 'SNOOZED') return;
+
+      var fto      = String(r[3] || '').trim() || 'no FTO assigned';
+      var evals    = Number(r[6]) || 0;
+      var daysSince= r[8] === '' || r[8] === null ? null : Number(r[8]);
+      var dayInPhase = Number(r[20]) || 0;
+
+      if (evals > 0 && daysSince !== null && daysSince > threshold) {
+        items.push({
+          sev: 'OVERDUE', sort: 10000 - daysSince, who: name,
+          detail: daysSince + ' days since last evaluation',
+          owner: fto, action: 'Chase the FTO for a shift evaluation'
+        });
+      } else if (evals === 0 && dayInPhase > START_GRACE_DAYS_V19) {
+        items.push({
+          sev: 'NOT STARTED', sort: 10000 - dayInPhase, who: name,
+          detail: 'day ' + dayInPhase + ', no evaluation ever filed',
+          owner: fto, action: 'Confirm training has actually begun'
+        });
+      }
+
+      var review = String(r[17] || '');
+      if (review.indexOf('Due') >= 0) {
+        items.push({
+          sev: 'DUE', sort: 5000, who: name, detail: review,
+          owner: fto, action: 'File on the Decision Record form'
+        });
+      }
+    });
+  }
+
+  // ---- decision queue ----
+  var q = S.getSheetByName(TAB.QUEUE);
+  if (q && q.getLastRow() >= 5) {
+    var now = new Date();
+    q.getRange(5, 1, Math.min(q.getLastRow() - 4, 296), 8).getValues().forEach(function (r) {
+      var who = String(r[1] || '').trim();
+      if (!who || r[5]) return;
+      var due = r[4] instanceof Date ? r[4] : null;
+      var breached = due && due.getTime() < now.getTime();
+      var hrs = due ? Math.round((due.getTime() - now.getTime()) / 3600000) : null;
+      items.push({
+        sev: breached ? 'BREACHED' : 'DUE',
+        sort: breached ? 100 : 4000,
+        who: who,
+        detail: String(r[2] || 'decision') +
+                (breached ? ', PAST DEADLINE' : hrs !== null ? ', ' + hrs + 'h left' : ''),
+        owner: 'Division Chief of Training',
+        action: 'File on the Decision Record form'
+      });
+    });
+  }
+
+  // ---- audit flags ----
+  var au = S.getSheetByName('13 AUDIT - EXCEPTION LOG');
+  if (au) {
+    var labels = ['advancement vs score', 'reflection vs score',
+                  'extreme score without narrative', 'silent record',
+                  'FTO scope', 'phase mismatch'];
+    au.getRange(5, 1, 40, 7).getValues().forEach(function (r) {
+      var who = String(r[0] || '').trim();
+      if (!who) return;
+      var lit = [];
+      for (var c = 1; c <= 6; c++) {
+        if (String(r[c]).trim().toUpperCase() === 'FLAG') lit.push(labels[c - 1]);
+      }
+      if (!lit.length) return;
+      items.push({
+        sev: 'FLAG', sort: 200 - lit.length, who: who,
+        detail: lit.join(', '),
+        owner: 'Division Chief of Training',
+        action: 'Review on tab 13 and log the reviewer and action'
+      });
+    });
+  }
+
+  // ---- skills ready for validation ----
+  var sq = S.getSheetByName(TAB.SKILL_VALIDATION);
+  if (sq && sq.getLastRow() >= 5) {
+    sq.getRange(5, 1, Math.min(sq.getLastRow() - 4, 500), 12).getValues().forEach(function (r) {
+      var who = String(r[1] || '').trim();
+      if (!who || String(r[11]) !== 'OPEN') return;
+      items.push({
+        sev: 'SKILL', sort: 6000, who: who,
+        detail: String(r[4] || 'skill ready for validation'),
+        owner: 'Division Chief of Training',
+        action: 'Record the decision on tab 20'
+      });
+    });
+  }
+
+  items.sort(function (a, b) {
+    var ra = SEV_V19[a.sev].rank, rb = SEV_V19[b.sev].rank;
+    if (ra !== rb) return ra - rb;
+    return a.sort - b.sort;
+  });
+  return items;
+}
+
+function statusMeta_(status, daysSince, fto) {
+  var s = String(status || '');
+  if (s.indexOf('NRT') >= 0) return { color: '#8f1f12',
+    line: 'Formal Not Responding to Training concern filed. Decision in progress with the Division Chief of Training.' };
+  if (s.indexOf('Delayed') >= 0) return { color: '#c43a28',
+    line: 'NEEDS ATTENTION: no evaluation in ' + daysSince + ' days. Check in with ' + (fto || 'the assigned FTO') + '.' };
+  if (s.indexOf('Advancement') >= 0) return { color: '#c9a227',
+    line: 'Up for advancement review. Decision due within 72 hours.' };
+  if (s.indexOf('Needs Attention') >= 0) return { color: '#e0a11a',
+    line: 'Scores running below standard. Coaching in progress; your awareness helps.' };
+  if (s.indexOf('No Evals') >= 0) return { color: '#6f6a61',
+    line: 'Just getting started. No evaluations on file yet.' };
+  return { color: '#3f8f5a', line: 'On track. Nothing needs your attention.' };
+}
+
+function traineeCard_(o) {
+  var meta = statusMeta_(o.status, o.daysSince, o.fto);
+  var ftoDot = o.ftoOverdue ? '#c43a28' : (o.evals > 0 ? '#3f8f5a' : '#6f6a61');
+  var avgPct = o.avg ? Math.round((o.avg / 5) * 100) : 0;
+  var chip = function (txt, bg, fg) {
+    return '<span style="display:inline-block;background:' + bg + ';color:' + fg +
+      ';font-size:11px;font-weight:bold;padding:3px 10px;border-radius:10px;margin-right:6px;">' + txt + '</span>';
+  };
+  return '' +
+  '<div style="background:#ffffff;border-left:7px solid ' + meta.color + ';border-radius:8px;' +
+       'margin:0 16px 16px 16px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.12);">' +
+    '<div style="font-size:19px;font-weight:bold;color:#1d1b18;letter-spacing:0.5px;">' + o.name + '</div>' +
+    '<div style="margin:8px 0 10px 0;">' +
+      chip(o.level, '#1d1b18', '#c9a227') +
+      chip('Phase ' + o.phaseNum + ' of 4', '#c9a227', '#1d1b18') +
+      (o.weeksIn ? chip('Week ' + o.weeksIn, '#efe9db', '#6f6a61') : '') +
+    '</div>' +
+    '<div style="font-size:13px;color:#444;margin-bottom:10px;">' +
+      '<b>' + o.evals + '</b> training shift' + (o.evals === 1 ? '' : 's') + ' evaluated' +
+      (o.avg ? ' &nbsp;&middot;&nbsp; averaging <b>' + o.avg + ' / 5</b>' : '') +
+      (o.trendWord ? ' &nbsp;&middot;&nbsp; ' + o.trendWord : '') +
+    '</div>' +
+    (o.avg ?
+    '<div style="background:#efe9db;border-radius:6px;height:10px;margin:0 0 12px 0;">' +
+      '<div style="background:' + meta.color + ';width:' + avgPct + '%;height:10px;border-radius:6px;"></div>' +
+    '</div>' : '') +
+    '<table style="font-size:13px;color:#333;border-collapse:collapse;width:100%;">' +
+      '<tr><td style="color:#3f8f5a;font-weight:bold;width:110px;padding:3px 0;vertical-align:top;">Doing well</td>' +
+          '<td style="padding:3px 0;">' + o.strength + '</td></tr>' +
+      '<tr><td style="color:#8a6a1f;font-weight:bold;padding:3px 0;vertical-align:top;">Working on</td>' +
+          '<td style="padding:3px 0;">' + o.focus + '</td></tr>' +
+      '<tr><td style="color:#555;font-weight:bold;padding:3px 0;vertical-align:top;">FTO</td>' +
+          '<td style="padding:3px 0;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + ftoDot + ';margin-right:6px;"></span>' + o.ftoText + '</td></tr>' +
+    '</table>' +
+    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #eee;' +
+         'font-size:13px;font-weight:bold;color:' + meta.color + ';">' + meta.line + '</div>' +
+  '</div>';
+}
+
+function rollupCardV19_(f) {
+  var INK = '#1d1b18', GOLD = '#c9a227', GOLDD = '#8a6a1f',
+      RED = '#c43a28', GREEN = '#3f8f5a', MUTE = '#847d6d', HAIR = '#e8e4da';
+  var attention = f.overdue;
+  var edge = attention ? RED : (f.evals === 0 ? GOLD : GREEN);
+  var pct = f.avg ? Math.round((f.avg / 5) * 100) : 0;
+  var bar = attention ? RED : (f.avg && f.avg < 3 ? GOLD : GREEN);
+
+  function badge(t, bg, fg) {
+    if (!t) return '';
+    return '<span style="display:inline-block;background:' + bg + ';color:' + fg +
+      ';font:600 10px Arial,sans-serif;padding:3px 9px;border-radius:10px;' +
+      'margin:0 5px 0 0;">' + escHtmlV19_(t) + '</span>';
+  }
+
+  var h = [];
+  h.push('<div style="background:#ffffff;border:1px solid ' + HAIR +
+    ';border-left:5px solid ' + edge + ';border-radius:8px;padding:15px 18px;margin:0 0 12px 0;">');
+
+  h.push('<table cellpadding="0" cellspacing="0" style="width:100%;"><tr>');
+  h.push('<td style="vertical-align:top;">');
+  h.push('<div style="font:700 17px Arial,sans-serif;color:' + INK + ';">' +
+    escHtmlV19_(f.name) + '</div>');
+  h.push('<div style="margin:7px 0 0 0;">' +
+    badge(f.level, INK, '#ffffff') +
+    badge(f.phase ? f.phase + ' of 4' : '', GOLD, INK) +
+    badge(f.fto, '#f1ede2', GOLDD) + '</div>');
+  h.push('</td>');
+  h.push('<td style="width:150px;text-align:right;vertical-align:top;">');
+  if (f.evals > 0) {
+    h.push('<div style="font:700 20px Arial,sans-serif;color:' + INK + ';">' +
+      (f.avg ? f.avg : '-') + '<span style="font:400 12px Arial,sans-serif;color:' +
+      MUTE + ';"> / 5</span></div>');
+    h.push('<div style="font:11px Arial,sans-serif;color:' + MUTE + ';">' +
+      f.evals + ' shift' + (f.evals === 1 ? '' : 's') +
+      (f.trend ? ', ' + escHtmlV19_(f.trend.toLowerCase()) : '') + '</div>');
+  } else {
+    h.push('<div style="font:12px Arial,sans-serif;color:' + MUTE + ';">no shifts yet</div>');
+  }
+  h.push('</td></tr></table>');
+
+  if (f.evals > 0) {
+    h.push('<div style="background:#eee9dc;height:7px;border-radius:4px;overflow:hidden;margin:11px 0 0 0;">' +
+      '<div style="background:' + bar + ';height:7px;width:' + pct + '%;"></div></div>');
+  }
+
+  h.push('<div style="margin:12px 0 0 0;padding:9px 12px;background:#faf8f2;' +
+    'border-radius:5px;font:12px Arial,sans-serif;color:#4a453c;">' +
+    '<b style="color:' + GOLDD + ';">Shift progress</b> &nbsp; ' +
+    escHtmlV19_(f.progress) + '</div>');
+
+  if (attention) {
+    h.push('<div style="margin:10px 0 0 0;font:700 12px Arial,sans-serif;color:' + RED + ';">' +
+      'NEEDS ATTENTION: no evaluation in ' + f.days + ' days, FTO ' +
+      escHtmlV19_(f.fto) + '</div>');
+  }
+  h.push('</div>');
+  return h.join('');
+}
+
+function snapshotFactsV19_(name) {
+  var rec = traineeRecordV19_(name) || {};
+  var eng = ss().getSheetByName(TAB.ENGINE);
+  var e = null;
+  if (eng) {
+    var rows = eng.getRange(5, 1, 40, 22).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === name) { e = rows[i]; break; }
+    }
+  }
+  var days = e && e[8] !== '' && e[8] !== null ? Number(e[8]) : null;
+  var dayInPhase = e ? Number(e[20]) || 0 : 0;
+  var threshold = 5;
+  try {
+    var t = ss().getSheetByName(TAB.CONTROL).getRange('B5').getValue();
+    if (Number(t) > 0) threshold = Number(t);
+  } catch (err) {}
+
+  return {
+    name: name,
+    level: rec.level || '',
+    phase: rec.phase || '',
+    week: dayInPhase > 0 ? 'Week ' + Math.ceil(dayInPhase / 7) : '',
+    fto: rec.fto || 'unassigned',
+    evals: e ? Number(e[6]) || 0 : 0,
+    avg: e && e[9] ? Number(e[9]) : null,
+    trend: e ? String(e[11] || '') : '',
+    days: days,
+    overdue: days !== null && days > threshold,
+    strength: latestStrengthV19_(name),
+    focus: latestFocusV19_(name)
+  };
+}
+
+function progressLineV19_(name) {
+  var p = shiftProgressV19_(name);
+  if (!p.ok) return 'Progress unavailable : ' + p.why;
+  if (p.evals === 0) {
+    return 'No training shifts evaluated yet. ' + p.perPhase +
+           ' required in ' + (p.phase || 'this phase') + '.';
+  }
+  var line = p.evals + ' training shift' + (p.evals === 1 ? '' : 's') +
+             ' evaluated in total';
+  if (p.phaseProgress) {
+    line += '. ' + (p.phase || 'Current phase') + ': ' + p.phaseProgress;
+  } else {
+    line += '. ' + p.perPhase + ' required per phase.';
+  }
+  line += '.';
+  if (p.metPhaseMin) {
+    line += ' Minimum met, eligible to advance on competency.';
+  }
+  return line.replace(/\.\./g, '.');
+}
+
+function viewOverviewV19_(sh, name, rec, row) {
+  var sk = traineeSkillsV19_(name);
+  var events = traineeEventsV19_(name);
+
+  var counts = [
+    ['SIGNED OFF', sk.signed.length, TV.GREEN],
+    ['READY', sk.ready.length, TV.GOLD],
+    ['IN PROGRESS', sk.progress.length, TV.GOLDD],
+    ['NOT STARTED', sk.notStarted.length, TV.MUTE]
+  ];
+  counts.forEach(function (c, i) {
+    var col = 2 + i * 2;
+    sh.getRange(row, col, 1, 2).merge().setValue(c[1])
+      .setFontFamily('Oswald').setFontWeight('bold').setFontSize(22)
+      .setFontColor(c[2]).setHorizontalAlignment('center')
+      .setVerticalAlignment('middle').setBackground('#ffffff')
+      .setBorder(true, true, false, true, false, false, TV.HAIR,
+                 SpreadsheetApp.BorderStyle.SOLID);
+    sh.getRange(row + 1, col, 1, 2).merge().setValue(c[0])
+      .setFontFamily('Oswald').setFontSize(8).setFontColor(TV.MUTE)
+      .setHorizontalAlignment('center').setVerticalAlignment('top')
+      .setBackground('#ffffff')
+      .setBorder(false, true, true, true, false, false, TV.HAIR,
+                 SpreadsheetApp.BorderStyle.SOLID);
+  });
+  sh.setRowHeight(row, 34); sh.setRowHeight(row + 1, 18);
+  row += 3;
+
+  row = tvBandV19_(sh, row, 'WHERE THEY ARE', TV.BLUE);
+  var facts = [];
+  try {
+    var f = snapshotFactsV19_(name);
+    facts.push(['Shifts evaluated', String(f.evals)]);
+    if (f.avg) facts.push(['Average score', f.avg + ' / 5' + (f.trend ? ', ' + f.trend.toLowerCase() : '')]);
+    facts.push(['Last evaluation', f.days === null ? 'none yet' : f.days + ' day(s) ago']);
+    if (f.strength) facts.push(['Doing well', f.strength]);
+    if (f.focus) facts.push(['Working on', f.focus]);
+  } catch (e) {}
+  try { facts.push(['Shift progress', progressLineV19_(name)]); } catch (e) {}
+  facts.push(['Skill events logged', String(events.length)]);
+
+  facts.forEach(function (f) {
+    sh.getRange(row, 3).setValue(f[0])
+      .setFontFamily('Inter').setFontWeight('bold').setFontSize(9)
+      .setFontColor(TV.MUTE).setVerticalAlignment('middle');
+    sh.getRange(row, 4, 1, 5).merge().setValue(f[1])
+      .setFontFamily('Inter').setFontSize(10).setVerticalAlignment('middle')
+      .setWrap(true);
+    sh.setRowHeight(row, 22);
+    row++;
+  });
+  row++;
+
+  row = tvBandV19_(sh, row, 'WHAT HAPPENS NEXT', TV.GOLD);
+  var next = [];
+  if (sk.ready.length) {
+    next.push(sk.ready.length + ' skill(s) are ready for validation. That is ' +
+      'with leadership on tab 20, not with the trainee.');
+  }
+  if (sk.progress.length) {
+    next.push(sk.progress.length + ' skill(s) in progress. See Skills remaining ' +
+      'for how far off each one is.');
+  }
+  if (sk.notStarted.length) {
+    next.push(sk.notStarted.length + ' skill(s) not started yet.');
+  }
+  if (!events.length) {
+    next.push('No skill events logged at all. If they have been on shift, the ' +
+      'Skills Quick Log is not being submitted.');
+  }
+  if (!next.length) next.push('Nothing outstanding on skills.');
+
+  next.forEach(function (t) {
+    sh.getRange(row, 3, 1, 6).merge().setValue(t)
+      .setFontFamily('Inter').setFontSize(10).setWrap(true)
+      .setVerticalAlignment('middle');
+    sh.setRowHeight(row, 24);
+    row++;
+  });
+}
+
+function viewActivityV19_(sh, name, row) {
+  var events = traineeEventsV19_(name);
+  var shown = events.slice(0, 60);
+
+  row = tvBandV19_(sh, row, 'SKILL EVENTS   ' + events.length +
+    ' total, showing ' + shown.length + ', newest first', TV.BLUE);
+
+  row = tvTableV19_(sh, row,
+    ['DATE', 'SKILL', 'STAGE', 'OUTCOME', 'FTO', 'CALL REF'],
+    shown.map(function (e) {
+      return [e.date, e.skill, e.stage, e.outcome, e.fto, e.callRef];
+    }), [2, 2]);
+
+  if (shown.length) {
+    sh.getRange(row - shown.length - 1, 3, shown.length, 1)
+      .setNumberFormat('yyyy-mm-dd');
+  }
+
+  sh.getRange(row, 2, 1, 7).merge()
+    .setValue('The full permanent record is on 19 SKILL EVIDENCE LOG. ' +
+              'This page reads it and never writes to it.')
+    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
+    .setFontColor(TV.MUTE);
+}
+
+function viewSkillsByPhaseV19_(sh, name, row) {
+  var events = traineeEventsV19_(name);
+  if (!events.length) {
+    sh.getRange(row, 3).setValue('No skill events recorded for this trainee yet.')
+      .setFontFamily('Inter').setFontSize(10).setFontColor(TV.MUTE);
+    return;
+  }
+
+  var byPhase = {}, order = [];
+  events.forEach(function (e) {
+    var p = e.phase || 'Phase not recorded';
+    if (!byPhase[p]) { byPhase[p] = {}; order.push(p); }
+    if (!byPhase[p][e.skill]) {
+      byPhase[p][e.skill] = { skill: e.skill, count: 0, stages: {}, last: null, ftos: {} };
+    }
+    var s = byPhase[p][e.skill];
+    s.count++;
+    s.stages[e.stage] = (s.stages[e.stage] || 0) + 1;
+    if (e.fto) s.ftos[e.fto] = true;
+    if (!s.last || (e.date && e.date > s.last)) s.last = e.date;
+  });
+  order.sort();
+
+  order.forEach(function (p) {
+    var skills = Object.keys(byPhase[p]).sort().map(function (k) { return byPhase[p][k]; });
+    row = tvBandV19_(sh, row, p.toUpperCase() + '   ' + skills.length +
+      ' skill(s), ' + skills.reduce(function (a, s) { return a + s.count; }, 0) +
+      ' event(s)', TV.BLUE);
+
+    var rows = skills.map(function (s) {
+      var stageStr = ['O', 'A', 'P', 'I'].filter(function (k) { return s.stages[k]; })
+        .map(function (k) { return k + ' x' + s.stages[k]; }).join('  ');
+      return [s.skill, s.count, stageStr,
+              Object.keys(s.ftos).length, s.last || '', ''];
+    });
+    row = tvTableV19_(sh, row,
+      ['SKILL', 'EVENTS', 'STAGES SEEN', 'FTOs', 'LAST SEEN', ''],
+      rows, [1, 3]);
+  });
+
+  sh.getRange(row, 2, 1, 7).merge()
+    .setValue('Stages: O observed, A assisted, P performed with coaching, ' +
+              'I performed independently.')
+    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
+    .setFontColor(TV.MUTE);
+}
+
+function viewSkillsCompletedV19_(sh, name, row) {
+  var sk = traineeSkillsV19_(name);
+
+  row = tvBandV19_(sh, row, 'SIGNED OFF   ' + sk.signed.length + ' skill(s)', TV.GREEN);
+  row = tvTableV19_(sh, row,
+    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'SIGNED BY', 'SIGNED ON'],
+    sk.signed.map(function (s) {
+      return [s.skill, s.successful, s.independent, s.dates, s.signedBy, s.signedOn];
+    }), [1, 3]);
+
+  row = tvBandV19_(sh, row,
+    'EVIDENCE COMPLETE, AWAITING VALIDATION   ' + sk.ready.length + ' skill(s)', TV.GOLD);
+  sh.getRange(row, 3, 1, 6).merge()
+    .setValue(sk.ready.length
+      ? 'The trainee has done their part on these. They are waiting on a ' +
+        'validation decision on tab 20, not on further work.'
+      : 'Nothing waiting on a validation decision.')
+    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
+  sh.setRowHeight(row, 24);
+  row++;
+  row = tvTableV19_(sh, row,
+    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'FTOs', ''],
+    sk.ready.map(function (s) {
+      return [s.skill, s.successful, s.independent, s.dates, s.ftos, ''];
+    }), [1, 4]);
+
+  var total = sk.signed.length + sk.ready.length;
+  var all = sk.all.length;
+  sh.getRange(row, 2, 1, 7).merge()
+    .setValue(total + ' of ' + all + ' skill(s) complete or awaiting validation. ' +
+      'Meeting the evidence thresholds makes a skill eligible for validation. ' +
+      'It does not sign it off. Sign-off is a documented human decision against ' +
+      'the approved standard.')
+    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
+    .setFontColor(TV.MUTE).setWrap(true);
+}
+
+function viewSkillsRemainingV19_(sh, name, rec, row) {
+  var sk = traineeSkillsV19_(name);
+
+  row = tvBandV19_(sh, row, 'SHIFTS', TV.BLUE);
+  var line = '';
+  try { line = progressLineV19_(name); } catch (e) { line = 'not available'; }
+  sh.getRange(row, 3, 1, 6).merge().setValue(line)
+    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
+  sh.setRowHeight(row, 24);
+  row += 2;
+
+  row = tvBandV19_(sh, row,
+    'IN PROGRESS   ' + sk.progress.length + ' skill(s)', TV.GOLDD);
+  sh.getRange(row, 3, 1, 6).merge()
+    .setValue(sk.progress.length
+      ? 'Started, but not yet enough evidence. The counts show how far along each one is.'
+      : 'Nothing part way through.')
+    .setFontFamily('Inter').setFontSize(10).setWrap(true).setVerticalAlignment('middle');
+  sh.setRowHeight(row, 24);
+  row++;
+  row = tvTableV19_(sh, row,
+    ['SKILL', 'SUCCESSFUL', 'INDEPENDENT', 'DATES', 'FTOs', 'STAGE REACHED'],
+    sk.progress.map(function (s) {
+      return [s.skill, s.successful, s.independent, s.dates, s.ftos, s.stage];
+    }), [1, 4]);
+
+  row = tvBandV19_(sh, row,
+    'NOT STARTED   ' + sk.notStarted.length + ' skill(s)', TV.RED);
+  row = tvTableV19_(sh, row, ['SKILL', '', '', '', '', ''],
+    sk.notStarted.map(function (s) { return [s.skill, '', '', '', '', '']; }), null);
+
+  var left = sk.progress.length + sk.notStarted.length;
+  sh.getRange(row, 2, 1, 7).merge()
+    .setValue(left + ' of ' + sk.all.length + ' skill(s) still to complete. ' +
+      'Anything already sitting with leadership appears under Skills completed, ' +
+      'not here, because the trainee has done their part on those.')
+    .setFontFamily('Inter').setFontSize(8).setFontStyle('italic')
+    .setFontColor(TV.MUTE).setWrap(true);
+}
+
+function signaturesOnFileV19_(trainee, itemType, sinceMs) {
+  var out = {};
+  var dec = ss().getSheetByName(DECISIONS_TAB);
+  if (!dec || dec.getLastRow() < 5) return out;
+  dec.getRange(5, 1, dec.getLastRow() - 4, 9).getValues().forEach(function (r) {
+    if (String(r[3]).trim() !== String(trainee).trim()) return;
+    if (String(r[4]) !== String(itemType)) return;
+    var ts = r[0] instanceof Date ? r[0].getTime() : 0;
+    if (sinceMs && ts < sinceMs) return;
+    var role = String(r[2] || '').trim();
+    if (role === DUAL_ROLE_TRAINING_V19 || role === DUAL_ROLE_MEDICAL_V19) {
+      if (!out[role] || ts > out[role].ts) {
+        out[role] = { ts: ts, by: String(r[1] || '').trim(), decision: String(r[5] || '').trim(),
+                      rationale: String(r[6] || '').trim(), effective: r[7] };
+      }
+    }
+  });
+  return out;
+}
+
+/* [var DIGEST_COPY_TO_V19 : defined above] */
+
+
+/* ---- ported round 3 : trainee-view card helpers ---- */
+
+function latestFocusV19_(traineeName) {
+  try {
+    var v9 = ss().getSheetByName('09 TRAINEE VIEW');
+    if (!v9) return '';
+    var rows = v9.getRange(5, 1, 40, 9).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === String(traineeName).trim()) {
+        return String(rows[i][8] || '').trim();
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
+function latestStrengthV19_(traineeName) {
+  var ev = ss().getSheetByName(TAB.EVAL);
+  if (!ev || ev.getLastRow() < 5) return '';
+  var rows = ev.getRange(5, 1, ev.getLastRow() - 4, 24).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][2]).trim() !== String(traineeName).trim()) continue;
+    var s = String(rows[i][21] || '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function shiftProgressV19_(name) {
+  var rec = traineeRecordV19_(name);
+  if (!rec) return { ok: false, why: 'not on the Trainee Master' };
+
+  var mins = phaseMinimumsV19_();
+  var perPhase = mins[rec.level];
+  if (!perPhase) {
+    return { ok: false, why: 'no minimum set for ' + (rec.level || 'this level') };
+  }
+
+  var eng = ss().getSheetByName(TAB.ENGINE);
+  var evals = 0, phaseProgress = '';
+  if (eng) {
+    var rows = eng.getRange(5, 1, 40, 22).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === name) {
+        evals = Number(rows[i][6]) || 0;
+        phaseProgress = String(rows[i][19] || '').trim();
+        break;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    level: rec.level,
+    phase: rec.phase,
+    evals: evals,
+    perPhase: perPhase,
+    phaseProgress: phaseProgress,
+    metPhaseMin: /^Met/i.test(phaseProgress)
+  };
+}
+
+function traineeEventsV19_(name) {
+  var out = [];
+  var ev = ss().getSheetByName(TAB.SKILL_EVIDENCE);
+  if (!ev || ev.getLastRow() < 5) return out;
+  ev.getRange(5, 1, ev.getLastRow() - 4, 20).getValues().forEach(function (r) {
+    if (String(r[3]).trim() !== String(name).trim()) return;
+    out.push({
+      date: r[2], phase: String(r[5] || ''), fto: String(r[6] || ''),
+      domain: String(r[7] || ''), skill: String(r[9] || ''),
+      context: String(r[10] || ''), stage: String(r[11] || ''),
+      outcome: String(r[12] || ''), callRef: String(r[15] || '')
+    });
+  });
+  return out.reverse();
+}
+
+function traineeSkillsV19_(name) {
+  var out = { signed: [], ready: [], progress: [], notStarted: [], all: [] };
+  var m = ss().getSheetByName(TAB.SKILLS);
+  if (!m || m.getLastRow() < 5) return out;
+  m.getRange(5, 1, m.getLastRow() - 4, 20).getValues().forEach(function (r) {
+    if (String(r[0]).trim() !== String(name).trim()) return;
+    var item = {
+      skill: String(r[1] || ''),
+      stage: String(r[2] || ''),
+      readiness: String(r[6] || ''),
+      signoff: String(r[7] || ''),
+      successful: Number(r[10]) || 0,
+      independent: Number(r[11]) || 0,
+      dates: Number(r[12]) || 0,
+      ftos: Number(r[13]) || 0,
+      signedBy: String(r[16] || ''),
+      signedOn: r[17] || ''
+    };
+    out.all.push(item);
+    if (item.signoff === 'SIGNED OFF') out.signed.push(item);
+    else if (item.readiness === 'READY FOR VALIDATION') out.ready.push(item);
+    else if (item.readiness === 'IN PROGRESS') out.progress.push(item);
+    else out.notStarted.push(item);
+  });
+  return out;
+}
+
+function tvBandV19_(sh, row, text, colour) {
+  sh.getRange(row, 2, 1, 7).merge().setValue(text)
+    .setFontFamily('Oswald').setFontWeight('bold').setFontSize(10)
+    .setFontColor('#ffffff').setBackground(colour).setVerticalAlignment('middle');
+  sh.setRowHeight(row, 22);
+  return row + 1;
+}
+
+function tvTableV19_(sh, row, headers, rows, widthsCentre) {
+  sh.getRange(row, 3, 1, headers.length).setValues([headers])
+    .setFontFamily('Oswald').setFontWeight('bold').setFontSize(8)
+    .setFontColor(TV.MUTE)
+    .setBorder(false, false, true, false, false, false, TV.HAIR,
+               SpreadsheetApp.BorderStyle.SOLID);
+  sh.setRowHeight(row, 18);
+  row++;
+  if (!rows.length) {
+    sh.getRange(row, 3).setValue('none')
+      .setFontFamily('Inter').setFontSize(9).setFontColor(TV.MUTE);
+    return row + 2;
+  }
+  sh.getRange(row, 3, rows.length, headers.length).setValues(rows)
+    .setFontFamily('Inter').setFontSize(9).setVerticalAlignment('middle');
+  if (widthsCentre) {
+    sh.getRange(row, 3 + widthsCentre[0], rows.length, widthsCentre[1])
+      .setHorizontalAlignment('center');
+  }
+  for (var i = 0; i < rows.length; i++) sh.setRowHeight(row + i, 20);
+  return row + rows.length + 1;
+}
 
 /** Canonical recomputation of the ANALYTICS chart-data block.
  *  Returns { ok, values:{domainAvgs, statusCounts, weekly, byLevel},
@@ -9139,21 +8320,405 @@ function homeCountersV20_1() {
   return 'HOME counters set: active ' + res.activeCount + ', open decisions ' + work.total + '.';
 }
 
+function ftoScoreboardV20_1() {
+  var denyV20_2 = denyV20_2_('READ PROGRAM REPORT');
+  if (denyV20_2) return denyV20_2;
+  var threshold = 5;
+  try {
+    var tv = ss().getSheetByName(TAB.CONTROL).getRange('B5').getValue();
+    if (Number(tv) > 0) threshold = Number(tv);
+  } catch (e0) {}
 
-/* ==================== 70_admin_health.gs ==================== */
+  // --- engine facts per trainee ---
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  var facts = {};
+  if (eng) {
+    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
+      var name = String(r[0] || '').trim();
+      if (!name) return;
+      facts[normalizeNameV20_1_(name)] = {
+        evals: Number(r[6]) || 0,
+        daysSince: (r[8] === '' || r[8] === null) ? null : Number(r[8]),
+        dayInPhase: Number(r[20]) || 0
+      };
+    });
+  }
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 70_admin_health.gs
- * Safe builders, the read-only control suite (auditV20_1,
- * runtimeHealthCheckV20_1, verifyPortalV20_1), retired-function stubs,
- * portal serving, tab visibility, permissions audit, and backups.
+  // --- audit flags per trainee ---
+  var flags = {};
+  var au = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (au) {
+    var labels = ['advancement vs score', 'reflection vs score',
+                  'extreme score without narrative', 'silent record',
+                  'FTO scope', 'phase mismatch'];
+    au.getRange(5, 1, 40, 7).getValues().forEach(function (r) {
+      var name = normalizeNameV20_1_(String(r[0] || ''));
+      if (!name) return;
+      var fl = [];
+      for (var c = 1; c <= 6; c++) if (String(r[c]) === 'FLAG') fl.push(labels[c - 1]);
+      if (fl.length) flags[name] = fl;
+    });
+  }
+
+  // --- who has actually filed, from the raw mirror ---
+  var filedBy = {}, filedByDisplay = {}, lastEvalFor = {};
+  var m = getSheetOrNullV20_1_(TAB.EVAL);
+  if (m && m.getLastRow() >= 5) {
+    m.getRange(5, 1, m.getLastRow() - 4, 3).getValues().forEach(function (r) {
+      var d = parseDateSafeV20_1_(r[0]);
+      var fto = String(r[1] || '').trim();
+      var tr = normalizeNameV20_1_(String(r[2] || ''));
+      if (!fto || !tr) return;
+      var fn = normalizeNameV20_1_(fto);
+      filedBy[fn] = (filedBy[fn] || 0) + 1;
+      if (!filedByDisplay[fn]) filedByDisplay[fn] = fto;
+      if (d && (!lastEvalFor[tr] || d.getTime() > lastEvalFor[tr].getTime())) lastEvalFor[tr] = d;
+    });
+  }
+
+  // --- group active trainees by assigned FTO ---
+  var byFto = {}, unassigned = [], totals = { active: 0, never: 0, overdue: 0, current: 0 };
+  masterTraineeRowsV20_1_().forEach(function (t) {
+    if (t.closed) return;
+    if (String(t.name).indexOf('EXAMPLE') === 0 || String(t.name).indexOf(TEST_PREFIX) === 0) return;
+    totals.active++;
+    var f = facts[t.norm] || { evals: 0, daysSince: null, dayInPhase: 0 };
+    var status, sev;
+    if (f.evals === 0) {
+      status = 'NEVER EVALUATED — day ' + f.dayInPhase + ' of phase'; sev = 2; totals.never++;
+    } else if (f.daysSince !== null && f.daysSince > threshold) {
+      status = f.daysSince + ' days since last eval (limit ' + threshold + ')'; sev = 1; totals.overdue++;
+    } else {
+      status = 'current' + (lastEvalFor[t.norm] ? ' — last eval ' + dateKeyV20_1_(lastEvalFor[t.norm]) : ''); sev = 0; totals.current++;
+    }
+    var entry = { name: t.name, phase: t.phase || '', status: status, sev: sev,
+                  evals: f.evals, flags: flags[t.norm] || [] };
+    var ftoName = String(t.fto || '').trim();
+    if (!ftoName) { unassigned.push(entry); return; }
+    var key = normalizeNameV20_1_(ftoName);
+    if (!byFto[key]) byFto[key] = { display: ftoName, trainees: [] };
+    byFto[key].trainees.push(entry);
+  });
+
+  // --- compose ---
+  var today = dateKeyV20_1_(new Date());
+  var T = [], H = [];
+  function line(t) { T.push(t); }
+  H.push('<div style="font-family:Arial,sans-serif;max-width:680px">');
+  H.push('<h2 style="margin:0 0 4px">SCEMS FTO Scoreboard — ' + today + '</h2>');
+  H.push('<p style="margin:0 0 14px;color:#555">Active trainees: <b>' + totals.active +
+    '</b> · current: <b style="color:#2e7d32">' + totals.current +
+    '</b> · overdue: <b style="color:#b7791f">' + totals.overdue +
+    '</b> · never evaluated: <b style="color:#c62828">' + totals.never + '</b> · eval limit: ' + threshold + ' days</p>');
+  line('SCEMS FTO SCOREBOARD — ' + today);
+  line('Active ' + totals.active + ' | current ' + totals.current + ' | overdue ' + totals.overdue + ' | never evaluated ' + totals.never);
+  line('');
+
+  var ftoKeys = Object.keys(byFto).sort(function (a, b) {
+    var wa = Math.max.apply(null, byFto[a].trainees.map(function (x) { return x.sev; }));
+    var wb = Math.max.apply(null, byFto[b].trainees.map(function (x) { return x.sev; }));
+    return wb - wa;
+  });
+  ftoKeys.forEach(function (k) {
+    var g = byFto[k];
+    var filed = filedBy[k] || 0;
+    H.push('<h3 style="margin:14px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">FTO ' + g.display +
+      ' <span style="font-weight:normal;color:#777">(' + g.trainees.length + ' trainee(s) · ' + filed + ' eval(s) ever filed by them)</span></h3>');
+    line('FTO ' + g.display + '  (' + g.trainees.length + ' trainee(s), ' + filed + ' eval(s) ever filed by them)');
+    g.trainees.sort(function (a, b) { return b.sev - a.sev; }).forEach(function (tr) {
+      var col = tr.sev === 2 ? '#c62828' : tr.sev === 1 ? '#b7791f' : '#2e7d32';
+      H.push('<p style="margin:3px 0 3px 12px"><b>' + tr.name + '</b> (' + tr.phase + ', ' + tr.evals +
+        ' eval(s)) — <span style="color:' + col + '">' + tr.status + '</span>' +
+        (tr.flags.length ? '<br><span style="color:#c62828;font-size:12px">&nbsp;&nbsp;audit: ' + tr.flags.join('; ') + '</span>' : '') + '</p>');
+      line('   ' + tr.name + ' (' + tr.phase + ', ' + tr.evals + ' evals) — ' + tr.status +
+        (tr.flags.length ? '  [audit: ' + tr.flags.join('; ') + ']' : ''));
+    });
+    line('');
+  });
+
+  if (unassigned.length) {
+    H.push('<h3 style="margin:14px 0 2px;color:#c62828">Trainees with NO assigned FTO</h3>');
+    line('TRAINEES WITH NO ASSIGNED FTO');
+    unassigned.forEach(function (tr) {
+      H.push('<p style="margin:3px 0 3px 12px"><b>' + tr.name + '</b> — ' + tr.status + '</p>');
+      line('   ' + tr.name + ' — ' + tr.status);
+    });
+    line('');
+  }
+
+  var filers = Object.keys(filedBy).sort(function (a, b) { return filedBy[b] - filedBy[a]; });
+  H.push('<h3 style="margin:14px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">Filing totals — every eval ever filed, by who filed it</h3>');
+  line('FILING TOTALS (all evals on record, by filer)');
+  filers.forEach(function (k) {
+    H.push('<p style="margin:2px 0 2px 12px">' + filedByDisplay[k] + ' : <b>' + filedBy[k] + '</b></p>');
+    line('   ' + filedByDisplay[k] + ' : ' + filedBy[k]);
+  });
+
+  H.push('<p style="margin-top:16px;color:#888;font-size:12px">Generated from live SCEMS data. Every number is traceable: evals on tab 02, decisions on tab 21, flags on tab 13.</p></div>');
+  line('');
+  line('Generated from live SCEMS data ' + new Date() + '. Every number traceable on tabs 02 / 21 / 13.');
+
+  var to = sessionEmailV20_1_() || CONFIG.TCO_EMAIL;
+  sendHtmlMail(to, 'SCEMS FTO Scoreboard — ' + today, T.join('\n'), H.join('\n'));
+  var msg = 'Scoreboard sent to ' + to + '.\n\n' + T.join('\n');
+  systemLog_('INFO', 'FTO SCOREBOARD SENT',
+    totals.active + ' active, ' + totals.overdue + ' overdue, ' + totals.never + ' never evaluated');
+  try { SpreadsheetApp.getUi().alert(('Scoreboard emailed to ' + to + '.\n\n' + T.join('\n')).slice(0, 1400)); } catch (e) {}
+  Logger.log(msg);
+  return msg;
+}
+
+function redoAuditTabV20_1() {
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) return 'Tab 13 not found.';
+  var R = [];
+
+  // ---- 1. headers + notes (labels only; formulas untouched) ----
+  var heads = [
+    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Goes out when scores support the request or it is withdrawn.'],
+    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Goes out as they converge.'],
+    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Goes out when the FTO\'s narrative is added to the eval record.'],
+    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Goes out as evals and reflections resume.'],
+    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Goes out when corrected.'],
+    ['PHASE MISMATCH', 'CURRENT PHASE on tab 01 disagrees with what the record shows. Goes out when the phase is corrected on tab 01.']
+  ];
+  for (var c = 0; c < 6; c++) {
+    var cell = sh.getRange(4, 2 + c);
+    cell.setValue(heads[c][0]).setNote(heads[c][1] +
+      '\n\nFlags compute themselves from the data. Nothing here is dismissed by hand — fix the condition, or log your review below.');
+  }
+  sh.getRange(4, 1).setValue('TRAINEE')
+    .setNote('Names flow from the roster. The matrix B5:G44 is the machine\'s — hands off. Your space is the FLAG REVIEW LOG below.');
+  sh.getRange(4, 1, 1, 7).setFontWeight('bold').setFontColor('#FFFFFF')
+    .setBackground('#546E7A').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+    .setVerticalAlignment('middle');
+  sh.setFrozenRows(4);
+  sh.setFrozenColumns(1);
+  sh.setColumnWidth(1, 170);
+  for (var w = 2; w <= 7; w++) sh.setColumnWidth(w, 118);
+  sh.getRange(5, 1, 40, 1).setFontWeight('bold');
+  sh.getRange(5, 2, 40, 6).setHorizontalAlignment('center');
+  R.push('Headers, notes, freeze, and widths applied.');
+
+  // ---- 2. color rules for the matrix ----
+  var matrix = sh.getRange(5, 2, 40, 6);
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
+      .setRanges([matrix]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenCellNotEmpty().setFontColor('#9E9E9E')
+      .setRanges([matrix]).build()
+  ]);
+  R.push('Flag colors set: red = burning, grey = anything else.');
+
+  // ---- 3. remove the trap checkbox ----
+  try {
+    sh.getRange(2, 10).removeCheckboxes();
+    sh.getRange(2, 10).clearContent().setNote('');
+    R.push('Trap "clear all" checkbox removed (it only ever refused).');
+  } catch (e1) { R.push('Checkbox removal skipped: ' + e1); }
+
+  // ---- 4. FLAG REVIEW LOG (yours) ----
+  var LOG_HEADS = ['DATE', 'TRAINEE', 'FLAG TYPE', 'REVIEWER', 'ACTION TAKEN', 'STATUS'];
+  var flagTypes = heads.map(function (h) { return h[0]; });
+  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved'];
+  var logRow = 0;
+  var scanN = Math.max(sh.getLastRow(), 60);
+  var scan = sh.getRange(1, 1, scanN, 2).getValues();
+  for (var i = 44; i < scan.length; i++) {
+    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
+        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = i + 1; break; }
+  }
+  if (!logRow) logRow = Math.max(sh.getLastRow() + 2, 47);
+  if (sh.getMaxRows() < logRow + 24) sh.insertRowsAfter(sh.getMaxRows(), logRow + 24 - sh.getMaxRows());
+  sh.getRange(logRow, 1, 1, 6).merge().breakApart();
+  sh.getRange(logRow, 1).setValue('FLAG REVIEW LOG — YOURS. Log what you did about each flag while the data catches up.');
+  sh.getRange(logRow, 1, 1, 6).setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold');
+  sh.getRange(logRow + 1, 1, 1, 6).setValues([LOG_HEADS])
+    .setFontWeight('bold').setBackground('#FFF3D6');
+  var entry = sh.getRange(logRow + 2, 1, 20, 6);
+  entry.setBackground('#FFFDF4').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  sh.getRange(logRow + 2, 1, 20, 1).setNumberFormat('m/d/yyyy');
+  sh.getRange(logRow + 2, 3, 20, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(flagTypes, true).setAllowInvalid(true).build());
+  sh.getRange(logRow + 2, 6, 20, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(statuses, true).setAllowInvalid(true).build());
+  var tl = traineeListSafeV20_1_();
+  if (tl.length) {
+    sh.getRange(logRow + 2, 2, 20, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(tl, true).setAllowInvalid(true).build());
+  }
+  R.push('FLAG REVIEW LOG ready at row ' + logRow + ' — date, trainee, flag type, reviewer, action, status (dropdowns included).');
+
+  // ---- 5. pipeline match report (read-only) ----
+  var P = [];
+  var formulas = sh.getRange(5, 2, 40, 6).getFormulas();
+  var refs = {}, staticCells = 0, formulaCells = 0, emptyCells = 0;
+  formulas.forEach(function (row, ri) {
+    row.forEach(function (f, ci) {
+      if (!f) {
+        var v = sh.getRange(5 + ri, 2 + ci).getValue();
+        if (v === '' || v == null) emptyCells++; else staticCells++;
+        return;
+      }
+      formulaCells++;
+      (f.match(/'([^']+)'!/g) || []).forEach(function (m) {
+        refs[m.slice(1, -2)] = (refs[m.slice(1, -2)] || 0) + 1;
+      });
+      (f.match(/(?:^|[^A-Za-z0-9_'!])([A-Za-z0-9_]{2,})!/g) || []).forEach(function (m2) {
+        var nm = m2.replace(/^[^A-Za-z0-9_]*/, '').replace(/!$/, '');
+        refs[nm] = (refs[nm] || 0) + 1;
+      });
+    });
+  });
+  P.push('Matrix cells: ' + formulaCells + ' formula(s), ' + staticCells + ' static value(s), ' + emptyCells + ' empty.');
+  if (staticCells) P.push('  ← STATIC CELLS in a formula matrix deserve review: a typed value never clears itself.');
+  var liveTabs = {};
+  ss().getSheets().forEach(function (s2) { liveTabs[s2.getName()] = true; });
+  Object.keys(refs).forEach(function (t) {
+    P.push('  pulls from "' + t + '" ×' + refs[t] + (liveTabs[t] ? '' : '   ← TAB DOES NOT EXIST — dead reference'));
+  });
+  if (!Object.keys(refs).length && formulaCells) P.push('  (formulas reference only this sheet)');
+  var masterNorms = {};
+  masterTraineeRowsV20_1_().forEach(function (t3) { masterNorms[t3.norm] = true; });
+  var nameCol = sh.getRange(5, 1, 40, 1).getValues();
+  var staleNames = [];
+  nameCol.forEach(function (r4, i4) {
+    var nm = String(r4[0] || '').trim();
+    if (!nm) return;
+    if (nm.indexOf('EXAMPLE') === 0 || nm.indexOf(TEST_PREFIX) === 0) return;
+    if (!masterNorms[normalizeNameV20_1_(nm)]) staleNames.push('row ' + (5 + i4) + ' [' + nm + ']');
+  });
+  P.push(staleNames.length
+    ? 'Names not on the active master: ' + staleNames.join(', ') + '  ← stale rows (closed trainees linger until the matrix rebuilds)'
+    : 'Every name in the matrix matches the active master.');
+
+  var msg = 'TAB 13 REDO COMPLETE\n\n' + R.join('\n') +
+    '\n\nPIPELINE MATCH REPORT (read-only — formulas untouched):\n' + P.join('\n');
+  systemLog_('INFO', 'AUDIT TAB REDONE', 'layout/notes/review log applied; formulas untouched');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
+  return msg;
+}
+
+/** (internal) active trainee names for the review-log dropdown. */
+function traineeListSafeV20_1_() {
+  var out = [];
+  try {
+    masterTraineeRowsV20_1_().forEach(function (t) {
+      if (!t.closed && String(t.name).indexOf('EXAMPLE') !== 0 &&
+          String(t.name).indexOf(TEST_PREFIX) !== 0) out.push(t.name);
+    });
+  } catch (e) {}
+  return out;
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 70_admin_health
  *
- * READ-ONLY GUARANTEE: auditV20_1, previewMigrationV20_1 (80_migration),
- * runtimeHealthCheckV20_1, verifyPortalV20_1, verifySkillsV20_1 (40) and
- * verifyAnalyticsV20_1 (60) repair nothing, format nothing, hide nothing,
- * sort nothing, write no sheet logs, send no mail, and change no
- * Script Properties. They return text.
- ************************************************************************/
+ * Health checks and repairs: what is wrong, and the previewed tool that
+ * fixes it.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Post-upgrade repair  (v20.2)
+ *   Safe builders, the read-only control suite (auditV20_1,
+ *   runtimeHealthCheckV20_1, verifyPortalV20_1), retired-function stubs,
+ *   portal serving, tab visibility, permissions audit, and backups.
+ *   READ-ONLY GUARANTEE: auditV20_1, previewMigrationV20_1 (80_migration),
+ *   runtimeHealthCheckV20_1, verifyPortalV20_1, verifySkillsV20_1 (40) and
+ *   verifyAnalyticsV20_1 (60) repair nothing, format nothing, hide nothing,
+ *   sort nothing, write no sheet logs, send no mail, and change no
+ *   Script Properties. They return text.
+ *   Full system review — READ ONLY, split for the 6-minute limit.
+ */
+
+function hasStrayV19_(s) { return typeof s === 'string' && s.indexOf(STRAY_V19) >= 0; }
+
+/** Re-opens sign-off requests that the old queue sweep cancelled by mistake.
+ *
+ *  v20.1's sweep cancelled every OPEN queue row whose skill was not on the
+ *  matrix. Because a matrix rebuild that produced nothing left the matrix
+ *  empty, one bad rebuild stamped "CANCELLED : CRITERIA CHANGED" across the
+ *  whole pending queue. v20.2 stops that happening again; this undoes what
+ *  already happened.
+ *
+ *  A row is re-opened only when the matrix NOW says the skill qualifies and
+ *  nothing else is already open for the same trainee and skill. Anything
+ *  else is left exactly as it is and reported. No row is deleted, and no
+ *  decision, rationale or date is touched. */
+function repairCancelledQueueRowsV20_2() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+
+  var t = queueTableV20_1_();
+  if (!t.ok) return 'Queue tab not found.';
+  var need = ['TRAINEE', 'SKILL ID', 'SKILL', 'RECORD STATUS'];
+  var missing = need.filter(function (h) { return t.col[h] === undefined; });
+  if (missing.length) {
+    return 'Refusing to touch the queue: missing header(s) ' + missing.join(', ') + '.';
+  }
+
+  var QUALIFY = ['READY FOR VALIDATION', 'SIGNED OFF - REVIEW REQUIRED',
+                 'LEGACY SIGN-OFF REVIEW REQUIRED'];
+
+  // Anything already open owns its (trainee, skill) — never create a second ask.
+  var openKeys = {};
+  t.rows.forEach(function (r) {
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    openKeys[normalizeNameV20_1_(cleanNameV20_1_(r[t.col['TRAINEE']])) + '||' +
+             String(r[t.col['SKILL ID']] || '').trim()] = true;
+  });
+
+  var reopened = [], leftAlone = [], scanned = 0;
+  t.rows.forEach(function (r, i) {
+    var status = String(r[t.col['RECORD STATUS']] || '').trim();
+    if (status.indexOf('CANCELLED : CRITERIA CHANGED') !== 0) return;
+    scanned++;
+    var row = t.firstDataRow + i;
+    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
+    var skillId = String(r[t.col['SKILL ID']] || '').trim();
+    var skill = String(r[t.col['SKILL']] || '').trim();
+    var key = normalizeNameV20_1_(trainee) + '||' + skillId;
+
+    if (openKeys[key]) {
+      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — already open elsewhere');
+      return;
+    }
+    var readiness = skillReadinessNowV20_2_(trainee, skillId);
+    if (QUALIFY.indexOf(readiness) < 0) {
+      leftAlone.push(trainee + ' / ' + skill + ' (row ' + row + ') — matrix reads "' +
+        (readiness || 'not on the matrix') + '"');
+      return;
+    }
+    t.sheet.getRange(row, t.col['RECORD STATUS'] + 1).setValue('OPEN');
+    openKeys[key] = true;
+    reopened.push(trainee + ' / ' + skill + ' (row ' + row + ')');
+    systemLog_('WARN', 'QUEUE ROW RE-OPENED',
+      'row ' + row + ' | ' + trainee + ' / ' + skillId +
+      ' | was CANCELLED : CRITERIA CHANGED, matrix now reads ' + readiness);
+  });
+
+  var msg = 'CANCELLED QUEUE REPAIR\n\n' +
+    'Cancelled rows examined : ' + scanned + '\n' +
+    'Re-opened               : ' + reopened.length + '\n' +
+    'Left as they were       : ' + leftAlone.length + '\n' +
+    (reopened.length ? '\nBack in your queue:\n  ' + reopened.slice(0, 25).join('\n  ') +
+      (reopened.length > 25 ? '\n  …and ' + (reopened.length - 25) + ' more' : '') : '') +
+    (leftAlone.length ? '\n\nLeft alone (the matrix does not support re-opening these):\n  ' +
+      leftAlone.slice(0, 15).join('\n  ') +
+      (leftAlone.length > 15 ? '\n  …and ' + (leftAlone.length - 15) + ' more' : '') : '') +
+    '\n\nNothing was deleted. No decision, rationale or date was changed.';
+  systemLog_('WARN', 'CANCELLED QUEUE REPAIR',
+    scanned + ' examined, ' + reopened.length + ' re-opened');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
 
 /* ---------------------------------------------------------------- *
  *  SAFE builders — header mismatch REPORTS, never clears
@@ -9230,17 +8795,20 @@ function fixAndFinishSkillsV19() {
   systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'fixAndFinishSkillsV19');
   Logger.log(m); return m;
 }
+
 function purgeLegacySkillValidationsV19() {
   var m = 'RETIRED in v20.1. Dropdown rules are re-armed non-destructively by ' +
           'applySkillsLayoutV19_() and armQueueValidationV20_(); nothing needs purging.';
   systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'purgeLegacySkillValidationsV19');
   Logger.log(m); return m;
 }
+
 function purgeExamples() {
   var m = 'RETIRED in v20.1. Remove example rows by hand if any remain.';
   systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'purgeExamples');
   Logger.log(m); return m;
 }
+
 /** ZZ TEST cleanup: preview first; delete only rows whose trainee/name
  *  field begins with the ZZ TEST prefix. Never touches other rows. */
 function purgeTestRows(confirmToken) {
@@ -9279,15 +8847,18 @@ function purgeTestRows(confirmToken) {
   systemLog_('WARN', 'ZZ TEST ROWS REMOVED', found.length + ' row(s)');
   return 'Removed ' + found.length + ' ZZ TEST row(s).';
 }
+
 function scemsFixSelfTest() {
   var m = 'SCEMS ' + SCEMS_VERSION + ': single-definition project; the v19 fix block is retired.';
   Logger.log(m); return m;
 }
-/* Legacy menu names → safe no-ops (pattern retained from v19.0.4). */
-function buildSkillsSystem() { return installSkillsV19(); }
+
 function seedTraineeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
+
 function organizeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
+
 function skillsKey() { try { applySkillsLayoutV19_(); } catch (e) {} }
+
 function parseSkills(v) {
   systemLog_('WARN', 'LEGACY FREE-TEXT SKILL FIELD IGNORED',
     'Use the structured Skills Quick Log. No competency state was changed.');
@@ -9609,25 +9180,1932 @@ function fullBackupV20_1() {
   return 'Backup package ' + stamp + ' created in "' + folderName + '".';
 }
 
+function reviewSectionV20_1_(R, title, fn) {
+  R.push('');
+  R.push('================ ' + title + ' ================');
+  try { R.push(String(fn())); }
+  catch (e) { R.push('SECTION FAILED: ' + e); }
+}
 
-/* ==================== 80_migration.gs ==================== */
+/** Fast half: everything answerable from the sheets alone. ~1 minute. */
+function reviewCoreV20_1() {
+  var R = [];
+  reviewSectionV20_1_(R, 'VERSION', function () { return versionReportV20_1(); });
+  reviewSectionV20_1_(R, 'MASTER NAME HYGIENE (spaces shown in brackets)', function () {
+    var t = readTableV20_1_(TAB.MASTER, 4);
+    if (!t.ok) return 'Master not readable.';
+    var L = [];
+    var raw = t.sheet.getRange(t.firstDataRow, 1, Math.max(t.sheet.getLastRow() - t.firstDataRow + 1, 1), 1).getValues();
+    raw.forEach(function (r, i) {
+      var v = r[0];
+      if (v === '' || v == null) return;
+      var s = String(v);
+      var flags = [];
+      if (/^\s/.test(s)) flags.push('LEADING SPACE');
+      if (/\s$/.test(s)) flags.push('TRAILING SPACE');
+      if (/\s\s/.test(s)) flags.push('DOUBLE SPACE INSIDE');
+      L.push('row ' + (t.firstDataRow + i) + ' [' + s + ']' + (flags.length ? '  <-- ' + flags.join(', ') : ''));
+    });
+    return L.join('\n') || '(no names found)';
+  });
+  reviewSectionV20_1_(R, 'EVAL COUNT CROSS-CHECK (raw rows vs engine)', function () {
+    var m = getSheetOrNullV20_1_(TAB.EVAL);
+    var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+    if (!m || !eng) return 'Mirror or engine missing.';
+    var counts = {};
+    if (m.getLastRow() >= 5) {
+      m.getRange(5, 3, m.getLastRow() - 4, 1).getValues().forEach(function (r) {
+        var n = normalizeNameV20_1_(String(r[0] || ''));
+        if (n) counts[n] = (counts[n] || 0) + 1;
+      });
+    }
+    var L = [];
+    eng.getRange(5, 1, 40, 9).getValues().forEach(function (r, i) {
+      var name = String(r[0] || '').trim();
+      if (!name) return;
+      var engineSays = Number(r[6]) || 0;
+      var rawSays = counts[normalizeNameV20_1_(name)] || 0;
+      L.push('engine row ' + (5 + i) + ' ' + name + ' : raw eval rows ' + rawSays +
+        ' | engine says ' + engineSays + (rawSays === engineSays ? '' : '   <-- MISMATCH'));
+    });
+    return L.join('\n') || '(engine empty)';
+  });
+  reviewSectionV20_1_(R, 'ORPHANED EVALS (trainee matches nobody)', function () {
+    var m = getSheetOrNullV20_1_(TAB.EVAL);
+    if (!m || m.getLastRow() < 5) return 'Mirror empty.';
+    var known = {};
+    masterTraineeRowsV20_1_().forEach(function (x) { known[x.norm] = true; });
+    var arch = getSheetOrNullV20_1_(TAB.ARCHIVE);
+    if (arch && arch.getLastRow() >= 5) {
+      arch.getRange(5, 2, arch.getLastRow() - 4, 1).getValues().forEach(function (r) {
+        var n = normalizeNameV20_1_(String(r[0] || ''));
+        if (n) known[n] = true;
+      });
+    }
+    var L = [], seen = {};
+    m.getRange(5, 1, m.getLastRow() - 4, 3).getValues().forEach(function (r, i) {
+      var who = String(r[2] || '').trim();
+      if (!who) return;
+      var n = normalizeNameV20_1_(who);
+      if (known[n] || seen[n]) return;
+      if (who.indexOf('EXAMPLE') === 0 || who.indexOf(TEST_PREFIX) === 0) return;
+      seen[n] = true;
+      L.push('[' + who + '] (first at mirror row ' + (5 + i) + ')');
+    });
+    return L.length ? L.join('\n') : 'None. Every eval belongs to a known trainee.';
+  });
+  reviewSectionV20_1_(R, 'DECISIONS RECONCILIATION', function () { return reconcileDecisionsV20(); });
+  reviewSectionV20_1_(R, 'INGESTION EXCEPTIONS', function () { return ingestionExceptionReportV20_1(); });
+  reviewSectionV20_1_(R, 'ANALYTICS VERIFICATION', function () { return verifyAnalyticsV20_1(); });
+  var msg = 'SYSTEM REVIEW — CORE (fast half) — READ ONLY\n' + R.join('\n') +
+    '\n\nNow run reviewDeepV20_1 for forms, portal, permissions, and the full audit.';
+  Logger.log(msg);
+  return msg;
+}
 
-/************************************************************************
- * SCEMS FTPD v20.1 : 80_migration.gs
- * The non-destructive migration: read-only preview, explicit apply,
- * verification, and rollback helpers.
+/** Slow half: everything that talks to Forms, Drive, and the portal. */
+function reviewDeepV20_1() {
+  var R = [];
+  reviewSectionV20_1_(R, 'RUNTIME HEALTH', function () { return runtimeHealthCheckV20_1(); });
+  reviewSectionV20_1_(R, 'FORM DELIVERY ADDRESSES', function () {
+    var liveId = ss().getId();
+    var L = [];
+    storedFormIdsV20_1_().forEach(function (id) {
+      try {
+        var f = FormApp.openById(id);
+        var dest = '';
+        try { dest = f.getDestinationId(); } catch (e2) {}
+        L.push((dest === liveId ? 'OK    ' : dest ? 'WRONG ' : 'NONE  ') +
+          f.getTitle() + ' | ' + f.getResponses().length + ' response(s)' +
+          (dest && dest !== liveId ? ' | delivering to ' + dest : ''));
+      } catch (e) { L.push('UNREADABLE ' + id + ' : ' + e); }
+    });
+    return L.join('\n');
+  });
+  reviewSectionV20_1_(R, 'INGESTION RECONCILIATION', function () { return reconcileIngestionV20_1(); });
+  reviewSectionV20_1_(R, 'SKILLS VERIFICATION', function () { return verifySkillsV20_1(); });
+  reviewSectionV20_1_(R, 'PORTAL VERIFICATION', function () { return verifyPortalV20_1(); });
+  reviewSectionV20_1_(R, 'PERMISSIONS AUDIT', function () { return permissionsAuditV20_1(); });
+  reviewSectionV20_1_(R, 'SYSTEM AUDIT', function () { return auditV20_1(); });
+  var msg = 'SYSTEM REVIEW — DEEP (forms half) — READ ONLY\n' + R.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** Kept so the old habit still works; points at the split. */
+function fullSystemReviewV20_1() {
+  var msg = 'The review is split to fit the 6-minute limit:\n' +
+    '  1. reviewCoreV20_1  (fast, sheets-only)\n' +
+    '  2. reviewDeepV20_1  (forms / portal / permissions / audit)\nRun them one after the other.';
+  Logger.log(msg);
+  return msg;
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 75_presentation
  *
- * EVERYTHING THE APPLY STEP DOES IS ADDITIVE
- *  - Creates the four v20.1 system sheets (90–93) if absent.
- *  - Appends missing provenance/ID columns to the RIGHT of existing
- *    headers on tabs 19, 20, 21, and EMAIL/EMPLOYEE ID on tab 22.
- *  - Backfills queue REQUEST IDs and arms the RECORD checkbox column.
- *  - Replaces the six IFERROR(…,0) domain-average formulas on ANALYTICS
- *    with recomputed values — after archiving the original formula text
- *    into the migration record so rollback is a paste-back.
- *  - Hardens form identity settings and destinations IN PLACE.
- *  It never deletes, clears, renames, or rewrites an existing record.
- ************************************************************************/
+ * How the sheets look and read. Three versions of this concern used to sit
+ * in three separate blocks.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   SCEMS v20.5 : the badge, and a masthead on every page
+ *   The badge is a black shield with a white star of life. It disappears
+ *   on a dark band, so the masthead is light — cream ground, charcoal
+ *   type, a gold rule underneath. That is also the right way round for a
+ *   document people print.
+ *   Rows 1 to 3 are the masthead on every sheet. Row 4 is the header row,
+ *   which is where the data has always started, so nothing below moves.
+ *   SCEMS v20.4 : plain English, correct headers, plumbing out of sight
+ *   The problem this solves, in the order it hurts:
+ *   1. 12 DECISION QUEUE's header row is one column SHORT of its data,
+ *   so every label from column D rightward names the wrong column.
+ *   2. 01 TRAINEE MASTER carries an ENTRY PROFILE KEY legend inside the
+ *   data table, and on at least one row it contradicts the code
+ *   beside it.
+ *   3. Header rows cannot decide between Title Case and SHOUTING CASE.
+ *   4. Up to 44% of the columns on a record sheet are machine plumbing.
+ *   5. Raw counters sit far from the thresholds that give them meaning.
+ *   6. Action checkboxes are interleaved with data and IDs.
+ *   The thing that made this hard: 235 places in this file look a column
+ *   up BY ITS HEADER TEXT. Renaming a header on the sheet would break all
+ *   of them at once. So the rename is made safe first, by teaching the
+ *   table reader that a display label and a canonical name are the same
+ *   column. Nothing downstream changes.
+ *   SCEMS v20.3 : the readable release
+ *   "if im the division chief and i open the spreadsheet i should be
+ *   able to see any submissions, where the trainee is at, and have a
+ *   simple button to press on each trainee ... once someone is ready
+ *   to be released this should be a simple check box ... it should
+ *   take all the information gathered on that trainee, create a file
+ *   of everything done from day 1 until release, and i should be able
+ *   to get that information any time i like ... i want to view any
+ *   comments in their entirety, not having to constantly wrap the
+ *   text because the cells aren't big enough."
+ *   Three things, and nothing else:
+ *   1. TRAINEES  — one row per person, plain words, two checkboxes
+ *   2. the file  — everything from day one, as a document you can keep
+ *   3. readable  — narrative columns wide enough to actually read
+ *   SCEMS v20.1.0h ADD-ON : makeQueueReadableV20_1
+ *   FORMATTING ONLY. Reads the queue through the same header-mapped
+ *   loader the system uses; changes how the tab LOOKS and never what
+ *   it SAYS. No row is moved, sorted, hidden, or edited.
+ *   SCEMS v20.1.0i ADD-ON : make the flags fixable
+ *   SCEMS v20.1.0i ADD-ON : fix all current flags, one click
+ *   SCEMS v20.1.0i ADD-ON : flags, simplified for one human
+ */
+
+var BRAND_V20_5 = Object.freeze({
+  INK:      '#1d1b18',   // the shield's black
+  INK_SOFT: '#4a453d',
+  MUTE:     '#6f6859',
+  GOLD:     '#c9a227',   // the county gold, used only as a rule and for accents
+  PAPER:    '#faf8f3',
+  RULE:     '#e0dace',
+  HEAD_BG:  '#1d1b18',   // the column-header band
+  HEAD_FG:  '#f4f1ea',
+  FONT:     'Arial'
+});
+
+/** What each sheet is FOR, in one line, under its title. A masthead that
+ *  only repeats the tab name is decoration; this earns its space. */
+function sheetPurposeV20_5_() {
+  var m = {};
+  m['TRAINEES']              = ['Trainees', 'Everyone in training. Tick a box to open someone’s file or release them.'];
+  m['HOME']                  = ['Field Training Programme', 'Where things stand today.'];
+  m[TAB.CONTROL]             = ['Mission Control', 'Programme settings, forms and reference data.'];
+  m[TAB.MASTER]              = ['Trainee Master', 'One row per person: level, phase, who trains them, how they came in.'];
+  m[TAB.SKILLS]              = ['Skills Progress', 'One row per person per skill. The system keeps this current — do not type in it.'];
+  m[TAB.SKILL_VALIDATION]    = ['Sign-off Queue', 'Skills that have met their evidence and are waiting on a decision from you.'];
+  m[TAB.QUEUE]               = ['Decision Queue', 'Advancements, reviews and programme decisions awaiting an outcome.'];
+  m[TAB.AUDIT]               = ['Audit and Exceptions', 'Conditions the system has flagged. Fix the cause, or accept a flag with a reason.'];
+  m[TAB.WEEKLY]              = ['Weekly Status', 'The programme at a glance, rebuilt each Monday.'];
+  m[TAB.FTO_VIEW]            = ['FTO View', 'What each training officer is carrying.'];
+  m[TAB.TRAINEE_VIEW]        = ['Trainee View', 'Each trainee’s own picture of where they are.'];
+  m[TAB.DASH]                = ['Training Division Dashboard', 'Programme-level numbers for the Division Chief.'];
+  m[TAB.MD_VIEW]             = ['Medical Director View', 'Clinical competency and anything needing medical review.'];
+  m[TAB.CATALOG]             = ['Skill Catalog', 'Every skill, who must do it, and how much evidence it takes. Edited by hand.'];
+  m[TAB.FTO_ROSTER]          = ['FTO Roster', 'Training officers, their levels, and what they may sign off.'];
+  m[TAB.TRAINEE_SKILLS]      = ['Trainee Skills', 'One trainee’s skills, for reading and for approving in place.'];
+  m[TAB.SKILL_EVIDENCE]      = ['Skill Evidence Log', 'Every repetition an FTO has logged. Append-only — a permanent record.'];
+  m[TAB.SKILL_SIGNOFF]       = ['Skill Sign-off Log', 'Every sign-off decision ever made. Append-only — a permanent record.'];
+  m[TAB.DECISIONS]           = ['Decisions', 'Programme decisions as filed. Append-only — a permanent record.'];
+  m[TAB.ARCHIVE]             = ['Trainee Archive', 'People who have completed or left the programme.'];
+  m[TAB.EVAL]                = ['Shift Evaluations', 'Every submitted shift evaluation, exactly as the FTO wrote it.'];
+  m[TAB.REFLECT]             = ['Self-Reflections', 'Every trainee reflection, in their own words.'];
+  m[TAB.URGENT]              = ['Urgent Concerns', 'Concerns raised from the field. Read these first.'];
+  m[TAB.ANALYTICS]           = ['Analytics', 'Trends across the programme.'];
+  m[TAB.ENGINE]              = ['Phase and Status Engine', 'Working sheet. The system reads and writes this — do not edit it.'];
+  m[TAB.LOG]                 = ['System Log', 'What the system did, and when. Diagnostic.'];
+  m[TAB.REGISTRY]            = ['Person Registry', 'Identity and role for everyone the system knows.'];
+  m[TAB.LEDGER]              = ['Ingestion Ledger', 'Every form submission received, and what became of it.'];
+  m[TAB.ASSIGNMENTS]         = ['Assignment History', 'Who was assigned to whom, and when.'];
+  m[TAB.ACCESS]              = ['Access Log', 'Every request to act, granted or refused, with the identity behind it.'];
+  return m;
+}
+
+/** The badge as an image blob, or null when it is missing or a stub.
+ *  A 1x1 placeholder is treated as absent — better no badge than an
+ *  invisible pixel that looks like a bug. */
+function badgeBlobV20_5_() {
+  try {
+    var b64 = String(BADGE_B64 || '');
+    if (b64.length < 1000) return null;          // placeholder, not a real badge
+    return Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', 'scems_badge.png');
+  } catch (e) { return null; }
+}
+
+/** True when BADGE_B64 holds a real image rather than a placeholder. */
+function badgeIsRealV20_5_() {
+  return String(BADGE_B64 || '').length >= 1000;
+}
+
+/** Puts the masthead on one sheet: badge, title, what the sheet is for,
+ *  and a gold rule. Formatting only — it writes rows 1 to 3, which have
+ *  always been chrome, and never touches row 4 or below. */
+function brandSheetV20_5_(sheetName, title, subtitle, width) {
+  var sh = getSheetOrNullV20_1_(sheetName);
+  if (!sh) return false;
+  var B = BRAND_V20_5;
+  var cols = Math.max(width || sh.getLastColumn(), 6);
+
+  // one badge, not one per run
+  try {
+    (sh.getImages() || []).forEach(function (img) { try { img.remove(); } catch (e) {} });
+  } catch (e) {}
+
+  sh.getRange(1, 1, 3, cols).setBackground(B.PAPER).setFontFamily(B.FONT);
+  try { sh.setRowHeight(1, 54); sh.setRowHeight(2, 20); sh.setRowHeight(3, 6); } catch (e) {}
+
+  sh.getRange(1, 1, 1, cols).clearContent();
+  sh.getRange(2, 1, 1, cols).clearContent();
+
+  sh.getRange(1, 2)
+    .setValue(title)
+    .setFontSize(16).setFontWeight('bold').setFontColor(B.INK)
+    .setVerticalAlignment('bottom').setHorizontalAlignment('left');
+  sh.getRange(2, 2)
+    .setValue(subtitle)
+    .setFontSize(10).setFontColor(B.MUTE)
+    .setVerticalAlignment('top').setHorizontalAlignment('left');
+
+  // county mark, right-aligned, quiet
+  sh.getRange(1, Math.max(cols - 1, 3))
+    .setValue('SUMTER COUNTY EMS')
+    .setFontSize(9).setFontWeight('bold').setFontColor(B.GOLD)
+    .setHorizontalAlignment('right').setVerticalAlignment('bottom');
+  sh.getRange(2, Math.max(cols - 1, 3))
+    .setValue(String(CONFIG.POLICY_VERSION || ''))
+    .setFontSize(8).setFontColor(B.MUTE)
+    .setHorizontalAlignment('right').setVerticalAlignment('top');
+
+  // the gold rule
+  sh.getRange(3, 1, 1, cols).setBackground(B.GOLD);
+
+  // the badge sits over column A, clear of the text in column B
+  var blob = badgeBlobV20_5_();
+  if (blob) {
+    try { sh.insertImage(blob, 1, 1, 6, 5).setWidth(43).setHeight(47); } catch (e) {}
+    try { if (sh.getColumnWidth(1) < 56) sh.setColumnWidth(1, 56); } catch (e) {}
+  }
+
+  // the column-header band, so every sheet reads the same way
+  try {
+    sh.getRange(4, 1, 1, cols)
+      .setBackground(B.HEAD_BG).setFontColor(B.HEAD_FG)
+      .setFontWeight('bold').setFontSize(10)
+      .setVerticalAlignment('middle').setWrap(true);
+    sh.setRowHeight(4, 38);
+    sh.setFrozenRows(4);
+  } catch (e) {}
+  return true;
+}
+
+/** Puts the masthead on every sheet that has one defined. */
+function brandAllSheetsV20_5() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  if (!badgeIsRealV20_5_()) {
+    var warn = 'The badge image is missing from this build.\n\n' +
+      'BADGE_B64 holds a placeholder rather than the county shield, so the ' +
+      'masthead would go on without it. Everything else still applies.\n\n' +
+      'Recover the real badge from an older copy of the script before running ' +
+      'this, or accept a masthead with no shield.';
+    systemLog_('WARN', 'BADGE MISSING', 'BADGE_B64 is a placeholder');
+    Logger.log(warn);
+    try { SpreadsheetApp.getUi().alert(warn); } catch (e) {}
+  }
+
+  var purpose = sheetPurposeV20_5_();
+  var done = [], skipped = [];
+  ss().getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    var p = purpose[name];
+    if (!p) { skipped.push(name); return; }
+    var width = name === 'TRAINEES' ? CONSOLE_HEADERS_V20_3.length : sh.getLastColumn();
+    if (brandSheetV20_5_(name, p[0], p[1], width)) done.push(name);
+  });
+
+  var msg = 'MASTHEAD APPLIED\n\n' +
+    done.length + ' sheet(s) branded:\n  ' + done.join('\n  ') +
+    (skipped.length ? '\n\nNo masthead defined for (left alone):\n  ' + skipped.join('\n  ') : '') +
+    '\n\nEach page now carries the county shield, its name, and one line saying\n' +
+    'what it is for. Rows 1 to 3 only — no data moved.' +
+    (badgeIsRealV20_5_() ? '' : '\n\nNOTE: the shield is missing from this build, see the warning above.');
+  systemLog_('INFO', 'MASTHEAD APPLIED', done.length + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Display label -> canonical header name, PER SHEET.
+ *
+ *  Derived from the rename plan below, reversed, so there is exactly one
+ *  place that says what a column is called. It has to be per sheet: the
+ *  evidence log has its own PHASE column that is not the master's CURRENT
+ *  PHASE, and the access log has a REASON that is not a queue RATIONALE.
+ *  A global alias table would have quietly wired those together.
+ *
+ *  This is what makes the rename safe. readTableV20_1_ registers both the
+ *  literal header and its canonical name, so all 235 lookups by canonical
+ *  name keep resolving after a column is relabelled.
+ */
+var HEADER_ALIAS_CACHE_V20_4 = null;
+
+function headerAliasesForV20_4_(sheetName) {
+  if (!HEADER_ALIAS_CACHE_V20_4) {
+    HEADER_ALIAS_CACHE_V20_4 = {};
+    var plan = headerRenamesV20_4_();
+    Object.keys(plan).forEach(function (sheet) {
+      var back = {};
+      Object.keys(plan[sheet]).forEach(function (canon) {
+        back[String(plan[sheet][canon]).toUpperCase().replace(/\s+/g, ' ')] = canon;
+      });
+      HEADER_ALIAS_CACHE_V20_4[sheet] = back;
+    });
+  }
+  return HEADER_ALIAS_CACHE_V20_4[sheetName] || {};
+}
+
+/** The canonical name for a header on a given sheet, or '' when it is
+ *  already canonical or unknown. Case and spacing insensitive. */
+function canonicalHeaderV20_4_(header, sheetName) {
+  var k = String(header || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!k) return '';
+  return headerAliasesForV20_4_(sheetName)[k] || '';
+}
+
+/* ---------------------------------------------------------------- *
+ *  The renames, per sheet
+ * ---------------------------------------------------------------- */
+
+/** What each sheet's headers should say. Canonical name on the left,
+ *  what a person reads on the right. A sheet not listed is left alone. */
+function headerRenamesV20_4_() {
+  var m = {};
+  m[TAB.MASTER] = {
+    'SET STATUS': 'Program status',
+    'PHASE START DATE': 'Phase started',
+    'NRT DATE': 'Not-responding-to-training date',
+    'CLEARANCE DATE': 'Cleared date',
+    'ENTRY PROFILE': 'How they came in',
+    'ASSIGNED FTO': 'Training officer',
+    'START DATE': 'Started',
+    'TRAINEE EMAIL': 'Email address'
+  };
+  m[TAB.SKILLS] = {
+    'READINESS': 'Where this skill stands',
+    'SIGN-OFF': 'Signed off?',
+    'SUCCESSFUL REPS': 'Successful',
+    'INDEPENDENT REPS': 'Independent',
+    'DISTINCT DATES': 'Separate days',
+    'DISTINCT FTOS': 'Different FTOs',
+    'DECISION / EVIDENCE NOTE': 'Note',
+    'LAST DATE': 'Last logged',
+    'LAST OUTCOME': 'How it went',
+    'LAST CONTEXT': 'Where it happened'
+  };
+  m[TAB.SKILL_VALIDATION] = {
+    'EVIDENCE SUMMARY': 'Evidence so far',
+    'RATIONALE': 'Reason for the decision',
+    'READY DATE': 'Ready since',
+    'LAST EVIDENCE DATE': 'Last evidence'
+  };
+  m[TAB.SKILL_EVIDENCE] = {
+    'VALIDATION RESULT': 'Accepted?',
+    'EVIDENCE NOTE': 'What the FTO wrote',
+    'CALL / SCENARIO REF': 'Call number',
+    'PROMPTING': 'Prompting needed',
+    'LEVEL AT EVENT': 'Level then'
+  };
+  m[TAB.SKILL_SIGNOFF] = {
+    'RATIONALE': 'Reason given',
+    'STANDARD / CATALOG VERSION': 'Standard used'
+  };
+  m[TAB.QUEUE] = {
+    'FILED': 'Raised',
+    'ITEM': 'What it is',
+    'DECISION DUE': 'Due',
+    'DATED': 'Decided on'
+  };
+  return m;
+}
+
+/** Columns nobody reading the sheet ever needs: IDs, provenance,
+ *  writer stamps. Correct, necessary, and not for human eyes. */
+function plumbingColumnsV20_4_() {
+  var m = {};
+  m[TAB.SKILL_EVIDENCE] = ['EVENT ID', 'SOURCE FORM', 'SOURCE ROW', 'SOURCE FORM ID',
+                           'SOURCE RESPONSE ID', 'WRITER VERSION', 'PERSON ID', 'ASSIGNMENT ID'];
+  m[TAB.SKILL_SIGNOFF] = ['DECISION ID', 'SOURCE QUEUE ROW', 'STANDARD / CATALOG VERSION',
+                          'REQUEST ID', 'SUPERSEDES', 'DECIDED BY PERSON ID', 'WRITER VERSION'];
+  m[TAB.SKILL_VALIDATION] = ['REQUEST ID', 'SKILL ID'];
+  m[TAB.SKILLS] = ['SKILL ID', 'SUCCESSFUL REPS', 'INDEPENDENT REPS',
+                   'DISTINCT DATES', 'DISTINCT FTOS'];
+  m[TAB.MASTER] = ['ENTRY PROFILE KEY'];
+  m[TAB.LEDGER] = ['LEDGER KEY', 'FORM ID', 'RESPONSE ID', 'WRITER VERSION'];
+  m[TAB.REGISTRY] = ['PERSON ID'];
+  return m;
+}
+
+/* ---------------------------------------------------------------- *
+ *  1. The broken header row
+ * ---------------------------------------------------------------- */
+
+/** 12 DECISION QUEUE's header names 8 columns; its rows carry 9. The
+ *  owner column — who the item sits with — was never given a name, so
+ *  DECISION DUE ended up over a person's name and every label after it
+ *  described its neighbour.
+ *
+ *  Inserts the missing name. Touches the header row only; not one data
+ *  cell moves, because the data was never wrong — only its labels. */
+function repairDecisionQueueHeaderV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.QUEUE, 4);
+  if (!t.ok) return 'Tab "' + TAB.QUEUE + '" not found.';
+
+  var named = t.headers.filter(function (h) { return String(h || '').trim(); }).length;
+  var widest = 0;
+  t.rows.forEach(function (r) {
+    var last = 0;
+    r.forEach(function (v, i) { if (v !== '' && v != null) last = i + 1; });
+    if (last > widest) widest = last;
+  });
+
+  if (widest <= named) {
+    return 'No repair needed: ' + named + ' header(s) for ' + widest + ' column(s) of data.';
+  }
+  if (t.col['OWNER'] !== undefined) {
+    return 'Already repaired — an OWNER column is named.';
+  }
+
+  // The unnamed column is the one after ITEM. Shift the labels right by one
+  // and give it its name.
+  var idxItem = t.col['ITEM'];
+  if (idxItem === undefined) {
+    return 'Refusing to repair: no ITEM column to anchor on. Header row needs a look by hand.';
+  }
+  var fixed = t.headers.slice(0, idxItem + 1)
+    .concat(['OWNER'])
+    .concat(t.headers.slice(idxItem + 1));
+  fixed = fixed.slice(0, Math.max(widest, fixed.length));
+  while (fixed.length < widest) fixed.push('');
+
+  t.sheet.getRange(4, 1, 1, fixed.length).setValues([fixed]);
+  var msg = 'DECISION QUEUE HEADER REPAIRED\n\n' +
+    'Was : ' + t.headers.filter(String).join(' | ') + '\n\n' +
+    'Now : ' + fixed.filter(String).join(' | ') + '\n\n' +
+    'An unnamed column sat after ITEM — the person the item is with. Every\n' +
+    'label to its right was describing its neighbour. Only the header row\n' +
+    'changed; no data moved, because the data was never wrong.';
+  systemLog_('WARN', 'DECISION QUEUE HEADER REPAIRED',
+    named + ' header(s) -> ' + fixed.filter(String).length + ' for ' + widest + ' data column(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  2. The entry-profile contradiction
+ * ---------------------------------------------------------------- */
+
+/** ENTRY PROFILE holds a bare letter; ENTRY PROFILE KEY holds a legend
+ *  like "C : Experienced transfer" — filled in on some rows, blank on
+ *  others, and on at least one row naming a different letter than the
+ *  code beside it.
+ *
+ *  This REPORTS rather than resolves. Which of the two is right is a
+ *  fact about a person's training history, and v20.2's rule holds: the
+ *  system does not guess at a record. It names every disagreement, and
+ *  writes the legend once, properly, above the table. */
+function auditEntryProfilesV20_4() {
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (!t.ok) return 'Trainee master not found.';
+  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'], cName = t.col['TRAINEE'];
+  if (cCode === undefined || cName === undefined) return 'No ENTRY PROFILE column to audit.';
+
+  var clash = [], missing = [], legend = {};
+  t.rows.forEach(function (r, i) {
+    var name = cleanNameV20_1_(r[cName]);
+    if (!name) return;
+    var code = String(r[cCode] || '').trim().toUpperCase();
+    var key = cKey === undefined ? '' : String(r[cKey] || '').trim();
+    if (key) {
+      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
+      if (m) legend[m[1].toUpperCase()] = m[2].trim();
+    }
+    if (!code) { missing.push(name + ' (row ' + (t.firstDataRow + i) + ') — no entry profile'); return; }
+    if (key) {
+      var keyLetter = (key.match(/^([A-Z])/i) || [])[1];
+      if (keyLetter && keyLetter.toUpperCase() !== code) {
+        clash.push(name + ' (row ' + (t.firstDataRow + i) + ') — profile says "' + code +
+                   '" but the key beside it says "' + key + '"');
+      }
+    }
+  });
+
+  var L = ['ENTRY PROFILE AUDIT — read only', ''];
+  if (clash.length) {
+    L.push('DISAGREEMENTS — these need your decision, not mine:');
+    clash.forEach(function (x) { L.push('  ' + x); });
+    L.push('');
+    L.push('Which is correct is a fact about that person\'s history. Fix the one');
+    L.push('that is wrong on 01 TRAINEE MASTER, then run this again.');
+    L.push('');
+  } else {
+    L.push('No profile/key disagreements.');
+    L.push('');
+  }
+  if (missing.length) {
+    L.push('NO ENTRY PROFILE SET:');
+    missing.forEach(function (x) { L.push('  ' + x); });
+    L.push('');
+  }
+  var letters = Object.keys(legend).sort();
+  if (letters.length) {
+    L.push('The legend, as found in the data:');
+    letters.forEach(function (k) { L.push('  ' + k + '  =  ' + legend[k]); });
+    L.push('');
+    L.push('Run tidyEntryProfileLegendV20_4() to move this out of the data table');
+    L.push('and into a note on the column heading, where a legend belongs.');
+  }
+  var msg = L.join('\n');
+  systemLog_(clash.length ? 'WARN' : 'INFO', 'ENTRY PROFILE AUDIT',
+    clash.length + ' disagreement(s), ' + missing.length + ' unset');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Lifts the entry-profile legend out of the data table and attaches it
+ *  to the column heading as a note, then hides the now-redundant column.
+ *  The column keeps its contents — nothing is deleted. */
+function tidyEntryProfileLegendV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.MASTER, 4);
+  if (!t.ok) return 'Trainee master not found.';
+  var cCode = t.col['ENTRY PROFILE'], cKey = t.col['ENTRY PROFILE KEY'];
+  if (cCode === undefined) return 'No ENTRY PROFILE column.';
+
+  var legend = {};
+  if (cKey !== undefined) {
+    t.rows.forEach(function (r) {
+      var key = String(r[cKey] || '').trim();
+      var m = key.match(/^([A-Z])\s*:\s*(.+)$/i);
+      if (m) legend[m[1].toUpperCase()] = m[2].trim();
+    });
+  }
+  var letters = Object.keys(legend).sort();
+  if (!letters.length) return 'No legend entries found to lift.';
+
+  var note = 'How they came in\n\n' +
+    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
+    '\n\nThis legend used to live in a column of its own inside the data.';
+  t.sheet.getRange(4, cCode + 1).setNote(note);
+  systemLog_('INFO', 'ENTRY PROFILE LEGEND LIFTED', letters.join(', '));
+  var msg = 'The entry-profile legend is now a note on the column heading:\n\n' +
+    letters.map(function (k) { return '  ' + k + '  =  ' + legend[k]; }).join('\n') +
+    '\n\nHover the heading to read it. The old ENTRY PROFILE KEY column keeps\n' +
+    'its contents and is grouped away with the other machinery — nothing was\n' +
+    'deleted.';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  3. Plain English headers
+ * ---------------------------------------------------------------- */
+
+/** Rewrites header text into words, consistently cased. Safe because
+ *  headerAliasesForV20_4_ teaches the table reader that the new label and
+ *  the canonical name are the same column. */
+function renameHeadersV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var plan = headerRenamesV20_4_();
+  var out = [], total = 0;
+  Object.keys(plan).forEach(function (sheetName) {
+    var t = readTableV20_1_(sheetName, 4);
+    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
+    var renames = plan[sheetName];
+    var headers = t.headers.slice();
+    var n = 0;
+    headers.forEach(function (h, i) {
+      var canon = String(h || '').trim().toUpperCase();
+      var already = canonicalHeaderV20_4_(h, sheetName);
+      var key = already || canon;
+      if (renames[key] && headers[i] !== renames[key]) { headers[i] = renames[key]; n++; }
+    });
+    if (n) {
+      t.sheet.getRange(4, 1, 1, headers.length).setValues([headers]);
+      total += n;
+    }
+    out.push('  ' + sheetName + ' : ' + n + ' header(s) renamed');
+  });
+
+  // the stray value that leaked into the matrix header row
+  var m = readTableV20_1_(TAB.SKILLS, 4);
+  if (m.ok) {
+    var strayAt = -1;
+    m.headers.forEach(function (h, i) {
+      if (i >= 20 && String(h || '').trim()) strayAt = i;
+    });
+    if (strayAt >= 0) {
+      m.sheet.getRange(4, strayAt + 1).clearContent();
+      out.push('  ' + TAB.SKILLS + ' : cleared a stray value out of the header row (column ' +
+               (strayAt + 1) + ', "' + m.headers[strayAt] + '")');
+    }
+  }
+
+  var msg = 'HEADERS REWRITTEN IN PLAIN ENGLISH\n\n' + out.join('\n') +
+    '\n\n' + total + ' header(s) changed in total.\n\n' +
+    'Nothing behind the scenes changed: every one of the 235 places this\n' +
+    'system looks a column up by name still finds it, because the old name\n' +
+    'and the new label are registered as the same column.';
+  systemLog_('WARN', 'HEADERS RENAMED', total + ' header(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  4. Plumbing out of sight
+ * ---------------------------------------------------------------- */
+
+/** Groups the machine columns and collapses the group, so they are one
+ *  click away instead of in your eyeline. Nothing is deleted, nothing
+ *  moves, and every one of them still receives data. */
+function groupPlumbingColumnsV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var plan = plumbingColumnsV20_4_();
+  var out = [];
+  Object.keys(plan).forEach(function (sheetName) {
+    var t = readTableV20_1_(sheetName, 4);
+    if (!t.ok) { out.push('  ' + sheetName + ' : not present'); return; }
+    var hidden = 0;
+    plan[sheetName].forEach(function (canon) {
+      var i = t.col[canon];
+      if (i === undefined) return;
+      try { t.sheet.hideColumns(i + 1); hidden++; } catch (e) {}
+    });
+    out.push('  ' + sheetName + ' : ' + hidden + ' machine column(s) tucked away');
+  });
+  var msg = 'MACHINE COLUMNS HIDDEN\n\n' + out.join('\n') +
+    '\n\nIDs, provenance and writer stamps are still there and still being\n' +
+    'written — they are just not in front of you any more. Select the\n' +
+    'columns either side and choose Unhide to see them again.';
+  systemLog_('INFO', 'PLUMBING COLUMNS HIDDEN', out.length + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Puts every hidden column back. */
+function showAllColumnsV20_4() {
+  var plan = plumbingColumnsV20_4_();
+  var n = 0;
+  Object.keys(plan).forEach(function (sheetName) {
+    var sh = getSheetOrNullV20_1_(sheetName);
+    if (!sh) return;
+    try { sh.showColumns(1, sh.getMaxColumns()); n++; } catch (e) {}
+  });
+  var msg = 'Every column is visible again on ' + n + ' sheet(s).';
+  systemLog_('INFO', 'ALL COLUMNS SHOWN', n + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  5. Counters that mean something where they sit
+ * ---------------------------------------------------------------- */
+
+/** "5 / 3 / 3 / 2" against thresholds on a different sheet is not
+ *  information. This turns the queue's evidence summary into a sentence
+ *  that carries its own thresholds. */
+function evidenceSentenceV20_4_(counts, catalogEntry) {
+  var c = catalogEntry || {};
+  function part(have, need, word) {
+    have = Number(have) || 0;
+    need = Number(need) || 0;
+    if (!need) return have + ' ' + word;
+    return have + ' of ' + need + ' ' + word + (have >= need ? '' : '  (short)');
+  }
+  return [
+    part(counts.successful, c.minSuccessful, 'successful'),
+    part(counts.independent, c.minIndependent, 'independent'),
+    part(counts.dates, c.minDates, 'separate days'),
+    part(counts.ftos, c.minFtos, 'different FTOs')
+  ].join('   ·   ');
+}
+
+/** Rewrites the evidence summary on every OPEN queue row into that
+ *  sentence. Reads the catalog for the thresholds. Writes one column. */
+function rewriteEvidenceSummariesV20_4() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var t = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+  if (!t.ok) return 'Queue not found.';
+  var cSum = t.col['EVIDENCE SUMMARY'], cSkill = t.col['SKILL ID'], cTrainee = t.col['TRAINEE'];
+  if (cSum === undefined || cSkill === undefined) return 'Queue is missing its evidence columns.';
+
+  var byId = {};
+  try { byId = catalogMapsV19_(true).byId || {}; } catch (e) {}
+
+  var m = readTableV20_1_(TAB.SKILLS, 4);
+  var counts = {};
+  if (m.ok && m.col['TRAINEE'] !== undefined) {
+    m.rows.forEach(function (r) {
+      var k = normalizeNameV20_1_(cleanNameV20_1_(r[m.col['TRAINEE']])) + '||' +
+              String(r[m.col['SKILL ID']] || '').trim();
+      counts[k] = {
+        successful: r[m.col['SUCCESSFUL REPS']],
+        independent: r[m.col['INDEPENDENT REPS']],
+        dates: r[m.col['DISTINCT DATES']],
+        ftos: r[m.col['DISTINCT FTOS']]
+      };
+    });
+  }
+
+  var n = 0;
+  t.rows.forEach(function (r, i) {
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var skillId = String(r[cSkill] || '').trim();
+    var key = normalizeNameV20_1_(cleanNameV20_1_(r[cTrainee])) + '||' + skillId;
+    var c = counts[key];
+    if (!c) return;
+    t.sheet.getRange(t.firstDataRow + i, cSum + 1)
+      .setValue(evidenceSentenceV20_4_(c, byId[skillId]));
+    n++;
+  });
+  var msg = n + ' evidence summary(ies) rewritten as "3 of 5 successful · 2 of 2 independent · …"\n' +
+    'so the thresholds are beside the counts instead of on another sheet.';
+  systemLog_('INFO', 'EVIDENCE SUMMARIES REWRITTEN', n + ' row(s)');
+  Logger.log(msg);
+  return msg;
+}
+
+var TAB_CONSOLE_V20_3 = 'TRAINEES';
+
+var CONSOLE_HEADERS_V20_3 = [
+  'Trainee', 'Level', 'Phase', 'Weeks in phase', 'Last evaluation',
+  'Evaluations', 'Skills signed off', 'Waiting on you', 'Concerns',
+  'Open file', 'Release', 'Their file'
+];
+
+/* Column numbers on TRAINEES, so the edit handler and the builder agree. */
+var CONSOLE_COL_V20_3 = Object.freeze({
+  NAME: 1, LEVEL: 2, PHASE: 3, WEEKS: 4, LAST_EVAL: 5, EVALS: 6,
+  SIGNED: 7, WAITING: 8, CONCERNS: 9, OPEN: 10, RELEASE: 11, FILE: 12
+});
+
+var CONSOLE_FIRST_ROW_V20_3 = 3;
+
+/* ---------------------------------------------------------------- *
+ *  1. The console
+ * ---------------------------------------------------------------- */
+
+
+/** Opens the TRAINEES tab, building it first if it is not there yet. */
+function openTraineeConsoleV20_3() {
+  var S = ss();
+  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
+  if (!sh) { buildTraineeConsoleV20_3(); sh = S.getSheetByName(TAB_CONSOLE_V20_3); }
+  if (sh) {
+    try { if (sh.isSheetHidden()) sh.showSheet(); } catch (e) {}
+    S.setActiveSheet(sh);
+    try { S.moveActiveSheet(1); } catch (e2) {}
+  }
+  return 'TRAINEES is open.';
+}
+
+/** Builds or refreshes TRAINEES: one row per person, in words rather
+ *  than codes. Reads everything, decides nothing, writes no record. */
+function buildTraineeConsoleV20_3() {
+  var S = ss();
+  var sh = S.getSheetByName(TAB_CONSOLE_V20_3);
+  if (!sh) sh = S.insertSheet(TAB_CONSOLE_V20_3, 0);
+
+  var people = masterTraineeRowsV20_1_().filter(function (p) { return !p.closed; });
+  var closed = masterTraineeRowsV20_1_().filter(function (p) { return p.closed; });
+
+  // ---- gather, once, rather than per person ----
+  var evalRows = [], reflectRows = [], urgentRows = [];
+  try { var e = readTableV20_1_(TAB.EVAL, 4); if (e.ok) evalRows = e.rows.map(function (r) {
+    return { when: parseDateSafeV20_1_(r[0]), trainee: cleanNameV20_1_(r[2]) }; }); } catch (e1) {}
+  try { var u = readTableV20_1_(TAB.URGENT, 4); if (u.ok) urgentRows = u.rows.map(function (r) {
+    return { trainee: cleanNameV20_1_(r[3]) }; }); } catch (e2) {}
+
+  var matrix = readTableV20_1_(TAB.SKILLS, 4);
+  var signedBy = {}, applicableBy = {}, readyBy = {};
+  if (matrix.ok && matrix.col['TRAINEE'] !== undefined) {
+    matrix.rows.forEach(function (r) {
+      var who = normalizeNameV20_1_(cleanNameV20_1_(r[matrix.col['TRAINEE']]));
+      if (!who) return;
+      applicableBy[who] = (applicableBy[who] || 0) + 1;
+      var readiness = String(r[matrix.col['READINESS']] || '').trim();
+      if (readiness === 'SIGNED OFF' || String(r[matrix.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF') {
+        signedBy[who] = (signedBy[who] || 0) + 1;
+      }
+      if (readiness === 'READY FOR VALIDATION') readyBy[who] = (readyBy[who] || 0) + 1;
+    });
+  }
+
+  var waitingBy = {};
+  var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
+  if (q.ok && q.col['TRAINEE'] !== undefined) {
+    q.rows.forEach(function (r) {
+      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+      var who = normalizeNameV20_1_(cleanNameV20_1_(r[q.col['TRAINEE']]));
+      if (who) waitingBy[who] = (waitingBy[who] || 0) + 1;
+    });
+  }
+
+  function countFor(list, norm) {
+    var n = 0;
+    list.forEach(function (x) { if (normalizeNameV20_1_(x.trainee) === norm) n++; });
+    return n;
+  }
+  function lastEvalFor(norm) {
+    var latest = null;
+    evalRows.forEach(function (x) {
+      if (normalizeNameV20_1_(x.trainee) !== norm) return;
+      if (x.when && (!latest || x.when.getTime() > latest.getTime())) latest = x.when;
+    });
+    return latest;
+  }
+
+  var fileLinks = consoleFileLinksV20_3_(sh);   // keep any links already on the sheet
+
+  var body = people.map(function (p) {
+    var norm = p.norm;
+    var last = lastEvalFor(norm);
+    var days = last ? Math.floor((new Date() - last) / 86400000) : null;
+    var weeks = p.phaseStart ? Math.max(0, Math.floor((new Date() - p.phaseStart) / (7 * 86400000))) : '';
+    var waiting = waitingBy[norm] || 0;
+    var ready = readyBy[norm] || 0;
+    var concerns = countFor(urgentRows, norm);
+    return [
+      p.name,
+      p.level || '',
+      p.phase || '',
+      weeks === '' ? '' : weeks,
+      last ? (days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago') : 'never',
+      countFor(evalRows, norm),
+      (signedBy[norm] || 0) + ' of ' + (applicableBy[norm] || 0),
+      waiting ? waiting + ' waiting' : (ready ? ready + ' nearly ready' : ''),
+      concerns ? concerns : '',
+      false,
+      false,
+      fileLinks[norm] || ''
+    ];
+  });
+
+  // ---- write ----
+  var width = CONSOLE_HEADERS_V20_3.length;
+  ensureSheetCapacityV19_(sh, Math.max(body.length + CONSOLE_FIRST_ROW_V20_3 + 10, 60), width + 2);
+  sh.getRange(1, 1, sh.getMaxRows(), width).clearContent().clearDataValidations();
+
+  sh.getRange(1, 1).setValue('TRAINEES')
+    .setFontSize(20).setFontWeight('bold').setFontColor('#1d1b18');
+  sh.getRange(1, 3).setValue(people.length + ' active   ·   ' + closed.length +
+    ' released   ·   updated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE d MMM, h:mm a'))
+    .setFontColor('#6f6859').setFontSize(10);
+
+  sh.getRange(2, 1, 1, width).setValues([CONSOLE_HEADERS_V20_3])
+    .setFontWeight('bold').setFontSize(11)
+    .setBackground('#1d1b18').setFontColor('#f4f1ea')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  if (body.length) {
+    sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, body.length, width).setValues(body);
+    sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.OPEN, body.length, 2)
+      .insertCheckboxes();
+  }
+
+  applyConsoleLookV20_3_(sh, body.length);
+  systemLog_('INFO', 'TRAINEE CONSOLE BUILT', people.length + ' active trainee(s)');
+  return 'TRAINEES refreshed: ' + people.length + ' active, ' + closed.length + ' released.';
+}
+
+/** Existing file links, keyed by normalized name, so a rebuild never
+ *  loses a document that was already generated. */
+function consoleFileLinksV20_3_(sh) {
+  var out = {};
+  try {
+    if (sh.getLastRow() < CONSOLE_FIRST_ROW_V20_3) return out;
+    var n = sh.getLastRow() - CONSOLE_FIRST_ROW_V20_3 + 1;
+    var names = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.NAME, n, 1).getValues();
+    var links = sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.FILE, n, 1).getValues();
+    for (var i = 0; i < n; i++) {
+      var nm = normalizeNameV20_1_(cleanNameV20_1_(names[i][0]));
+      if (nm && links[i][0]) out[nm] = links[i][0];
+    }
+  } catch (e) {}
+  return out;
+}
+
+/** Readable by default: room for words, no squinting. */
+function applyConsoleLookV20_3_(sh, rows) {
+  var W = { 1: 210, 2: 110, 3: 120, 4: 110, 5: 130, 6: 100, 7: 140, 8: 150, 9: 90, 10: 90, 11: 90, 12: 260 };
+  Object.keys(W).forEach(function (c) { try { sh.setColumnWidth(Number(c), W[c]); } catch (e) {} });
+  try { sh.setFrozenRows(2); sh.setFrozenColumns(1); } catch (e) {}
+  try { sh.setRowHeight(1, 40); sh.setRowHeight(2, 38); } catch (e) {}
+  if (rows > 0) {
+    var r = sh.getRange(CONSOLE_FIRST_ROW_V20_3, 1, rows, CONSOLE_HEADERS_V20_3.length);
+    r.setVerticalAlignment('middle').setWrap(true).setFontSize(11);
+    for (var i = 0; i < rows; i++) {
+      try { sh.setRowHeight(CONSOLE_FIRST_ROW_V20_3 + i, 34); } catch (e) {}
+    }
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains('waiting')
+        .setBackground('#fdf3d6').setFontColor('#7a5c00').setBold(true)
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.WAITING, rows, 1)]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(0)
+        .setBackground('#fbeeec').setFontColor('#a62a21').setBold(true)
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.CONCERNS, rows, 1)]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains('never')
+        .setBackground('#fbeeec').setFontColor('#a62a21')
+        .setRanges([sh.getRange(CONSOLE_FIRST_ROW_V20_3, CONSOLE_COL_V20_3.LAST_EVAL, rows, 1)]).build()
+    ]);
+  }
+  try { sh.getRange(1, 1, sh.getMaxRows(), 40).setFontFamily('Arial'); } catch (e) {}
+}
+
+/* ---------------------------------------------------------------- *
+ *  2. The file
+ * ---------------------------------------------------------------- */
+
+/** Everything recorded about one trainee, from the first day to now, as
+ *  a document. Narratives appear in full — this is the thing the
+ *  spreadsheet cannot show you.
+ *
+ *  Read-only with respect to the record: it copies, it never changes. */
+function buildTraineeFileV20_3(traineeName) {
+  var name = cleanNameV20_1_(traineeName);
+  if (!name) throw new Error('No trainee name given.');
+  var norm = normalizeNameV20_1_(name);
+  var resolved = resolveTraineeV20_1_(name);
+  var rec = resolved.record;
+
+  var doc = DocumentApp.create('SCEMS Training File — ' + name + ' — ' +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'));
+  var b = doc.getBody();
+  b.setMarginTop(48).setMarginBottom(48).setMarginLeft(56).setMarginRight(56);
+
+  function H1(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING1); }
+  function H2(t) { b.appendParagraph(t).setHeading(DocumentApp.ParagraphHeading.HEADING2); }
+  function P(t) { return b.appendParagraph(String(t == null ? '' : t)); }
+  function small(t) { P(t).setFontSize(9).setForegroundColor('#666666'); }
+  function kv(k, v) { P(k + ':  ' + (v === '' || v == null ? '—' : v)); }
+  function rule() { b.appendHorizontalRule(); }
+
+  // ---- cover ----
+  b.appendParagraph('SUMTER COUNTY EMS').setFontSize(10).setBold(true).setForegroundColor('#a8811a');
+  b.appendParagraph('Field Training Record').setHeading(DocumentApp.ParagraphHeading.TITLE);
+  b.appendParagraph(name).setFontSize(20).setBold(true);
+  small('Generated ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEEE d MMMM yyyy, h:mm a') +
+        '  ·  ' + SCEMS_VERSION + '  ·  ' + String(CONFIG.POLICY_VERSION || ''));
+  rule();
+
+  H1('Who this is');
+  if (rec) {
+    kv('Certification level', rec.level);
+    kv('Entry profile', rec.entryProfile);
+    kv('Employee ID', rec.employeeId);
+    kv('Assigned FTO', rec.fto);
+    kv('Started', rec.startDate ? dateKeyV20_1_(rec.startDate) : '');
+    kv('Current phase', rec.phase);
+    kv('Phase started', rec.phaseStart ? dateKeyV20_1_(rec.phaseStart) : '');
+    kv('Program status', rec.setStatus);
+    if (rec.startDate) {
+      kv('Time in program', Math.floor((new Date() - rec.startDate) / 86400000) + ' days');
+    }
+  } else {
+    P('No master record found for this name. The evidence below is everything filed under it.');
+  }
+
+  // ---- shift evaluations, in full ----
+  H1('Shift evaluations');
+  var ev = readTableV20_1_(TAB.EVAL, 4);
+  var evN = 0;
+  if (ev.ok) {
+    var evMine = ev.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[2])) === norm; });
+    evMine.sort(function (a, b) {
+      var da = parseDateSafeV20_1_(a[0]), db = parseDateSafeV20_1_(b[0]);
+      return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+    });
+    evN = evMine.length;
+    if (!evN) P('None recorded.');
+    evMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2((when ? dateKeyV20_1_(when) : 'undated') + '  ·  FTO ' + (cleanNameV20_1_(r[1]) || 'unnamed'));
+      ev.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || i <= 2) return;
+        var val = r[i];
+        if (val === '' || val == null) return;
+        P(head + ':  ' + String(val));      // full text, never truncated
+      });
+    });
+  } else { P('The evaluation mirror is not present.'); }
+
+  // ---- self-reflections ----
+  H1('The trainee in their own words');
+  var rf = readTableV20_1_(TAB.REFLECT, 4);
+  var rfN = 0;
+  if (rf.ok) {
+    var rfMine = rf.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[1])) === norm; });
+    rfN = rfMine.length;
+    if (!rfN) P('None submitted.');
+    rfMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2(when ? dateKeyV20_1_(when) : 'undated');
+      rf.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || i <= 1) return;
+        if (r[i] === '' || r[i] == null) return;
+        P(head + ':  ' + String(r[i]));
+      });
+    });
+  }
+
+  // ---- skills ----
+  H1('Skills — every logged repetition');
+  var sk = readTableV20_1_(TAB.SKILL_EVIDENCE, 4);
+  var skN = 0, skAccepted = 0;
+  if (sk.ok && sk.col['TRAINEE'] !== undefined) {
+    var skMine = sk.rows.filter(function (r) {
+      return normalizeNameV20_1_(cleanNameV20_1_(r[sk.col['TRAINEE']])) === norm; });
+    skN = skMine.length;
+    if (!skN) P('None recorded.');
+    skMine.forEach(function (r) {
+      var val = String(r[sk.col['VALIDATION RESULT']] || '');
+      if (val === 'ACCEPTED') skAccepted++;
+      var when = parseDateSafeV20_1_(r[sk.col['SHIFT DATE']]);
+      var line = (when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' +
+        String(r[sk.col['SKILL']] || '') + '  ·  ' + String(r[sk.col['OUTCOME']] || '') +
+        '  ·  FTO ' + String(r[sk.col['FTO']] || '') +
+        (val === 'ACCEPTED' ? '' : '  ·  [' + val + ']');
+      P(line);
+      var note = String(r[sk.col['EVIDENCE NOTE']] || '').trim();
+      if (note) P('       ' + note).setFontSize(10).setForegroundColor('#444444');
+    });
+  }
+
+  // ---- decisions ----
+  H1('Sign-off decisions');
+  var so = readTableV20_1_(TAB.SKILL_SIGNOFF, 4);
+  var soN = 0;
+  if (so.ok && so.col['TRAINEE'] !== undefined) {
+    var soMine = so.rows.filter(function (r) {
+      return normalizeNameV20_1_(cleanNameV20_1_(r[so.col['TRAINEE']])) === norm; });
+    soN = soMine.length;
+    if (!soN) P('None recorded.');
+    soMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[so.col['DECISION DATE']]);
+      P((when ? dateKeyV20_1_(when) : 'undated') + '  ·  ' + String(r[so.col['SKILL']] || '') +
+        '  ·  ' + String(r[so.col['DECISION']] || ''));
+      P('       by ' + String(r[so.col['DECIDED BY']] || '') + ' — ' +
+        String(r[so.col['RATIONALE']] || '')).setFontSize(10).setForegroundColor('#444444');
+    });
+  }
+
+  // ---- concerns ----
+  H1('Urgent concerns');
+  var ur = readTableV20_1_(TAB.URGENT, 4);
+  var urN = 0;
+  if (ur.ok) {
+    var urMine = ur.rows.filter(function (r) { return normalizeNameV20_1_(cleanNameV20_1_(r[3])) === norm; });
+    urN = urMine.length;
+    if (!urN) P('None filed.');
+    urMine.forEach(function (r) {
+      var when = parseDateSafeV20_1_(r[0]);
+      H2(when ? dateKeyV20_1_(when) : 'undated');
+      ur.headers.forEach(function (h, i) {
+        var head = String(h || '').trim();
+        if (!head || r[i] === '' || r[i] == null) return;
+        P(head + ':  ' + String(r[i]));
+      });
+    });
+  }
+
+  // ---- decisions raw / phase history ----
+  H1('Phase and programme decisions');
+  var dr = readTableV20_1_(TAB.DECISIONS, 4);
+  var drN = 0;
+  if (dr.ok) {
+    var drMine = dr.rows.filter(function (r) {
+      return r.some(function (c) { return normalizeNameV20_1_(cleanNameV20_1_(c)) === norm; }); });
+    drN = drMine.length;
+    if (!drN) P('None recorded.');
+    drMine.forEach(function (r) {
+      var parts = [];
+      dr.headers.forEach(function (h, i) {
+        if (String(h || '').trim() && r[i] !== '' && r[i] != null) parts.push(h + ': ' + r[i]);
+      });
+      P(parts.join('   ·   '));
+    });
+  }
+
+  rule();
+  H1('What this file contains');
+  kv('Shift evaluations', evN);
+  kv('Self-reflections', rfN);
+  kv('Skill repetitions logged', skN + ' (' + skAccepted + ' accepted into the record)');
+  kv('Sign-off decisions', soN);
+  kv('Urgent concerns', urN);
+  kv('Programme decisions', drN);
+  small('Compiled by ' + (deciderIdentityV20_2_() || 'an unidentified session') +
+        ' from the SCEMS Field Training record on ' +
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy') +
+        '. Source of truth is the tracker; this document is a copy made at that moment. ' +
+        'Retention: ' + String(CONFIG.RETENTION_STATEMENT || 'per county policy') + '.');
+
+  doc.saveAndClose();
+
+  // file it next to the tracker
+  try {
+    var f = DriveApp.getFileById(doc.getId());
+    var parents = DriveApp.getFileById(ss().getId()).getParents();
+    if (parents.hasNext()) parents.next().addFile(f);
+  } catch (e) {}
+
+  var url = doc.getUrl();
+  systemLog_('WARN', 'TRAINEE FILE BUILT', name + ' | ' + url);
+  return { url: url, name: name, counts: { evals: evN, reflections: rfN, skills: skN,
+           accepted: skAccepted, signoffs: soN, concerns: urN, decisions: drN } };
+}
+
+/* ---------------------------------------------------------------- *
+ *  3. The checkboxes
+ * ---------------------------------------------------------------- */
+
+/** Handles a tick on TRAINEES. Called from onSheetEdit; returns true when
+ *  it owned the edit, so the rest of the handler is skipped. */
+function consoleEditV20_3_(e, sh) {
+  if (sh.getName() !== TAB_CONSOLE_V20_3) return false;
+  var row = e.range.getRow(), col = e.range.getColumn();
+  if (row < CONSOLE_FIRST_ROW_V20_3) return false;
+  if (col !== CONSOLE_COL_V20_3.OPEN && col !== CONSOLE_COL_V20_3.RELEASE) return false;
+  if (e.range.getValue() !== true) return true;         // unticking does nothing
+
+  var ui = null; try { ui = SpreadsheetApp.getUi(); } catch (e0) {}
+  var name = cleanNameV20_1_(sh.getRange(row, CONSOLE_COL_V20_3.NAME).getValue());
+  e.range.setValue(false);                              // a checkbox is a button, not a state
+  if (!name) return true;
+
+  if (col === CONSOLE_COL_V20_3.OPEN) {
+    try {
+      var built = buildTraineeFileV20_3(name);
+      sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(built.url);
+      if (ui) ui.alert('File ready — ' + name,
+        'Everything on record from day one, in full.\n\n' +
+        built.counts.evals + ' shift evaluation(s)\n' +
+        built.counts.reflections + ' self-reflection(s)\n' +
+        built.counts.skills + ' skill repetition(s), ' + built.counts.accepted + ' accepted\n' +
+        built.counts.signoffs + ' sign-off decision(s)\n' +
+        built.counts.concerns + ' urgent concern(s)\n\n' +
+        'The link is in the last column. The document stays in Drive — open it any time.',
+        ui.ButtonSet.OK);
+    } catch (err) {
+      if (ui) ui.alert('Could not build the file for ' + name + '.\n\n' + err);
+      systemLog_('ERROR', 'TRAINEE FILE FAILED', name + ' | ' + err);
+    }
+    return true;
+  }
+
+  // ---- release ----
+  if (!gateV20_2_('CLOSE TRAINEE')) return true;
+  if (ui) {
+    var waiting = String(sh.getRange(row, CONSOLE_COL_V20_3.WAITING).getValue() || '');
+    var ok = ui.alert('Release ' + name + '?',
+      'This closes their training record and builds their complete file.\n\n' +
+      (waiting ? 'NOTE: ' + waiting + ' — releasing does not decide those.\n\n' : '') +
+      'The file covers day one to today and stays in Drive for good.\n\nRelease?',
+      ui.ButtonSet.YES_NO);
+    if (ok !== ui.Button.YES) return true;
+  }
+  var report = [];
+  try { report.push(String(closeTraineeV20_1(name))); }
+  catch (err2) { report.push('Close step failed: ' + err2); }
+  try {
+    var file = buildTraineeFileV20_3(name);
+    sh.getRange(row, CONSOLE_COL_V20_3.FILE).setValue(file.url);
+    report.push('File built: ' + file.url);
+  } catch (err3) { report.push('File build failed: ' + err3); }
+
+  systemLog_('WARN', 'TRAINEE RELEASED VIA CONSOLE', name + ' | ' + report.join(' | ').slice(0, 300));
+  if (ui) ui.alert('Released — ' + name, report.join('\n\n').slice(0, 1400), ui.ButtonSet.OK);
+  try { buildTraineeConsoleV20_3(); } catch (e4) {}
+  return true;
+}
+
+/* ---------------------------------------------------------------- *
+ *  4. Room to read
+ * ---------------------------------------------------------------- */
+
+/** Column widths by what the column HOLDS, not by position.
+ *  Anything whose name suggests prose gets real width and wrapping;
+ *  dates and counts stay narrow so the prose has somewhere to go. */
+function readableWidthForV20_3_(header) {
+  var h = String(header || '').toLowerCase();
+  if (!h) return 100;
+  if (/note|narrative|detail|comment|rationale|summary|reason|concern|what |why|situation|justif|strength|improve|focus|feedback|action|plan|evidence/.test(h)) return 460;
+  if (/name|trainee|fto|skill|decided by|signed by|assigned/.test(h)) return 190;
+  if (/date|timestamp|when|expiration/.test(h)) return 110;
+  if (/id$|^id| id /.test(h)) return 150;
+  if (/status|decision|outcome|level|phase|stage|context|domain|result|prompting|attestation/.test(h)) return 165;
+  return 130;
+}
+
+/** Makes the record sheets readable: wide narrative columns, wrapping on,
+ *  taller rows, frozen headers. Formatting only — no cell value changes. */
+function makeSheetsReadableV20_3() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var targets = [TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.SKILLS,
+                 TAB.SKILL_VALIDATION, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
+                 TAB.CATALOG, TAB.FTO_ROSTER, TAB.DECISIONS];
+  var done = [];
+  targets.forEach(function (name) {
+    var t = readTableV20_1_(name, 4);
+    if (!t.ok || !t.headers.length) { done.push('  ' + name + ' : not present'); return; }
+    var sh = t.sheet;
+    try {
+      t.headers.forEach(function (h, i) {
+        if (!String(h || '').trim()) return;
+        sh.setColumnWidth(i + 1, readableWidthForV20_3_(h));
+      });
+      sh.getRange(4, 1, 1, Math.max(t.headers.length, 1))
+        .setWrap(true).setVerticalAlignment('middle').setFontWeight('bold');
+      var lastRow = Math.max(sh.getLastRow(), 5);
+      sh.getRange(5, 1, lastRow - 4, Math.max(t.headers.length, 1))
+        .setWrap(true).setVerticalAlignment('top');
+      sh.setFrozenRows(4);
+      sh.setFrozenColumns(name === TAB.SKILLS || name === TAB.SKILL_VALIDATION ? 2 : 1);
+      try { sh.setRowHeights(5, Math.max(lastRow - 4, 1), 46); } catch (e2) {}
+      try { sh.setRowHeight(4, 40); } catch (e3) {}
+      done.push('  ' + name + ' : ' + t.headers.filter(String).length + ' column(s) sized');
+    } catch (e) {
+      done.push('  ' + name + ' : ' + e);
+    }
+  });
+  var msg = 'READABLE LAYOUT APPLIED\n\n' + done.join('\n') +
+    '\n\nNarrative columns are now wide and wrapping; dates and counts stay narrow.\n' +
+    'Header rows are frozen so they stay put when you scroll.\n' +
+    'Nothing was moved, renamed or deleted — this is formatting only.';
+  systemLog_('INFO', 'READABLE LAYOUT APPLIED', done.length + ' sheet(s)');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Tab order and visibility  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** Left-to-right order: the things you use, then the things you consult,
+ *  then the machinery. Anything not listed keeps its place at the end. */
+function tabOrderV20_2_() {
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
+          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
+          TAB.ANALYTICS, TAB.ENGINE,
+          TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
+          TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
+          TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
+}
+
+/** The tabs a person actually opens. Everything else is machinery: still
+ *  live, still receiving data, just not in your way. */
+function dailyTabsV20_2_() {
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
+          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
+          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
+}
+
+/** Puts the tabs in a sensible order and hides the machinery.
+ *
+ *  Hiding is tidiness, not security — a hidden tab still receives data and
+ *  is one menu click from visible. Nothing is deleted or renamed.
+ *  showAllTabsV20_2() puts everything back. */
+function organizeTabsV20_2() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var S = ss();
+  var order = tabOrderV20_2_();
+  var daily = dailyTabsV20_2_();
+
+  var moved = 0, pos = 1;
+  order.forEach(function (name) {
+    var sh = S.getSheetByName(name);
+    if (!sh) return;
+    try {
+      if (sh.isSheetHidden()) sh.showSheet();   // cannot move a hidden sheet
+      S.setActiveSheet(sh);
+      S.moveActiveSheet(pos);
+      pos++; moved++;
+    } catch (e) {}
+  });
+
+  var visible = [], hidden = [];
+  S.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (daily.indexOf(name) >= 0) {
+      try { sh.showSheet(); visible.push(name); } catch (e) {}
+    } else {
+      try { sh.hideSheet(); hidden.push(name); } catch (e) { visible.push(name); }
+    }
+  });
+
+  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
+  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
+
+  var msg = 'TABS ORGANIZED\n\n' +
+    'Ordered : ' + moved + ' tab(s)\n' +
+    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
+    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
+    '\n  ' + hidden.join('\n  ') +
+    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
+  systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Unhides everything, for when you are working on the system itself. */
+function showAllTabsV20_2() {
+  var S = ss(), n = 0;
+  S.getSheets().forEach(function (sh) {
+    try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
+  });
+  var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
+    'Admin > Tidy up the tabs puts the machinery away.';
+  systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+function makeQueueReadableV20_1() {
+  var t = queueTableV20_1_();
+  if (!t.ok) {
+    try { SpreadsheetApp.getUi().alert('Queue tab not found; nothing changed.'); } catch (e0) {}
+    return 'Queue tab not found; nothing changed.';
+  }
+  var sh = t.sheet;
+  var headerRow = t.firstDataRow - 1;
+  var width = t.headers.length;
+  var lastRow = Math.max(sh.getLastRow(), t.firstDataRow);
+  var nData = Math.max(lastRow - t.firstDataRow + 1, 1);
+
+  function colLetter_(n) { // 1-based index -> A1 letter
+    var s = '';
+    while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+  }
+
+  // ---- freeze panes: headers on top, trainee names on the left
+  sh.setFrozenRows(headerRow);
+  if (t.col['TRAINEE'] !== undefined) sh.setFrozenColumns(t.col['TRAINEE'] + 1);
+
+  // ---- header row look
+  sh.getRange(headerRow, 1, 1, width)
+    .setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#37474F')
+    .setVerticalAlignment('middle').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
+  // ---- column widths (only the columns that actually exist)
+  var widths = { 'TRAINEE': 160, 'LEVEL': 70, 'SKILL': 230, 'SKILL ID': 105,
+                 'DECISION': 175, 'DECIDED BY': 150, 'DECISION DATE': 105,
+                 'RECORD STATUS': 130, 'RATIONALE': 260, 'REQUEST ID': 95 };
+  Object.keys(widths).forEach(function (h) {
+    if (t.col[h] !== undefined) sh.setColumnWidth(t.col[h] + 1, widths[h]);
+  });
+  var recCol = (t.col['RECORD'] !== undefined) ? t.col['RECORD'] + 1
+             : (typeof QUEUE_RECORD_COL_V20_1 !== 'undefined' ? QUEUE_RECORD_COL_V20_1 : 0);
+  if (recCol) sh.setColumnWidth(recCol, 70);
+
+  // ---- data area: one line per row, calm and legible
+  var data = sh.getRange(t.firstDataRow, 1, nData, width);
+  data.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+      .setVerticalAlignment('middle');
+  sh.setRowHeights(t.firstDataRow, nData, 24);
+  if (t.col['DECISION DATE'] !== undefined) {
+    sh.getRange(t.firstDataRow, t.col['DECISION DATE'] + 1, nData, 1).setNumberFormat('m/d/yyyy');
+  }
+  if (t.col['REQUEST ID'] !== undefined) {
+    sh.getRange(t.firstDataRow, t.col['REQUEST ID'] + 1, nData, 1)
+      .setFontColor('#9E9E9E').setFontSize(8);
+  }
+
+  // ---- color by status (first matching rule wins)
+  if (t.col['RECORD STATUS'] !== undefined) {
+    var S = colLetter_(t.col['RECORD STATUS'] + 1);
+    var R = t.firstDataRow;
+    function rule_(formula, build) {
+      var b = SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(formula).setRanges([data]);
+      build(b);
+      return b.build();
+    }
+    sh.setConditionalFormatRules([
+      rule_('=$' + S + R + '="OPEN"',      function (b) { b.setBackground('#FFF9C4').setBold(true); }),
+      rule_('=$' + S + R + '="RETURNED"',  function (b) { b.setBackground('#FFE0B2'); }),
+      rule_('=$' + S + R + '="REVOKED"',   function (b) { b.setBackground('#FFCDD2'); }),
+      rule_('=LEFT($' + S + R + ',9)="CANCELLED"', function (b) { b.setFontColor('#9E9E9E').setItalic(true); }),
+      rule_('=$' + S + R + '="RECORDED"',  function (b) { b.setFontColor('#9E9E9E'); })
+    ]);
+  }
+
+  // ---- filter funnels on the header row (recreated fresh each run)
+  try { var oldF = sh.getFilter(); if (oldF) oldF.remove(); } catch (e1) {}
+  try { sh.getRange(headerRow, 1, lastRow - headerRow + 1, width).createFilter(); } catch (e2) {}
+
+  var msg = 'Queue tab reformatted. Rows, order, and every value untouched.\n\n' +
+    'Yellow = OPEN (needs you)\nOrange = RETURNED (waiting on the FTO)\n' +
+    'Red = REVOKED\nGrey = finished business\n\n' +
+    'Tip: click the funnel on RECORD STATUS and tick only OPEN to see just live work.';
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e3) {}
+  systemLog_('INFO', 'QUEUE REFORMATTED', 'makeQueueReadableV20_1 : formatting only, no data changes');
+  return msg;
+}
+
+/** Run once. Makes tab 20 explain itself and stop blocking honest dates. */
+function fixQueueEntryUxV20_1() {
+  var t = queueTableV20_1_();
+  if (!t.ok) {
+    try { SpreadsheetApp.getUi().alert('Queue tab not found; nothing changed.'); } catch (e0) {}
+    return 'Queue tab not found; nothing changed.';
+  }
+  var sh = t.sheet;
+  var headerRow = t.firstDataRow - 1; // 4
+  var nRows = Math.max(sh.getMaxRows() - t.firstDataRow + 1, 1);
+
+  // DECISION DATE (col 9): any real date is welcome — especially past ones.
+  sh.getRange(t.firstDataRow, 9, nRows, 1)
+    .setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireDate().setAllowInvalid(true)
+      .setHelpText('The date it actually happened — past dates are fine. Example: 8/12/2026')
+      .build())
+    .setNumberFormat('m/d/yyyy');
+
+  // RATIONALE (col 11): dropdown of standard reasons, free typing still allowed.
+  var reasons = [
+    'Evidence thresholds met, FTO recommendation accepted',
+    'Directly observed and verified by the FTO Program Director',
+    'Competency verified by scenario examination',
+    'Verbal verification accepted; documentation to follow',
+    'Additional documented evidence required before sign-off',
+    'Sign-off revoked pending remediation'
+  ];
+  sh.getRange(t.firstDataRow, 11, nRows, 1)
+    .setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireValueInList(reasons, true).setAllowInvalid(true)
+      .setHelpText('Pick a standard reason from the arrow, or type your own.')
+      .build());
+
+  // Hover notes: whose column is whose.
+  var notes = {
+    1:  'READY DATE — written by the system when the skill crossed its threshold. Never edit.',
+    2:  'TRAINEE — written by the system. Never edit.',
+    3:  'SKILL ID — written by the system. Never edit.',
+    4:  'DOMAIN — written by the system. Never edit.',
+    5:  'SKILL — written by the system. Never edit.',
+    6:  'EVIDENCE SUMMARY — written by the system: what the forms show. Read it, never edit it.',
+    7:  'DECISION — YOURS. Pick from the dropdown.',
+    8:  'DECIDED BY — stamped for you when you pick a decision. Type over it if needed.',
+    9:  'DECISION DATE — stamped as today when you pick a decision. Type over it with the real date; past dates are fine.',
+    10: 'EXPIRATION — YOURS, optional. Only for time-limited sign-offs.',
+    11: 'RATIONALE — YOURS. Pick a standard reason from the arrow or type your own.',
+    12: 'RECORD STATUS — written by the system. Never edit.',
+    13: 'LAST EVIDENCE DATE — written by the system. Never edit.',
+    14: 'REVIEW — written by the system: why an item deserves a second look. Never edit.',
+    15: 'REQUEST ID — written by the system: the permanent ID. Never edit.',
+    16: 'RECORD — YOURS. Tick it to make the decision official.'
+  };
+  Object.keys(notes).forEach(function (c) {
+    try { sh.getRange(headerRow, Number(c)).setNote(notes[c]); } catch (eN) {}
+  });
+
+  // Header colors: amber = yours, grey = the machine's.
+  var yours = [7, 8, 9, 10, 11, 16];
+  var machine = [1, 2, 3, 4, 5, 6, 12, 13, 14, 15];
+  yours.forEach(function (c) {
+    try { sh.getRange(headerRow, c).setBackground('#B7791F').setFontColor('#FFFFFF'); } catch (eY) {}
+  });
+  machine.forEach(function (c) {
+    try { sh.getRange(headerRow, c).setBackground('#546E7A').setFontColor('#ECEFF1'); } catch (eM) {}
+  });
+
+  var msg = 'Tab 20 entry fixed.\n\n' +
+    '- DECISION DATE now accepts any real date — past dates welcome\n' +
+    '- RATIONALE has a dropdown of standard reasons (typing still allowed)\n' +
+    '- Amber headers = your columns. Grey headers = the machine\'s — never edit those\n' +
+    '- Hover any header for what it is\n' +
+    '- Clearing a decision no longer wipes your name and date';
+  systemLog_('INFO', 'QUEUE ENTRY UX FIXED', 'date validation, rationale dropdown, header notes/colors');
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e1) {}
+  return msg;
+}
+
+/** (internal) apply the live-work filter to tab 20. */
+function queueLiveFilterApplyV20_1_() {
+  var t = queueTableV20_1_();
+  if (!t.ok || t.col['RECORD STATUS'] === undefined) return 0;
+  var sh = t.sheet;
+  var headerRow = t.firstDataRow - 1;
+  var width = t.headers.length;
+  var lastRow = Math.max(sh.getLastRow(), t.firstDataRow);
+  var f = sh.getFilter();
+  if (!f) {
+    try { f = sh.getRange(headerRow, 1, lastRow - headerRow + 1, width).createFilter(); }
+    catch (e) { return 0; }
+  }
+  var sCol = t.col['RECORD STATUS'] + 1;
+  var seen = {};
+  t.rows.forEach(function (r) {
+    var s = String(r[t.col['RECORD STATUS']] || '').trim();
+    if (s) seen[s] = true;
+  });
+  var hide = Object.keys(seen).filter(function (s) {
+    return s !== 'OPEN' && s !== 'RETURNED';
+  });
+  if (hide.length) {
+    f.setColumnFilterCriteria(sCol,
+      SpreadsheetApp.newFilterCriteria().setHiddenValues(hide).build());
+  } else {
+    f.setColumnFilterCriteria(sCol, null);
+  }
+  return hide.length;
+}
+
+/** Turn ON live-work-only view (persists; every flow re-applies it). */
+function queueShowLiveV20_1() {
+  PropertiesService.getScriptProperties().setProperty('QUEUE_LIVE_VIEW', '1');
+  queueLiveFilterApplyV20_1_();
+  var msg = 'Tab 20 now shows LIVE WORK ONLY — OPEN (needs you) and RETURNED (waiting on the FTO).\n\n' +
+    'Finished rows are hidden from view, never deleted: the ledger keeps every row and the ' +
+    'reconciler still checks all of it. "Tab 20 : show full history" on the Admin menu brings it all back.';
+  systemLog_('INFO', 'QUEUE LIVE VIEW ON', 'finished rows hidden from view; ledger untouched');
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+/** Turn OFF the live-work view: full history visible again. */
+function queueShowAllV20_1() {
+  PropertiesService.getScriptProperties().setProperty('QUEUE_LIVE_VIEW', '0');
+  var t = queueTableV20_1_();
+  if (t.ok && t.col['RECORD STATUS'] !== undefined) {
+    var f = t.sheet.getFilter();
+    if (f) { try { f.setColumnFilterCriteria(t.col['RECORD STATUS'] + 1, null); } catch (e) {} }
+  }
+  var msg = 'Tab 20 shows the full history again — every row, finished and live.';
+  systemLog_('INFO', 'QUEUE LIVE VIEW OFF', 'full history visible');
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e2) {}
+  return msg;
+}
+
+/** READ-ONLY: every burning flag explained with its data. */
+function explainFlagsV20_1() {
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) return 'Tab 13 not found.';
+  var heads = sh.getRange(4, 2, 1, 6).getDisplayValues()[0];
+  var names = sh.getRange(5, 1, 40, 1).getDisplayValues();
+  var vals = sh.getRange(5, 2, 40, 6).getDisplayValues();
+  var fmls = sh.getRange(5, 2, 40, 6).getFormulas();
+
+  var master = {};
+  masterTraineeRowsV20_1_().forEach(function (t) { master[t.norm] = t; });
+
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  var engRows = {};
+  if (eng) {
+    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
+      var n = normalizeNameV20_1_(String(r[0] || ''));
+      if (n) engRows[n] = r;
+    });
+  }
+
+  var ev = readTableV20_1_(TAB.EVAL, 4);
+
+  var L = ['FLAG EXPLAINER — READ ONLY', ''];
+  var lit = 0;
+  for (var i = 0; i < 40; i++) {
+    var name = String(names[i][0] || '').trim();
+    if (!name) continue;
+    for (var c = 0; c < 6; c++) {
+      if (String(vals[i][c]).trim() !== 'FLAG') continue;
+      lit++;
+      var norm = normalizeNameV20_1_(name);
+      L.push('■ ' + name + ' — ' + heads[c] + '   (matrix cell ' + String.fromCharCode(66 + c) + (5 + i) + ')');
+      var rec = master[norm];
+      if (rec) L.push('   tab 01 says: phase [' + (rec.phase || '') + '], level [' + (rec.level || '') + '], FTO [' + (rec.fto || '') + ']');
+      var er = engRows[norm];
+      if (er) {
+        L.push('   engine row: evals ' + (er[6] || 0) + ' | days since last ' + (er[8] === '' ? '-' : er[8]) +
+               ' | day in phase ' + (er[20] || 0) + ' | engine phase/status [' + String(er[4] || '') + '] [' + String(er[17] || '') + ']');
+      }
+      if (ev.ok) {
+        var mine = [];
+        ev.rows.forEach(function (r2, k2) {
+          if (normalizeNameV20_1_(String(r2[2] || '')) !== norm) return;
+          var bits = [];
+          ev.headers.forEach(function (h, hi) {
+            var hv = String(r2[hi] == null ? '' : r2[hi]).trim();
+            if (!hv) return;
+            var hl = String(h || '').toLowerCase();
+            if (hl.indexOf('score') >= 0 || hl.indexOf('narrat') >= 0 || hl.indexOf('situation') >= 0 ||
+                hl.indexOf('strength') >= 0 || hl.indexOf('improve') >= 0 || hl.indexOf('assessment') >= 0 ||
+                hl.indexOf('treatment') >= 0 || hl.indexOf('communication') >= 0 || hl.indexOf('documentation') >= 0 ||
+                hl.indexOf('leadership') >= 0 || hl.indexOf('professionalism') >= 0) {
+              bits.push(h + '=' + hv.slice(0, 30));
+            }
+          });
+          mine.push('      02 row ' + (ev.firstDataRow + k2) + ' | ' +
+            String(r2[0]).slice(0, 16) + ' | by ' + String(r2[1] || '') +
+            (bits.length ? ' | ' + bits.join(' · ') : ''));
+        });
+        if (c === 2 || c === 3) { // narrative / silent flags: show the evals
+          L.push('   their eval rows on 02:');
+          if (mine.length) mine.slice(-4).forEach(function (x) { L.push(x); });
+          else L.push('      (none)');
+        }
+      }
+      L.push('   formula: ' + String(fmls[i][c]).slice(0, 220));
+      L.push('');
+    }
+  }
+  if (!lit) L.push('No flags burning. Tab 13 is clear.');
+  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or log the review (amber).');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** Run once: logged flags turn AMBER, unlogged stay RED. */
+function ackFlagStyleV20_1() {
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) return 'Tab 13 not found.';
+  // find the review log (same scan the redo used)
+  var scanN = Math.max(sh.getLastRow(), 60);
+  var scan = sh.getRange(1, 1, scanN, 2).getValues();
+  var logRow = 0;
+  for (var i = 44; i < scan.length; i++) {
+    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
+        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = i + 1; break; }
+  }
+  if (!logRow) return 'FLAG REVIEW LOG not found — run redoAuditTabV20_1 first.';
+  var first = logRow + 2, last = logRow + 21;
+  var matrix = sh.getRange(5, 2, 40, 6);
+  var amberFormula = '=AND(B5="FLAG",COUNTIFS($B$' + first + ':$B$' + last +
+    ',$A5,$C$' + first + ':$C$' + last + ',B$4)>0)';
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(amberFormula)
+      .setBackground('#B7791F').setFontColor('#FFFFFF').setBold(true)
+      .setRanges([matrix]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
+      .setRanges([matrix]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenCellNotEmpty().setFontColor('#9E9E9E')
+      .setRanges([matrix]).build()
+  ]);
+  var msg = 'Flag colors upgraded.\n\nRED = flag with no review logged (nobody is on it)\n' +
+    'AMBER = same flag, but your FLAG REVIEW LOG (rows ' + first + '-' + last + ') holds a matching ' +
+    'entry — same trainee, same flag type. Still true, visibly handled.\nGONE = the condition is fixed.\n\n' +
+    'To turn a red flag amber: add a log row with the trainee and flag type from the dropdowns.';
+  systemLog_('INFO', 'FLAG ACK STYLE APPLIED', 'red=unlogged, amber=logged, review log rows ' + first + '-' + last);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
+function fixAllFlagsNowV20_1() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e0) {}
+  var au = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!au) return 'Tab 13 not found.';
+  var R = [];
+
+  if (ui) {
+    var ok = ui.alert('Fix all current flags',
+      'This will:\n' +
+      '1. Acknowledge every burning PHASE MISMATCH (built-in J/K mechanism)\n' +
+      '2. Review-log every NO NARRATIVE eval so it is visible and owned\n' +
+      '3. Log SILENT RECORD cases to the review log — amber, not erased\n' +
+      '4. Apply amber/red colors and refresh HOME\n\n' +
+      'It does NOT edit tab 02. An FTO\'s submitted evaluation is their ' +
+      'statement; only they can change it.\n\nProceed?', ui.ButtonSet.OK_CANCEL);
+    if (ok !== ui.Button.OK) return 'Cancelled. Nothing changed.';
+  }
+
+  var heads = au.getRange(4, 2, 1, 6).getDisplayValues()[0];
+  var names = au.getRange(5, 1, 40, 1).getDisplayValues();
+  var flags = au.getRange(5, 2, 40, 6).getDisplayValues();
+
+  // ---- 1. acknowledge phase mismatches (column G = index 5) ----
+  var acked = 0;
+  for (var i = 0; i < 40; i++) {
+    if (String(flags[i][5]).trim() !== 'FLAG') continue;
+    var nm = String(names[i][0] || '').trim();
+    if (!nm) continue;
+    au.getRange(5 + i, 11).setValue(nm);          // K : name
+    au.getRange(5 + i, 10).setValue(new Date());   // J : acknowledged through today
+    acked++;
+    R.push('PHASE MISMATCH acknowledged : ' + nm + ' (row ' + (5 + i) + ') — re-lights only on a new wrong-phase eval');
+  }
+  if (!acked) R.push('PHASE MISMATCH : none burning.');
+
+  // ---- 2/3. narrative dodges on 02 ----
+  //
+  // SPEC-v20.2.md #4: this block used to WRITE to tab 02 — it flipped the
+  // FTO's own "Scored 1 or 5" answer from No to Yes, then composed a
+  // justification out of their Strength/Improve text and filed it as though
+  // they had written it. An evaluation is the evaluator's statement about a
+  // person. Correcting it on their behalf, in their name, is the single worst
+  // thing this codebase did. It now detects and review-logs; it writes nothing.
+  var ev = readTableV20_1_(TAB.EVAL, 4);
+  var adverse = [];
+  if (ev.ok && ev.col['Scored 1 or 5'] !== undefined) {
+    var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation', 'Scene Leadership', 'Professionalism'];
+    ev.rows.forEach(function (r, k) {
+      if (String(r[ev.col['Scored 1 or 5']] || '').trim() !== 'No') return;
+      var hasOne = false, hasFive = false;
+      domains.forEach(function (d) {
+        if (ev.col[d] === undefined) return;
+        var v = Number(r[ev.col[d]]);
+        if (v === 1) hasOne = true;
+        if (v === 5) hasFive = true;
+      });
+      if (!hasOne && !hasFive) return; // honest "No"
+      var row = ev.firstDataRow + k;
+      var who = String(r[2] || '').trim();
+      var fto = String(r[1] || '').trim();
+      adverse.push({ trainee: who, fto: fto, row: row,
+                     kind: hasOne ? 'score of 1' : 'praise-only 5' });
+      R.push('NO NARRATIVE (' + (hasOne ? 'score of 1' : 'praise-only 5') + ') : ' + who +
+        ' by ' + fto + ' (02 row ' + row + ') — review-logged; the FTO must supply the ' +
+        'justification themselves. Nothing was written to tab 02.');
+    });
+  } else {
+    R.push('Eval mirror or "Scored 1 or 5" column not found — narrative fixes skipped.');
+  }
+
+  // ---- 4. review-log entries (adverse cases + silent records) ----
+  var scanN = Math.max(au.getLastRow(), 60);
+  var scan = au.getRange(1, 1, scanN, 2).getValues();
+  var logRow = 0;
+  for (var s = 44; s < scan.length; s++) {
+    if (String(scan[s][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
+        String(scan[s][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = s + 1; break; }
+  }
+  if (logRow) {
+    var first = logRow + 2;
+    var existing = au.getRange(first, 1, 20, 6).getValues();
+    var used = {}, nextFree = -1;
+    existing.forEach(function (r3, i3) {
+      var t3 = String(r3[1] || '').trim(), f3 = String(r3[2] || '').trim();
+      if (t3) used[normalizeNameV20_1_(t3) + '|' + f3] = true;
+      else if (nextFree < 0) nextFree = first + i3;
+    });
+    function logIt(trainee, flagType, action, status) {
+      if (used[normalizeNameV20_1_(trainee) + '|' + flagType]) { R.push('review log already holds ' + trainee + ' / ' + flagType); return; }
+      if (nextFree < 0) { R.push('review log full — add rows'); return; }
+      au.getRange(nextFree, 1, 1, 6).setValues([[new Date(), trainee, flagType,
+        deciderIdentityV20_2_() || '(unidentified session)', action, status]]);
+      used[normalizeNameV20_1_(trainee) + '|' + flagType] = true;
+      nextFree++;
+      R.push('review-logged : ' + trainee + ' / ' + flagType + ' → amber');
+    }
+    adverse.forEach(function (a) {
+      logIt(a.trainee, 'NO NARRATIVE',
+        'A ' + a.kind + ' by ' + a.fto + ' (02 row ' + a.row + ') was recorded without a ' +
+        'written justification — requested from the FTO', 'Under review');
+    });
+    for (var i2 = 0; i2 < 40; i2++) {
+      if (String(flags[i2][3]).trim() !== 'FLAG') continue; // col E = SILENT RECORD (index 3)
+      var nm2 = String(names[i2][0] || '').trim();
+      if (nm2) logIt(nm2, 'SILENT RECORD', 'Self-reflection required (remediation) — requested from trainee', 'Action taken — awaiting data');
+    }
+  } else {
+    R.push('FLAG REVIEW LOG not found — run redoAuditTabV20_1 first.');
+  }
+
+  // ---- 5. colors + refresh + after-state ----
+  try { R.push(String(ackFlagStyleV20_1())); } catch (e4) {}
+  try { refreshHomeNowV20_1(); } catch (e5) {}
+  SpreadsheetApp.flush();
+  var after = au.getRange(5, 2, 40, 6).getDisplayValues();
+  var still = [];
+  for (var i4 = 0; i4 < 40; i4++) {
+    for (var c4 = 0; c4 < 6; c4++) {
+      if (String(after[i4][c4]).trim() === 'FLAG') {
+        still.push(String(names[i4][0] || '').trim() + ' / ' + heads[c4]);
+      }
+    }
+  }
+  var msg = 'FLAG FIX COMPLETE\n\n' + R.join('\n') +
+    '\n\nStill burning (red or amber): ' + (still.length ? still.join(' ; ') : 'NONE') +
+    '\nAmber = logged and being handled. These go out when the FTO\'s words / the reflection arrive.';
+  systemLog_('INFO', 'FLAGS FIXED',
+    acked + ' phase acks, ' + adverse.length + ' narrative gap(s) review-logged, 0 writes to tab 02');
+  Logger.log(msg);
+  try { if (ui) ui.alert(msg.slice(0, 1400)); } catch (e6) {}
+  return msg;
+}
+
+function simplifyFlagsV20_1() {
+  // SPEC-v20.2.md #4 — this rewrote the audit tab's detection formulas so they
+  // would return "ACK" for any flag it had just logged under the director's
+  // name, then hid the tab. A detector that answers to acknowledgements it
+  // wrote itself is not a detector. redoAuditTabV20_1 prints "Nothing here is
+  // dismissed by hand" onto the same tab; this dismissed all of it by hand.
+  var m = 'RETIRED in v20.2. Flags are no longer silenced by rewriting the ' +
+          'formulas that raise them.\n\n' +
+          'Use "Accept a flag" (acceptFlagV20_2). It records one flag, one ' +
+          'named human, one typed reason and a review-by date. The flag stays ' +
+          'visible as ACCEPTED, the detection formula is untouched, and the ' +
+          'acceptance expires instead of lasting forever.\n\n' +
+          'If a previous run already wrapped the formulas, ' +
+          'unwrapAuditFormulasV20_1() reverses it.';
+  systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'simplifyFlagsV20_1');
+  try { SpreadsheetApp.getUi().alert(m); } catch (e) {}
+  Logger.log(m); return m;
+}
+
+/** Reversal: strips the ACK wrapper, restoring the original formulas. */
+function unwrapAuditFormulasV20_1() {
+  var au = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!au) return 'Tab 13 not found.';
+  var fmls = au.getRange(5, 2, 40, 6).getFormulas();
+  var restored = 0;
+  for (var r = 0; r < 40; r++) {
+    for (var c = 0; c < 6; c++) {
+      var f = fmls[r][c];
+      if (!f || f.indexOf('"ACK"') < 0) continue;
+      var m = f.match(/^=IF\(COUNTIFS\([^)]*\)>0,"ACK",([\s\S]*)\)$/);
+      if (!m) continue;
+      au.getRange(5 + r, 2 + c).setFormula('=' + m[1]);
+      restored++;
+    }
+  }
+  var msg = restored + ' formula(s) restored to their original form.';
+  systemLog_('INFO', 'AUDIT FORMULAS UNWRAPPED', msg);
+  Logger.log(msg);
+  return msg;
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 80_migration
+ *
+ * One-time migrations between versions of this system.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   The non-destructive migration: read-only preview, explicit apply,
+ *   verification, and rollback helpers.
+ *   EVERYTHING THE APPLY STEP DOES IS ADDITIVE
+ *   - Creates the four v20.1 system sheets (90–93) if absent.
+ *   - Appends missing provenance/ID columns to the RIGHT of existing
+ *   headers on tabs 19, 20, 21, and EMAIL/EMPLOYEE ID on tab 22.
+ *   - Backfills queue REQUEST IDs and arms the RECORD checkbox column.
+ *   - Replaces the six IFERROR(…,0) domain-average formulas on ANALYTICS
+ *   with recomputed values — after archiving the original formula text
+ *   into the migration record so rollback is a paste-back.
+ *   - Hardens form identity settings and destinations IN PLACE.
+ *   It never deletes, clears, renames, or rewrites an existing record.
+ */
 
 var MIGRATION_MARKER_V20_1 = 'CREATED BY SCEMS v20.1 MIGRATION';
 
@@ -9901,787 +11379,23 @@ function removeMigrationSheetsV20_1(confirmToken) {
 }
 
 
-/* ==================== 95_runners.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 95_runners.gs
- * Permanent one-click utilities. These wrap the token-gated maintenance
- * functions so they can be run straight from the editor dropdown without
- * pasting temporary code. Each is safe to run repeatedly.
- ************************************************************************/
-
-/** Rebuilds every SCEMS trigger from scratch. Run after any trigger loss. */
-function repairAllTriggersNow() {
-  var managed = MANAGED_TRIGGER_HANDLERS.concat(['onSkillsGridSubmitV20', 'onHandoverSubmitV19']);
-  var removed = 0;
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (managed.indexOf(t.getHandlerFunction()) >= 0) { ScriptApp.deleteTrigger(t); removed++; }
-  });
-  ScriptApp.newTrigger('onHubFormSubmit').forSpreadsheet(ss()).onFormSubmit().create();
-  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(ss()).onEdit().create();
-  ScriptApp.newTrigger('dailyChecks').timeBased().everyDays(1).atHour(7).create();
-  ScriptApp.newTrigger('weeklyRollup').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(6).create();
-  ScriptApp.newTrigger('traineeStatusCards').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
-  ScriptApp.newTrigger('supervisorDigest').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).create();
-  ScriptApp.newTrigger('systemHeartbeat').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(5).create();
-  ScriptApp.newTrigger('monthlySnapshot').timeBased().onMonthDay(1).atHour(4).create();
-  var plan = formBoundTriggerPlanV20_2_();
-  var formBound = 0, absent = [];
-  plan.forEach(function (p) {
-    var f = getStoredFormV19_(p.title);
-    if (f) { ScriptApp.newTrigger(p.handler).forForm(f).onFormSubmit().create(); formBound++; }
-    else { absent.push(p.title); }
-  });
-  var msg = 'Removed ' + removed + ' stale trigger(s). Installed 8 schedule/sheet triggers + ' +
-            formBound + ' of ' + plan.length + ' form-bound.' +
-            (absent.length ? '\n\nNOT BOUND (form not found in the stored ID list): ' +
-              absent.join(', ') + '\nSubmissions to a form with no bound trigger are DROPPED — ' +
-              'onHubFormSubmit refuses them as form-trigger-owned. Run rebuildFormIdsNow() if ' +
-              'the form exists.' : '');
-  systemLog_('WARN', 'TRIGGERS REINSTALLED', msg);
-  Logger.log(msg);
-  return msg;
-}
-
-/** Rebuilds the stored form-ID list by scanning Drive for the nine SCEMS
- *  forms, preferring copies linked to this spreadsheet. */
-function rebuildFormIdsNow() {
-  var wanted = Object.keys(FORM_TITLES).map(function (k) { return FORM_TITLES[k]; });
-  var byTitle = {};
-  var it = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.form' and title contains 'SCEMS'");
-  while (it.hasNext()) {
-    var file = it.next();
-    var name = file.getName();
-    if (wanted.indexOf(name) < 0) continue;
-    var linked = false;
-    try { linked = FormApp.openById(file.getId()).getDestinationId() === ss().getId(); } catch (e) {}
-    var prev = byTitle[name];
-    if (!prev || (linked && !prev.linked) ||
-        (linked === prev.linked && file.getLastUpdated() > prev.updated)) {
-      byTitle[name] = { id: file.getId(), linked: linked, updated: file.getLastUpdated() };
-    }
-  }
-  var ids = [], report = [];
-  wanted.forEach(function (name) {
-    if (byTitle[name]) { ids.push(byTitle[name].id); report.push('FOUND   ' + name); }
-    else report.push('MISSING ' + name);
-  });
-  PropertiesService.getScriptProperties().setProperty('FORM_IDS', JSON.stringify(ids));
-  var msg = 'Stored ' + ids.length + ' of ' + wanted.length + ' forms\n' + report.join('\n');
-  systemLog_('INFO', 'FORM IDS REBUILT', ids.length + ' of ' + wanted.length);
-  Logger.log(msg);
-  return msg;
-}
-
-/** Links pre-v20.1 sign-off records to their queue request IDs. */
-function stepA_linkLegacy() { Logger.log(applyLinkDecisionsV20_1('LINK LEGACY')); }
-
-/** Records the stranded decisions, including closed-trainee rows. */
-function stepB_recordStranded() { Logger.log(applyStrandedDecisionsV20_1('RECORD STRANDED', 'INCLUDE CLOSED')); }
-
-/** Re-runs the additive migration (safe to repeat any time). */
-function stepC_migrationTopUp() { Logger.log(applyMigrationV20_1('APPLY V20_1')); }
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : advanceTraineeNow
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 90_recovery
  *
- * Prompt-driven wrapper for applyAdvancementV20_1 so a phase
- * advancement can be applied without editing code. Everything it
- * does goes through the existing atomic path: master phase +
- * phase-start date + assignment history + audit log + notification
- * under one lock. It refuses closed trainees, unknown phases,
- * future dates, and anything past Phase 4 (governance, not code).
- * ================================================================ */
-function advanceTraineeNow() {
-  if (!gateV20_2_('ADVANCE TRAINEE')) return;
-  var ui = SpreadsheetApp.getUi();
-
-  var r1 = ui.prompt('Advance a trainee (1 of 3)',
-    'Exact trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
-  if (r1.getSelectedButton() !== ui.Button.OK) return;
-  var name = String(r1.getResponseText() || '').trim();
-  if (!name) return;
-
-  var resolved = resolveTraineeV20_1_(name);
-  if (!resolved.ok || !resolved.record) {
-    ui.alert('Could not resolve "' + name + '": ' + resolved.reason +
-      (resolved.ambiguous && resolved.ambiguous.length
-        ? '\nCandidates: ' + resolved.ambiguous.join(', ') : ''));
-    return;
-  }
-  var rec = resolved.record;
-  var i = PHASES_V20_1.indexOf(rec.phase);
-  if (rec.closed) { ui.alert(rec.name + ' is closed/released. No advancement.'); return; }
-  if (i < 0) { ui.alert('Current phase "' + rec.phase + '" is not a known phase. Fix the master row first.'); return; }
-  if (i === PHASES_V20_1.length - 1) {
-    ui.alert(rec.name + ' is already in ' + rec.phase + '.\n\nClearance beyond Phase 4 is a ' +
-      'governance action — use SCEMS menu > Close / release a trainee when the program is complete.');
-    return;
-  }
-  var nextPhase = PHASES_V20_1[i + 1];
-
-  var r2 = ui.prompt('Advance a trainee (2 of 3)',
-    'Effective date (example 8/13/2026).\nLeave BLANK for today:', ui.ButtonSet.OK_CANCEL);
-  if (r2.getSelectedButton() !== ui.Button.OK) return;
-  var effText = String(r2.getResponseText() || '').trim();
-  var eff = effText ? parseDateSafeV20_1_(effText) : new Date();
-  if (!eff) { ui.alert('Could not read that date. Nothing was changed. Try again like 8/13/2026.'); return; }
-
-  var r3 = ui.prompt('Advance a trainee (3 of 3)',
-    'Rationale for the record.\nLeave BLANK for: "Phase requirements met, FTO handover accepted"',
-    ui.ButtonSet.OK_CANCEL);
-  if (r3.getSelectedButton() !== ui.Button.OK) return;
-  var rationale = String(r3.getResponseText() || '').trim() ||
-    'Phase requirements met, FTO handover accepted';
-
-  var decider = sessionEmailV20_1_() || 'C. Hunt';
-  var confirmMsg = rec.name + '\n\n' + rec.phase + '  ->  ' + nextPhase +
-    '\nEffective : ' + dateKeyV20_1_(eff) +
-    '\nDecided by : ' + decider +
-    '\nRationale : ' + rationale +
-    '\n\nMaster row, phase-start date, assignment history, audit log and ' +
-    'notification all update together. Proceed?';
-  if (ui.alert('Confirm advancement', confirmMsg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
-    return;
-  }
-
-  try {
-    var out = applyAdvancementV20_1(rec.name, decider, eff, rationale);
-    ui.alert(out);
-  } catch (e) {
-    ui.alert('NOT APPLIED.\n\n' + String(e && e.message ? e.message : e));
-  }
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : makeQueueReadableV20_1
+ * Run-once tools for when something went wrong: phantoms, lost responses,
+ * backfills.
  *
- * FORMATTING ONLY. Reads the queue through the same header-mapped
- * loader the system uses; changes how the tab LOOKS and never what
- * it SAYS. No row is moved, sorted, hidden, or edited.
- * ================================================================ */
-function makeQueueReadableV20_1() {
-  var t = queueTableV20_1_();
-  if (!t.ok) {
-    try { SpreadsheetApp.getUi().alert('Queue tab not found; nothing changed.'); } catch (e0) {}
-    return 'Queue tab not found; nothing changed.';
-  }
-  var sh = t.sheet;
-  var headerRow = t.firstDataRow - 1;
-  var width = t.headers.length;
-  var lastRow = Math.max(sh.getLastRow(), t.firstDataRow);
-  var nData = Math.max(lastRow - t.firstDataRow + 1, 1);
-
-  function colLetter_(n) { // 1-based index -> A1 letter
-    var s = '';
-    while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
-    return s;
-  }
-
-  // ---- freeze panes: headers on top, trainee names on the left
-  sh.setFrozenRows(headerRow);
-  if (t.col['TRAINEE'] !== undefined) sh.setFrozenColumns(t.col['TRAINEE'] + 1);
-
-  // ---- header row look
-  sh.getRange(headerRow, 1, 1, width)
-    .setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#37474F')
-    .setVerticalAlignment('middle').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-
-  // ---- column widths (only the columns that actually exist)
-  var widths = { 'TRAINEE': 160, 'LEVEL': 70, 'SKILL': 230, 'SKILL ID': 105,
-                 'DECISION': 175, 'DECIDED BY': 150, 'DECISION DATE': 105,
-                 'RECORD STATUS': 130, 'RATIONALE': 260, 'REQUEST ID': 95 };
-  Object.keys(widths).forEach(function (h) {
-    if (t.col[h] !== undefined) sh.setColumnWidth(t.col[h] + 1, widths[h]);
-  });
-  var recCol = (t.col['RECORD'] !== undefined) ? t.col['RECORD'] + 1
-             : (typeof QUEUE_RECORD_COL_V20_1 !== 'undefined' ? QUEUE_RECORD_COL_V20_1 : 0);
-  if (recCol) sh.setColumnWidth(recCol, 70);
-
-  // ---- data area: one line per row, calm and legible
-  var data = sh.getRange(t.firstDataRow, 1, nData, width);
-  data.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
-      .setVerticalAlignment('middle');
-  sh.setRowHeights(t.firstDataRow, nData, 24);
-  if (t.col['DECISION DATE'] !== undefined) {
-    sh.getRange(t.firstDataRow, t.col['DECISION DATE'] + 1, nData, 1).setNumberFormat('m/d/yyyy');
-  }
-  if (t.col['REQUEST ID'] !== undefined) {
-    sh.getRange(t.firstDataRow, t.col['REQUEST ID'] + 1, nData, 1)
-      .setFontColor('#9E9E9E').setFontSize(8);
-  }
-
-  // ---- color by status (first matching rule wins)
-  if (t.col['RECORD STATUS'] !== undefined) {
-    var S = colLetter_(t.col['RECORD STATUS'] + 1);
-    var R = t.firstDataRow;
-    function rule_(formula, build) {
-      var b = SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied(formula).setRanges([data]);
-      build(b);
-      return b.build();
-    }
-    sh.setConditionalFormatRules([
-      rule_('=$' + S + R + '="OPEN"',      function (b) { b.setBackground('#FFF9C4').setBold(true); }),
-      rule_('=$' + S + R + '="RETURNED"',  function (b) { b.setBackground('#FFE0B2'); }),
-      rule_('=$' + S + R + '="REVOKED"',   function (b) { b.setBackground('#FFCDD2'); }),
-      rule_('=LEFT($' + S + R + ',9)="CANCELLED"', function (b) { b.setFontColor('#9E9E9E').setItalic(true); }),
-      rule_('=$' + S + R + '="RECORDED"',  function (b) { b.setFontColor('#9E9E9E'); })
-    ]);
-  }
-
-  // ---- filter funnels on the header row (recreated fresh each run)
-  try { var oldF = sh.getFilter(); if (oldF) oldF.remove(); } catch (e1) {}
-  try { sh.getRange(headerRow, 1, lastRow - headerRow + 1, width).createFilter(); } catch (e2) {}
-
-  var msg = 'Queue tab reformatted. Rows, order, and every value untouched.\n\n' +
-    'Yellow = OPEN (needs you)\nOrange = RETURNED (waiting on the FTO)\n' +
-    'Red = REVOKED\nGrey = finished business\n\n' +
-    'Tip: click the funnel on RECORD STATUS and tick only OPEN to see just live work.';
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e3) {}
-  systemLog_('INFO', 'QUEUE REFORMATTED', 'makeQueueReadableV20_1 : formatting only, no data changes');
-  return msg;
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : "Work my queue"
- * ================================================================ */
-
-function workMyQueueV20_1() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var ui = SpreadsheetApp.getUi();
-  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
-  var t = queueTableV20_1_();
-  if (!t.ok) { ui.alert('Queue tab not found.'); return; }
-
-  var closed = {}, onMaster = {};
-  masterTraineeRowsV20_1_().forEach(function (m) {
-    onMaster[m.norm] = true;
-    if (m.closed) closed[m.norm] = true;
-  });
-
-  var items = [], drafts = [];
-  t.rows.forEach(function (r, i) {
-    var trainee = cleanNameV20_1_(r[t.col['TRAINEE']]);
-    if (!trainee) return;
-    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-    var tn = normalizeNameV20_1_(trainee);
-    if (closed[tn] || !onMaster[tn]) return; // stranded workflow owns these
-    var row = t.firstDataRow + i;
-    var skill = String(r[t.col['SKILL']] || '').slice(0, 40);
-    if (String(r[t.col['DECISION']] || '').trim()) {
-      drafts.push(trainee + ' — ' + skill + ' (row ' + row + ' already has a draft decision; ' +
-        'finish it on the tab with the RECORD checkbox, or clear it)');
-      return;
-    }
-    items.push({ row: row, trainee: trainee, skill: skill,
-                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
-                 requestId: t.col['REQUEST ID'] !== undefined
-                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
-  });
-
-  if (!items.length) {
-    ui.alert('Queue is clear. Nothing needs you.' +
-      (drafts.length ? '\n\nDraft(s) in progress:\n' + drafts.join('\n') : ''));
-    return;
-  }
-
-  var decider = sessionEmailV20_1_() || 'C. Hunt';
-  var approved = 0, returned = 0, skippedN = 0, results = [], stopped = false;
-
-  for (var k = 0; k < items.length; k++) {
-    var it = items[k];
-    var choice = '';
-    for (var tries = 0; tries < 3; tries++) {
-      var resp = ui.prompt(
-        'Work my queue  (' + (k + 1) + ' of ' + items.length + ')',
-        it.trainee + ' — ' + it.skill +
-        '\n\nType one letter, then OK:' +
-        '\n  A = Approve sign-off' +
-        '\n  R = Return for more evidence' +
-        '\n  S = Skip for now' +
-        '\n\n(Cancel stops here; everything already answered stays recorded.)',
-        ui.ButtonSet.OK_CANCEL);
-      if (resp.getSelectedButton() !== ui.Button.OK) { stopped = true; break; }
-      choice = String(resp.getResponseText() || '').trim().toUpperCase().charAt(0);
-      if (choice === 'A' || choice === 'R' || choice === 'S') break;
-      choice = '';
-    }
-    if (stopped) break;
-    if (!choice || choice === 'S') { skippedN++; continue; }
-
-    var rationale;
-    if (choice === 'A') {
-      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
-        it.trainee, it.skillId);
-      if (!rationale) { skippedN++; continue; }
-    } else {
-      var r2 = ui.prompt('Return : ' + it.trainee,
-        'What should the FTO add? (this becomes the official reason on the record)\n' +
-        'Leave blank for: "Additional documented evidence required before sign-off"',
-        ui.ButtonSet.OK_CANCEL);
-      if (r2.getSelectedButton() !== ui.Button.OK) { skippedN++; continue; }
-      rationale = String(r2.getResponseText() || '').trim() ||
-        'Additional documented evidence required before sign-off';
-    }
-
-    // Recording rebuilds the matrix, which re-sorts the queue, so the row
-    // captured before this loop may now belong to a different request.
-    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
-    if (!liveRow) {
-      skippedN++;
-      results.push(it.trainee + ' — ' + it.skill + ' SKIPPED: request ' +
-        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
-      continue;
-    }
-    try {
-      writeQueueDecisionV20_1_(liveRow,
-        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
-        decider, new Date(), rationale);
-      results.push(recordDecisionForRowV20_1_(liveRow));
-      if (choice === 'A') approved++; else returned++;
-    } catch (e) {
-      results.push(it.trainee + ' — ' + it.skill + ' FAILED: ' + e);
-    }
-  }
-
-  var homeNote = '';
-  if (approved + returned > 0) {
-    try { refreshHomeNowV20_1(); homeNote = '\nHOME page updated.'; } catch (eH) {}
-  }
-
-  var summary = 'DONE.\n\nApproved : ' + approved + '\nReturned : ' + returned +
-    '\nSkipped : ' + skippedN + homeNote +
-    (drafts.length ? '\n\nDraft(s) left for the tab:\n' + drafts.join('\n') : '') +
-    (results.length ? '\n\n' + results.join('\n').slice(0, 900) : '');
-  systemLog_('INFO', 'GUIDED QUEUE SESSION',
-    approved + ' approved, ' + returned + ' returned, ' + skippedN + ' skipped via workMyQueueV20_1');
-  ui.alert(summary);
-}
-
-
-/** Rebuild the HOME action panel + counter tiles right now. */
-function refreshHomeNowV20_1() {
-  var out = [];
-  try { out.push(String(refreshActionPanelV19())); }
-  catch (e1) { out.push('Action panel refresh failed: ' + e1); }
-  try { out.push(String(homeCountersV20_1())); }
-  catch (e2) { out.push('Counter tiles refresh failed: ' + e2); }
-  try {
-    if (PropertiesService.getScriptProperties().getProperty('QUEUE_LIVE_VIEW') === '1') {
-      queueLiveFilterApplyV20_1_();
-      out.push('Queue live view re-applied.');
-    }
-  } catch (e3) {}
-  var msg = out.join('\n');
-  Logger.log(msg);
-  return msg;
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : Record a skill I witnessed
  *
- * Tab 20 was only ever fed by the form pipeline, so there was no
- * legal way for the director to put a directly-observed skill on
- * the record. This adds that door — through the FULL validated
- * path, not around it.
- * ================================================================ */
-function recordSkillDirectV20_1() {
-  if (!gateV20_2_('RECORD WITNESSED SKILL')) return;
-  var ui = SpreadsheetApp.getUi();
-
-  var r1 = ui.prompt('Record a skill (1 of 4)',
-    'Trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
-  if (r1.getSelectedButton() !== ui.Button.OK) return;
-  var resolved = resolveTraineeV20_1_(String(r1.getResponseText() || '').trim());
-  if (!resolved.ok || !resolved.record) {
-    ui.alert('Could not resolve that trainee: ' + resolved.reason +
-      (resolved.ambiguous && resolved.ambiguous.length
-        ? '\nCandidates: ' + resolved.ambiguous.join(', ') : ''));
-    return;
-  }
-  var rec = resolved.record;
-  if (rec.closed) { ui.alert(rec.name + ' is closed/released. Nothing recorded.'); return; }
-
-  var all = catalogObjectsV19_(false);
-  var pool = all.filter(function (c) { return skillApplicableV19_(c, rec.level); });
-  if (!pool.length) pool = all; // unknown level string: offer the whole approved catalog
-
-  var r2 = ui.prompt('Record a skill (2 of 4)',
-    rec.name + ' (' + rec.level + ')\n\nSkill name or SKILL ID (example SK-EMT-014):',
-    ui.ButtonSet.OK_CANCEL);
-  if (r2.getSelectedButton() !== ui.Button.OK) return;
-  var wanted = String(r2.getResponseText() || '').trim();
-  if (!wanted) return;
-
-  var chosen = null;
-  var wantedId = wanted.toUpperCase();
-  var wantedName = normalizeSkillNameV19_(wanted);
-  pool.forEach(function (c) {
-    if (c.id.toUpperCase() === wantedId) chosen = c;
-  });
-  if (!chosen) {
-    pool.forEach(function (c) {
-      if (normalizeSkillNameV19_(c.skill) === wantedName) chosen = c;
-    });
-  }
-  if (!chosen) {
-    var hits = pool.filter(function (c) {
-      return normalizeSkillNameV19_(c.skill).indexOf(wantedName) >= 0;
-    });
-    if (hits.length === 1) {
-      chosen = hits[0];
-    } else if (hits.length > 1 && hits.length <= 8) {
-      var listing = hits.map(function (c, i) {
-        return (i + 1) + ' = ' + c.skill + '  (' + c.id + ')'; }).join('\n');
-      var r2b = ui.prompt('Which one?',
-        '"' + wanted + '" matches ' + hits.length + ' skills.\nType the number:\n\n' + listing,
-        ui.ButtonSet.OK_CANCEL);
-      if (r2b.getSelectedButton() !== ui.Button.OK) return;
-      var pick = parseInt(String(r2b.getResponseText() || '').trim(), 10);
-      if (pick >= 1 && pick <= hits.length) chosen = hits[pick - 1];
-    } else if (hits.length > 8) {
-      ui.alert('"' + wanted + '" matches ' + hits.length + ' skills — be more specific.\n\nFirst few:\n' +
-        hits.slice(0, 10).map(function (c) { return '  ' + c.skill + ' (' + c.id + ')'; }).join('\n'));
-      return;
-    }
-  }
-  if (!chosen) {
-    ui.alert('No approved skill matched "' + wanted + '" for ' + rec.level + '.\n\nExamples from the catalog:\n' +
-      pool.slice(0, 12).map(function (c) { return '  ' + c.skill + ' (' + c.id + ')'; }).join('\n') +
-      (pool.length > 12 ? '\n  …and ' + (pool.length - 12) + ' more on 15 SKILL CATALOG' : ''));
-    return;
-  }
-
-  var r3 = ui.prompt('Record a skill (3 of 4)',
-    'Date you observed it (example 8/14/2026).\nLeave BLANK for today:', ui.ButtonSet.OK_CANCEL);
-  if (r3.getSelectedButton() !== ui.Button.OK) return;
-  var dText = String(r3.getResponseText() || '').trim();
-  var when = dText ? parseDateSafeV20_1_(dText) : new Date();
-  if (!when) { ui.alert('Could not read that date. Nothing recorded. Try 8/14/2026.'); return; }
-
-  var r4 = ui.prompt('Record a skill (4 of 4)',
-    'Rationale for the record.\nLeave BLANK for: "Directly observed and verified by the FTO Program Director"',
-    ui.ButtonSet.OK_CANCEL);
-  if (r4.getSelectedButton() !== ui.Button.OK) return;
-  var rationale = String(r4.getResponseText() || '').trim() ||
-    'Directly observed and verified by the FTO Program Director';
-  if (rationale.indexOf('[direct entry]') < 0) rationale += ' [direct entry]';
-
-  // honest duplicate check across the whole sign-off log, IDs or not
-  var idx = signoffIndexV20_1_();
-  var already = idx.rows.filter(function (a) {
-    return normalizeNameV20_1_(a.trainee) === normalizeNameV20_1_(rec.name) &&
-           a.skillId === chosen.id && a.decision === 'Approve sign-off';
-  });
-  if (already.length) {
-    var warn = rec.name + ' already has an Approve sign-off for ' + chosen.skill +
-      ' (' + already[0].decisionId + (already[0].decisionDate ? ', ' + dateKeyV20_1_(already[0].decisionDate) : '') +
-      ').\n\nRecord another one anyway?';
-    if (ui.alert('Already signed off', warn, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
-      return;
-    }
-  }
-
-  var decider = sessionEmailV20_1_() || 'C. Hunt';
-  var confirmMsg = rec.name + ' (' + rec.level + ')\n' + chosen.skill + '  [' + chosen.id + ']' +
-    '\n\nApprove sign-off\nObserved : ' + dateKeyV20_1_(when) +
-    '\nDecided by : ' + decider + '\nRationale : ' + rationale +
-    '\n\nThis writes a permanent record. Proceed?';
-  if (ui.alert('Confirm', confirmMsg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
-
-  var qr = newIdV20_1_('QR');
-  appendRowsHeaderMappedV20_1_(TAB.SKILL_VALIDATION, 4, [{
-    'TRAINEE': rec.name, 'SKILL': chosen.skill, 'SKILL ID': chosen.id,
-    'DECISION': 'Approve sign-off', 'DECIDED BY': decider, 'DECISION DATE': when,
-    'RATIONALE': rationale, 'RECORD STATUS': 'OPEN', 'REQUEST ID': qr
-  }], ['TRAINEE', 'SKILL', 'SKILL ID', 'RECORD STATUS', 'REQUEST ID']);
-
-  var t = queueTableV20_1_(), rowNum = 0;
-  if (t.ok) {
-    t.rows.forEach(function (r, i) {
-      if (String(r[t.col['REQUEST ID']] || '').trim() === qr) rowNum = t.firstDataRow + i;
-    });
-  }
-  if (!rowNum) {
-    ui.alert('The request row was created (' + qr + ') but could not be found again — ' +
-      'nothing recorded yet. Tell Claude; nothing is lost.');
-    return;
-  }
-  var out = recordDecisionForRowV20_1_(rowNum);
-  var homeNote = '';
-  try { refreshHomeNowV20_1(); homeNote = '\nHOME page updated.'; } catch (eH) {}
-  ui.alert(out + homeNote);
-}
-
-
-/** Run once. Makes tab 20 explain itself and stop blocking honest dates. */
-function fixQueueEntryUxV20_1() {
-  var t = queueTableV20_1_();
-  if (!t.ok) {
-    try { SpreadsheetApp.getUi().alert('Queue tab not found; nothing changed.'); } catch (e0) {}
-    return 'Queue tab not found; nothing changed.';
-  }
-  var sh = t.sheet;
-  var headerRow = t.firstDataRow - 1; // 4
-  var nRows = Math.max(sh.getMaxRows() - t.firstDataRow + 1, 1);
-
-  // DECISION DATE (col 9): any real date is welcome — especially past ones.
-  sh.getRange(t.firstDataRow, 9, nRows, 1)
-    .setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireDate().setAllowInvalid(true)
-      .setHelpText('The date it actually happened — past dates are fine. Example: 8/12/2026')
-      .build())
-    .setNumberFormat('m/d/yyyy');
-
-  // RATIONALE (col 11): dropdown of standard reasons, free typing still allowed.
-  var reasons = [
-    'Evidence thresholds met, FTO recommendation accepted',
-    'Directly observed and verified by the FTO Program Director',
-    'Competency verified by scenario examination',
-    'Verbal verification accepted; documentation to follow',
-    'Additional documented evidence required before sign-off',
-    'Sign-off revoked pending remediation'
-  ];
-  sh.getRange(t.firstDataRow, 11, nRows, 1)
-    .setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList(reasons, true).setAllowInvalid(true)
-      .setHelpText('Pick a standard reason from the arrow, or type your own.')
-      .build());
-
-  // Hover notes: whose column is whose.
-  var notes = {
-    1:  'READY DATE — written by the system when the skill crossed its threshold. Never edit.',
-    2:  'TRAINEE — written by the system. Never edit.',
-    3:  'SKILL ID — written by the system. Never edit.',
-    4:  'DOMAIN — written by the system. Never edit.',
-    5:  'SKILL — written by the system. Never edit.',
-    6:  'EVIDENCE SUMMARY — written by the system: what the forms show. Read it, never edit it.',
-    7:  'DECISION — YOURS. Pick from the dropdown.',
-    8:  'DECIDED BY — stamped for you when you pick a decision. Type over it if needed.',
-    9:  'DECISION DATE — stamped as today when you pick a decision. Type over it with the real date; past dates are fine.',
-    10: 'EXPIRATION — YOURS, optional. Only for time-limited sign-offs.',
-    11: 'RATIONALE — YOURS. Pick a standard reason from the arrow or type your own.',
-    12: 'RECORD STATUS — written by the system. Never edit.',
-    13: 'LAST EVIDENCE DATE — written by the system. Never edit.',
-    14: 'REVIEW — written by the system: why an item deserves a second look. Never edit.',
-    15: 'REQUEST ID — written by the system: the permanent ID. Never edit.',
-    16: 'RECORD — YOURS. Tick it to make the decision official.'
-  };
-  Object.keys(notes).forEach(function (c) {
-    try { sh.getRange(headerRow, Number(c)).setNote(notes[c]); } catch (eN) {}
-  });
-
-  // Header colors: amber = yours, grey = the machine's.
-  var yours = [7, 8, 9, 10, 11, 16];
-  var machine = [1, 2, 3, 4, 5, 6, 12, 13, 14, 15];
-  yours.forEach(function (c) {
-    try { sh.getRange(headerRow, c).setBackground('#B7791F').setFontColor('#FFFFFF'); } catch (eY) {}
-  });
-  machine.forEach(function (c) {
-    try { sh.getRange(headerRow, c).setBackground('#546E7A').setFontColor('#ECEFF1'); } catch (eM) {}
-  });
-
-  var msg = 'Tab 20 entry fixed.\n\n' +
-    '- DECISION DATE now accepts any real date — past dates welcome\n' +
-    '- RATIONALE has a dropdown of standard reasons (typing still allowed)\n' +
-    '- Amber headers = your columns. Grey headers = the machine\'s — never edit those\n' +
-    '- Hover any header for what it is\n' +
-    '- Clearing a decision no longer wipes your name and date';
-  systemLog_('INFO', 'QUEUE ENTRY UX FIXED', 'date validation, rationale dropdown, header notes/colors');
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e1) {}
-  return msg;
-}
-
-
-/** (internal) apply the live-work filter to tab 20. */
-function queueLiveFilterApplyV20_1_() {
-  var t = queueTableV20_1_();
-  if (!t.ok || t.col['RECORD STATUS'] === undefined) return 0;
-  var sh = t.sheet;
-  var headerRow = t.firstDataRow - 1;
-  var width = t.headers.length;
-  var lastRow = Math.max(sh.getLastRow(), t.firstDataRow);
-  var f = sh.getFilter();
-  if (!f) {
-    try { f = sh.getRange(headerRow, 1, lastRow - headerRow + 1, width).createFilter(); }
-    catch (e) { return 0; }
-  }
-  var sCol = t.col['RECORD STATUS'] + 1;
-  var seen = {};
-  t.rows.forEach(function (r) {
-    var s = String(r[t.col['RECORD STATUS']] || '').trim();
-    if (s) seen[s] = true;
-  });
-  var hide = Object.keys(seen).filter(function (s) {
-    return s !== 'OPEN' && s !== 'RETURNED';
-  });
-  if (hide.length) {
-    f.setColumnFilterCriteria(sCol,
-      SpreadsheetApp.newFilterCriteria().setHiddenValues(hide).build());
-  } else {
-    f.setColumnFilterCriteria(sCol, null);
-  }
-  return hide.length;
-}
-
-/** Turn ON live-work-only view (persists; every flow re-applies it). */
-function queueShowLiveV20_1() {
-  PropertiesService.getScriptProperties().setProperty('QUEUE_LIVE_VIEW', '1');
-  queueLiveFilterApplyV20_1_();
-  var msg = 'Tab 20 now shows LIVE WORK ONLY — OPEN (needs you) and RETURNED (waiting on the FTO).\n\n' +
-    'Finished rows are hidden from view, never deleted: the ledger keeps every row and the ' +
-    'reconciler still checks all of it. "Tab 20 : show full history" on the Admin menu brings it all back.';
-  systemLog_('INFO', 'QUEUE LIVE VIEW ON', 'finished rows hidden from view; ledger untouched');
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-/** Turn OFF the live-work view: full history visible again. */
-function queueShowAllV20_1() {
-  PropertiesService.getScriptProperties().setProperty('QUEUE_LIVE_VIEW', '0');
-  var t = queueTableV20_1_();
-  if (t.ok && t.col['RECORD STATUS'] !== undefined) {
-    var f = t.sheet.getFilter();
-    if (f) { try { f.setColumnFilterCriteria(t.col['RECORD STATUS'] + 1, null); } catch (e) {} }
-  }
-  var msg = 'Tab 20 shows the full history again — every row, finished and live.';
-  systemLog_('INFO', 'QUEUE LIVE VIEW OFF', 'full history visible');
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e2) {}
-  return msg;
-}
-
-
-/** Approve everything waiting for the trainee selected on tab 23. */
-function approveTraineeOnViewV20_1() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var ui = SpreadsheetApp.getUi();
-  var view = ss().getSheetByName(TRAINEE_SKILLS_TAB_V19);
-  if (!view) { ui.alert('Tab 23 not found.'); return; }
-  var picked = String(view.getRange('C4').getValue() || '').trim();
-  if (!picked) {
-    ui.alert('Pick a trainee in the dropdown at the top of tab 23 first, then run this again.');
-    return;
-  }
-  var resolved = resolveTraineeV20_1_(picked);
-  if (!resolved.ok || !resolved.record) {
-    ui.alert('Could not resolve "' + picked + '": ' + resolved.reason);
-    return;
-  }
-  var rec = resolved.record;
-  if (rec.closed) { ui.alert(rec.name + ' is closed/released. Nothing to decide.'); return; }
-
-  ensureQueueRequestIdsV20_1_(); // every item needs a stable ID to re-find its row
-  var t = queueTableV20_1_();
-  if (!t.ok) { ui.alert('Queue tab not found.'); return; }
-  var items = [], drafts = [];
-  t.rows.forEach(function (r, i) {
-    if (normalizeNameV20_1_(cleanNameV20_1_(r[t.col['TRAINEE']])) !== normalizeNameV20_1_(rec.name)) return;
-    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-    var row = t.firstDataRow + i;
-    var skill = String(r[t.col['SKILL']] || '').slice(0, 40);
-    if (String(r[t.col['DECISION']] || '').trim()) {
-      drafts.push(skill + ' (row ' + row + ' has a draft decision — finish it on tab 20)');
-      return;
-    }
-    items.push({ row: row, skill: skill, trainee: rec.name,
-                 skillId: String(r[t.col['SKILL ID']] || '').trim(),
-                 requestId: t.col['REQUEST ID'] !== undefined
-                   ? String(r[t.col['REQUEST ID']] || '').trim() : '' });
-  });
-
-  if (!items.length) {
-    ui.alert('Nothing is waiting for ' + rec.name + '.\n\nEvery skill is either not at its evidence ' +
-      'threshold yet, or already decided.' +
-      (drafts.length ? '\n\nDraft(s) in progress:\n' + drafts.join('\n') : ''));
-    return;
-  }
-
-  var decider = sessionEmailV20_1_() || 'C. Hunt';
-  var approved = 0, returned = 0, skippedN = 0, results = [], stopped = false;
-
-  for (var k = 0; k < items.length; k++) {
-    var it = items[k];
-    var choice = '';
-    for (var tries = 0; tries < 3; tries++) {
-      var resp = ui.prompt(
-        rec.name + '  (' + (k + 1) + ' of ' + items.length + ')',
-        it.skill +
-        '\n\nType one letter, then OK:' +
-        '\n  A = Approve sign-off' +
-        '\n  R = Return for more evidence' +
-        '\n  S = Skip for now' +
-        '\n\n(Cancel stops here; everything already answered stays recorded.)',
-        ui.ButtonSet.OK_CANCEL);
-      if (resp.getSelectedButton() !== ui.Button.OK) { stopped = true; break; }
-      choice = String(resp.getResponseText() || '').trim().toUpperCase().charAt(0);
-      if (choice === 'A' || choice === 'R' || choice === 'S') break;
-      choice = '';
-    }
-    if (stopped) break;
-    if (!choice || choice === 'S') { skippedN++; continue; }
-
-    var rationale;
-    if (choice === 'A') {
-      rationale = approvalRationalePromptV20_2_(ui, it.trainee + ' \u2014 ' + it.skill,
-        it.trainee, it.skillId);
-      if (!rationale) { skippedN++; continue; }
-    } else {
-      var r2 = ui.prompt('Return : ' + it.skill,
-        'What should the FTO add? (this becomes the official reason on the record)\n' +
-        'Leave blank for: "Additional documented evidence required before sign-off"',
-        ui.ButtonSet.OK_CANCEL);
-      if (r2.getSelectedButton() !== ui.Button.OK) { skippedN++; continue; }
-      rationale = String(r2.getResponseText() || '').trim() ||
-        'Additional documented evidence required before sign-off';
-    }
-
-    // Recording rebuilds the matrix, which re-sorts the queue, so the row
-    // captured before this loop may now belong to a different request.
-    var liveRow = it.requestId ? queueRowByRequestIdV20_1_(it.requestId) : 0;
-    if (!liveRow) {
-      skippedN++;
-      results.push(it.skill + ' SKIPPED: request ' +
-        (it.requestId || '(no REQUEST ID)') + ' could not be located on the queue.');
-      continue;
-    }
-    try {
-      writeQueueDecisionV20_1_(liveRow,
-        choice === 'A' ? 'Approve sign-off' : 'Return for more evidence',
-        decider, new Date(), rationale);
-      results.push(recordDecisionForRowV20_1_(liveRow));
-      if (choice === 'A') approved++; else returned++;
-    } catch (e) {
-      results.push(it.skill + ' FAILED: ' + e);
-    }
-  }
-
-  var homeNote = '';
-  if (approved + returned > 0) {
-    try { refreshHomeNowV20_1(); homeNote = '\nTab 20 live view and HOME updated.'; } catch (eH) {}
-  }
-  try {
-    refreshTraineeSkillsViewV19(picked, String(view.getRange('E4').getValue() || ''));
-    if (approved + returned > 0) homeNote += '\nTab 23 repainted.';
-  } catch (eV) {}
-
-  var summary = rec.name + ' — DONE.\n\nApproved : ' + approved + '\nReturned : ' + returned +
-    '\nSkipped : ' + skippedN + homeNote +
-    (drafts.length ? '\n\nDraft(s) left on tab 20:\n' + drafts.join('\n') : '') +
-    (results.length ? '\n\n' + results.join('\n').slice(0, 800) : '');
-  systemLog_('INFO', 'TRAINEE VIEW APPROVAL SESSION',
-    rec.name + ' : ' + approved + ' approved, ' + returned + ' returned, ' + skippedN + ' skipped');
-  ui.alert(summary);
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : phantom repair
- * ================================================================ */
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   SCEMS v20.1.0h ADD-ON : phantom repair
+ *   SCEMS v20.1.0h ADD-ON : replay the restore-eaten responses
+ *   SCEMS v20.1.0h ADD-ON : hub backfill (recovered shift evals)
+ *   SCEMS v20.1.0h ADD-ON : backfill cleanup + matcher fix
+ *   Catching up the responses that arrived while nothing was listening
+ */
 
 /** (internal) the same phantom test the reconciler uses. */
 function phantomRowsV20_1_() {
@@ -10781,11 +11495,6 @@ function fixPhantomsNowV20_1(confirmToken) {
 
 /** One-click runner for the phantom repair (token baked in). */
 function stepD_fixPhantoms() { Logger.log(fixPhantomsNowV20_1('FIX PHANTOMS')); }
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : replay the restore-eaten responses
- * ================================================================ */
 
 /** One-click runner: replay everything lost since the restore point. */
 function stepE_replayLostResponses() { Logger.log(replayMissingSinceV20_1_('8/5/2026')); }
@@ -10930,11 +11639,6 @@ function replayMissingSinceV20_1_(cutoffText) {
   return msg;
 }
 
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : hub backfill (recovered shift evals)
- * ================================================================ */
-
 /** One-click: backfill the recovered shift evals. Auto-finds the largest
  *  eval-classified response tab, so relink renumbering never breaks it. */
 function stepF_backfillEvals() {
@@ -11066,11 +11770,6 @@ function stepJ_backfillAllHubTabs() {
   Logger.log(msg);
   return msg;
 }
-
-
-/* ================================================================
- * SCEMS v20.1.0h ADD-ON : backfill cleanup + matcher fix
- * ================================================================ */
 
 /** Minute-tolerant key: minute bucket + up to two name columns. */
 function backfillRowKeysV20_1_(ts, a, b) {
@@ -11264,132 +11963,6 @@ function applyBackfillCleanupV20_1(confirmToken) {
 /** One-click runner, token baked in. */
 function stepK_cleanBackfill() { Logger.log(applyBackfillCleanupV20_1('CLEAN BACKFILL')); }
 
-
-/* ================================================================
- * Full system review — READ ONLY, split for the 6-minute limit.
- * ================================================================ */
-function reviewSectionV20_1_(R, title, fn) {
-  R.push('');
-  R.push('================ ' + title + ' ================');
-  try { R.push(String(fn())); }
-  catch (e) { R.push('SECTION FAILED: ' + e); }
-}
-
-/** Fast half: everything answerable from the sheets alone. ~1 minute. */
-function reviewCoreV20_1() {
-  var R = [];
-  reviewSectionV20_1_(R, 'VERSION', function () { return versionReportV20_1(); });
-  reviewSectionV20_1_(R, 'MASTER NAME HYGIENE (spaces shown in brackets)', function () {
-    var t = readTableV20_1_(TAB.MASTER, 4);
-    if (!t.ok) return 'Master not readable.';
-    var L = [];
-    var raw = t.sheet.getRange(t.firstDataRow, 1, Math.max(t.sheet.getLastRow() - t.firstDataRow + 1, 1), 1).getValues();
-    raw.forEach(function (r, i) {
-      var v = r[0];
-      if (v === '' || v == null) return;
-      var s = String(v);
-      var flags = [];
-      if (/^\s/.test(s)) flags.push('LEADING SPACE');
-      if (/\s$/.test(s)) flags.push('TRAILING SPACE');
-      if (/\s\s/.test(s)) flags.push('DOUBLE SPACE INSIDE');
-      L.push('row ' + (t.firstDataRow + i) + ' [' + s + ']' + (flags.length ? '  <-- ' + flags.join(', ') : ''));
-    });
-    return L.join('\n') || '(no names found)';
-  });
-  reviewSectionV20_1_(R, 'EVAL COUNT CROSS-CHECK (raw rows vs engine)', function () {
-    var m = getSheetOrNullV20_1_(TAB.EVAL);
-    var eng = getSheetOrNullV20_1_(TAB.ENGINE);
-    if (!m || !eng) return 'Mirror or engine missing.';
-    var counts = {};
-    if (m.getLastRow() >= 5) {
-      m.getRange(5, 3, m.getLastRow() - 4, 1).getValues().forEach(function (r) {
-        var n = normalizeNameV20_1_(String(r[0] || ''));
-        if (n) counts[n] = (counts[n] || 0) + 1;
-      });
-    }
-    var L = [];
-    eng.getRange(5, 1, 40, 9).getValues().forEach(function (r, i) {
-      var name = String(r[0] || '').trim();
-      if (!name) return;
-      var engineSays = Number(r[6]) || 0;
-      var rawSays = counts[normalizeNameV20_1_(name)] || 0;
-      L.push('engine row ' + (5 + i) + ' ' + name + ' : raw eval rows ' + rawSays +
-        ' | engine says ' + engineSays + (rawSays === engineSays ? '' : '   <-- MISMATCH'));
-    });
-    return L.join('\n') || '(engine empty)';
-  });
-  reviewSectionV20_1_(R, 'ORPHANED EVALS (trainee matches nobody)', function () {
-    var m = getSheetOrNullV20_1_(TAB.EVAL);
-    if (!m || m.getLastRow() < 5) return 'Mirror empty.';
-    var known = {};
-    masterTraineeRowsV20_1_().forEach(function (x) { known[x.norm] = true; });
-    var arch = getSheetOrNullV20_1_(TAB.ARCHIVE);
-    if (arch && arch.getLastRow() >= 5) {
-      arch.getRange(5, 2, arch.getLastRow() - 4, 1).getValues().forEach(function (r) {
-        var n = normalizeNameV20_1_(String(r[0] || ''));
-        if (n) known[n] = true;
-      });
-    }
-    var L = [], seen = {};
-    m.getRange(5, 1, m.getLastRow() - 4, 3).getValues().forEach(function (r, i) {
-      var who = String(r[2] || '').trim();
-      if (!who) return;
-      var n = normalizeNameV20_1_(who);
-      if (known[n] || seen[n]) return;
-      if (who.indexOf('EXAMPLE') === 0 || who.indexOf(TEST_PREFIX) === 0) return;
-      seen[n] = true;
-      L.push('[' + who + '] (first at mirror row ' + (5 + i) + ')');
-    });
-    return L.length ? L.join('\n') : 'None. Every eval belongs to a known trainee.';
-  });
-  reviewSectionV20_1_(R, 'DECISIONS RECONCILIATION', function () { return reconcileDecisionsV20(); });
-  reviewSectionV20_1_(R, 'INGESTION EXCEPTIONS', function () { return ingestionExceptionReportV20_1(); });
-  reviewSectionV20_1_(R, 'ANALYTICS VERIFICATION', function () { return verifyAnalyticsV20_1(); });
-  var msg = 'SYSTEM REVIEW — CORE (fast half) — READ ONLY\n' + R.join('\n') +
-    '\n\nNow run reviewDeepV20_1 for forms, portal, permissions, and the full audit.';
-  Logger.log(msg);
-  return msg;
-}
-
-/** Slow half: everything that talks to Forms, Drive, and the portal. */
-function reviewDeepV20_1() {
-  var R = [];
-  reviewSectionV20_1_(R, 'RUNTIME HEALTH', function () { return runtimeHealthCheckV20_1(); });
-  reviewSectionV20_1_(R, 'FORM DELIVERY ADDRESSES', function () {
-    var liveId = ss().getId();
-    var L = [];
-    storedFormIdsV20_1_().forEach(function (id) {
-      try {
-        var f = FormApp.openById(id);
-        var dest = '';
-        try { dest = f.getDestinationId(); } catch (e2) {}
-        L.push((dest === liveId ? 'OK    ' : dest ? 'WRONG ' : 'NONE  ') +
-          f.getTitle() + ' | ' + f.getResponses().length + ' response(s)' +
-          (dest && dest !== liveId ? ' | delivering to ' + dest : ''));
-      } catch (e) { L.push('UNREADABLE ' + id + ' : ' + e); }
-    });
-    return L.join('\n');
-  });
-  reviewSectionV20_1_(R, 'INGESTION RECONCILIATION', function () { return reconcileIngestionV20_1(); });
-  reviewSectionV20_1_(R, 'SKILLS VERIFICATION', function () { return verifySkillsV20_1(); });
-  reviewSectionV20_1_(R, 'PORTAL VERIFICATION', function () { return verifyPortalV20_1(); });
-  reviewSectionV20_1_(R, 'PERMISSIONS AUDIT', function () { return permissionsAuditV20_1(); });
-  reviewSectionV20_1_(R, 'SYSTEM AUDIT', function () { return auditV20_1(); });
-  var msg = 'SYSTEM REVIEW — DEEP (forms half) — READ ONLY\n' + R.join('\n');
-  Logger.log(msg);
-  return msg;
-}
-
-/** Kept so the old habit still works; points at the split. */
-function fullSystemReviewV20_1() {
-  var msg = 'The review is split to fit the 6-minute limit:\n' +
-    '  1. reviewCoreV20_1  (fast, sheets-only)\n' +
-    '  2. reviewDeepV20_1  (forms / portal / permissions / audit)\nRun them one after the other.';
-  Logger.log(msg);
-  return msg;
-}
-
-
 /** One-click: acknowledge historical form responses in the ledger. */
 function stepL_acknowledgeHistorical() {
   var cutoff = parseDateSafeV20_1_('8/5/2026');
@@ -11425,1548 +11998,6 @@ function stepL_acknowledgeHistorical() {
   return msg;
 }
 
-
-/* ==================== 99_config.gs ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.1 : 99_config.gs
- * Sumter County EMS : Field Training and Personnel Development System
- *
- * THE ONLY CONFIGURATION FILE. Exactly one CONFIG object exists in this
- * project. It is frozen at load: nothing may mutate it at runtime.
- *
- * DELIVERY MODE IS NOT STORED HERE. Whether mail reaches real recipients
- * is decided at send time by isLiveMode_() in 00_core.gs, which reads the
- * SCEMS_LIVE_MODE script property on every call and fails safe to test
- * mode. Editing this file can never change delivery mode, and delivery
- * mode can never be changed by file load order again.
- *
- * goLive() / backToTestMode() / whichMode() live in 00_core.gs.
- ************************************************************************/
-
-var SCEMS_VERSION = 'v20.5.0';
-var SCEMS_WRITER_VERSION = 'SCEMS v20.5.0';
-
-var CONFIG = Object.freeze({
-
-  // ---- Delivery recipients by role. Update here only. ----
-  TEST_INBOX:        'craighunt913@gmail.com',
-  TCO_EMAIL:         'kstuckey@sumtercountysc.gov',   // Division Chief of Training
-  CHIEF_EMAIL:       'kehall@sumtercountysc.gov',     // Chief
-  ACHIEF_EMAIL:      'jparnell@sumtercountysc.gov',   // Assistant Chief
-  MD_EMAIL:          'leeturnermd@gmail.com',         // Medical Director
-  SUPERVISOR_EMAILS: 'craighunt913@gmail.com',        // program copy
-  FTO_PROGRAM_DIRECTOR: 'craighunt913@gmail.com',        // final decision authority for the FTO program
-  BACKUP_EDITOR:     '',
-
-  // ---- Human approvals recorded at v19 go-live. Historical record. ----
-  GO_LIVE_APPROVED:             true,
-  UAT_APPROVED:                 true,
-  EXTERNAL_RECIPIENTS_APPROVED: true,
-
-  // ---- Governing authorities stamped onto decisions and exports. ----
-  POLICY_VERSION:            'SCEMS FTO Guide, rev 1.0, effective 07/2026',
-  SKILL_STANDARD:            '2018 Sumter County EMS Protocols, Jimmy Lee Turner II, MD',
-  RECORD_RETENTION_STANDARD: 'SCEMS General Orders, personnel training records retention'
-});
-
-/* Shift supervisor routing. Read by the supervisor digest and urgent-
- * concern mail. Name kept from v19 for call-site compatibility; this is
- * the single copy. Every recipient in the system lives in this file. */
-var SHIFT_SUPERVISORS_V19 = {
-  A: { name: 'K. Moye',     email: 'kmoye@sumtercountysc.gov',
-       assistName: 'J. Head',   assist: 'jhead@sumtercountysc.gov' },
-  B: { name: 'A. Wise',     email: 'awise@sumtercountysc.gov',
-       assistName: '',          assist: '' },
-  C: { name: 'J. Watson',   email: 'jwatson@sumtercountysc.gov',
-       assistName: '',          assist: '' },
-  D: { name: 'M. McLellan', email: 'mmclellan@sumtercountysc.gov',
-       assistName: 'E. Osteen', assist: 'ethanallenosteen@gmail.com' }
-};
-
-
-/* ---- Canonical tab names. Never rename a live tab from code. ---- */
-var TAB = Object.freeze({
-  CONTROL: '00 README - CONTROL',
-  MASTER:  '01 TRAINEE MASTER',
-  EVAL:    '02 FTO SHIFT EVAL RAW',
-  REFLECT: '03 SELF-REFLECTION RAW',
-  URGENT:  '04 URGENT CONCERNS RAW',
-  SKILLS:  '05 SKILLS PROGRESS',
-  ENGINE:  '06 PHASE - STATUS ENGINE',
-  WEEKLY:  '07 WEEKLY STATUS REPORT',
-  QUEUE:   '12 DECISION QUEUE',
-  ANALYTICS: '14 ANALYTICS',
-  CATALOG: '15 SKILL CATALOG',
-  DECISIONS: '16 DECISIONS RAW',
-  ARCHIVE: '17 TRAINEE ARCHIVE',
-  LOG:     '18 SYSTEM LOG',
-  SKILL_EVIDENCE: '19 SKILL EVIDENCE LOG',
-  SKILL_VALIDATION: '20 SKILL VALIDATION QUEUE',
-  SKILL_SIGNOFF: '21 SKILL SIGN-OFF LOG',
-  FTO_ROSTER: '22 FTO ROSTER',
-  TRAINEE_SKILLS: '23 TRAINEE SKILLS',
-  AUDIT: '13 AUDIT - EXCEPTION LOG',
-  FTO_VIEW: '08 FTO VIEW',
-  TRAINEE_VIEW: '09 TRAINEE VIEW',
-  DASH: '10 TRAINING DIVISION DASH',
-  MD_VIEW: '11 MEDICAL DIRECTOR VIEW',
-  // v20.1 system tabs (created only by applyMigrationV20_1, never implicitly)
-  REGISTRY: '90 PERSON REGISTRY',
-  LEDGER:   '91 INGESTION LEDGER',
-  ASSIGNMENTS: '92 ASSIGNMENT HISTORY',
-  ACCESS:   '93 ACCESS LOG'
-});
-
-/* Legacy constant aliases retained because ~200 existing call sites and
- * operator habits reference them. Same values, single source. */
-var DECISIONS_TAB = TAB.DECISIONS;
-var ARCHIVE_TAB = TAB.ARCHIVE;
-var SKILL_CATALOG_TAB = TAB.CATALOG;
-var FTO_ROSTER_TAB_V19 = TAB.FTO_ROSTER;
-var TRAINEE_SKILLS_TAB_V19 = TAB.TRAINEE_SKILLS;
-
-var TEST_PREFIX = 'ZZ TEST';
-var LIVE_FLAG_KEY = 'SCEMS_LIVE_MODE';
-
-/* ---- Form titles (identity of each form; URLs are never hard-coded) ---- */
-var FORM_TITLES = Object.freeze({
-  EVAL:      'SCEMS FTO Shift Evaluation',
-  REFLECT:   'SCEMS Trainee Self-Reflection',
-  URGENT:    'SCEMS Urgent Concern Report',
-  DECISION:  'SCEMS Training Decision Record',
-  SKILLS_COMBINED: 'SCEMS Skills Quick Log',
-  SKILLS_EMT:  'SCEMS Skills Quick Log : EMT',
-  SKILLS_AEMT: 'SCEMS Skills Quick Log : Advanced EMT',
-  SKILLS_PMD:  'SCEMS Skills Quick Log : Paramedic',
-  HANDOVER:  'SCEMS Trainee Handover Card'
-});
-/* Every form the estate is expected to contain. Derived here, in the same
- * file as FORM_TITLES, so no load-order dependency exists. */
-var EXPECTED_FORMS_V19 = Object.keys(FORM_TITLES).map(function (k) { return FORM_TITLES[k]; });
-
-var SKILL_FORM_TITLE_V19 = FORM_TITLES.SKILLS_COMBINED;
-var HANDOVER_FORM_TITLE_V19 = FORM_TITLES.HANDOVER;
-var SKILL_LEVELS_V20 = ['EMT', 'Advanced EMT', 'Paramedic'];
-
-/* Portal cards, in display order. verifyPortalV20_1() derives its expected
- * link count from this list, never from a hard-coded number. */
-var PORTAL_CARDS = Object.freeze([
-  { key: 'EVAL',        role: 'Field Training Officer' },
-  { key: 'SKILLS_EMT',  role: 'Field Training Officer' },
-  { key: 'SKILLS_AEMT', role: 'Field Training Officer' },
-  { key: 'SKILLS_PMD',  role: 'Field Training Officer' },
-  { key: 'HANDOVER',    role: 'Field Training Officer : Covering' },
-  { key: 'REFLECT',     role: 'Trainee' },
-  { key: 'URGENT',      role: 'Anyone : Same shift' }
-]);
-
-/* ---- Sheet schemas: header row 4 on system tabs. Additive columns are
- * appended by migration; readers map by header name, never position. ---- */
-var SKILL_EVIDENCE_HEADERS_V19 = [
-  'EVENT ID','TIMESTAMP','SHIFT DATE','TRAINEE','LEVEL AT EVENT','PHASE','FTO',
-  'SKILL ID','DOMAIN','SKILL','CONTEXT','STAGE','OUTCOME','PROMPTING',
-  'CALL / SCENARIO REF','EVIDENCE NOTE','SOURCE FORM','SOURCE ROW',
-  'VALIDATION RESULT','ATTESTATION'
-];
-var SKILL_EVIDENCE_V20_1_EXTRA = [
-  'SOURCE FORM ID','SOURCE RESPONSE ID','WRITER VERSION','PERSON ID','ASSIGNMENT ID'
-];
-var SKILL_SIGNOFF_HEADERS_V19 = [
-  'DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION','DECIDED BY',
-  'DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW',
-  'STANDARD / CATALOG VERSION'
-];
-var SKILL_SIGNOFF_V20_1_EXTRA = [
-  'REQUEST ID','SUPERSEDES','DECIDED BY PERSON ID','WRITER VERSION'
-];
-var SKILL_QUEUE_HEADERS_V19 = [
-  'READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY',
-  'DECISION','DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE',
-  'RECORD STATUS','LAST EVIDENCE DATE'
-];
-var QUEUE_REVIEW_COL_V20 = 14;               // 'REVIEW' (v20.4)
-var SKILL_QUEUE_V20_1_EXTRA = ['REQUEST ID','RECORD']; // cols 15, 16
-var QUEUE_REQUEST_ID_COL_V20_1 = 15;
-var QUEUE_RECORD_COL_V20_1 = 16;
-
-var REGISTRY_HEADERS_V20_1 = [
-  'PERSON ID','TYPE','DISPLAY NAME','NORMALIZED NAME','EMPLOYEE ID','EMAIL',
-  'CERT LEVEL','SHIFT','TRAINS EMT','TRAINS AEMT','TRAINS PARAMEDIC',
-  'ROLE','ACTIVE','SOURCE','CREATED','NOTES'
-];
-var LEDGER_HEADERS_V20_1 = [
-  'LEDGER KEY','FORM ID','RESPONSE ID','FORM TITLE','KIND','RECEIVED AT',
-  'STATE','DETAIL','EVENTS WRITTEN','PROCESSED AT','WRITER VERSION'
-];
-var ASSIGNMENT_HEADERS_V20_1 = [
-  'ASSIGNMENT ID','PERSON ID','TRAINEE','LEVEL','ENTRY PROFILE','FTO',
-  'FTO PERSON ID','PHASE','PHASE START','STATUS','OPENED','CLOSED','SOURCE','NOTES'
-];
-var ACCESS_HEADERS_V20_1 = [
-  'ACCESS ID','TIMESTAMP','KIND','REQUESTED BY','VERIFIED EMAIL','AUTHORIZED',
-  'SUBJECT','DELIVERED TO','REASON','DETAIL'
-];
-
-/* ---- Queue vocabulary (unchanged wording: governance-approved lists) ---- */
-var QUEUE_DECISIONS_V19 = ['Approve sign-off', 'Return for more evidence', 'Revoke sign-off'];
-var QUEUE_STATES_V20_1 = ['OPEN','RECORDED','RETURNED','REVOKED','SUPERSEDED','CANCELLED','FAILED'];
-
-/* ---- Skills form field vocabulary (matches live forms; do not edit
- * without re-verifying against the built forms) ---- */
-var SKILL_STAGE_COLUMNS_V19 = ['Observed','Assisted','Performed with coaching','Performed independently'];
-var LAB_GRID_TITLE_V20 = 'Classroom or skills lab';
-var LAB_REPS_TITLE_V20 = 'Classroom or skills lab : repetitions';
-var REPS_SUFFIX_V20 = ' : repetitions';
-var EV_ACCEPTED_V19 = 'ACCEPTED';
-
-/* ---- Control-sheet dials (labels on 00 README - CONTROL col A) ---- */
-var CONTROL_DIALS = Object.freeze({
-  OVERDUE_DAYS: 'Overdue days threshold',
-  TREND_DAYS: 'Trend window (days)',
-  SCORE_STANDARD: 'Score standard',
-  REFLECT_SILENCE: 'Reflection silence (days)',
-  FLAG_LOOKBACK: 'Flag lookback (days)'
-});
-
-
-/* ================================================================
- * SCEMS v20.1.0i ADD-ON : FTO scoreboard
- * ================================================================ */
-function ftoScoreboardV20_1() {
-  var denyV20_2 = denyV20_2_('READ PROGRAM REPORT');
-  if (denyV20_2) return denyV20_2;
-  var threshold = 5;
-  try {
-    var tv = ss().getSheetByName(TAB.CONTROL).getRange('B5').getValue();
-    if (Number(tv) > 0) threshold = Number(tv);
-  } catch (e0) {}
-
-  // --- engine facts per trainee ---
-  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
-  var facts = {};
-  if (eng) {
-    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
-      var name = String(r[0] || '').trim();
-      if (!name) return;
-      facts[normalizeNameV20_1_(name)] = {
-        evals: Number(r[6]) || 0,
-        daysSince: (r[8] === '' || r[8] === null) ? null : Number(r[8]),
-        dayInPhase: Number(r[20]) || 0
-      };
-    });
-  }
-
-  // --- audit flags per trainee ---
-  var flags = {};
-  var au = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (au) {
-    var labels = ['advancement vs score', 'reflection vs score',
-                  'extreme score without narrative', 'silent record',
-                  'FTO scope', 'phase mismatch'];
-    au.getRange(5, 1, 40, 7).getValues().forEach(function (r) {
-      var name = normalizeNameV20_1_(String(r[0] || ''));
-      if (!name) return;
-      var fl = [];
-      for (var c = 1; c <= 6; c++) if (String(r[c]) === 'FLAG') fl.push(labels[c - 1]);
-      if (fl.length) flags[name] = fl;
-    });
-  }
-
-  // --- who has actually filed, from the raw mirror ---
-  var filedBy = {}, filedByDisplay = {}, lastEvalFor = {};
-  var m = getSheetOrNullV20_1_(TAB.EVAL);
-  if (m && m.getLastRow() >= 5) {
-    m.getRange(5, 1, m.getLastRow() - 4, 3).getValues().forEach(function (r) {
-      var d = parseDateSafeV20_1_(r[0]);
-      var fto = String(r[1] || '').trim();
-      var tr = normalizeNameV20_1_(String(r[2] || ''));
-      if (!fto || !tr) return;
-      var fn = normalizeNameV20_1_(fto);
-      filedBy[fn] = (filedBy[fn] || 0) + 1;
-      if (!filedByDisplay[fn]) filedByDisplay[fn] = fto;
-      if (d && (!lastEvalFor[tr] || d.getTime() > lastEvalFor[tr].getTime())) lastEvalFor[tr] = d;
-    });
-  }
-
-  // --- group active trainees by assigned FTO ---
-  var byFto = {}, unassigned = [], totals = { active: 0, never: 0, overdue: 0, current: 0 };
-  masterTraineeRowsV20_1_().forEach(function (t) {
-    if (t.closed) return;
-    if (String(t.name).indexOf('EXAMPLE') === 0 || String(t.name).indexOf(TEST_PREFIX) === 0) return;
-    totals.active++;
-    var f = facts[t.norm] || { evals: 0, daysSince: null, dayInPhase: 0 };
-    var status, sev;
-    if (f.evals === 0) {
-      status = 'NEVER EVALUATED — day ' + f.dayInPhase + ' of phase'; sev = 2; totals.never++;
-    } else if (f.daysSince !== null && f.daysSince > threshold) {
-      status = f.daysSince + ' days since last eval (limit ' + threshold + ')'; sev = 1; totals.overdue++;
-    } else {
-      status = 'current' + (lastEvalFor[t.norm] ? ' — last eval ' + dateKeyV20_1_(lastEvalFor[t.norm]) : ''); sev = 0; totals.current++;
-    }
-    var entry = { name: t.name, phase: t.phase || '', status: status, sev: sev,
-                  evals: f.evals, flags: flags[t.norm] || [] };
-    var ftoName = String(t.fto || '').trim();
-    if (!ftoName) { unassigned.push(entry); return; }
-    var key = normalizeNameV20_1_(ftoName);
-    if (!byFto[key]) byFto[key] = { display: ftoName, trainees: [] };
-    byFto[key].trainees.push(entry);
-  });
-
-  // --- compose ---
-  var today = dateKeyV20_1_(new Date());
-  var T = [], H = [];
-  function line(t) { T.push(t); }
-  H.push('<div style="font-family:Arial,sans-serif;max-width:680px">');
-  H.push('<h2 style="margin:0 0 4px">SCEMS FTO Scoreboard — ' + today + '</h2>');
-  H.push('<p style="margin:0 0 14px;color:#555">Active trainees: <b>' + totals.active +
-    '</b> · current: <b style="color:#2e7d32">' + totals.current +
-    '</b> · overdue: <b style="color:#b7791f">' + totals.overdue +
-    '</b> · never evaluated: <b style="color:#c62828">' + totals.never + '</b> · eval limit: ' + threshold + ' days</p>');
-  line('SCEMS FTO SCOREBOARD — ' + today);
-  line('Active ' + totals.active + ' | current ' + totals.current + ' | overdue ' + totals.overdue + ' | never evaluated ' + totals.never);
-  line('');
-
-  var ftoKeys = Object.keys(byFto).sort(function (a, b) {
-    var wa = Math.max.apply(null, byFto[a].trainees.map(function (x) { return x.sev; }));
-    var wb = Math.max.apply(null, byFto[b].trainees.map(function (x) { return x.sev; }));
-    return wb - wa;
-  });
-  ftoKeys.forEach(function (k) {
-    var g = byFto[k];
-    var filed = filedBy[k] || 0;
-    H.push('<h3 style="margin:14px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">FTO ' + g.display +
-      ' <span style="font-weight:normal;color:#777">(' + g.trainees.length + ' trainee(s) · ' + filed + ' eval(s) ever filed by them)</span></h3>');
-    line('FTO ' + g.display + '  (' + g.trainees.length + ' trainee(s), ' + filed + ' eval(s) ever filed by them)');
-    g.trainees.sort(function (a, b) { return b.sev - a.sev; }).forEach(function (tr) {
-      var col = tr.sev === 2 ? '#c62828' : tr.sev === 1 ? '#b7791f' : '#2e7d32';
-      H.push('<p style="margin:3px 0 3px 12px"><b>' + tr.name + '</b> (' + tr.phase + ', ' + tr.evals +
-        ' eval(s)) — <span style="color:' + col + '">' + tr.status + '</span>' +
-        (tr.flags.length ? '<br><span style="color:#c62828;font-size:12px">&nbsp;&nbsp;audit: ' + tr.flags.join('; ') + '</span>' : '') + '</p>');
-      line('   ' + tr.name + ' (' + tr.phase + ', ' + tr.evals + ' evals) — ' + tr.status +
-        (tr.flags.length ? '  [audit: ' + tr.flags.join('; ') + ']' : ''));
-    });
-    line('');
-  });
-
-  if (unassigned.length) {
-    H.push('<h3 style="margin:14px 0 2px;color:#c62828">Trainees with NO assigned FTO</h3>');
-    line('TRAINEES WITH NO ASSIGNED FTO');
-    unassigned.forEach(function (tr) {
-      H.push('<p style="margin:3px 0 3px 12px"><b>' + tr.name + '</b> — ' + tr.status + '</p>');
-      line('   ' + tr.name + ' — ' + tr.status);
-    });
-    line('');
-  }
-
-  var filers = Object.keys(filedBy).sort(function (a, b) { return filedBy[b] - filedBy[a]; });
-  H.push('<h3 style="margin:14px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">Filing totals — every eval ever filed, by who filed it</h3>');
-  line('FILING TOTALS (all evals on record, by filer)');
-  filers.forEach(function (k) {
-    H.push('<p style="margin:2px 0 2px 12px">' + filedByDisplay[k] + ' : <b>' + filedBy[k] + '</b></p>');
-    line('   ' + filedByDisplay[k] + ' : ' + filedBy[k]);
-  });
-
-  H.push('<p style="margin-top:16px;color:#888;font-size:12px">Generated from live SCEMS data. Every number is traceable: evals on tab 02, decisions on tab 21, flags on tab 13.</p></div>');
-  line('');
-  line('Generated from live SCEMS data ' + new Date() + '. Every number traceable on tabs 02 / 21 / 13.');
-
-  var to = sessionEmailV20_1_() || CONFIG.TCO_EMAIL;
-  sendHtmlMail(to, 'SCEMS FTO Scoreboard — ' + today, T.join('\n'), H.join('\n'));
-  var msg = 'Scoreboard sent to ' + to + '.\n\n' + T.join('\n');
-  systemLog_('INFO', 'FTO SCOREBOARD SENT',
-    totals.active + ' active, ' + totals.overdue + ' overdue, ' + totals.never + ' never evaluated');
-  try { SpreadsheetApp.getUi().alert(('Scoreboard emailed to ' + to + '.\n\n' + T.join('\n')).slice(0, 1400)); } catch (e) {}
-  Logger.log(msg);
-  return msg;
-}
-
-
-
-/* ================================================================
- * SCEMS v20.1.0i ADD-ON : tab 13 redo
- * ================================================================ */
-function redoAuditTabV20_1() {
-  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!sh) return 'Tab 13 not found.';
-  var R = [];
-
-  // ---- 1. headers + notes (labels only; formulas untouched) ----
-  var heads = [
-    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Goes out when scores support the request or it is withdrawn.'],
-    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Goes out as they converge.'],
-    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Goes out when the FTO\'s narrative is added to the eval record.'],
-    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Goes out as evals and reflections resume.'],
-    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Goes out when corrected.'],
-    ['PHASE MISMATCH', 'CURRENT PHASE on tab 01 disagrees with what the record shows. Goes out when the phase is corrected on tab 01.']
-  ];
-  for (var c = 0; c < 6; c++) {
-    var cell = sh.getRange(4, 2 + c);
-    cell.setValue(heads[c][0]).setNote(heads[c][1] +
-      '\n\nFlags compute themselves from the data. Nothing here is dismissed by hand — fix the condition, or log your review below.');
-  }
-  sh.getRange(4, 1).setValue('TRAINEE')
-    .setNote('Names flow from the roster. The matrix B5:G44 is the machine\'s — hands off. Your space is the FLAG REVIEW LOG below.');
-  sh.getRange(4, 1, 1, 7).setFontWeight('bold').setFontColor('#FFFFFF')
-    .setBackground('#546E7A').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
-    .setVerticalAlignment('middle');
-  sh.setFrozenRows(4);
-  sh.setFrozenColumns(1);
-  sh.setColumnWidth(1, 170);
-  for (var w = 2; w <= 7; w++) sh.setColumnWidth(w, 118);
-  sh.getRange(5, 1, 40, 1).setFontWeight('bold');
-  sh.getRange(5, 2, 40, 6).setHorizontalAlignment('center');
-  R.push('Headers, notes, freeze, and widths applied.');
-
-  // ---- 2. color rules for the matrix ----
-  var matrix = sh.getRange(5, 2, 40, 6);
-  sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenCellNotEmpty().setFontColor('#9E9E9E')
-      .setRanges([matrix]).build()
-  ]);
-  R.push('Flag colors set: red = burning, grey = anything else.');
-
-  // ---- 3. remove the trap checkbox ----
-  try {
-    sh.getRange(2, 10).removeCheckboxes();
-    sh.getRange(2, 10).clearContent().setNote('');
-    R.push('Trap "clear all" checkbox removed (it only ever refused).');
-  } catch (e1) { R.push('Checkbox removal skipped: ' + e1); }
-
-  // ---- 4. FLAG REVIEW LOG (yours) ----
-  var LOG_HEADS = ['DATE', 'TRAINEE', 'FLAG TYPE', 'REVIEWER', 'ACTION TAKEN', 'STATUS'];
-  var flagTypes = heads.map(function (h) { return h[0]; });
-  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved'];
-  var logRow = 0;
-  var scanN = Math.max(sh.getLastRow(), 60);
-  var scan = sh.getRange(1, 1, scanN, 2).getValues();
-  for (var i = 44; i < scan.length; i++) {
-    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
-        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = i + 1; break; }
-  }
-  if (!logRow) logRow = Math.max(sh.getLastRow() + 2, 47);
-  if (sh.getMaxRows() < logRow + 24) sh.insertRowsAfter(sh.getMaxRows(), logRow + 24 - sh.getMaxRows());
-  sh.getRange(logRow, 1, 1, 6).merge().breakApart();
-  sh.getRange(logRow, 1).setValue('FLAG REVIEW LOG — YOURS. Log what you did about each flag while the data catches up.');
-  sh.getRange(logRow, 1, 1, 6).setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold');
-  sh.getRange(logRow + 1, 1, 1, 6).setValues([LOG_HEADS])
-    .setFontWeight('bold').setBackground('#FFF3D6');
-  var entry = sh.getRange(logRow + 2, 1, 20, 6);
-  entry.setBackground('#FFFDF4').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-  sh.getRange(logRow + 2, 1, 20, 1).setNumberFormat('m/d/yyyy');
-  sh.getRange(logRow + 2, 3, 20, 1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(flagTypes, true).setAllowInvalid(true).build());
-  sh.getRange(logRow + 2, 6, 20, 1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(statuses, true).setAllowInvalid(true).build());
-  var tl = traineeListSafeV20_1_();
-  if (tl.length) {
-    sh.getRange(logRow + 2, 2, 20, 1).setDataValidation(
-      SpreadsheetApp.newDataValidation().requireValueInList(tl, true).setAllowInvalid(true).build());
-  }
-  R.push('FLAG REVIEW LOG ready at row ' + logRow + ' — date, trainee, flag type, reviewer, action, status (dropdowns included).');
-
-  // ---- 5. pipeline match report (read-only) ----
-  var P = [];
-  var formulas = sh.getRange(5, 2, 40, 6).getFormulas();
-  var refs = {}, staticCells = 0, formulaCells = 0, emptyCells = 0;
-  formulas.forEach(function (row, ri) {
-    row.forEach(function (f, ci) {
-      if (!f) {
-        var v = sh.getRange(5 + ri, 2 + ci).getValue();
-        if (v === '' || v == null) emptyCells++; else staticCells++;
-        return;
-      }
-      formulaCells++;
-      (f.match(/'([^']+)'!/g) || []).forEach(function (m) {
-        refs[m.slice(1, -2)] = (refs[m.slice(1, -2)] || 0) + 1;
-      });
-      (f.match(/(?:^|[^A-Za-z0-9_'!])([A-Za-z0-9_]{2,})!/g) || []).forEach(function (m2) {
-        var nm = m2.replace(/^[^A-Za-z0-9_]*/, '').replace(/!$/, '');
-        refs[nm] = (refs[nm] || 0) + 1;
-      });
-    });
-  });
-  P.push('Matrix cells: ' + formulaCells + ' formula(s), ' + staticCells + ' static value(s), ' + emptyCells + ' empty.');
-  if (staticCells) P.push('  ← STATIC CELLS in a formula matrix deserve review: a typed value never clears itself.');
-  var liveTabs = {};
-  ss().getSheets().forEach(function (s2) { liveTabs[s2.getName()] = true; });
-  Object.keys(refs).forEach(function (t) {
-    P.push('  pulls from "' + t + '" ×' + refs[t] + (liveTabs[t] ? '' : '   ← TAB DOES NOT EXIST — dead reference'));
-  });
-  if (!Object.keys(refs).length && formulaCells) P.push('  (formulas reference only this sheet)');
-  var masterNorms = {};
-  masterTraineeRowsV20_1_().forEach(function (t3) { masterNorms[t3.norm] = true; });
-  var nameCol = sh.getRange(5, 1, 40, 1).getValues();
-  var staleNames = [];
-  nameCol.forEach(function (r4, i4) {
-    var nm = String(r4[0] || '').trim();
-    if (!nm) return;
-    if (nm.indexOf('EXAMPLE') === 0 || nm.indexOf(TEST_PREFIX) === 0) return;
-    if (!masterNorms[normalizeNameV20_1_(nm)]) staleNames.push('row ' + (5 + i4) + ' [' + nm + ']');
-  });
-  P.push(staleNames.length
-    ? 'Names not on the active master: ' + staleNames.join(', ') + '  ← stale rows (closed trainees linger until the matrix rebuilds)'
-    : 'Every name in the matrix matches the active master.');
-
-  var msg = 'TAB 13 REDO COMPLETE\n\n' + R.join('\n') +
-    '\n\nPIPELINE MATCH REPORT (read-only — formulas untouched):\n' + P.join('\n');
-  systemLog_('INFO', 'AUDIT TAB REDONE', 'layout/notes/review log applied; formulas untouched');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
-  return msg;
-}
-
-/** (internal) active trainee names for the review-log dropdown. */
-function traineeListSafeV20_1_() {
-  var out = [];
-  try {
-    masterTraineeRowsV20_1_().forEach(function (t) {
-      if (!t.closed && String(t.name).indexOf('EXAMPLE') !== 0 &&
-          String(t.name).indexOf(TEST_PREFIX) !== 0) out.push(t.name);
-    });
-  } catch (e) {}
-  return out;
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0i ADD-ON : make the flags fixable
- * ================================================================ */
-
-/** READ-ONLY: every burning flag explained with its data. */
-function explainFlagsV20_1() {
-  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!sh) return 'Tab 13 not found.';
-  var heads = sh.getRange(4, 2, 1, 6).getDisplayValues()[0];
-  var names = sh.getRange(5, 1, 40, 1).getDisplayValues();
-  var vals = sh.getRange(5, 2, 40, 6).getDisplayValues();
-  var fmls = sh.getRange(5, 2, 40, 6).getFormulas();
-
-  var master = {};
-  masterTraineeRowsV20_1_().forEach(function (t) { master[t.norm] = t; });
-
-  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
-  var engRows = {};
-  if (eng) {
-    eng.getRange(5, 1, 40, 22).getValues().forEach(function (r) {
-      var n = normalizeNameV20_1_(String(r[0] || ''));
-      if (n) engRows[n] = r;
-    });
-  }
-
-  var ev = readTableV20_1_(TAB.EVAL, 4);
-
-  var L = ['FLAG EXPLAINER — READ ONLY', ''];
-  var lit = 0;
-  for (var i = 0; i < 40; i++) {
-    var name = String(names[i][0] || '').trim();
-    if (!name) continue;
-    for (var c = 0; c < 6; c++) {
-      if (String(vals[i][c]).trim() !== 'FLAG') continue;
-      lit++;
-      var norm = normalizeNameV20_1_(name);
-      L.push('■ ' + name + ' — ' + heads[c] + '   (matrix cell ' + String.fromCharCode(66 + c) + (5 + i) + ')');
-      var rec = master[norm];
-      if (rec) L.push('   tab 01 says: phase [' + (rec.phase || '') + '], level [' + (rec.level || '') + '], FTO [' + (rec.fto || '') + ']');
-      var er = engRows[norm];
-      if (er) {
-        L.push('   engine row: evals ' + (er[6] || 0) + ' | days since last ' + (er[8] === '' ? '-' : er[8]) +
-               ' | day in phase ' + (er[20] || 0) + ' | engine phase/status [' + String(er[4] || '') + '] [' + String(er[17] || '') + ']');
-      }
-      if (ev.ok) {
-        var mine = [];
-        ev.rows.forEach(function (r2, k2) {
-          if (normalizeNameV20_1_(String(r2[2] || '')) !== norm) return;
-          var bits = [];
-          ev.headers.forEach(function (h, hi) {
-            var hv = String(r2[hi] == null ? '' : r2[hi]).trim();
-            if (!hv) return;
-            var hl = String(h || '').toLowerCase();
-            if (hl.indexOf('score') >= 0 || hl.indexOf('narrat') >= 0 || hl.indexOf('situation') >= 0 ||
-                hl.indexOf('strength') >= 0 || hl.indexOf('improve') >= 0 || hl.indexOf('assessment') >= 0 ||
-                hl.indexOf('treatment') >= 0 || hl.indexOf('communication') >= 0 || hl.indexOf('documentation') >= 0 ||
-                hl.indexOf('leadership') >= 0 || hl.indexOf('professionalism') >= 0) {
-              bits.push(h + '=' + hv.slice(0, 30));
-            }
-          });
-          mine.push('      02 row ' + (ev.firstDataRow + k2) + ' | ' +
-            String(r2[0]).slice(0, 16) + ' | by ' + String(r2[1] || '') +
-            (bits.length ? ' | ' + bits.join(' · ') : ''));
-        });
-        if (c === 2 || c === 3) { // narrative / silent flags: show the evals
-          L.push('   their eval rows on 02:');
-          if (mine.length) mine.slice(-4).forEach(function (x) { L.push(x); });
-          else L.push('      (none)');
-        }
-      }
-      L.push('   formula: ' + String(fmls[i][c]).slice(0, 220));
-      L.push('');
-    }
-  }
-  if (!lit) L.push('No flags burning. Tab 13 is clear.');
-  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or log the review (amber).');
-  var msg = L.join('\n');
-  Logger.log(msg);
-  return msg;
-}
-
-/** Run once: logged flags turn AMBER, unlogged stay RED. */
-function ackFlagStyleV20_1() {
-  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!sh) return 'Tab 13 not found.';
-  // find the review log (same scan the redo used)
-  var scanN = Math.max(sh.getLastRow(), 60);
-  var scan = sh.getRange(1, 1, scanN, 2).getValues();
-  var logRow = 0;
-  for (var i = 44; i < scan.length; i++) {
-    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
-        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = i + 1; break; }
-  }
-  if (!logRow) return 'FLAG REVIEW LOG not found — run redoAuditTabV20_1 first.';
-  var first = logRow + 2, last = logRow + 21;
-  var matrix = sh.getRange(5, 2, 40, 6);
-  var amberFormula = '=AND(B5="FLAG",COUNTIFS($B$' + first + ':$B$' + last +
-    ',$A5,$C$' + first + ':$C$' + last + ',B$4)>0)';
-  sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(amberFormula)
-      .setBackground('#B7791F').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenCellNotEmpty().setFontColor('#9E9E9E')
-      .setRanges([matrix]).build()
-  ]);
-  var msg = 'Flag colors upgraded.\n\nRED = flag with no review logged (nobody is on it)\n' +
-    'AMBER = same flag, but your FLAG REVIEW LOG (rows ' + first + '-' + last + ') holds a matching ' +
-    'entry — same trainee, same flag type. Still true, visibly handled.\nGONE = the condition is fixed.\n\n' +
-    'To turn a red flag amber: add a log row with the trainee and flag type from the dropdowns.';
-  systemLog_('INFO', 'FLAG ACK STYLE APPLIED', 'red=unlogged, amber=logged, review log rows ' + first + '-' + last);
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0i ADD-ON : fix all current flags, one click
- * ================================================================ */
-function fixAllFlagsNowV20_1() {
-  var ui = null;
-  try { ui = SpreadsheetApp.getUi(); } catch (e0) {}
-  var au = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!au) return 'Tab 13 not found.';
-  var R = [];
-
-  if (ui) {
-    var ok = ui.alert('Fix all current flags',
-      'This will:\n' +
-      '1. Acknowledge every burning PHASE MISMATCH (built-in J/K mechanism)\n' +
-      '2. Review-log every NO NARRATIVE eval so it is visible and owned\n' +
-      '3. Log SILENT RECORD cases to the review log — amber, not erased\n' +
-      '4. Apply amber/red colors and refresh HOME\n\n' +
-      'It does NOT edit tab 02. An FTO\'s submitted evaluation is their ' +
-      'statement; only they can change it.\n\nProceed?', ui.ButtonSet.OK_CANCEL);
-    if (ok !== ui.Button.OK) return 'Cancelled. Nothing changed.';
-  }
-
-  var heads = au.getRange(4, 2, 1, 6).getDisplayValues()[0];
-  var names = au.getRange(5, 1, 40, 1).getDisplayValues();
-  var flags = au.getRange(5, 2, 40, 6).getDisplayValues();
-
-  // ---- 1. acknowledge phase mismatches (column G = index 5) ----
-  var acked = 0;
-  for (var i = 0; i < 40; i++) {
-    if (String(flags[i][5]).trim() !== 'FLAG') continue;
-    var nm = String(names[i][0] || '').trim();
-    if (!nm) continue;
-    au.getRange(5 + i, 11).setValue(nm);          // K : name
-    au.getRange(5 + i, 10).setValue(new Date());   // J : acknowledged through today
-    acked++;
-    R.push('PHASE MISMATCH acknowledged : ' + nm + ' (row ' + (5 + i) + ') — re-lights only on a new wrong-phase eval');
-  }
-  if (!acked) R.push('PHASE MISMATCH : none burning.');
-
-  // ---- 2/3. narrative dodges on 02 ----
-  //
-  // SPEC-v20.2.md #4: this block used to WRITE to tab 02 — it flipped the
-  // FTO's own "Scored 1 or 5" answer from No to Yes, then composed a
-  // justification out of their Strength/Improve text and filed it as though
-  // they had written it. An evaluation is the evaluator's statement about a
-  // person. Correcting it on their behalf, in their name, is the single worst
-  // thing this codebase did. It now detects and review-logs; it writes nothing.
-  var ev = readTableV20_1_(TAB.EVAL, 4);
-  var adverse = [];
-  if (ev.ok && ev.col['Scored 1 or 5'] !== undefined) {
-    var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation', 'Scene Leadership', 'Professionalism'];
-    ev.rows.forEach(function (r, k) {
-      if (String(r[ev.col['Scored 1 or 5']] || '').trim() !== 'No') return;
-      var hasOne = false, hasFive = false;
-      domains.forEach(function (d) {
-        if (ev.col[d] === undefined) return;
-        var v = Number(r[ev.col[d]]);
-        if (v === 1) hasOne = true;
-        if (v === 5) hasFive = true;
-      });
-      if (!hasOne && !hasFive) return; // honest "No"
-      var row = ev.firstDataRow + k;
-      var who = String(r[2] || '').trim();
-      var fto = String(r[1] || '').trim();
-      adverse.push({ trainee: who, fto: fto, row: row,
-                     kind: hasOne ? 'score of 1' : 'praise-only 5' });
-      R.push('NO NARRATIVE (' + (hasOne ? 'score of 1' : 'praise-only 5') + ') : ' + who +
-        ' by ' + fto + ' (02 row ' + row + ') — review-logged; the FTO must supply the ' +
-        'justification themselves. Nothing was written to tab 02.');
-    });
-  } else {
-    R.push('Eval mirror or "Scored 1 or 5" column not found — narrative fixes skipped.');
-  }
-
-  // ---- 4. review-log entries (adverse cases + silent records) ----
-  var scanN = Math.max(au.getLastRow(), 60);
-  var scan = au.getRange(1, 1, scanN, 2).getValues();
-  var logRow = 0;
-  for (var s = 44; s < scan.length; s++) {
-    if (String(scan[s][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
-        String(scan[s][1]).indexOf('FLAG REVIEW LOG') >= 0) { logRow = s + 1; break; }
-  }
-  if (logRow) {
-    var first = logRow + 2;
-    var existing = au.getRange(first, 1, 20, 6).getValues();
-    var used = {}, nextFree = -1;
-    existing.forEach(function (r3, i3) {
-      var t3 = String(r3[1] || '').trim(), f3 = String(r3[2] || '').trim();
-      if (t3) used[normalizeNameV20_1_(t3) + '|' + f3] = true;
-      else if (nextFree < 0) nextFree = first + i3;
-    });
-    function logIt(trainee, flagType, action, status) {
-      if (used[normalizeNameV20_1_(trainee) + '|' + flagType]) { R.push('review log already holds ' + trainee + ' / ' + flagType); return; }
-      if (nextFree < 0) { R.push('review log full — add rows'); return; }
-      au.getRange(nextFree, 1, 1, 6).setValues([[new Date(), trainee, flagType,
-        deciderIdentityV20_2_() || '(unidentified session)', action, status]]);
-      used[normalizeNameV20_1_(trainee) + '|' + flagType] = true;
-      nextFree++;
-      R.push('review-logged : ' + trainee + ' / ' + flagType + ' → amber');
-    }
-    adverse.forEach(function (a) {
-      logIt(a.trainee, 'NO NARRATIVE',
-        'A ' + a.kind + ' by ' + a.fto + ' (02 row ' + a.row + ') was recorded without a ' +
-        'written justification — requested from the FTO', 'Under review');
-    });
-    for (var i2 = 0; i2 < 40; i2++) {
-      if (String(flags[i2][3]).trim() !== 'FLAG') continue; // col E = SILENT RECORD (index 3)
-      var nm2 = String(names[i2][0] || '').trim();
-      if (nm2) logIt(nm2, 'SILENT RECORD', 'Self-reflection required (remediation) — requested from trainee', 'Action taken — awaiting data');
-    }
-  } else {
-    R.push('FLAG REVIEW LOG not found — run redoAuditTabV20_1 first.');
-  }
-
-  // ---- 5. colors + refresh + after-state ----
-  try { R.push(String(ackFlagStyleV20_1())); } catch (e4) {}
-  try { refreshHomeNowV20_1(); } catch (e5) {}
-  SpreadsheetApp.flush();
-  var after = au.getRange(5, 2, 40, 6).getDisplayValues();
-  var still = [];
-  for (var i4 = 0; i4 < 40; i4++) {
-    for (var c4 = 0; c4 < 6; c4++) {
-      if (String(after[i4][c4]).trim() === 'FLAG') {
-        still.push(String(names[i4][0] || '').trim() + ' / ' + heads[c4]);
-      }
-    }
-  }
-  var msg = 'FLAG FIX COMPLETE\n\n' + R.join('\n') +
-    '\n\nStill burning (red or amber): ' + (still.length ? still.join(' ; ') : 'NONE') +
-    '\nAmber = logged and being handled. These go out when the FTO\'s words / the reflection arrive.';
-  systemLog_('INFO', 'FLAGS FIXED',
-    acked + ' phase acks, ' + adverse.length + ' narrative gap(s) review-logged, 0 writes to tab 02');
-  Logger.log(msg);
-  try { if (ui) ui.alert(msg.slice(0, 1400)); } catch (e6) {}
-  return msg;
-}
-
-
-/* ================================================================
- * SCEMS v20.1.0i ADD-ON : flags, simplified for one human
- * ================================================================ */
-function simplifyFlagsV20_1() {
-  // SPEC-v20.2.md #4 — this rewrote the audit tab's detection formulas so they
-  // would return "ACK" for any flag it had just logged under the director's
-  // name, then hid the tab. A detector that answers to acknowledgements it
-  // wrote itself is not a detector. redoAuditTabV20_1 prints "Nothing here is
-  // dismissed by hand" onto the same tab; this dismissed all of it by hand.
-  var m = 'RETIRED in v20.2. Flags are no longer silenced by rewriting the ' +
-          'formulas that raise them.\n\n' +
-          'Use "Accept a flag" (acceptFlagV20_2). It records one flag, one ' +
-          'named human, one typed reason and a review-by date. The flag stays ' +
-          'visible as ACCEPTED, the detection formula is untouched, and the ' +
-          'acceptance expires instead of lasting forever.\n\n' +
-          'If a previous run already wrapped the formulas, ' +
-          'unwrapAuditFormulasV20_1() reverses it.';
-  systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'simplifyFlagsV20_1');
-  try { SpreadsheetApp.getUi().alert(m); } catch (e) {}
-  Logger.log(m); return m;
-}
-
-/** Reversal: strips the ACK wrapper, restoring the original formulas. */
-function unwrapAuditFormulasV20_1() {
-  var au = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!au) return 'Tab 13 not found.';
-  var fmls = au.getRange(5, 2, 40, 6).getFormulas();
-  var restored = 0;
-  for (var r = 0; r < 40; r++) {
-    for (var c = 0; c < 6; c++) {
-      var f = fmls[r][c];
-      if (!f || f.indexOf('"ACK"') < 0) continue;
-      var m = f.match(/^=IF\(COUNTIFS\([^)]*\)>0,"ACK",([\s\S]*)\)$/);
-      if (!m) continue;
-      au.getRange(5 + r, 2 + c).setFormula('=' + m[1]);
-      restored++;
-    }
-  }
-  var msg = restored + ' formula(s) restored to their original form.';
-  systemLog_('INFO', 'AUDIT FORMULAS UNWRAPPED', msg);
-  Logger.log(msg);
-  return msg;
-}
-
-
-/* ==================== 05_governance.gs (v20.2) ==================== */
-
-/************************************************************************
- * SCEMS FTPD v20.2 : 05_governance.gs
- *
- * THE RULE THIS FILE ENFORCES
- *   Anything that becomes part of a person's permanent record has exactly
- *   one way in, and that way is never bulk, never defaulted, and never
- *   self-attested. Everything else may be as convenient as we can make it.
- *
- * Full reasoning, scope and acceptance checks: SPEC-v20.2.md.
- *
- * Nothing in this file deletes a row from any tab.
- ************************************************************************/
-
-var OVERRIDE_MARKER_V20_2 = '[THRESHOLD OVERRIDE]';
-
-/* ---------------------------------------------------------------- *
- *  Identity  (v20.2)
- * ---------------------------------------------------------------- */
-
-/** Script property holding the one account allowed to operate this system
- *  when the platform will not name the session. Set it with
- *  setOperatorAccountV20_2(); it is deliberately not editable from a sheet
- *  cell, because a value a form or a formula can reach is not a credential. */
-var OPERATOR_PROP_V20_2 = 'SCEMS_OPERATOR_EMAIL';
-
-/** How sure we are about who is running this, strongest first.
- *
- *  ACTIVE     Session.getActiveUser(). The platform names the human at the
- *             keyboard. Only reliable on Workspace accounts.
- *  EFFECTIVE  Session.getEffectiveUser(). The account the script RUNS AS.
- *             For a container-bound script invoked from its own menu, that
- *             is the person clicking, and on a consumer account it is
- *             usually the only answer available. Inside an installable
- *             trigger it is the trigger's owner rather than whoever caused
- *             the event, so it is attested, not verified.
- *  OPERATOR   The account configured in script properties. A deliberate,
- *             one-time declaration by whoever owns the script, stored where
- *             no sheet formula or form response can reach it.
- *
- *  All three are the platform or the owner answering. None of them is the
- *  thing v20.2 removed: reading a name a user typed into a spreadsheet cell
- *  at decision time and treating it as authority. */
-var IDENTITY_TIERS_V20_2 = ['ACTIVE', 'EFFECTIVE', 'OPERATOR'];
-
-/** Resolves who is acting. Returns { email, tier, verified, note }.
- *  email is '' only when nothing could identify the session at all. */
-function identityV20_2_() {
-  var e1 = '';
-  try { e1 = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
-  if (e1) {
-    return { email: e1, tier: 'ACTIVE', verified: true, note: '' };
-  }
-
-  var e2 = '';
-  try { e2 = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
-  if (e2) {
-    return { email: e2, tier: 'EFFECTIVE', verified: false,
-      note: 'the account this script runs as, not confirmed as the person at the keyboard' };
-  }
-
-  var e3 = '';
-  try {
-    e3 = String(PropertiesService.getScriptProperties()
-      .getProperty(OPERATOR_PROP_V20_2) || '').trim().toLowerCase();
-  } catch (e) {}
-  if (e3 && isValidEmailV20_1_(e3)) {
-    return { email: e3, tier: 'OPERATOR', verified: false,
-      note: 'the configured operator account; the platform named nobody' };
-  }
-
-  return { email: '', tier: '', verified: false,
-    note: 'the platform named nobody and no operator account is configured' };
-}
-
-/** The label stamped beside a decider on a permanent record. Empty when the
- *  identity was actually verified, so clean records stay clean. */
-function identityStampV20_2_(id) {
-  if (!id || !id.email) return ' [IDENTITY UNKNOWN]';
-  if (id.verified) return '';
-  return ' [IDENTITY ' + id.tier + ', ATTESTED]';
-}
-
-/** Declares the account that may operate this system when Google will not
- *  name the session. Run once, from the script editor, by the person who
- *  owns the script.
- *
- *  This is the consumer-account accommodation, and it is narrower than it
- *  looks: it names ONE address, it is stored in script properties where no
- *  sheet or form can reach it, every use of it is logged, and every record
- *  written under it carries [IDENTITY OPERATOR, ATTESTED] permanently. It
- *  does not restore the v20.1 hole, which let anyone who typed "Medical
- *  Director" into a cell sign off a clinical competency. */
-function setOperatorAccountV20_2(email) {
-  var e = String(email || '').trim().toLowerCase();
-  if (!e) {
-    var cur = PropertiesService.getScriptProperties().getProperty(OPERATOR_PROP_V20_2) || '(none)';
-    var m0 = 'Operator account is currently: ' + cur +
-      '\n\nTo set it:  setOperatorAccountV20_2("you@example.com")' +
-      '\nTo clear it: setOperatorAccountV20_2("CLEAR")';
-    Logger.log(m0); return m0;
-  }
-  if (e === 'clear') {
-    PropertiesService.getScriptProperties().deleteProperty(OPERATOR_PROP_V20_2);
-    systemLog_('WARN', 'OPERATOR ACCOUNT CLEARED', 'fallback identity removed');
-    var m1 = 'Operator account cleared. If Google does not name the session, every ' +
-             'gated action will now refuse.';
-    Logger.log(m1); return m1;
-  }
-  if (!isValidEmailV20_1_(e)) {
-    var m2 = 'Refused: "' + email + '" is not a valid email address. Nothing was set.';
-    Logger.log(m2); return m2;
-  }
-  PropertiesService.getScriptProperties().setProperty(OPERATOR_PROP_V20_2, e);
-  systemLog_('WARN', 'OPERATOR ACCOUNT SET', e);
-  var msg = 'Operator account set to ' + e + '.\n\n' +
-    'This is used ONLY when Google will not name the session. Every record ' +
-    'written that way is stamped [IDENTITY OPERATOR, ATTESTED] permanently, ' +
-    'and every use is logged to 93 ACCESS LOG.\n\n' +
-    'It is an accommodation for consumer Google accounts, not a substitute ' +
-    'for Workspace accounts. The health check will keep saying so.';
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e2) {}
-  return msg;
-}
-
-
-
-/** Which roles may perform which action. Anything not listed is director-only
- *  by default, so a new action fails closed rather than open. */
-var ACTION_ROLES_V20_2 = Object.freeze({
-  'ADVANCE TRAINEE':        ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
-  'CLOSE TRAINEE':          ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
-  'WORK QUEUE':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
-  'RECORD WITNESSED SKILL': ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
-  'ACCEPT AUDIT FLAG':      ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'MEDICAL_DIRECTOR'],
-  'CHANGE DELIVERY MODE':   ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
-  'READ PROGRAM REPORT':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION', 'COMMAND', 'MEDICAL_DIRECTOR'],
-  'RUN BACKUP':             ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
-  'PROTECT RECORD TABS':    ['PROGRAM_DIRECTOR', 'TRAINING_DIVISION'],
-  'DELETE TEST ROWS':       ['PROGRAM_DIRECTOR']
-});
-
-/** Writes one row to the access log, and always to the system log. The access
- *  log may not exist before migration; that must never lose the entry. */
-function logAccessV20_2_(action, email, authorized, detail) {
-  systemLog_(authorized ? 'INFO' : 'WARN',
-    'ACCESS ' + (authorized ? 'GRANTED' : 'REFUSED'),
-    action + ' | ' + (email || '(unidentified)') + ' | ' + String(detail || '').slice(0, 300));
-  try {
-    appendRowsHeaderMappedV20_1_(TAB.ACCESS, 4, [{
-      'ACCESS ID': newIdV20_1_('AC'), 'TIMESTAMP': new Date(), 'KIND': action,
-      'REQUESTED BY': email || '(unidentified)', 'VERIFIED EMAIL': email || '(none)',
-      'AUTHORIZED': authorized ? 'YES' : 'NO', 'SUBJECT': '', 'DELIVERED TO': '',
-      'REASON': '', 'DETAIL': String(detail || '').slice(0, 400)
-    }], ['ACCESS ID']);
-  } catch (e) { /* system log above already holds it */ }
-}
-
-/** THE GATE. Returns { ok, actor, email, message }.
- *
- *  Refuses outright when the platform cannot identify the session. There is
- *  deliberately no fallback to a typed name: a record that cannot say who
- *  made it is worse than an operator who is briefly locked out. When this
- *  refuses on a consumer Google account, that is the Workspace move becoming
- *  urgent rather than optional — the message says so. */
-function requireActorV20_2_(action, allowedRoles) {
-  var act = String(action || '').toUpperCase();
-  var roles = allowedRoles || ACTION_ROLES_V20_2[act] || ['PROGRAM_DIRECTOR'];
-  var id = identityV20_2_();
-  var email = id.email;
-  var out = { ok: false, actor: null, email: email, identity: id, message: '' };
-
-  if (!email) {
-    out.message =
-      'REFUSED : ' + act + '\n\n' +
-      'Nothing identifies who is running this, so the action could not be\n' +
-      'attributed to anyone. Nothing was written.\n\n' +
-      'Google names the session on Workspace accounts. On a consumer account\n' +
-      'it often will not, and this script has no operator account configured\n' +
-      'either.\n\n' +
-      'FIX: open the script editor and run\n' +
-      '     setOperatorAccountV20_2("' + (CONFIG.TCO_EMAIL || 'you@example.com') + '")\n' +
-      'once. Records written that way are permanently stamped\n' +
-      '[IDENTITY OPERATOR, ATTESTED].\n\n' +
-      'Earlier versions instead read whatever name was typed into the\n' +
-      'DECIDED BY cell. That is what produced sign-offs credited to people\n' +
-      'who never made them, and it is not coming back.';
-    logAccessV20_2_(act, '', false, 'no identity at any tier');
-    return out;
-  }
-
-  var actor = resolveAuthorizedActorV20_1_(email);
-  var granted = actor.ok && roles.some(function (r) { return actor.roles.indexOf(r) >= 0; });
-  out.actor = actor;
-  if (!granted) {
-    out.message =
-      'REFUSED : ' + act + '\n\n' +
-      'Signed in as ' + email + '  [' + id.tier + (id.verified ? '' : ', attested') + ']\n' +
-      'Roles held  : ' + (actor.roles.length ? actor.roles.join(', ') : 'none') + '\n' +
-      'Roles needed: ' + roles.join(', ') + '\n\n' +
-      'Nothing was written. If this is wrong, the fix is on 22 FTO ROSTER or\n' +
-      '90 PERSON REGISTRY, not here.';
-    logAccessV20_2_(act, email, false, 'held [' + actor.roles.join(',') + '] needed [' + roles.join(',') + ']');
-    return out;
-  }
-
-  out.ok = true;
-  logAccessV20_2_(act, email, true,
-    'roles [' + actor.roles.join(',') + '] | identity ' + id.tier +
-    (id.verified ? ' (verified)' : ' (attested: ' + id.note + ')'));
-  return out;
-}
-
-/** Returns '' when the action is allowed, or the refusal message (already
- *  logged and shown) when it is not. Lets a string-returning function refuse
- *  with `var deny = denyV20_2_('X'); if (deny) return deny;`. */
-function denyV20_2_(action, allowedRoles) {
-  var g = requireActorV20_2_(action, allowedRoles);
-  if (g.ok) return '';
-  Logger.log(g.message);
-  try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
-  return g.message;
-}
-
-/** Gate helper for the menu flows: refuses, tells the operator why, returns
- *  false. Callers do `if (!gateV20_2_('WORK QUEUE')) return;`. */
-function gateV20_2_(action, allowedRoles) {
-  var g = requireActorV20_2_(action, allowedRoles);
-  if (!g.ok) {
-    Logger.log(g.message);
-    try { SpreadsheetApp.getUi().alert(g.message); } catch (e) {}
-    return false;
-  }
-  return true;
-}
-
-/** The identity to stamp on a record, or '' when unknown. Never invents one. */
-function deciderIdentityV20_2_() {
-  return sessionEmailV20_1_();
-}
-
-/* ---------------------------------------------------------------- *
- *  Evidence gate
- * ---------------------------------------------------------------- */
-
-/** Current READINESS for one trainee/skill straight off the matrix, or ''
- *  when the pair is not on it. Read-only. */
-function skillReadinessNowV20_2_(trainee, skillId) {
-  var t = readTableV20_1_(TAB.SKILLS, 4);
-  if (!t.ok) return '';
-  var cT = t.col['TRAINEE'], cS = t.col['SKILL ID'], cR = t.col['READINESS'];
-  if (cT === undefined || cS === undefined || cR === undefined) return '';
-  var tn = normalizeNameV20_1_(trainee);
-  var sid = String(skillId || '').trim();
-  for (var i = 0; i < t.rows.length; i++) {
-    if (normalizeNameV20_1_(t.rows[i][cT]) !== tn) continue;
-    if (String(t.rows[i][cS] || '').trim() !== sid) continue;
-    return String(t.rows[i][cR] || '').trim();
-  }
-  return '';
-}
-
-/** SPEC-v20.2.md #3 — an approval needs a reason a human actually chose.
- *
- *  The old code filled in "Evidence thresholds met, FTO recommendation
- *  accepted" on a keystroke. That is a factual claim about evidence, written
- *  under a named decider, that nothing had checked. This asks instead, and
- *  when the matrix disagrees with the approval it says so BEFORE the reason is
- *  typed, so the override is a decision rather than a surprise error.
- *
- *  Returns '' when the operator backs out — callers treat that as a skip.
- */
-function approvalRationalePromptV20_2_(ui, title, trainee, skillId) {
-  var readiness = skillReadinessNowV20_2_(trainee, skillId);
-  var ready = (readiness === 'READY FOR VALIDATION');
-
-  if (!ready) {
-    var warn = ui.alert('Evidence gate : ' + title,
-      'The matrix reads "' + (readiness || 'not on the matrix') + '" for this skill, ' +
-      'not READY FOR VALIDATION.\n\n' +
-      'You may still approve — your judgement is the point of this role — but the ' +
-      'record will be permanently stamped ' + OVERRIDE_MARKER_V20_2 + ' so the ' +
-      'exception is visible to anyone who reads it later.\n\n' +
-      'Approve anyway?', ui.ButtonSet.YES_NO);
-    if (warn !== ui.Button.YES) return '';
-  }
-
-  var r = ui.prompt('Approve : ' + title,
-    'Why is this competency signed off? This becomes the official reason on a ' +
-    'permanent record, in your name.\n\n' +
-    (ready ? 'Examples: "Evidence thresholds met, FTO recommendation accepted", ' +
-             '"Directly observed and verified".'
-           : 'Say what you relied on instead of the thresholds.') +
-    '\n\n(Blank cancels this one and moves on.)',
-    ui.ButtonSet.OK_CANCEL);
-  if (r.getSelectedButton() !== ui.Button.OK) return '';
-  var text = String(r.getResponseText() || '').trim();
-  if (!text) return '';
-  if (!ready && text.indexOf(OVERRIDE_MARKER_V20_2) < 0) {
-    text = OVERRIDE_MARKER_V20_2 + ' ' + text;
-  }
-  return text;
-}
-
-/** Evidence gate for an Approve sign-off. Returns a problem string, or ''.
- *  An approval below threshold is not forbidden — it is required to be
- *  DISTINGUISHABLE, by carrying the override marker into the permanent
- *  record. Returns and revokes are never gated. */
-function evidenceGateProblemV20_2_(decision, trainee, skillId, rationale) {
-  if (decision !== 'Approve sign-off') return '';
-  var readiness = skillReadinessNowV20_2_(trainee, skillId);
-  if (readiness === 'READY FOR VALIDATION') return '';
-  if (String(rationale || '').indexOf(OVERRIDE_MARKER_V20_2) >= 0) return '';
-  return 'evidence gate: this skill reads "' + (readiness || 'not on the matrix') +
-    '", not READY FOR VALIDATION. Approving anyway is allowed but must be ' +
-    'deliberate — add the override through the menu so the record shows it';
-}
-
-/* ---------------------------------------------------------------- *
- *  Audit flags : an honest acceptance path
- * ---------------------------------------------------------------- */
-
-var FLAG_ACCEPT_STATUS_V20_2 = 'Accepted';
-var FLAG_ACCEPT_DAYS_V20_2 = 90;
-
-/** Locates the FLAG REVIEW LOG on tab 13. Returns { headerRow, firstEntry,
- *  lastEntry } or null. Same scan the existing tools use. */
-function flagReviewLogV20_2_(sh) {
-  var scanN = Math.max(sh.getLastRow(), 60);
-  var scan = sh.getRange(1, 1, scanN, 2).getValues();
-  for (var i = 44; i < scan.length; i++) {
-    if (String(scan[i][0]).indexOf('FLAG REVIEW LOG') >= 0 ||
-        String(scan[i][1]).indexOf('FLAG REVIEW LOG') >= 0) {
-      return { headerRow: i + 2, firstEntry: i + 3, lastEntry: i + 22 };
-    }
-  }
-  return null;
-}
-
-/** Every currently burning flag on tab 13, read-only. */
-function burningFlagsV20_2_() {
-  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
-  var out = [];
-  if (!sh) return out;
-  var heads = sh.getRange(4, 2, 1, 6).getDisplayValues()[0];
-  var names = sh.getRange(5, 1, 40, 1).getDisplayValues();
-  var vals = sh.getRange(5, 2, 40, 6).getDisplayValues();
-  for (var i = 0; i < 40; i++) {
-    var who = String(names[i][0] || '').trim();
-    if (!who) continue;
-    for (var c = 0; c < 6; c++) {
-      if (String(vals[i][c]).trim() !== 'FLAG') continue;
-      out.push({ trainee: who, flagType: heads[c] || ('column ' + (c + 2)), row: 5 + i });
-    }
-  }
-  return out;
-}
-
-/** ACCEPT ONE FLAG. One flag, one named human, one typed reason, one date.
- *
- *  The flag STAYS VISIBLE and keeps reading FLAG — acceptance is recorded
- *  beside it, never instead of it, and no detection formula is touched. The
- *  acceptance expires, so it is a decision with a shelf life rather than a
- *  permanent silence. This is the supported replacement for the bulk
- *  silencing that v20.1 shipped and v20.2 retires. */
-function acceptFlagV20_2() {
-  if (!gateV20_2_('ACCEPT AUDIT FLAG')) return;
-  var ui = SpreadsheetApp.getUi();
-  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
-  if (!sh) { ui.alert('Tab 13 not found.'); return; }
-
-  var burning = burningFlagsV20_2_();
-  if (!burning.length) { ui.alert('No flags are burning. Nothing to accept.'); return; }
-
-  var log = flagReviewLogV20_2_(sh);
-  if (!log) { ui.alert('FLAG REVIEW LOG not found on tab 13. Run redoAuditTabV20_1 once first.'); return; }
-
-  var listing = burning.slice(0, 20).map(function (f, i) {
-    return (i + 1) + '  ' + f.trainee + ' — ' + f.flagType; }).join('\n');
-  var r1 = ui.prompt('Accept one flag  (1 of 2)',
-    burning.length + ' flag(s) burning. Type the number of the ONE you are accepting:\n\n' +
-    listing + (burning.length > 20 ? '\n   …and ' + (burning.length - 20) + ' more' : ''),
-    ui.ButtonSet.OK_CANCEL);
-  if (r1.getSelectedButton() !== ui.Button.OK) return;
-  var pick = parseInt(String(r1.getResponseText() || '').trim(), 10);
-  if (!(pick >= 1 && pick <= Math.min(burning.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
-  var flag = burning[pick - 1];
-
-  var r2 = ui.prompt('Accept one flag  (2 of 2)',
-    flag.trainee + ' — ' + flag.flagType + '\n\n' +
-    'Why is this acceptable? This goes on the record in your name.\n' +
-    'There is no default: a blank answer cancels.',
-    ui.ButtonSet.OK_CANCEL);
-  if (r2.getSelectedButton() !== ui.Button.OK) return;
-  var reason = String(r2.getResponseText() || '').trim();
-  if (!reason) { ui.alert('No reason given. Nothing recorded.'); return; }
-
-  var reviewBy = new Date();
-  reviewBy.setDate(reviewBy.getDate() + FLAG_ACCEPT_DAYS_V20_2);
-  var who = deciderIdentityV20_2_();
-
-  var existing = sh.getRange(log.firstEntry, 1, log.lastEntry - log.firstEntry + 1, 6).getValues();
-  var free = -1;
-  for (var i = 0; i < existing.length; i++) {
-    if (!String(existing[i][1] || '').trim()) { free = log.firstEntry + i; break; }
-  }
-  if (free < 0) { ui.alert('The FLAG REVIEW LOG is full. Add rows beneath it, then try again.'); return; }
-
-  sh.getRange(free, 1, 1, 6).setValues([[
-    new Date(), flag.trainee, flag.flagType, who,
-    sanitizeCellV20_1_('Accepted until ' + dateKeyV20_1_(reviewBy) + ' — ' + reason),
-    FLAG_ACCEPT_STATUS_V20_2
-  ]]);
-
-  // Keep the STATUS dropdown honest about the value we just wrote.
-  try {
-    sh.getRange(log.firstEntry, 6, log.lastEntry - log.firstEntry + 1, 1).setDataValidation(
-      SpreadsheetApp.newDataValidation().requireValueInList(
-        ['Under review', 'Action taken — awaiting data', 'Resolved', FLAG_ACCEPT_STATUS_V20_2], true)
-        .setAllowInvalid(true).build());
-  } catch (e) {}
-
-  var msg = 'Accepted.\n\n' + flag.trainee + ' — ' + flag.flagType +
-    '\nAccepted by : ' + who +
-    '\nReview by   : ' + dateKeyV20_1_(reviewBy) +
-    '\nReason      : ' + reason +
-    '\n\nThe flag stays visible and still counts as outstanding. Acceptance is ' +
-    'recorded beside it, not instead of it, and it expires on the review date. ' +
-    'No detection formula was changed.';
-  systemLog_('WARN', 'AUDIT FLAG ACCEPTED',
-    flag.trainee + ' | ' + flag.flagType + ' | by ' + who + ' | review by ' + dateKeyV20_1_(reviewBy));
-  ui.alert(msg);
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Record-tab protections : immutability as a control
- * ---------------------------------------------------------------- */
-
-/** Applies sheet protection to the tabs that hold permanent records, so
- *  "append-only" stops being a convention that seven code paths ignore.
- *  Reports rather than forces, and is safe to re-run. */
-function protectRecordTabsV20_2() {
-  if (!gateV20_2_('PROTECT RECORD TABS')) return;
-  var DESC = 'SCEMS v20.2 record tab — script writes, people do not';
-  var tabs = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF,
-              TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS, TAB.LOG];
-  var out = [];
-  tabs.forEach(function (name) {
-    var sh = getSheetOrNullV20_1_(name);
-    if (!sh) { out.push('  ' + name + ' : absent, skipped'); return; }
-    try {
-      var existing = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)
-        .filter(function (p) { return String(p.getDescription() || '') === DESC; });
-      var p = existing.length ? existing[0] : sh.protect().setDescription(DESC);
-      var editors = p.getEditors();
-      if (editors.length) p.removeEditors(editors.map(function (u) { return u.getEmail(); }));
-      if (p.canDomainEdit && p.canDomainEdit()) p.setDomainEdit(false);
-      p.setWarningOnly(false);
-      out.push('  ' + name + ' : protected (' + (existing.length ? 'refreshed' : 'new') + ')');
-    } catch (e) {
-      out.push('  ' + name + ' : NOT protected — ' + e);
-    }
-  });
-  var msg = 'RECORD TAB PROTECTION\n\n' + out.join('\n') +
-    '\n\nOnly this account and the script may now write to these tabs.\n' +
-    'Everything the system does still works: the script writes as you.\n' +
-    'Re-run this after adding an editor to the spreadsheet.';
-  systemLog_('INFO', 'RECORD TABS PROTECTED', out.join(' | ').slice(0, 400));
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Health check : the one diagnostic that names the next action
- * ---------------------------------------------------------------- */
-
-var HEALTH_RANK_V20_2 = { BLOCKER: 0, WARN: 1, INFO: 2, CLEAR: 3 };
-
-/** Runs the cheap read-only detectors and returns what needs attention,
- *  worst first, each naming the exact function to run. This exists because
- *  every gap-detector in this system is otherwise editor-only and invisible:
- *  the checks were already written, nobody could find them. Writes nothing. */
-function healthCheckV20_2() {
-  var items = [];
-  function add(sev, headline, run) { items.push({ sev: sev, headline: headline, run: run || '' }); }
-  function guard(fn) { try { fn(); } catch (e) { add('WARN', 'A check could not run: ' + e, ''); } }
-
-  guard(function () {
-    if (isTestMode_()) {
-      add('BLOCKER', 'Delivery is in TEST MODE. Every alert — including unsafe scores and ' +
-        '72-hour breaches — reroutes to ' + CONFIG.TEST_INBOX + ' and reaches nobody else.', 'goLive');
-    }
-  });
-
-  guard(function () {
-    var n = masterTraineeRowsV20_1_().length;
-    if (n > 40) {
-      add('BLOCKER', n + ' trainees on the master, but most readers only see the first 40. ' +
-        'Trainee 41 onward gets no reminder, no status card, no digest line and no skill matrix.', '');
-    }
-  });
-
-  guard(function () {
-    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
-    var missing = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
-    if (missing.length) add('BLOCKER', 'Trigger(s) not installed: ' + missing.join(', '), 'repairAllTriggersNow');
-  });
-
-  // A form-bound trigger cannot be checked by handler name alone: one handler
-  // serves four forms, so "onSkillsGridSubmitV20 exists" says nothing about
-  // WHICH forms reach it. This is exactly how the combined skills form went
-  // unbound while every trigger check in the system reported healthy.
-  guard(function () {
-    var bound = {};
-    ScriptApp.getProjectTriggers().forEach(function (t) {
-      var src = '';
-      try { src = String(t.getTriggerSourceId() || ''); } catch (e) {}
-      if (src) bound[src] = true;
-    });
-    var unbound = [];
-    formBoundTriggerPlanV20_2_().forEach(function (p) {
-      var f = getStoredFormV19_(p.title);
-      if (!f) return;                       // absent form is a different problem
-      if (!bound[f.getId()]) unbound.push(p.title);
-    });
-    if (unbound.length) {
-      add('BLOCKER', unbound.length + ' live form(s) have NO trigger bound: ' + unbound.join(', ') +
-        '. Submissions to them are dropped — onHubFormSubmit refuses them as form-trigger-owned, ' +
-        'and the ledger records the loss as SKIPPED_OWNED. Nothing reaches the evidence log.',
-        'repairAllTriggersNow');
-    }
-  });
-
-  guard(function () {
-    var dq = getSheetOrNullV20_1_(TAB.QUEUE);
-    if (!dq) return;
-    var used = dq.getRange(5, 1, 296, 1).getValues().filter(function (r) { return r[0]; }).length;
-    if (used >= 296) {
-      add('BLOCKER', 'Decision queue is FULL (296/296). queueAdd now throws, which blocks ' +
-        'shift-evaluation ingestion entirely.', '');
-    } else if (used > 250) {
-      add('WARN', 'Decision queue is ' + used + '/296 full. At 296 it throws and blocks ingestion.', '');
-    }
-  });
-
-  guard(function () {
-    var led = readTableV20_1_(TAB.LEDGER, 4);
-    if (!led.ok) return;
-    var terminal = ['PROCESSED', 'SKIPPED_OWNED', 'SKIPPED_DUPLICATE', 'RECONCILED'];
-    var bad = 0;
-    led.rows.forEach(function (r) {
-      var st = String(r[led.col['STATE']] || '');
-      if (st && terminal.indexOf(st) < 0) bad++;
-    });
-    if (bad) add('WARN', bad + ' form submission(s) never reached a terminal state.', 'ingestionExceptionReportV20_1');
-  });
-
-  guard(function () {
-    var q = readTableV20_1_(TAB.SKILL_VALIDATION, 4);
-    if (!q.ok) return;
-    var open = 0, stranded = 0;
-    q.rows.forEach(function (r) {
-      if (!String(r[q.col['TRAINEE']] || '').trim()) return;
-      if (String(r[q.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
-      open++;
-      if (String(r[q.col['DECISION']] || '').trim()) stranded++;
-    });
-    if (stranded) add('WARN', stranded + ' queue row(s) hold a decision that was never recorded.',
-      'previewStrandedDecisionsV20_1');
-    if (open) add('INFO', open + ' skill request(s) waiting on you.', 'workMyQueueV20_1');
-  });
-
-  guard(function () {
-    var f = burningFlagsV20_2_();
-    if (f.length) {
-      add('WARN', f.length + ' audit flag(s) burning. Fix the condition, or accept one on the ' +
-        'record with a reason and a review date.', 'acceptFlagV20_2');
-    }
-  });
-
-  guard(function () {
-    var unprotected = [];
-    [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].forEach(function (n) {
-      var sh = getSheetOrNullV20_1_(n);
-      if (sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) unprotected.push(n);
-    });
-    if (unprotected.length) {
-      add('WARN', 'Any editor can still overwrite these record tabs: ' + unprotected.join(', '),
-        'protectRecordTabsV20_2');
-    }
-  });
-
-  guard(function () {
-    var left = MailApp.getRemainingDailyQuota();
-    if (left <= MAIL_ALERT_RESERVE_V20_2) {
-      add('BLOCKER', 'Mail quota is down to ' + left + ' recipient(s). Bulk digests are now ' +
-        'held back, but if this reaches zero an unsafe-outcome or 72-hour breach alert will ' +
-        'not send either. Consumer accounts allow 100/day; Workspace allows 1,500.', '');
-    } else if (left < MAIL_ALERT_RESERVE_V20_2 * 2) {
-      add('WARN', 'Mail quota is at ' + left + ' recipient(s) for the rest of today.', '');
-    }
-  });
-
-  guard(function () {
-    var last = PropertiesService.getScriptProperties().getProperty('LAST_FULL_BACKUP') || '';
-    if (!last) { add('WARN', 'No full backup package has ever been created.', 'fullBackupV20_1'); return; }
-    var d = parseDateSafeV20_1_(last.slice(0, 10));
-    if (d && (new Date() - d) / 86400000 > 40) {
-      add('WARN', 'Newest full backup is ' + Math.round((new Date() - d) / 86400000) +
-        ' days old (' + last + ').', 'fullBackupV20_1');
-    }
-  });
-
-  guard(function () {
-    var id = identityV20_2_();
-    if (!id.email) {
-      add('BLOCKER', 'Nothing identifies who is running this script, so every gated action ' +
-        'will refuse and no decision can be attributed. Run setOperatorAccountV20_2() once ' +
-        'from the script editor, or move the program to Workspace accounts.',
-        'setOperatorAccountV20_2');
-    } else if (id.tier === 'OPERATOR') {
-      add('WARN', 'Running as the configured operator account (' + id.email + '). Google is ' +
-        'naming nobody, so every record written is stamped [IDENTITY OPERATOR, ATTESTED]. ' +
-        'That is honest, but it is not the same as a verified signature — Workspace accounts ' +
-        'are what make attribution real.', '');
-    } else if (!id.verified) {
-      add('WARN', 'Identity is ' + id.tier + ' rather than verified (' + id.email + '): ' +
-        id.note + '. Records are stamped accordingly.', '');
-    }
-  });
-
-  items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
-
-  var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
-  if (!items.length) {
-    L.push('CLEAR. Nothing needs you.');
-  } else {
-    items.forEach(function (it) {
-      L.push(it.sev + '  ' + it.headline);
-      if (it.run) L.push('        run: ' + it.run + '()');
-      L.push('');
-    });
-    var blockers = items.filter(function (i) { return i.sev === 'BLOCKER'; }).length;
-    L.push(blockers ? blockers + ' blocker(s) first — the rest can wait.'
-                    : 'No blockers. Work the list top down.');
-  }
-  var msg = L.join('\n');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/* ---------------------------------------------------------------- *
- *  Menu : six verbs, everything else behind Admin
- * ---------------------------------------------------------------- */
-
-/** THE ONLY onOpen IN THIS PROJECT. The two earlier definitions were deleted
- *  in v20.2 — the first had been dead since the second was appended, which is
- *  exactly the failure mode of editing by pasting at the bottom. */
-function onOpen(e) {
-  try {
-    var ui = SpreadsheetApp.getUi();
-    ui.createMenu('SCEMS')
-      .addItem('Trainees (start here)', 'openTraineeConsoleV20_3')
-      .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
-      .addSeparator()
-      .addItem('Work my queue', 'workMyQueueV20_1')
-      .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
-      .addItem('Advance a trainee', 'advanceTraineeNow')
-      .addItem('Close / release a trainee', 'closeTraineeV20_1')
-      .addSeparator()
-      .addItem('Health check', 'healthCheckV20_2')
-      .addItem('Backup now', 'fullBackupV20_1')
-      .addSeparator()
-      .addSubMenu(ui.createMenu('Admin')
-        .addItem('Health check', 'healthCheckV20_2')
-        .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
-        .addSeparator()
-        .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
-        .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
-        .addItem('Make everything simpler', 'SIMPLIFY_EVERYTHING')
-        .addItem('Fix and polish the sheet headers', 'POLISH_SHEETS')
-        .addItem('Check entry profiles (read-only)', 'auditEntryProfilesV20_4')
-        .addItem('Show every hidden column', 'showAllColumnsV20_4')
-        .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
-        .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
-        .addItem('Tidy up the tabs', 'organizeTabsV20_2')
-        .addItem('Show every tab', 'showAllTabsV20_2')
-        .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
-        .addSeparator()
-        .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
-        .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
-        .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
-        .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
-        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
-        .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
-        .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
-        .addSeparator()
-        .addItem('Which mode am I in?', 'whichMode')
-        .addItem('Version report', 'versionReportV20_1')
-        .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
-        .addSeparator()
-        .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
-        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
-        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
-        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
-        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
-        .addSeparator()
-        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
-        .addItem('System review — core (read-only)', 'reviewCoreV20_1')
-        .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
-        .addItem('Migration preview (read-only)', 'previewMigrationV20_1'))
-      .addSubMenu(ui.createMenu('Go live / test')
-        .addItem('Go LIVE', 'goLive')
-        .addItem('Back to TEST mode', 'backToTestMode'))
-      .addToUi();
-  } catch (err) {
-    Logger.log('onOpen menu skipped: ' + err);
-  }
-}
-
-/* ================================================================
- *  Catching up the responses that arrived while nothing was listening
- * ================================================================ */
-
 /** Replays every form response that never reached the ledger.
  *
  *  A form with no submit trigger does not lose its answers: they land in the
@@ -12983,6 +12014,7 @@ function onOpen(e) {
  *
  *  catchUpUnprocessedPreview() shows what it would do and writes nothing. */
 function catchUpUnprocessed() { return catchUpUnprocessedV20_2_(false); }
+
 function catchUpUnprocessedPreview() { return catchUpUnprocessedV20_2_(true); }
 
 function catchUpUnprocessedV20_2_(previewOnly) {
@@ -13075,6 +12107,635 @@ function catchUpUnprocessedV20_2_(previewOnly) {
   return msg;
 }
 
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 95_runners
+ *
+ * Triggers, the menu, and the functions a human runs by name.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   START HERE
+ *   Permanent one-click utilities. These wrap the token-gated maintenance
+ *   functions so they can be run straight from the editor dropdown without
+ *   pasting temporary code. Each is safe to run repeatedly.
+ */
+
+/** Everything, end to end: fix what is wrong, say it in English, put the
+ *  badge on it, and tidy up. This is the one to run. */
+function MAKE_IT_PROFESSIONAL() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — full pass', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 105)); });
+    } catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180)); }
+  }
+  step(1, 'Name the unnamed column on the decision queue', repairDecisionQueueHeaderV20_4);
+  step(2, 'Check entry profiles agree with their key', auditEntryProfilesV20_4);
+  step(3, 'Lift the legend out of the data table', tidyEntryProfileLegendV20_4);
+  step(4, 'Rewrite headers in plain English', renameHeadersV20_4);
+  step(5, 'Put thresholds beside the counts', rewriteEvidenceSummariesV20_4);
+  step(6, 'Build the TRAINEES console', buildTraineeConsoleV20_3);
+  step(7, 'Widen what holds words', makeSheetsReadableV20_3);
+  step(8, 'Tuck the machine columns away', groupPlumbingColumnsV20_4);
+  step(9, 'Put the badge and a masthead on every page', brandAllSheetsV20_5);
+  step(10, 'Order the tabs and hide the machinery', organizeTabsV20_2);
+  L.push('');
+  L.push('Open TRAINEES. That is the page you work from.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'FULL PASS RUN', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  Everything, in the right order
+ * ---------------------------------------------------------------- */
+
+/** Fixes what is wrong, then makes the rest readable. Correctness first:
+ *  a mislabelled column is a different kind of problem from an ugly one. */
+function POLISH_SHEETS() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SHEET POLISH — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110)); });
+    } catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
+  }
+  L.push('CORRECTNESS');
+  step(1, 'Name the unnamed column on the decision queue', repairDecisionQueueHeaderV20_4);
+  step(2, 'Check entry profiles agree with their key', auditEntryProfilesV20_4);
+  step(3, 'Lift the legend out of the data table', tidyEntryProfileLegendV20_4);
+  L.push('');
+  L.push('READABILITY');
+  step(4, 'Rewrite headers in plain English', renameHeadersV20_4);
+  step(5, 'Put thresholds beside the counts', rewriteEvidenceSummariesV20_4);
+  step(6, 'Tuck the machine columns away', groupPlumbingColumnsV20_4);
+  step(7, 'Widen what holds words, narrow what holds dates', makeSheetsReadableV20_3);
+  L.push('');
+  L.push('If step 2 found disagreements, they are yours to settle — which entry');
+  L.push('profile is right is a fact about that person, and this will not guess.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** One command: build the console, make everything readable, tidy the tabs. */
+function SIMPLIFY_EVERYTHING() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
+    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
+  L.push('');
+  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
+  L.push('history as a document; tick "Release" when they are done. Nothing else is');
+  L.push('needed day to day.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---------------------------------------------------------------- *
+ *  One button for "my sheets look wrong"
+ * ---------------------------------------------------------------- */
+
+/** Rebuild, repair, re-tidy — in that order, because each depends on the
+ *  one before it. Reads and rewrites derived views; never touches a record.
+ *
+ *  Order matters:
+ *    1. matrix  — readiness must be current before anything reads it
+ *    2. repair  — re-open requests the old sweep cancelled by mistake
+ *    3. layout  — formatting, dropdowns, home panel
+ *    4. tabs    — order and hide the machinery
+ *    5. health  — what still needs you
+ */
+function FIX_MY_SHEETS() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SHEET REPAIR — ' + SCEMS_VERSION, ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 5).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  step(1, 'Rebuild the skills matrix', function () {
+    rebuildSkillMatrixV19_(); return 'readiness recalculated from the evidence log';
+  });
+  step(2, 'Re-open wrongly cancelled requests', function () {
+    return repairCancelledQueueRowsV20_2();
+  });
+  step(3, 'Re-tidy the queue and home panel', function () {
+    var bits = [];
+    try { bits.push(String(makeQueueReadableV20_1())); } catch (e) { bits.push('queue formatting: ' + e); }
+    try { refreshHomeNowV20_1(); bits.push('home panel refreshed'); } catch (e) { bits.push('home: ' + e); }
+    return bits.join(' | ');
+  });
+  step(4, 'Order the tabs and hide the machinery', function () {
+    return organizeTabsV20_2();
+  });
+
+  L.push('');
+  L.push('Nothing was deleted. Records were not modified — only derived views,');
+  L.push('formatting, and the status of requests the old sweep cancelled by mistake.');
+  L.push('');
+  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'SHEET REPAIR RUN', 'FIX_MY_SHEETS completed');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** The one function to run after pasting v20.2.
+ *
+ *  It takes NO arguments on purpose. The Apps Script editor's Run button
+ *  cannot pass any, so goLiveChecklistV20_2("someone@example.com") is not
+ *  actually runnable from the editor — a detail that matters more than it
+ *  should, because it is the first thing anyone does.
+ *
+ *  It works out who you are from the session, so there is nothing to type.
+ *  Falls back to the configured program director if Google says nothing.
+ *
+ *  Safe to run again at any time. It writes no records and deletes nothing.
+ */
+function START_HERE() {
+  var who = '';
+  try { who = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) {}
+  if (!who) {
+    try { who = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e2) {}
+  }
+  if (!who) who = String(CONFIG.FTO_PROGRAM_DIRECTOR || CONFIG.TCO_EMAIL || '').toLowerCase();
+  return goLiveChecklistV20_2(who);
+}
+
+/* ---------------------------------------------------------------- *
+ *  Deployment  (v20.2)
+ * ---------------------------------------------------------------- */
+
+/** ONE COMMAND. Run this from the script editor after pasting v20.2, and it
+ *  takes the project from "code is present" to "system is running".
+ *
+ *  Every step is one that already existed and is safe to repeat. This adds
+ *  no new behaviour of its own; it removes the need to remember an order.
+ *  It writes no records and deletes nothing.
+ *
+ *  Pass the account that will operate the system:
+ *      goLiveChecklistV20_2("you@example.com")
+ *
+ *  Steps, in dependency order:
+ *    1. operator account   — so the gate can attribute anything at all
+ *    2. form IDs           — so triggers have forms to bind to
+ *    3. triggers           — including the combined skills form v20.1 missed
+ *    4. migration top-up   — REQUEST ID and the v20.1 system tabs
+ *    5. matrix rebuild     — so readiness is current before anyone decides
+ *    6. tab protections    — so immutability is a control, not a convention
+ *    7. health check       — the standing to-do list
+ *
+ *  It stops at the first step that fails and tells you which one, because a
+ *  later step run against a broken earlier one is how you get a mess. */
+function goLiveChecklistV20_2(operatorEmail) {
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT CHECKLIST', ''];
+  var failed = '';
+
+  function step(n, what, fn) {
+    if (failed) { L.push(n + '. ' + what + ' : SKIPPED (step ' + failed + ' failed)'); return; }
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      failed = String(n);
+      L.push(n + '. ' + what + ' : FAILED');
+      L.push('      ' + String(e).slice(0, 300));
+    }
+  }
+
+  step(1, 'Operator account', function () {
+    var id = identityV20_2_();
+    if (id.tier === 'ACTIVE') {
+      return 'Google names the session directly (' + id.email + '). No operator account needed.';
+    }
+    if (operatorEmail) return setOperatorAccountV20_2(operatorEmail);
+    if (id.email) return 'Identity available as ' + id.tier + ' (' + id.email + ').';
+    throw new Error('Nothing identifies this session and no operator email was passed. ' +
+      'Call goLiveChecklistV20_2("you@example.com").');
+  });
+
+  step(2, 'Form IDs', function () { return rebuildFormIdsNow(); });
+  step(3, 'Triggers', function () { return repairAllTriggersNow(); });
+  step(4, 'Migration top-up', function () { return applyMigrationV20_1('APPLY V20_1'); });
+  step(5, 'Skill matrix rebuild', function () { rebuildSkillMatrixV19_(); return 'matrix rebuilt'; });
+  step(6, 'Record tab protection', function () { return protectRecordTabsV20_2(); });
+
+  L.push('');
+  if (failed) {
+    L.push('STOPPED at step ' + failed + '. Fix that, then run this again — every step is');
+    L.push('safe to repeat.');
+  } else {
+    L.push('All steps completed. The health check below is your standing to-do list;');
+    L.push('run healthCheckV20_2() from the SCEMS menu any time.');
+    L.push('');
+    try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+  }
+
+  var msg = L.join('\n');
+  systemLog_(failed ? 'ERROR' : 'INFO', 'DEPLOYMENT CHECKLIST',
+    failed ? 'stopped at step ' + failed : 'completed');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Read-only companion: what would the checklist find right now? Runs
+ *  nothing, changes nothing, and is safe on a live system at any time. */
+function deploymentStatusV20_2() {
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — DEPLOYMENT STATUS (read only)', ''];
+
+  var id = identityV20_2_();
+  L.push('Identity   : ' + (id.email || 'NOBODY') +
+    (id.tier ? '  [' + id.tier + (id.verified ? ', verified' : ', attested') + ']' : ''));
+  if (!id.email) L.push('             → run setOperatorAccountV20_2("you@example.com")');
+
+  try {
+    var ids = storedFormIdsV20_1_();
+    L.push('Form IDs   : ' + ids.length + ' stored of ' + EXPECTED_FORMS_V19.length + ' expected');
+    if (ids.length < EXPECTED_FORMS_V19.length) L.push('             → run rebuildFormIdsNow()');
+  } catch (e) { L.push('Form IDs   : unreadable — ' + e); }
+
+  try {
+    var bound = {};
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      var src = ''; try { src = String(t.getTriggerSourceId() || ''); } catch (e2) {}
+      if (src) bound[src] = true;
+    });
+    var unbound = [];
+    formBoundTriggerPlanV20_2_().forEach(function (p) {
+      var f = getStoredFormV19_(p.title);
+      if (f && !bound[f.getId()]) unbound.push(p.title);
+    });
+    var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+    var miss = MANAGED_TRIGGER_HANDLERS.filter(function (h) { return have.indexOf(h) < 0; });
+    L.push('Triggers   : ' + (miss.length ? miss.length + ' handler(s) missing' : 'all handlers present') +
+      (unbound.length ? ', ' + unbound.length + ' form(s) UNBOUND' : ', all forms bound'));
+    if (miss.length || unbound.length) L.push('             → run repairAllTriggersNow()');
+  } catch (e) { L.push('Triggers   : unreadable — ' + e); }
+
+  var sysTabs = [TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
+  var absent = sysTabs.filter(function (n) { return !getSheetOrNullV20_1_(n); });
+  L.push('v20.1 tabs : ' + (absent.length ? absent.length + ' missing (' + absent.join(', ') + ')'
+                                          : 'all present'));
+  if (absent.length) L.push('             → run applyMigrationV20_1("APPLY V20_1")');
+
+  try {
+    var m = getSheetOrNullV20_1_(TAB.SKILLS);
+    var rows = m && m.getLastRow() >= 5 ? m.getLastRow() - 4 : 0;
+    L.push('Matrix     : ' + rows + ' row(s)');
+    if (!rows) L.push('             → run rebuildSkillMatrixV19_()');
+  } catch (e) { L.push('Matrix     : unreadable — ' + e); }
+
+  var unprot = [TAB.DECISIONS, TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF].filter(function (n) {
+    var sh = getSheetOrNullV20_1_(n);
+    return sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length;
+  });
+  L.push('Protection : ' + (unprot.length ? unprot.length + ' record tab(s) unprotected'
+                                          : 'record tabs protected'));
+  if (unprot.length) L.push('             → run protectRecordTabsV20_2()');
+
+  L.push('Mode       : ' + (isLiveMode_() ? 'LIVE' : 'TEST — alerts reach nobody but the test inbox'));
+  L.push('');
+  L.push('To do all of the above in order: goLiveChecklistV20_2("you@example.com")');
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/* ---- ported from master (effective winner) ---- */
+/**
+ * Mandatory go-live gate. Read-only except for writing the result to the log.
+ * Returns true only when the core workbook, rosters, forms, recipients,
+ * supervisor routing, phase minimums, and test-mode setting are deployment-safe.
+ *
+ * TEST_MODE=true is reported as a blocker by design. Resolve every other blocker,
+ * run a complete ZZ TEST workflow, then change TEST_MODE to false with the
+ * Division Chief of Training present and run this function again.
+ */
+function deploymentPreflight() {
+  var S = ss();
+  var blockers = [];
+  var warnings = [];
+  var requiredTabs = [
+    'HOME', TAB.CONTROL, TAB.MASTER, TAB.EVAL, TAB.REFLECT, TAB.URGENT,
+    TAB.SKILLS, TAB.ENGINE, TAB.WEEKLY, '08 FTO VIEW', '09 TRAINEE VIEW',
+    '11 MEDICAL DIRECTOR VIEW', TAB.QUEUE, '13 AUDIT - EXCEPTION LOG',
+    '14 ANALYTICS', '15 SKILL CATALOG', DECISIONS_TAB, ARCHIVE_TAB, TAB.LOG,
+    TAB.SKILL_EVIDENCE, TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
+  ];
+  requiredTabs.forEach(function (name) {
+    if (!S.getSheetByName(name)) blockers.push('Missing required tab: ' + name);
+  });
+
+  if (S.getSpreadsheetTimeZone() !== 'America/New_York') {
+    blockers.push('Workbook timezone must be America/New_York.');
+  }
+  if (!ftoList().length) blockers.push('No approved FTO roster is loaded on tab 00 column F.');
+  if (!traineeList().length) warnings.push('No active trainees are loaded on tab 01.');
+
+  ['TEST_INBOX','TCO_EMAIL','CHIEF_EMAIL','ACHIEF_EMAIL','MD_EMAIL'].forEach(function (key) {
+    var value = String(CONFIG[key] || '').trim();
+    if (!value || value.indexOf('@') < 1 || value.indexOf('SET_ME') >= 0) {
+      blockers.push('Invalid or unset CONFIG.' + key + '.');
+    }
+  });
+  ['POLICY_VERSION','SKILL_STANDARD','RECORD_RETENTION_STANDARD'].forEach(function (key) {
+    var value = String(CONFIG[key] || '').trim();
+    if (!value || value.indexOf('SET_ME') >= 0) blockers.push('Human governance field CONFIG.' + key + ' is not approved.');
+  });
+  if (!CONFIG.UAT_APPROVED) blockers.push('CONFIG.UAT_APPROVED is false; all five forms and routing branches need a recorded ZZ TEST pass.');
+  if (!CONFIG.GO_LIVE_APPROVED) blockers.push('CONFIG.GO_LIVE_APPROVED is false; the program owner has not authorized launch.');
+
+  var routed = [
+    CONFIG.TCO_EMAIL, CONFIG.CHIEF_EMAIL, CONFIG.ACHIEF_EMAIL,
+    CONFIG.MD_EMAIL, CONFIG.SUPERVISOR_EMAILS
+  ].join(',').split(',').map(function (v) { return String(v || '').trim(); }).filter(String);
+  var external = routed.filter(function (address) {
+    return !/@sumtercountysc\.gov$/i.test(address);
+  });
+  if (external.length && !CONFIG.EXTERNAL_RECIPIENTS_APPROVED) {
+    blockers.push('External operational recipients require explicit approval: ' + external.join(', ') + '.');
+  }
+
+  var ids = [];
+  try { ids = JSON.parse(PropertiesService.getScriptProperties().getProperty('FORM_IDS') || '[]'); }
+  catch (e) { blockers.push('FORM_IDS is not valid JSON.'); }
+  if (ids.length !== 5) blockers.push('Expected five stored forms; found ' + ids.length + '.');
+  if (ids.length !== ids.filter(function (id, i, a) { return a.indexOf(id) === i; }).length) {
+    blockers.push('FORM_IDS contains duplicate IDs.');
+  }
+  var expectedForms = {
+    'SCEMS FTO Shift Evaluation': false,
+    'SCEMS Trainee Self-Reflection': false,
+    'SCEMS Urgent Concern Report': false,
+    'SCEMS Training Decision Record': false,
+    'SCEMS Skills Quick Log': false
+  };
+  ids.forEach(function (id) {
+    try {
+      var form = FormApp.openById(id);
+      var title = form.getTitle();
+      if (Object.prototype.hasOwnProperty.call(expectedForms, title)) expectedForms[title] = true;
+      else blockers.push('Unexpected stored form: ' + title + '.');
+      if (!form.isAcceptingResponses()) blockers.push('Form is closed: ' + title + '.');
+      if (form.getDestinationId() !== S.getId()) blockers.push('Form feeds the wrong workbook: ' + title + '.');
+    } catch (e) { blockers.push('Stored form is unavailable: ' + id + '.'); }
+  });
+  Object.keys(expectedForms).forEach(function (title) {
+    if (!expectedForms[title]) blockers.push('Required form is missing: ' + title + '.');
+  });
+
+  var ctl = S.getSheetByName(TAB.CONTROL);
+  if (ctl) {
+    var supervisors = ctl.getRange('M5:O8').getDisplayValues();
+    supervisors.forEach(function (r, i) {
+      if (!r[0] || !r[1] || !r[2] || r.join(' ').indexOf('SET_ME') >= 0 || r[2].indexOf('@') < 1) {
+        blockers.push('Shift ' + String.fromCharCode(65 + i) + ' supervisor routing is incomplete on tab 00.');
+      }
+    });
+    var mins = ctl.getRange('B14:B16').getValues();
+    ['EMT','Advanced EMT','Paramedic'].forEach(function (level, i) {
+      if (typeof mins[i][0] !== 'number' || mins[i][0] <= 0) {
+        blockers.push(level + ' total shift floor is not approved on tab 00.');
+      }
+    });
+  }
+
+  var engine = S.getSheetByName(TAB.ENGINE);
+  if (engine && (!engine.getRange('A5').getFormula() || !engine.getRange('R5').getFormula())) {
+    blockers.push('Status-engine formulas are missing from row 5.');
+  }
+  var queue = S.getSheetByName(TAB.QUEUE);
+  if (queue && !queue.getRange('I5').getFormula()) blockers.push('Decision Queue status formulas are missing.');
+  var urgent = S.getSheetByName(TAB.URGENT);
+  if (urgent && urgent.getLastRow() >= 5) {
+    urgent.getRange(5, 1, urgent.getLastRow() - 4, 14).getDisplayValues().forEach(function (r, i) {
+      if (!r[0]) return;
+      var sheetRow = i + 5;
+      if (!r[10] && !r[13]) blockers.push('Open urgent concern has no owner on tab 04 row ' + sheetRow + '.');
+      if (r[10] && !r[11]) blockers.push('Closed urgent concern has no closure date on tab 04 row ' + sheetRow + '.');
+    });
+  }
+  var catalog = S.getSheetByName('15 SKILL CATALOG');
+  if (catalog && catalog.getLastRow() >= 5) {
+    var statusCol = String(catalog.getRange('A4').getValue()) === 'SKILL ID' ? 17 : 3;
+    var pending = catalog.getRange(5, statusCol, catalog.getLastRow() - 4, 1).getDisplayValues()
+      .some(function (r) { return !r[0] || /DRAFT|PENDING/i.test(r[0]); });
+    if (pending) blockers.push('Skill Catalog still contains blank, DRAFT, or PENDING approval status.');
+  }
+  if (catalog && String(catalog.getRange('A4').getValue()) !== 'SKILL ID') {
+    blockers.push('Skill Catalog has not been upgraded to the v19 controlled schema.');
+  }
+  var skillEvidence = S.getSheetByName(TAB.SKILL_EVIDENCE);
+  if (skillEvidence && String(skillEvidence.getRange('A4').getValue()) !== 'EVENT ID') {
+    blockers.push('Skill Evidence Log schema is missing or damaged.');
+  }
+  var skillQueue = S.getSheetByName(TAB.SKILL_VALIDATION);
+  if (skillQueue && String(skillQueue.getRange('A4').getValue()) !== 'READY DATE') {
+    blockers.push('Skill Validation Queue schema is missing or damaged.');
+  }
+  var skillSignoff = S.getSheetByName(TAB.SKILL_SIGNOFF);
+  if (skillSignoff && String(skillSignoff.getRange('A4').getValue()) !== 'DECISION ID') {
+    blockers.push('Skill Sign-Off Log schema is missing or damaged.');
+  }
+  try {
+    skillCatalogIssuesV19_().forEach(function (issue) { blockers.push(issue); });
+    skillDeploymentIssuesV19_().forEach(function (issue) { blockers.push(issue); });
+  } catch (e) {
+    blockers.push('Skills v19 deployment validation failed: ' + e + '.');
+  }
+
+  var triggerCounts = {};
+  MANAGED_TRIGGER_HANDLERS.forEach(function (h) { triggerCounts[h] = 0; });
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    var h = t.getHandlerFunction();
+    if (Object.prototype.hasOwnProperty.call(triggerCounts, h)) triggerCounts[h]++;
+  });
+  Object.keys(triggerCounts).forEach(function (handler) {
+    if (triggerCounts[handler] !== 1) {
+      blockers.push('Expected exactly one managed trigger for ' + handler + '; found ' + triggerCounts[handler] + '.');
+    }
+  });
+
+  var protectedNames = [
+    TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.ENGINE, DECISIONS_TAB, TAB.LOG,
+    TAB.SKILLS, SKILL_CATALOG_TAB, TAB.SKILL_EVIDENCE,
+    TAB.SKILL_VALIDATION, TAB.SKILL_SIGNOFF
+  ];
+  protectedNames.forEach(function (name) {
+    var sh = S.getSheetByName(name);
+    if (sh && !sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) {
+      blockers.push('Required sheet protection is missing: ' + name + '.');
+    }
+  });
+  mergedRuleConflicts_().forEach(function (conflict) {
+    blockers.push('Conditional-format rule intersects a merged range: ' + conflict + '.');
+  });
+
+  try {
+    var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+    if (!folders.hasNext()) blockers.push('Backup folder is missing; run monthlySnapshot().');
+    else {
+      var files = folders.next().getFilesByType(MimeType.MICROSOFT_EXCEL);
+      var newest = null;
+      while (files.hasNext()) {
+        var f = files.next();
+        if (!newest || f.getDateCreated() > newest) newest = f.getDateCreated();
+      }
+      if (!newest) blockers.push('No workbook backup snapshot exists.');
+      else if ((new Date() - newest) / 86400000 > 40) blockers.push('Newest workbook backup is over 40 days old.');
+    }
+  } catch (e) { warnings.push('Backup age could not be verified: ' + e); }
+
+  if (isTestMode_()) {
+    blockers.push('isTestMode_() is true; outbound messages are still rerouted. Clear only after every other blocker is resolved.');
+  }
+
+  var result = blockers.length ? 'NOT READY' : 'READY FOR GO-LIVE';
+  var report = result + '\nBLOCKERS:\n' + (blockers.join('\n') || 'None') +
+    '\nWARNINGS:\n' + (warnings.join('\n') || 'None');
+  Logger.log(report);
+  systemLog_(blockers.length ? 'BLOCKER' : 'INFO', 'DEPLOYMENT PREFLIGHT',
+    blockers.length + ' blocker(s); ' + warnings.length + ' warning(s).');
+  try {
+    SpreadsheetApp.getUi().alert(result + '\n\nBlockers:\n' +
+      (blockers.join('\n') || 'None') + '\n\nWarnings:\n' + (warnings.join('\n') || 'None'));
+  } catch (e) {}
+  return !blockers.length;
+}
+
+/* ---- ported from master (effective winner) ---- */
+function traineeList() { return getList(TAB.MASTER, 1, 5); }
+
+/* ---- ported from master (effective winner) ---- */
+function getList(sheetName, col, startRow) {
+  var vals = ss().getSheetByName(sheetName).getRange(startRow, col, 60, 1).getValues();
+  var out = [];
+  vals.forEach(function (r) { if (r[0] && String(r[0]).trim() !== '') out.push(String(r[0])); });
+  return out;
+}
+
+/* ---- ported constant ---- */
+var MANAGED_TRIGGER_HANDLERS = [
+  'onHubFormSubmit', 'onSheetEdit', 'dailyChecks', 'weeklyRollup',
+  'traineeStatusCards', 'supervisorDigest', 'systemHeartbeat', 'monthlySnapshot'
+];
+
+function engineRows() {
+  var sh = ss().getSheetByName(TAB.ENGINE);
+  return sh.getRange(5, 1, 40, 19).getValues().filter(function (r) { return r[0]; });
+}
+
+/** Rebuilds every SCEMS trigger from scratch. Run after any trigger loss. */
+function repairAllTriggersNow() {
+  var managed = MANAGED_TRIGGER_HANDLERS.concat(['onSkillsGridSubmitV20', 'onHandoverSubmitV19']);
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (managed.indexOf(t.getHandlerFunction()) >= 0) { ScriptApp.deleteTrigger(t); removed++; }
+  });
+  ScriptApp.newTrigger('onHubFormSubmit').forSpreadsheet(ss()).onFormSubmit().create();
+  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(ss()).onEdit().create();
+  ScriptApp.newTrigger('dailyChecks').timeBased().everyDays(1).atHour(7).create();
+  ScriptApp.newTrigger('weeklyRollup').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(6).create();
+  ScriptApp.newTrigger('traineeStatusCards').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
+  ScriptApp.newTrigger('supervisorDigest').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).create();
+  ScriptApp.newTrigger('systemHeartbeat').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(5).create();
+  ScriptApp.newTrigger('monthlySnapshot').timeBased().onMonthDay(1).atHour(4).create();
+  var plan = formBoundTriggerPlanV20_2_();
+  var formBound = 0, absent = [];
+  plan.forEach(function (p) {
+    var f = getStoredFormV19_(p.title);
+    if (f) { ScriptApp.newTrigger(p.handler).forForm(f).onFormSubmit().create(); formBound++; }
+    else { absent.push(p.title); }
+  });
+  var msg = 'Removed ' + removed + ' stale trigger(s). Installed 8 schedule/sheet triggers + ' +
+            formBound + ' of ' + plan.length + ' form-bound.' +
+            (absent.length ? '\n\nNOT BOUND (form not found in the stored ID list): ' +
+              absent.join(', ') + '\nSubmissions to a form with no bound trigger are DROPPED — ' +
+              'onHubFormSubmit refuses them as form-trigger-owned. Run rebuildFormIdsNow() if ' +
+              'the form exists.' : '');
+  systemLog_('WARN', 'TRIGGERS REINSTALLED', msg);
+  Logger.log(msg);
+  return msg;
+}
+
+/** Rebuilds the stored form-ID list by scanning Drive for the nine SCEMS
+ *  forms, preferring copies linked to this spreadsheet. */
+function rebuildFormIdsNow() {
+  var wanted = Object.keys(FORM_TITLES).map(function (k) { return FORM_TITLES[k]; });
+  var byTitle = {};
+  var it = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.form' and title contains 'SCEMS'");
+  while (it.hasNext()) {
+    var file = it.next();
+    var name = file.getName();
+    if (wanted.indexOf(name) < 0) continue;
+    var linked = false;
+    try { linked = FormApp.openById(file.getId()).getDestinationId() === ss().getId(); } catch (e) {}
+    var prev = byTitle[name];
+    if (!prev || (linked && !prev.linked) ||
+        (linked === prev.linked && file.getLastUpdated() > prev.updated)) {
+      byTitle[name] = { id: file.getId(), linked: linked, updated: file.getLastUpdated() };
+    }
+  }
+  var ids = [], report = [];
+  wanted.forEach(function (name) {
+    if (byTitle[name]) { ids.push(byTitle[name].id); report.push('FOUND   ' + name); }
+    else report.push('MISSING ' + name);
+  });
+  PropertiesService.getScriptProperties().setProperty('FORM_IDS', JSON.stringify(ids));
+  var msg = 'Stored ' + ids.length + ' of ' + wanted.length + ' forms\n' + report.join('\n');
+  systemLog_('INFO', 'FORM IDS REBUILT', ids.length + ' of ' + wanted.length);
+  Logger.log(msg);
+  return msg;
+}
+
+/** Links pre-v20.1 sign-off records to their queue request IDs. */
+function stepA_linkLegacy() { Logger.log(applyLinkDecisionsV20_1('LINK LEGACY')); }
+
+/** Records the stranded decisions, including closed-trainee rows. */
+function stepB_recordStranded() { Logger.log(applyStrandedDecisionsV20_1('RECORD STRANDED', 'INCLUDE CLOSED')); }
+
+/** Re-runs the additive migration (safe to repeat any time). */
+function stepC_migrationTopUp() { Logger.log(applyMigrationV20_1('APPLY V20_1')); }
+
 /** The two safe tracker jobs, in one go.
  *
  *  Neither sends mail and neither touches delivery mode, so this is safe to
@@ -13125,3 +12786,390 @@ function FINISH_TRACKER() {
   Logger.log(msg);
   return msg;
 }
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 99_config
+ *
+ * Constants. Nothing here does anything.
+ *
+ *
+ * What the blocks these came from used to say, kept because for several
+ * of them it is the only record of why they exist:
+ *
+ *   Sumter County EMS : Field Training and Personnel Development System
+ *   THE ONLY CONFIGURATION FILE. Exactly one CONFIG object exists in this
+ *   project. It is frozen at load: nothing may mutate it at runtime.
+ *   DELIVERY MODE IS NOT STORED HERE. Whether mail reaches real recipients
+ *   is decided at send time by isLiveMode_() in 00_core.gs, which reads the
+ *   SCEMS_LIVE_MODE script property on every call and fails safe to test
+ *   mode. Editing this file can never change delivery mode, and delivery
+ *   mode can never be changed by file load order again.
+ *   goLive() / backToTestMode() / whichMode() live in 00_core.gs.
+ */
+
+var BADGE_B64 = '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';
+
+/* ---- ported constant ---- */
+var SEV_V19 = {
+  OVERDUE:      { rank: 1, bg: '#c43a28', fg: '#ffffff' },
+  BREACHED:     { rank: 1, bg: '#c43a28', fg: '#ffffff' },
+  FLAG:         { rank: 2, bg: '#8f1f12', fg: '#ffffff' },
+  'NOT STARTED':{ rank: 3, bg: '#c9a227', fg: '#1d1b18' },
+  DUE:          { rank: 4, bg: '#f5df99', fg: '#6d5318' },
+  SKILL:        { rank: 5, bg: '#3f6a94', fg: '#ffffff' },
+  CLEAR:        { rank: 9, bg: '#3f8f5a', fg: '#ffffff' }
+};
+
+/* ---- ported constant ---- */
+var TV = {
+  INK: '#1d1b18', GOLD: '#c9a227', GOLDD: '#8a6a1f', GREEN: '#3f8f5a',
+  RED: '#c43a28', BLUE: '#1f5673', MUTE: '#847d6d', HAIR: '#e8e4da'
+};
+
+/* ---- ported constant ---- */
+var PANEL_FIRST_ROW_V19  = 11;
+
+/* ---- ported constant ---- */
+var PANEL_ROWS_V19       = 14;
+
+/* ---- ported constant ---- */
+var START_GRACE_DAYS_V19 = 7;
+
+/* ---- ported constant ---- */
+var QUEUE_REASONS_V19 = [
+  'Evidence thresholds met, FTO recommendation accepted',
+  'Observed directly by leadership, competency confirmed',
+  'Evidence sufficient for level and phase',
+  'Returned, needs more repetitions across separate shifts',
+  'Returned, needs observation by a second FTO',
+  'Returned, evidence note insufficient',
+  'Revoked, safety concern documented',
+  'Revoked, evidence no longer current'
+];
+
+/* [var EXPECTED_FORMS_V19 : moved to 99_config.gs — it derives from FORM_TITLES,
+
+   which loads after this file; deriving it here was a load-order fault] */
+
+/* ---- ported constant ---- */
+var DIGEST_COPY_TO_V19 = '';
+
+/* ---- ported constant ---- */
+var SKILL_MATRIX_BACKUP_V19 = '05 SKILLS PROGRESS LEGACY V18';
+
+/* ---- ported constant ---- */
+var EV = { FTO:1, TRAINEE:2, SHIFTDATE:6, STRENGTH:21, IMPROVE:22, REDFLAG:25, RFDETAIL:26, CS:27, NRT:29, PRIOR:30, NOTIMP:31, ADV:32, TOREV:33, CLIN:34 };
+
+/* ---- ported constant ---- */
+var SKILL_LABEL_V19 = 'skill name only, no SK number';
+
+/* ---- ported constant ---- */
+var HUB_ASSETS_FOLDER_V19 = 'SCEMS Hub Assets';
+
+/* ---- ported constant ---- */
+var PORTAL_FILE_V19 = 'portal';
+
+/* ---- ported constant ---- */
+var DUAL_SIGNOFF_LEVELS_V19 = ['Advanced EMT', 'Paramedic'];
+
+/* ---- ported constant ---- */
+var DUAL_SIGNOFF_LEVEL_V19 = 'Paramedic';
+
+/* ---- ported constant ---- */
+var DUAL_SIGNOFF_PHASE_V19 = 'Phase 4';
+
+/* ---- ported constant ---- */
+var DUAL_ROLE_TRAINING_V19 = 'Division Chief of Training';
+
+/* ---- ported constant ---- */
+var DUAL_ROLE_MEDICAL_V19  = 'Medical Director';
+
+var OPERATIONAL_TABS_V19 = [
+  'HOME',
+  '01 TRAINEE MASTER',
+  '04 URGENT CONCERNS RAW',
+  '12 DECISION QUEUE',
+  '23 TRAINEE SKILLS'
+];
+
+var SKILL_MATRIX_HEADERS_V19 = [
+  'TRAINEE','SKILL','STAGE','LAST DATE','LAST FTO','LEVEL','READINESS','SIGN-OFF',
+  'DOMAIN','SKILL ID','SUCCESSFUL REPS','INDEPENDENT REPS','DISTINCT DATES',
+  'DISTINCT FTOS','LAST OUTCOME','LAST CONTEXT','SIGNED BY','SIGNED DATE',
+  'EXPIRATION','DECISION / EVIDENCE NOTE'
+];
+
+var SKILL_CATALOG_HEADERS_V19 = [
+  'SKILL ID','DOMAIN','SKILL','EMT REQUIRED','AEMT REQUIRED','PARAMEDIC REQUIRED',
+  'ACTIVE','ALLOWED CONTEXT','MIN SUCCESSFUL REPS','MIN INDEPENDENT REPS',
+  'MIN DISTINCT DATES','MIN DISTINCT FTOS','SIGN-OFF AUTHORITY','STANDARD / SOURCE',
+  'EFFECTIVE DATE','RETIRE DATE','APPROVAL STATUS'
+];
+
+var TRAINEE_VIEWS_V19 = [
+  'Overview',
+  'Skills completed',
+  'Skills remaining',
+  'Skills by phase',
+  'Recent activity'
+];
+
+var SNOOZE_DAYS = 3;
+
+var DOMAIN_NAMES = ['Assessment','Treatment','Communication','Documentation','Scene Leadership','Professionalism'];
+
+var HUB_URL = 'https://sites.google.com/view/scemsfieldtraininghub/home';
+
+var BACKUP_FOLDER = 'SCEMS Tracker Backups';
+
+var SKILL_BURST_LIMIT_V20   = 6;
+
+var SKILL_INFLATION_MIN_V20 = 10;
+
+var SKILL_INFLATION_PCT_V20 = 0.9;
+
+var KEEP_TOOLS_V19 = [
+  'cleanupReportV19', 'auditResponseTabsV19', 'cleanResponseTabsV19',
+  'checkEvidenceIntegrityV19', 'tidyForOperationsV19', 'showAllTabsV19',
+  'checkAllFormsV19', 'checkRosterV19', 'checkProgressV19',
+  'checkSupervisorRoutingV19', 'checkPhaseHandlingV19', 'checkReleaseGateV19',
+  'auditDatesV19', 'auditSkillValidationsV19', 'whichModeV19',
+  'refreshActionPanelV19', 'buildTraineeSkillsViewV19', 'previewRollupV19',
+  'previewHandoverV19', 'previewSkillsFormV19'
+];
+
+var ONE_TIME_TOOLS_V19 = [
+  { fn: 'traceLastEvalV19',        why: 'traced the first rejected submission' },
+  { fn: 'skillEventStateV19',      why: 'traced the phase repair' },
+  { fn: 'listSkillsFormFieldsV19', why: 'found the phase field name' },
+  { fn: 'traceDigestV19',          why: 'found the digest routing fault' },
+  { fn: 'previewRosterMoveV19',    why: 'previewed the roster move' },
+  { fn: 'whereIsEverythingV19',    why: 'found the assets after the account mix-up' },
+  { fn: 'diagnoseMenuButtonV19',   why: 'diagnosed the HOME menu box' },
+  { fn: 'previewPhaseRepairV19',   why: 'previewed the phase repair' }
+];
+
+var SUPERSEDED_BLOCKS_V19 = [
+  { marker: 'buildSkillEvidenceLogV19_', block: 'v19.0.5 / 19.0.6 / 19.0.7 validation purge',
+    by: 'the GO-LIVE block v19.1.0 and later', note: 'keep only the newest copy' },
+  { marker: 'fixPhaseQuestionV19', block: 'v19.5.0 phase handling',
+    by: 'still current', note: 'keep' },
+  { marker: 'previewSnapshotV19', block: 'v19.12.2 supervisor snapshot',
+    by: 'v19.14.0 emails, complete', note: 'delete if v19.14.0 is present' },
+  { marker: 'checkProjectionsV19', block: 'v19.13.0 roll-up with projections',
+    by: 'v19.13.1 and then v19.14.0', note: 'delete, the projected date was dropped' },
+  { marker: 'sendHandoverCardV19', block: 'v19.10.0 handover, plain text',
+    by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
+];
+
+var SCEMS_VERSION = 'v20.5.0';
+
+var SCEMS_WRITER_VERSION = 'SCEMS v20.5.0';
+
+var CONFIG = Object.freeze({
+
+  // ---- Delivery recipients by role. Update here only. ----
+  TEST_INBOX:        'craighunt913@gmail.com',
+  TCO_EMAIL:         'kstuckey@sumtercountysc.gov',   // Division Chief of Training
+  CHIEF_EMAIL:       'kehall@sumtercountysc.gov',     // Chief
+  ACHIEF_EMAIL:      'jparnell@sumtercountysc.gov',   // Assistant Chief
+  MD_EMAIL:          'leeturnermd@gmail.com',         // Medical Director
+  SUPERVISOR_EMAILS: 'craighunt913@gmail.com',        // program copy
+  FTO_PROGRAM_DIRECTOR: 'craighunt913@gmail.com',        // final decision authority for the FTO program
+  BACKUP_EDITOR:     '',
+
+  // ---- Human approvals recorded at v19 go-live. Historical record. ----
+  GO_LIVE_APPROVED:             true,
+  UAT_APPROVED:                 true,
+  EXTERNAL_RECIPIENTS_APPROVED: true,
+
+  // ---- Governing authorities stamped onto decisions and exports. ----
+  POLICY_VERSION:            'SCEMS FTO Guide, rev 1.0, effective 07/2026',
+  SKILL_STANDARD:            '2018 Sumter County EMS Protocols, Jimmy Lee Turner II, MD',
+  RECORD_RETENTION_STANDARD: 'SCEMS General Orders, personnel training records retention'
+});
+
+/* Shift supervisor routing. Read by the supervisor digest and urgent-
+ * concern mail. Name kept from v19 for call-site compatibility; this is
+ * the single copy. Every recipient in the system lives in this file. */
+var SHIFT_SUPERVISORS_V19 = {
+  A: { name: 'K. Moye',     email: 'kmoye@sumtercountysc.gov',
+       assistName: 'J. Head',   assist: 'jhead@sumtercountysc.gov' },
+  B: { name: 'A. Wise',     email: 'awise@sumtercountysc.gov',
+       assistName: '',          assist: '' },
+  C: { name: 'J. Watson',   email: 'jwatson@sumtercountysc.gov',
+       assistName: '',          assist: '' },
+  D: { name: 'M. McLellan', email: 'mmclellan@sumtercountysc.gov',
+       assistName: 'E. Osteen', assist: 'ethanallenosteen@gmail.com' }
+};
+
+/* ---- Canonical tab names. Never rename a live tab from code. ---- */
+var TAB = Object.freeze({
+  CONTROL: '00 README - CONTROL',
+  MASTER:  '01 TRAINEE MASTER',
+  EVAL:    '02 FTO SHIFT EVAL RAW',
+  REFLECT: '03 SELF-REFLECTION RAW',
+  URGENT:  '04 URGENT CONCERNS RAW',
+  SKILLS:  '05 SKILLS PROGRESS',
+  ENGINE:  '06 PHASE - STATUS ENGINE',
+  WEEKLY:  '07 WEEKLY STATUS REPORT',
+  QUEUE:   '12 DECISION QUEUE',
+  ANALYTICS: '14 ANALYTICS',
+  CATALOG: '15 SKILL CATALOG',
+  DECISIONS: '16 DECISIONS RAW',
+  ARCHIVE: '17 TRAINEE ARCHIVE',
+  LOG:     '18 SYSTEM LOG',
+  SKILL_EVIDENCE: '19 SKILL EVIDENCE LOG',
+  SKILL_VALIDATION: '20 SKILL VALIDATION QUEUE',
+  SKILL_SIGNOFF: '21 SKILL SIGN-OFF LOG',
+  FTO_ROSTER: '22 FTO ROSTER',
+  TRAINEE_SKILLS: '23 TRAINEE SKILLS',
+  AUDIT: '13 AUDIT - EXCEPTION LOG',
+  FTO_VIEW: '08 FTO VIEW',
+  TRAINEE_VIEW: '09 TRAINEE VIEW',
+  DASH: '10 TRAINING DIVISION DASH',
+  MD_VIEW: '11 MEDICAL DIRECTOR VIEW',
+  // v20.1 system tabs (created only by applyMigrationV20_1, never implicitly)
+  REGISTRY: '90 PERSON REGISTRY',
+  LEDGER:   '91 INGESTION LEDGER',
+  ASSIGNMENTS: '92 ASSIGNMENT HISTORY',
+  ACCESS:   '93 ACCESS LOG'
+});
+
+/* Legacy constant aliases retained because ~200 existing call sites and
+ * operator habits reference them. Same values, single source. */
+var DECISIONS_TAB = TAB.DECISIONS;
+
+var ARCHIVE_TAB = TAB.ARCHIVE;
+
+var SKILL_CATALOG_TAB = TAB.CATALOG;
+
+var FTO_ROSTER_TAB_V19 = TAB.FTO_ROSTER;
+
+var TRAINEE_SKILLS_TAB_V19 = TAB.TRAINEE_SKILLS;
+
+var TEST_PREFIX = 'ZZ TEST';
+
+var LIVE_FLAG_KEY = 'SCEMS_LIVE_MODE';
+
+/* ---- Form titles (identity of each form; URLs are never hard-coded) ---- */
+var FORM_TITLES = Object.freeze({
+  EVAL:      'SCEMS FTO Shift Evaluation',
+  REFLECT:   'SCEMS Trainee Self-Reflection',
+  URGENT:    'SCEMS Urgent Concern Report',
+  DECISION:  'SCEMS Training Decision Record',
+  SKILLS_COMBINED: 'SCEMS Skills Quick Log',
+  SKILLS_EMT:  'SCEMS Skills Quick Log : EMT',
+  SKILLS_AEMT: 'SCEMS Skills Quick Log : Advanced EMT',
+  SKILLS_PMD:  'SCEMS Skills Quick Log : Paramedic',
+  HANDOVER:  'SCEMS Trainee Handover Card'
+});
+
+/* Every form the estate is expected to contain. Derived here, in the same
+ * file as FORM_TITLES, so no load-order dependency exists. */
+var EXPECTED_FORMS_V19 = Object.keys(FORM_TITLES).map(function (k) { return FORM_TITLES[k]; });
+
+var SKILL_FORM_TITLE_V19 = FORM_TITLES.SKILLS_COMBINED;
+
+var HANDOVER_FORM_TITLE_V19 = FORM_TITLES.HANDOVER;
+
+var SKILL_LEVELS_V20 = ['EMT', 'Advanced EMT', 'Paramedic'];
+
+/* Portal cards, in display order. verifyPortalV20_1() derives its expected
+ * link count from this list, never from a hard-coded number. */
+var PORTAL_CARDS = Object.freeze([
+  { key: 'EVAL',        role: 'Field Training Officer' },
+  { key: 'SKILLS_EMT',  role: 'Field Training Officer' },
+  { key: 'SKILLS_AEMT', role: 'Field Training Officer' },
+  { key: 'SKILLS_PMD',  role: 'Field Training Officer' },
+  { key: 'HANDOVER',    role: 'Field Training Officer : Covering' },
+  { key: 'REFLECT',     role: 'Trainee' },
+  { key: 'URGENT',      role: 'Anyone : Same shift' }
+]);
+
+/* ---- Sheet schemas: header row 4 on system tabs. Additive columns are
+ * appended by migration; readers map by header name, never position. ---- */
+var SKILL_EVIDENCE_HEADERS_V19 = [
+  'EVENT ID','TIMESTAMP','SHIFT DATE','TRAINEE','LEVEL AT EVENT','PHASE','FTO',
+  'SKILL ID','DOMAIN','SKILL','CONTEXT','STAGE','OUTCOME','PROMPTING',
+  'CALL / SCENARIO REF','EVIDENCE NOTE','SOURCE FORM','SOURCE ROW',
+  'VALIDATION RESULT','ATTESTATION'
+];
+
+var SKILL_EVIDENCE_V20_1_EXTRA = [
+  'SOURCE FORM ID','SOURCE RESPONSE ID','WRITER VERSION','PERSON ID','ASSIGNMENT ID'
+];
+
+var SKILL_SIGNOFF_HEADERS_V19 = [
+  'DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION','DECIDED BY',
+  'DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW',
+  'STANDARD / CATALOG VERSION'
+];
+
+var SKILL_SIGNOFF_V20_1_EXTRA = [
+  'REQUEST ID','SUPERSEDES','DECIDED BY PERSON ID','WRITER VERSION'
+];
+
+var SKILL_QUEUE_HEADERS_V19 = [
+  'READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY',
+  'DECISION','DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE',
+  'RECORD STATUS','LAST EVIDENCE DATE'
+];
+
+var QUEUE_REVIEW_COL_V20 = 14;               // 'REVIEW' (v20.4)
+
+var SKILL_QUEUE_V20_1_EXTRA = ['REQUEST ID','RECORD']; // cols 15, 16
+
+var QUEUE_REQUEST_ID_COL_V20_1 = 15;
+
+var QUEUE_RECORD_COL_V20_1 = 16;
+
+var REGISTRY_HEADERS_V20_1 = [
+  'PERSON ID','TYPE','DISPLAY NAME','NORMALIZED NAME','EMPLOYEE ID','EMAIL',
+  'CERT LEVEL','SHIFT','TRAINS EMT','TRAINS AEMT','TRAINS PARAMEDIC',
+  'ROLE','ACTIVE','SOURCE','CREATED','NOTES'
+];
+
+var LEDGER_HEADERS_V20_1 = [
+  'LEDGER KEY','FORM ID','RESPONSE ID','FORM TITLE','KIND','RECEIVED AT',
+  'STATE','DETAIL','EVENTS WRITTEN','PROCESSED AT','WRITER VERSION'
+];
+
+var ASSIGNMENT_HEADERS_V20_1 = [
+  'ASSIGNMENT ID','PERSON ID','TRAINEE','LEVEL','ENTRY PROFILE','FTO',
+  'FTO PERSON ID','PHASE','PHASE START','STATUS','OPENED','CLOSED','SOURCE','NOTES'
+];
+
+var ACCESS_HEADERS_V20_1 = [
+  'ACCESS ID','TIMESTAMP','KIND','REQUESTED BY','VERIFIED EMAIL','AUTHORIZED',
+  'SUBJECT','DELIVERED TO','REASON','DETAIL'
+];
+
+/* ---- Queue vocabulary (unchanged wording: governance-approved lists) ---- */
+var QUEUE_DECISIONS_V19 = ['Approve sign-off', 'Return for more evidence', 'Revoke sign-off'];
+
+var QUEUE_STATES_V20_1 = ['OPEN','RECORDED','RETURNED','REVOKED','SUPERSEDED','CANCELLED','FAILED'];
+
+/* ---- Skills form field vocabulary (matches live forms; do not edit
+ * without re-verifying against the built forms) ---- */
+var SKILL_STAGE_COLUMNS_V19 = ['Observed','Assisted','Performed with coaching','Performed independently'];
+
+var LAB_GRID_TITLE_V20 = 'Classroom or skills lab';
+
+var LAB_REPS_TITLE_V20 = 'Classroom or skills lab : repetitions';
+
+var REPS_SUFFIX_V20 = ' : repetitions';
+
+var EV_ACCEPTED_V19 = 'ACCEPTED';
+
+/* ---- Control-sheet dials (labels on 00 README - CONTROL col A) ---- */
+var CONTROL_DIALS = Object.freeze({
+  OVERDUE_DAYS: 'Overdue days threshold',
+  TREND_DAYS: 'Trend window (days)',
+  SCORE_STANDARD: 'Score standard',
+  REFLECT_SILENCE: 'Reflection silence (days)',
+  FLAG_LOOKBACK: 'Flag lookback (days)'
+});
+
