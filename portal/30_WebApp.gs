@@ -243,6 +243,60 @@ function approveSignoffV1(row, reason, requestId) {
   return 'Staged. The tracker records it.';
 }
 
+/** The Training Division records that it has seen a finding.
+ *
+ *  It does not clear it. Nothing here can, and that is the point: the
+ *  doctrine's rule is that a finding is never blanked without the data
+ *  changing or a named acknowledgment, so this is the named acknowledgment
+ *  and it is all it is. A row is appended saying who saw what, when, in
+ *  whose words, and for how long they are asking before it is raised again.
+ *
+ *  The finding is stored in the words it was shown in. "27 days since an
+ *  evaluation" is not the same finding as "34 days since an evaluation", so
+ *  acknowledging one cannot silence the other, and when the data moves the
+ *  new state surfaces on its own without anybody remembering to look. */
+function acknowledgeFindingV1(trainee, finding, note, days) {
+  requireWritableV1_('acknowledge a finding');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may acknowledge a finding.');
+  }
+  var who = String(trainee || '').trim();
+  var what = String(finding || '').trim();
+  var why = String(note || '').trim();
+  if (!who) throw new Error('No name was given.');
+  if (!what) throw new Error('There is no finding on that person to acknowledge.');
+  if (why.length < 8) {
+    throw new Error('Say what you are doing about it. It goes on the record in your name, ' +
+      'and an acknowledgment with nothing in it is how a problem gets buried.');
+  }
+
+  var made = ensureAckLogV1_();
+  if (!made) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.ACKS + ', so nothing was ' +
+      'recorded. Nothing is worth acknowledging into a log that is not there.');
+  }
+  var t = readTabV1_(PORTAL.TAB.ACKS);
+  if (!t.ok) throw new Error('No acknowledgment log.');
+
+  var n = ackDaysV1_(days);
+  var until = new Date();
+  until.setHours(0, 0, 0, 0);
+  until.setDate(until.getDate() + n);
+
+  var byHeader = { 'WHEN': new Date(), 'TRAINEE': clean_(who), 'FINDING': clean_(what),
+                   'WHO': viewer.email, 'NOTE': clean_(why), 'HOLDS UNTIL': until };
+  t.sheet.appendRow(t.headers.map(function (h) {
+    var v = byHeader[String(h).toUpperCase()];
+    return v === undefined ? '' : v;
+  }));
+
+  forgetTabsV1_();
+  auditV1_('FINDING ACKNOWLEDGED', viewer.email,
+    who + ' | ' + what + ' | ' + n + 'd | ' + why.slice(0, 120));
+  return { until: until.toDateString(), days: n };
+}
+
 /** One person's whole record: the most recent submission of each kind, then
  *  every earlier one, in full. Read only in every mode — it opens nothing and
  *  writes nothing, so it is safe against the live tracker.

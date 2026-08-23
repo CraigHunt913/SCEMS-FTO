@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 661b1cd4
+ * Build 003164f5
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -56,7 +56,8 @@ var PORTAL = Object.freeze({
     SIGNOFF:    '21 SKILL SIGN-OFF LOG',
     ROSTER:     '22 FTO ROSTER',
     COACHING:   'PORTAL COACHING',
-    AUDIT:      'PORTAL AUDIT'
+    AUDIT:      'PORTAL AUDIT',
+    ACKS:       'PORTAL ACKNOWLEDGEMENTS'
   }),
 
   HEADER_ROW: 4,
@@ -1497,6 +1498,9 @@ function divisionPayloadV1_() {
   var incomplete = active.filter(function (t) {
     return !t.setupComplete || strandedBy[t.norm]; });
 
+  // Read the acknowledgment log once, not once per person.
+  var acks = safeFormsV1_(function () { return ackRowsV1_(); }) || [];
+
   var seen = {}, dupes = [];
   active.forEach(function (t) {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
@@ -1550,9 +1554,13 @@ function divisionPayloadV1_() {
       else if (days < 0) why = 'never evaluated';
       else if (days > 14) why = days + ' days since an evaluation';
       else if (!t.setupComplete) why = 'record incomplete';
+      // Seen, by a named person, in their own words, for a stated time. The
+      // finding is not cleared and never can be - it moves out of the alarm
+      // list until the hold runs out, and comes straight back after.
+      var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
-               days: days, status: t.status || '', needs: why,
+               days: days, status: t.status || '', needs: why, ack: ack,
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),
@@ -1928,6 +1936,60 @@ function approveSignoffV1(row, reason, requestId) {
   auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
     ' | ' + why.slice(0, 120));
   return 'Staged. The tracker records it.';
+}
+
+/** The Training Division records that it has seen a finding.
+ *
+ *  It does not clear it. Nothing here can, and that is the point: the
+ *  doctrine's rule is that a finding is never blanked without the data
+ *  changing or a named acknowledgment, so this is the named acknowledgment
+ *  and it is all it is. A row is appended saying who saw what, when, in
+ *  whose words, and for how long they are asking before it is raised again.
+ *
+ *  The finding is stored in the words it was shown in. "27 days since an
+ *  evaluation" is not the same finding as "34 days since an evaluation", so
+ *  acknowledging one cannot silence the other, and when the data moves the
+ *  new state surfaces on its own without anybody remembering to look. */
+function acknowledgeFindingV1(trainee, finding, note, days) {
+  requireWritableV1_('acknowledge a finding');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may acknowledge a finding.');
+  }
+  var who = String(trainee || '').trim();
+  var what = String(finding || '').trim();
+  var why = String(note || '').trim();
+  if (!who) throw new Error('No name was given.');
+  if (!what) throw new Error('There is no finding on that person to acknowledge.');
+  if (why.length < 8) {
+    throw new Error('Say what you are doing about it. It goes on the record in your name, ' +
+      'and an acknowledgment with nothing in it is how a problem gets buried.');
+  }
+
+  var made = ensureAckLogV1_();
+  if (!made) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.ACKS + ', so nothing was ' +
+      'recorded. Nothing is worth acknowledging into a log that is not there.');
+  }
+  var t = readTabV1_(PORTAL.TAB.ACKS);
+  if (!t.ok) throw new Error('No acknowledgment log.');
+
+  var n = ackDaysV1_(days);
+  var until = new Date();
+  until.setHours(0, 0, 0, 0);
+  until.setDate(until.getDate() + n);
+
+  var byHeader = { 'WHEN': new Date(), 'TRAINEE': clean_(who), 'FINDING': clean_(what),
+                   'WHO': viewer.email, 'NOTE': clean_(why), 'HOLDS UNTIL': until };
+  t.sheet.appendRow(t.headers.map(function (h) {
+    var v = byHeader[String(h).toUpperCase()];
+    return v === undefined ? '' : v;
+  }));
+
+  forgetTabsV1_();
+  auditV1_('FINDING ACKNOWLEDGED', viewer.email,
+    who + ' | ' + what + ' | ' + n + 'd | ' + why.slice(0, 120));
+  return { until: until.toDateString(), days: n };
 }
 
 /** One person's whole record: the most recent submission of each kind, then
@@ -2481,7 +2543,10 @@ function goLive() {
   var missing = [];
   Object.keys(PORTAL.TAB).forEach(function (k) {
     var tn = PORTAL.TAB[k];
-    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT) return;
+    // The portal's own tabs. It makes these itself; their absence is not a
+    // reason to refuse the mode, it is a thing to do on the way in.
+    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT ||
+        tn === PORTAL.TAB.ACKS) return;
     if (!readTabV1_(tn).ok) missing.push(tn);
   });
   if (missing.length) {
@@ -2514,6 +2579,16 @@ function goLive() {
       'do: the tab ' + PORTAL.TAB.AUDIT + ' is not in this spreadsheet and ' +
       'could not be created. Allowing a sign-off and keeping no record of who ' +
       'approved it is worse than not allowing it. Nothing was changed.');
+  }
+
+  // Somewhere to record a finding having been seen. Same reasoning as the
+  // audit log: a screen that offers to record an acknowledgment and then puts
+  // it nowhere is worse than one that does not offer it.
+  if (!ensureAckLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.ACKS + ' is not in ' +
+      'this spreadsheet and could not be created, so the Training Division ' +
+      'could say it had seen a finding and nothing would record that it had. ' +
+      'Nothing was changed.');
   }
 
   var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
@@ -4497,6 +4572,146 @@ function viewAsFTO()        { return switchRoleForTestingV1('FTO'); }
 function viewAsDivision()   { return switchRoleForTestingV1('DIVISION'); }
 function viewAsSupervisor() { return switchRoleForTestingV1('SUPERVISOR'); }
 function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }
+
+
+/* ======================================================================
+ * 93_Acknowledge.gs
+ * ====================================================================== */
+
+/**
+ * "I have seen this."
+ *
+ * The Division screen names three people and a reason each: 27 days since an
+ * evaluation, not responding to training, never evaluated. Tapping one used to
+ * open a screen that did not even repeat the reason, let alone offer anything
+ * to do about it. Three problems, no way to act on any of them, and no way to
+ * stop being shown them tomorrow.
+ *
+ * The doctrine says exactly what the answer is not:
+ *
+ *   "Never build anything that blanks a finding without the data changing or
+ *    a named acknowledgment."
+ *
+ * So this is the named acknowledgment, and nothing more. It does not clear a
+ * finding and it cannot. It records that a named person saw it, in their own
+ * words, on a date, and how long they are asking for before it comes back.
+ * The finding stays on the screen the whole time - demoted out of the alarm
+ * list, never deleted from it.
+ *
+ * Three properties make it safe to defend:
+ *
+ *   APPEND ONLY   Nothing here edits or deletes a row. An acknowledgment you
+ *                 disagree with is superseded by a later one, exactly the way
+ *                 a decision is revoked rather than erased.
+ *
+ *   IT EXPIRES    A hold lasts a stated number of days and then the finding is
+ *                 back, unchanged. Without that, acknowledging is just a way
+ *                 to hide something permanently, which is the thing the rule
+ *                 above exists to prevent.
+ *
+ *   IT IS KEYED   TO THE FINDING'S OWN WORDS. "27 days since an evaluation" is
+ *                 not the same finding as "34 days since an evaluation", so
+ *                 acknowledging one does not silence the other. When the data
+ *                 changes, the new state surfaces on its own.
+ */
+
+var ACK_HEADERS_V1 = ['WHEN', 'TRAINEE', 'FINDING', 'WHO', 'NOTE', 'HOLDS UNTIL'];
+
+/** The log, made if it is not there. Returns 'present', 'created' or ''. */
+function ensureAckLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.ACKS)) return 'present';
+    var sh = book.insertSheet(PORTAL.TAB.ACKS);
+    sh.getRange(1, 1).setValue(
+      'Findings the Training Division has seen, in their own words. Written by ' +
+      'the portal, append only. Do not edit, sort or delete rows: an entry you ' +
+      'disagree with is superseded by a later one.').setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, ACK_HEADERS_V1.length)
+      .setValues([ACK_HEADERS_V1])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return 'created';
+  } catch (e) { return ''; }
+}
+
+/** How long a hold may last. A month is the outside of "I am dealing with it";
+ *  anything longer is a decision, and a decision belongs on the record as one. */
+var ACK_MAX_DAYS_V1 = 30;
+var ACK_DEFAULT_DAYS_V1 = 7;
+
+function ackDaysV1_(v) {
+  var n = Math.floor(Number(v));
+  if (!n || n < 1) return ACK_DEFAULT_DAYS_V1;
+  return n > ACK_MAX_DAYS_V1 ? ACK_MAX_DAYS_V1 : n;
+}
+
+/** Everything ever acknowledged, read across every listed spreadsheet. */
+function ackRowsV1_() {
+  var t = readTabAllV1_(PORTAL.TAB.ACKS);
+  if (!t.ok) return [];
+  var iWhen = headerIndexV1_(t, ['WHEN']);
+  var iWho  = headerIndexV1_(t, ['TRAINEE']);
+  var iWhat = headerIndexV1_(t, ['FINDING']);
+  var iBy   = headerIndexV1_(t, ['WHO']);
+  var iNote = headerIndexV1_(t, ['NOTE']);
+  var iTill = headerIndexV1_(t, ['HOLDS UNTIL']);
+  if (iWho < 0 || iWhat < 0) return [];
+
+  var out = [];
+  t.rows.forEach(function (r) {
+    var who = atV1_(r, iWho);
+    if (!who) return;
+    out.push({
+      norm: normNameV1_(who),
+      finding: atV1_(r, iWhat),
+      by: atV1_(r, iBy),
+      note: atV1_(r, iNote),
+      when: iWhen < 0 ? null : asDateV1_(r[iWhen]),
+      until: iTill < 0 ? null : asDateV1_(r[iTill])
+    });
+  });
+  return out;
+}
+
+/** The acknowledgment standing over this exact finding right now, or null.
+ *
+ *  The LAST matching row wins, because the log is append-only and a later
+ *  entry supersedes an earlier one. An expired hold returns null: the finding
+ *  is back, and the record of having seen it is still there. */
+function liveAckForV1_(norm, finding, rows) {
+  var f = String(finding || '').trim().toLowerCase();
+  if (!f) return null;
+  var now = new Date();
+  var hit = null;
+  (rows || ackRowsV1_()).forEach(function (a) {
+    if (a.norm !== norm) return;
+    if (String(a.finding || '').trim().toLowerCase() !== f) return;
+    hit = a;
+  });
+  if (!hit) return null;
+  if (!hit.until || hit.until.getTime() < now.getTime()) return null;
+  return { by: hit.by, note: hit.note,
+           when: hit.when ? hit.when.toDateString() : '',
+           until: hit.until.toDateString(),
+           daysLeft: Math.max(0, Math.ceil((hit.until - now) / 86400000)) };
+}
+
+/** Everything the Division has ever said about one person, newest first.
+ *  Read only, and shown on their sheet whether it is still holding or not. */
+function ackHistoryForV1_(norm) {
+  var now = new Date();
+  return ackRowsV1_().filter(function (a) { return a.norm === norm; })
+    .map(function (a) {
+      return { finding: a.finding, by: a.by, note: a.note,
+               when: a.when ? a.when.toDateString() : '',
+               until: a.until ? a.until.toDateString() : '',
+               live: !!(a.until && a.until.getTime() >= now.getTime()),
+               at: a.when ? a.when.getTime() : 0 };
+    })
+    .sort(function (x, y) { return y.at - x.at; });
+}
 
 
 /* ======================================================================
@@ -7333,6 +7548,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'reflect')  return paintReflect();\n",
   "  if (S.screen === 'receipt')  return paintReceipt();\n",
   "  if (S.screen === 'signoff')  return paintSignoff();\n",
+  "  if (S.screen === 'ack')      return paintAck();\n",
   "  if (S.screen === 'trainee')  return paintTraineeSheet();\n",
   "  if (S.screen === 'person')   return paintPersonSheet();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
@@ -7598,10 +7814,12 @@ var PORTAL_PAGE_HTML = [
   "  // Every active trainee is either asking something of you or is not. Only\n",
   "  // the first kind gets a row; the rest get counted and hidden behind a\n",
   "  // button, because a name with nothing next to it is just noise.\n",
-  "  var flagged = [], quiet = [];\n",
+  "  /* Three lists, not two. Someone you have already looked at and said\n",
+  "     something about is not an alarm any more - and is not gone either. */\n",
+  "  var flagged = [], seen = [], quiet = [];\n",
   "  (d.people||[]).forEach(function(t,i){\n",
-  "    if (t.needs || missingBy[t.name]) flagged.push({t:t,i:i}); else quiet.push({t:t,i:i});",
-  "\n",
+  "    if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }\n",
+  "    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});\n",
   "  });\n",
   "\n",
   "  var h = hero('Training Division',\n",
@@ -7609,7 +7827,8 @@ var PORTAL_PAGE_HTML = [
   "             : 'Nothing waiting on you',\n",
   "    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+\n",
   "    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look",
-  "'));\n",
+  "')+\n",
+  "    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
   "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
@@ -7662,6 +7881,15 @@ var PORTAL_PAGE_HTML = [
   "    h += sec('Needs a look', flagged.length);\n",
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
+  "\n",
+  "  /* Looked at, and something said about it. Not an alarm any more, and not\n",
+  "     gone either - the finding is still on the card, with who holds it and\n",
+  "     until when. */\n",
+  "  if (seen.length){\n",
+  "    h += sec('Seen, and holding', seen.length);\n",
+  "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
+  "  }\n",
+  "\n",
   "  if ((d.people||[]).length){\n",
   "    h += sec('Anyone else', (d.people||[]).length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+d.people.length+\n",
@@ -7716,14 +7944,18 @@ var PORTAL_PAGE_HTML = [
   "function personCard(t, i, missing){\n",
   "  var why = missing ? 'missing '+missing : String(t.needs || '');\n",
   "  var hard = why && urgentNeedV(why);\n",
-  "  return '<button class=\"card act\"'+spine(why ? (hard ? 'due' : 'soon') : '')+\n",
+  "  var held = !!t.ack;\n",
+  "  return '<button class=\"card act\"'+spine(!why || held ? '' : (hard ? 'due' : 'soon'))+\n",
   "    ' onclick=\"openPerson('+i+')\">'+\n",
   "    '<span class=\"bd\">'+\n",
   "    '<span class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+",
   "'</span>'+\n",
   "    '<span class=\"m\">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no tra",
   "ining officer')+'</span>'+\n",
-  "    (why ? '<span class=\"flag\">'+esc(cap(why))+'</span>' : '')+\n",
+  "    (why ? '<span class=\"flag\"'+(held ? ' style=\"--accent:var(--ink-3)\"' : '')+'>'+\n",
+  "           esc(cap(why))+'</span>' : '')+\n",
+  "    (held ? '<span class=\"m\">Seen '+esc(t.ack.when)+' &middot; back on the list '+\n",
+  "            esc(t.ack.until)+'</span>' : '')+\n",
   "    '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "}\n",
   "function urgentNeedV(w){\n",
@@ -7773,6 +8005,32 @@ var PORTAL_PAGE_HTML = [
   "  var h = hero('Trainee record', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "  /* The card you tapped said why. Losing the reason on the way in is how a\n",
+  "     screen becomes a dead end: three problems named on one page and nothing\n",
+  "     to do about any of them on the next. */\n",
+  "  if (t.needs){\n",
+  "    if (t.ack){\n",
+  "      h += '<div class=\"note n-info\"><b>Seen</b>'+esc(cap(t.needs))+'.<br>'+\n",
+  "           esc(t.ack.by)+' on '+esc(t.ack.when)+': &ldquo;'+esc(t.ack.note)+'&rdquo;<br>'+",
+  "\n",
+  "           'Back on the list '+esc(t.ack.until)+' unless something changes first.</div>';\n",
+  "    } else {\n",
+  "      h += '<div class=\"note '+(urgentNeedV(t.needs)?'n-stop':'n-warn')+'\">'+\n",
+  "           '<b>Why this is flagged</b>'+esc(cap(t.needs))+'.</div>';\n",
+  "    }\n",
+  "    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAck('+jsStr(t.name)+','",
+  "+\n",
+  "           jsStr(t.needs)+')\"><span class=\"bd\">'+\n",
+  "           '<span class=\"h\">'+(t.ack ? 'Say something else about it' : 'I have seen this')",
+  "+'</span>'+\n",
+  "           '<span class=\"m\">Record what you are doing, in your words. It does not clear th",
+  "e '+\n",
+  "           'finding &mdash; it moves it off the list for as long as you say.</span></span>",
+  "'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    }\n",
+  "  }\n",
   "  h += freshRow(t.freshness);\n",
   "  h += '<div class=\"panel\">'+kv('Training officer', esc(t.fto||'not assigned'))+\n",
   "       kv('Shift', esc(t.shift||'not set'))+'</div>';\n",
@@ -7787,6 +8045,51 @@ var PORTAL_PAGE_HTML = [
   "he registry could not reach them.</div>';\n",
   "  paint(h);\n",
   "}\n",
+  "function openAck(name, finding){\n",
+  "  S.ctx = { name:name, finding:finding, from:S.screen };\n",
+  "  S.screen = 'ack'; render();\n",
+  "}\n",
+  "function paintAck(){\n",
+  "  var c = S.ctx || {};\n",
+  "  paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\''+(c.from||'main')+'\\';render()\">&larr; Back",
+  "</button>'+\n",
+  "    '<div class=\"note n-info\"><b>This does not clear it</b>Nothing here changes the record",
+  " or '+\n",
+  "    'the finding. It records that you saw it, in your words, and holds it off the list for",
+  " as '+\n",
+  "    'long as you ask. When that runs out it is back exactly as it is now.</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">What are you doing about it</div>'+\n",
+  "    '<textarea id=\"ackwhy\" placeholder=\"Goes on the record in your name. An acknowledgment",
+  " with '+\n",
+  "    'nothing in it is how a problem gets buried.\"></textarea></div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Hold it off the list for</div>'+\n",
+  "    picker('ackdays', '', [\n",
+  "      { value:'3',  label:'3 days'  },\n",
+  "      { value:'7',  label:'7 days'  },\n",
+  "      { value:'14', label:'14 days' },\n",
+  "      { value:'30', label:'30 days — the longest a hold can be' }\n",
+  "    ], 'pickDays', String(S.ackDays || 7))+'</div>'+\n",
+  "    '<button class=\"btn\" id=\"ackgo\" onclick=\"sendAck()\">Record it</button>'+\n",
+  "    '<div class=\"next\"><b>Why it comes back</b>A hold that never expires is a way to hide ",
+  "'+\n",
+  "    'something permanently. This one runs out, and the finding returns unchanged.</div>');",
+  "\n",
+  "}\n",
+  "function pickDays(v){ S.ackDays = Number(v) || 7; }\n",
+  "function sendAck(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = el('ackwhy').value.trim();\n",
+  "  if (why.length < 8) { alert('Say what you are doing about it.'); return; }\n",
+  "  S.busy = true; var b = el('ackgo'); b.disabled = true; b.textContent = 'Recording…';\n",
+  "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
+  "; })\n",
+  "    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Record",
+  " it';\n",
+  "      alert(e.message||e); })\n",
+  "    .acknowledgeFindingV1(S.ctx.name, S.ctx.finding, why, S.ackDays || 7);\n",
+  "}\n",
+  "\n",
   "function openSignoff(row,trainee,skill,evidence,requestId){\n",
   "  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId|",
   "|'' };\n",
@@ -8008,7 +8311,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '661b1cd4';
+var PORTAL_BUILD = '003164f5';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

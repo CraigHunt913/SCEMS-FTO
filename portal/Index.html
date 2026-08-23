@@ -320,6 +320,7 @@ function render(){
   if (S.screen === 'reflect')  return paintReflect();
   if (S.screen === 'receipt')  return paintReceipt();
   if (S.screen === 'signoff')  return paintSignoff();
+  if (S.screen === 'ack')      return paintAck();
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
   if (S.screen === 'record')   return paintRecord();
@@ -553,16 +554,20 @@ function paintDivision(d){
   // Every active trainee is either asking something of you or is not. Only
   // the first kind gets a row; the rest get counted and hidden behind a
   // button, because a name with nothing next to it is just noise.
-  var flagged = [], quiet = [];
+  /* Three lists, not two. Someone you have already looked at and said
+     something about is not an alarm any more - and is not gone either. */
+  var flagged = [], seen = [], quiet = [];
   (d.people||[]).forEach(function(t,i){
-    if (t.needs || missingBy[t.name]) flagged.push({t:t,i:i}); else quiet.push({t:t,i:i});
+    if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }
+    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});
   });
 
   var h = hero('Training Division',
     q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
              : 'Nothing waiting on you',
     d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
-    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look'));
+    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look')+
+    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
@@ -610,6 +615,15 @@ function paintDivision(d){
     h += sec('Needs a look', flagged.length);
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
+
+  /* Looked at, and something said about it. Not an alarm any more, and not
+     gone either - the finding is still on the card, with who holds it and
+     until when. */
+  if (seen.length){
+    h += sec('Seen, and holding', seen.length);
+    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
+  }
+
   if ((d.people||[]).length){
     h += sec('Anyone else', (d.people||[]).length);
     h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
@@ -659,12 +673,16 @@ function signoffCard(q){
 function personCard(t, i, missing){
   var why = missing ? 'missing '+missing : String(t.needs || '');
   var hard = why && urgentNeedV(why);
-  return '<button class="card act"'+spine(why ? (hard ? 'due' : 'soon') : '')+
+  var held = !!t.ack;
+  return '<button class="card act"'+spine(!why || held ? '' : (hard ? 'due' : 'soon'))+
     ' onclick="openPerson('+i+')">'+
     '<span class="bd">'+
     '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
     '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no training officer')+'</span>'+
-    (why ? '<span class="flag">'+esc(cap(why))+'</span>' : '')+
+    (why ? '<span class="flag"'+(held ? ' style="--accent:var(--ink-3)"' : '')+'>'+
+           esc(cap(why))+'</span>' : '')+
+    (held ? '<span class="m">Seen '+esc(t.ack.when)+' &middot; back on the list '+
+            esc(t.ack.until)+'</span>' : '')+
     '</span><span class="go">&rsaquo;</span></button>';
 }
 function urgentNeedV(w){
@@ -709,6 +727,27 @@ function paintPersonSheet(){
   var h = hero('Trainee record', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  /* The card you tapped said why. Losing the reason on the way in is how a
+     screen becomes a dead end: three problems named on one page and nothing
+     to do about any of them on the next. */
+  if (t.needs){
+    if (t.ack){
+      h += '<div class="note n-info"><b>Seen</b>'+esc(cap(t.needs))+'.<br>'+
+           esc(t.ack.by)+' on '+esc(t.ack.when)+': &ldquo;'+esc(t.ack.note)+'&rdquo;<br>'+
+           'Back on the list '+esc(t.ack.until)+' unless something changes first.</div>';
+    } else {
+      h += '<div class="note '+(urgentNeedV(t.needs)?'n-stop':'n-warn')+'">'+
+           '<b>Why this is flagged</b>'+esc(cap(t.needs))+'.</div>';
+    }
+    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+      h += '<button class="card act"'+spine('gold')+' onclick="openAck('+jsStr(t.name)+','+
+           jsStr(t.needs)+')"><span class="bd">'+
+           '<span class="h">'+(t.ack ? 'Say something else about it' : 'I have seen this')+'</span>'+
+           '<span class="m">Record what you are doing, in your words. It does not clear the '+
+           'finding &mdash; it moves it off the list for as long as you say.</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    }
+  }
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
@@ -722,6 +761,43 @@ function paintPersonSheet(){
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
   paint(h);
 }
+function openAck(name, finding){
+  S.ctx = { name:name, finding:finding, from:S.screen };
+  S.screen = 'ack'; render();
+}
+function paintAck(){
+  var c = S.ctx || {};
+  paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+
+    '<button class="back" onclick="S.screen=\''+(c.from||'main')+'\';render()">&larr; Back</button>'+
+    '<div class="note n-info"><b>This does not clear it</b>Nothing here changes the record or '+
+    'the finding. It records that you saw it, in your words, and holds it off the list for as '+
+    'long as you ask. When that runs out it is back exactly as it is now.</div>'+
+    '<div class="panel"><div class="lab">What are you doing about it</div>'+
+    '<textarea id="ackwhy" placeholder="Goes on the record in your name. An acknowledgment with '+
+    'nothing in it is how a problem gets buried."></textarea></div>'+
+    '<div class="panel"><div class="lab">Hold it off the list for</div>'+
+    picker('ackdays', '', [
+      { value:'3',  label:'3 days'  },
+      { value:'7',  label:'7 days'  },
+      { value:'14', label:'14 days' },
+      { value:'30', label:'30 days — the longest a hold can be' }
+    ], 'pickDays', String(S.ackDays || 7))+'</div>'+
+    '<button class="btn" id="ackgo" onclick="sendAck()">Record it</button>'+
+    '<div class="next"><b>Why it comes back</b>A hold that never expires is a way to hide '+
+    'something permanently. This one runs out, and the finding returns unchanged.</div>');
+}
+function pickDays(v){ S.ackDays = Number(v) || 7; }
+function sendAck(){
+  if (S.busy) return;
+  var why = el('ackwhy').value.trim();
+  if (why.length < 8) { alert('Say what you are doing about it.'); return; }
+  S.busy = true; var b = el('ackgo'); b.disabled = true; b.textContent = 'Recording…';
+  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
+    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Record it';
+      alert(e.message||e); })
+    .acknowledgeFindingV1(S.ctx.name, S.ctx.finding, why, S.ackDays || 7);
+}
+
 function openSignoff(row,trainee,skill,evidence,requestId){
   S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'' };
   S.screen = 'signoff'; render();

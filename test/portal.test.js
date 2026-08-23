@@ -71,7 +71,7 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 // with the registry in the picture. portal-forms.test.js proves the registry.
 global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
 
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -736,6 +736,86 @@ const dv = divisionPayloadV1_();
 ok(dv.warnings.length >= 1, 'losing the evaluation tab\'s trainee column is reported too');
 ok(/last evaluated/i.test(dv.warnings[0]),
    'on the screen that counts days since the last evaluation');
+
+// ---------------------------------------------------------------- //
+section('A finding can be seen, and seeing it is not clearing it');
+// ---------------------------------------------------------------- //
+// Three people named on the Division screen with a reason each, and tapping
+// one opened a page that did not even repeat the reason. Nothing to do, and
+// no way to stop being shown it tomorrow. The doctrine says what the answer
+// is not: never blank a finding without the data changing or a named
+// acknowledgment. So: the named acknowledgment, and nothing more.
+world();
+as('chief@example.org');
+const before = divisionPayloadV1_();
+const flaggedBefore = before.people.filter(p => p.needs);
+ok(flaggedBefore.length >= 1, 'somebody is flagged to begin with');
+const target = flaggedBefore[0];
+ok(!target.ack, 'and nothing is holding it');
+
+ok(/Say what you are doing/.test(
+     threwMsg(() => acknowledgeFindingV1(target.name, target.needs, 'ok', 7))),
+   'an acknowledgment with nothing in it is refused');
+as('jamie@example.org');
+ok(/Only the Training Division/.test(
+     threwMsg(() => acknowledgeFindingV1(target.name, target.needs, 'I will handle it myself.', 7))),
+   'and a trainee cannot acknowledge anything');
+
+as('chief@example.org');
+const res = acknowledgeFindingV1(target.name, target.needs,
+  'Spoke to their officer. Riding together Thursday and an evaluation comes out of it.', 7);
+ok(res.days === 7, 'the Division can, with a real sentence');
+
+const ackTab = readTabV1_(PORTAL.TAB.ACKS);
+ok(ackTab.ok, 'the log is created on demand');
+ok(ackTab.rows.length === 1, 'and carries one row');
+ok(String(ackTab.rows[0][ackTab.col['TRAINEE']]) === target.name, 'naming the person');
+ok(String(ackTab.rows[0][ackTab.col['FINDING']]) === target.needs,
+   'and the finding in the words it was shown in');
+ok(String(ackTab.rows[0][ackTab.col['WHO']]) === 'chief@example.org',
+   'against the signed-in account, not a typed name');
+ok(/Riding together Thursday/.test(String(ackTab.rows[0][ackTab.col['NOTE']])),
+   'with their own words');
+ok(SHEETS[PORTAL.TAB.AUDIT].g.some(r => r[1] === 'FINDING ACKNOWLEDGED'),
+   'and it is audited');
+
+const after = divisionPayloadV1_();
+const now = after.people.filter(p => p.name === target.name)[0];
+ok(!!now.ack, 'the person now carries the acknowledgment');
+ok(now.needs === target.needs,
+   'and the finding is UNCHANGED - seeing something is not fixing it');
+ok(/Riding together Thursday/.test(now.ack.note), 'the screen can show what was said');
+ok(now.ack.daysLeft === 7, 'and how long the hold has left');
+
+// it expires, and it is keyed to the words
+acknowledgeFindingV1(target.name, target.needs, 'Second look, still on it.', 1);
+const two = readTabV1_(PORTAL.TAB.ACKS);
+ok(two.rows.length === 2, 'a second acknowledgment appends rather than editing the first');
+ok(/Riding together Thursday/.test(String(two.rows[0][two.col['NOTE']])),
+   'the first is still there, word for word');
+ok(divisionPayloadV1_().people.filter(p => p.name === target.name)[0].ack.daysLeft === 1,
+   'and the later one governs');
+
+ok(liveAckForV1_(normNameV1_(target.name), 'something else entirely') === null,
+   'a hold on one finding does not silence a different one');
+ok(liveAckForV1_(normNameV1_(target.name), target.needs) !== null, 'while its own still holds');
+
+// expired
+SHEETS[PORTAL.TAB.ACKS].g.forEach((r, i) => {
+  if (i >= PORTAL.HEADER_ROW) r[two.col['HOLDS UNTIL']] = new Date(2020, 0, 1);
+});
+forgetTabsV1_();
+ok(liveAckForV1_(normNameV1_(target.name), target.needs) === null,
+   'an expired hold stops holding, and the finding is back');
+ok(readTabV1_(PORTAL.TAB.ACKS).rows.length === 2,
+   'with the record of having seen it still on file - nothing is ever removed');
+
+world(); PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_PRODUCTION;
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+as('chief@example.org');
+ok(/read only/i.test(threwMsg(() => acknowledgeFindingV1('Jamie Rivers', 'never evaluated',
+   'Looking into it this week.', 7))),
+   'and none of it happens against a read-only tracker');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

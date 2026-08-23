@@ -296,6 +296,9 @@ function divisionPayloadV1_() {
   var incomplete = active.filter(function (t) {
     return !t.setupComplete || strandedBy[t.norm]; });
 
+  // Read the acknowledgment log once, not once per person.
+  var acks = safeFormsV1_(function () { return ackRowsV1_(); }) || [];
+
   var seen = {}, dupes = [];
   active.forEach(function (t) {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
@@ -349,9 +352,13 @@ function divisionPayloadV1_() {
       else if (days < 0) why = 'never evaluated';
       else if (days > 14) why = days + ' days since an evaluation';
       else if (!t.setupComplete) why = 'record incomplete';
+      // Seen, by a named person, in their own words, for a stated time. The
+      // finding is not cleared and never can be - it moves out of the alarm
+      // list until the hold runs out, and comes straight back after.
+      var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
-               days: days, status: t.status || '', needs: why,
+               days: days, status: t.status || '', needs: why, ack: ack,
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),

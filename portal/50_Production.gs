@@ -120,7 +120,10 @@ function goLive() {
   var missing = [];
   Object.keys(PORTAL.TAB).forEach(function (k) {
     var tn = PORTAL.TAB[k];
-    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT) return;
+    // The portal's own tabs. It makes these itself; their absence is not a
+    // reason to refuse the mode, it is a thing to do on the way in.
+    if (tn === PORTAL.TAB.COACHING || tn === PORTAL.TAB.AUDIT ||
+        tn === PORTAL.TAB.ACKS) return;
     if (!readTabV1_(tn).ok) missing.push(tn);
   });
   if (missing.length) {
@@ -153,6 +156,16 @@ function goLive() {
       'do: the tab ' + PORTAL.TAB.AUDIT + ' is not in this spreadsheet and ' +
       'could not be created. Allowing a sign-off and keeping no record of who ' +
       'approved it is worse than not allowing it. Nothing was changed.');
+  }
+
+  // Somewhere to record a finding having been seen. Same reasoning as the
+  // audit log: a screen that offers to record an acknowledgment and then puts
+  // it nowhere is worse than one that does not offer it.
+  if (!ensureAckLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.ACKS + ' is not in ' +
+      'this spreadsheet and could not be created, so the Training Division ' +
+      'could say it had seen a finding and nothing would record that it had. ' +
+      'Nothing was changed.');
   }
 
   var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;

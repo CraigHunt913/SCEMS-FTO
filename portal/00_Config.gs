@@ -35,7 +35,8 @@ var PORTAL = Object.freeze({
     SIGNOFF:    '21 SKILL SIGN-OFF LOG',
     ROSTER:     '22 FTO ROSTER',
     COACHING:   'PORTAL COACHING',
-    AUDIT:      'PORTAL AUDIT'
+    AUDIT:      'PORTAL AUDIT',
+    ACKS:       'PORTAL ACKNOWLEDGEMENTS'
   }),
 
   HEADER_ROW: 4,
