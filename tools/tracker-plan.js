@@ -27,6 +27,7 @@ const FILES = [
   ['70_admin_health','Health checks and repairs: what is wrong, and the previewed tool that fixes it.'],
   ['75_presentation','How the sheets look and read. Three versions of this concern used to sit in three separate blocks.'],
   ['80_migration',   'One-time migrations between versions of this system.'],
+  ['85_freshstart',  'Copying the tracker and cleaning the copy, without losing anything.'],
   ['90_recovery',    'Run-once tools for when something went wrong: phantoms, lost responses, backfills.'],
   ['95_runners',     'Triggers, the menu, and the functions a human runs by name.'],
   ['99_config',      'Constants. Nothing here does anything.']
@@ -112,6 +113,9 @@ put('99_config', ['BADGE_B64', 'SEV_V19', 'TV', 'PANEL_FIRST_ROW_V19', 'PANEL_RO
   'KEEP_TOOLS_V19', 'ONE_TIME_TOOLS_V19', 'SUPERSEDED_BLOCKS_V19']);
 
 put('20_forms', ['goLiveV19', 'backToTestModeV19']);
+
+put('85_freshstart', ['knownTabsV20_6_', 'sheetIsLiveFormDestinationV20_6_',
+  'freshStartReport', 'freshStartClean', 'freshStartV20_6_']);
 
 /** Where one declaration goes. '' means nobody has said, and the build stops. */
 function fileFor(unit) {

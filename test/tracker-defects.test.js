@@ -294,5 +294,90 @@ ok(SYSLOG.some(l => l.kind === 'ENGINE KEY COLUMN REPAIRED'), 'the repair is log
 ok(/Nothing to repair/.test(previewEngineRepairV20_6()),
    'and running it again finds nothing to do');
 
+// ---------------------------------------------------------------- //
+section('The fresh start removes only what no form is writing to');
+// ---------------------------------------------------------------- //
+// Fifty-two tabs, twenty-two of which the code has never heard of. The whole
+// question is which of them are safe to drop, and the name cannot answer it:
+// "Form Responses 27" looks identical whether a form is writing to it every
+// day or nothing has touched it in a year. Google is asked instead.
+function sheet(name, rows, formUrl) {
+  const g = [[]];
+  for (let i = 0; i < rows; i++) g.push(['x']);
+  const sh = new FakeSheet(name, g);
+  sh.getFormUrl = () => formUrl || null;
+  SHEETS[name] = sh;
+  SHEET_LIST.push(name);
+  return sh;
+}
+let DELETED = [];
+function bookWith(names) {
+  reset(); DELETED = [];
+  names.forEach(n => sheet(n.name, n.rows || 0, n.form));
+  global.SpreadsheetApp.getActiveSpreadsheet = () => ({
+    getName: () => 'SCEMS Tracker COPY',
+    getSheetByName: n => SHEETS[n] || null,
+    getSheets: () => SHEET_LIST.map(n => SHEETS[n]),
+    deleteSheet: sh => { DELETED.push(sh.getName()); },
+    toast: () => {}
+  });
+}
+
+bookWith([
+  { name: TAB.MASTER, rows: 12 },
+  { name: TAB.SKILL_EVIDENCE, rows: 361 },
+  { name: 'HOME', rows: 41 },
+  { name: 'PORTAL AUDIT', rows: 33 },
+  { name: 'Form Responses 26', rows: 37, form: 'https://docs.google.com/forms/d/LIVE/edit' },
+  { name: 'Form Responses 27', rows: 26 },
+  { name: 'Form Responses 3', rows: 1 },
+  { name: '05 SKILLS PROGRESS LEGACY V18', rows: 20 }
+]);
+
+let rep = freshStartReport();
+ok(/NOTHING WAS CHANGED/.test(rep), 'the report changes nothing');
+ok(DELETED.length === 0, 'and deletes nothing');
+ok(/REMOVABLE +: 3/.test(rep), 'it finds three removable tabs');
+ok(/Form Responses 27 +— +26 row\(s\), no form writes to it/.test(rep),
+   'an orphaned response tab, with its row count');
+ok(/LEGACY V18 +— +20 row\(s\), superseded/.test(rep), 'and a superseded one');
+ok(!/Form Responses 26 +—/.test(rep.split('These would be removed')[1] || ''),
+   'the response tab a form IS writing to is not on the removal list');
+ok(/A form is currently writing to these/.test(rep) && /Form Responses 26/.test(rep),
+   'it is listed separately, as kept');
+ok(/47 row\(s\) in total/.test(rep), 'the total is stated before anything happens');
+ok(!/01 TRAINEE MASTER/.test(rep.split('These would be removed')[1] || ''),
+   'no tab the code names is ever removable');
+ok(!/PORTAL AUDIT/.test(rep.split('These would be removed')[1] || ''),
+   'nor a tab the portal made');
+
+ok(/NOTHING WAS CHANGED/.test(freshStartClean('CLEAN the wrong book')),
+   'a token naming a different spreadsheet does nothing');
+ok(DELETED.length === 0, 'still nothing deleted');
+
+ok(/not authorised/i.test(freshStartClean('CLEAN SCEMS Tracker COPY')),
+   'the right token is still refused without authorisation');
+ok(DELETED.length === 0, 'and still nothing deleted');
+
+const realGate2 = gateV20_2_;
+gateV20_2_ = () => true;
+const out2 = freshStartClean('CLEAN SCEMS Tracker COPY');
+gateV20_2_ = realGate2;
+ok(/DONE\. 3 tab\(s\) removed/.test(out2), 'with both, it removes the three');
+ok(DELETED.indexOf('Form Responses 27') >= 0 && DELETED.indexOf('Form Responses 3') >= 0,
+   'the orphaned response tabs');
+ok(DELETED.indexOf('05 SKILLS PROGRESS LEGACY V18') >= 0, 'and the superseded one');
+ok(DELETED.indexOf('Form Responses 26') < 0, 'and NOT the one a form is writing to');
+ok(DELETED.indexOf(TAB.MASTER) < 0 && DELETED.indexOf('HOME') < 0,
+   'and nothing the code names');
+ok(SYSLOG.some(l => l.kind === 'FRESH START CLEAN'), 'and it is logged');
+ok(/engineHealthCheck\(\)/.test(out2), 'and it says what to run next');
+
+// unsure means keep
+bookWith([{ name: TAB.MASTER, rows: 5 }, { name: 'Form Responses 9', rows: 4 }]);
+SHEETS['Form Responses 9'].getFormUrl = () => { throw new Error('no'); };
+ok(/REMOVABLE +: 0/.test(freshStartReport()),
+   'and when Google will not say whether a form is writing to a tab, it is kept');
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

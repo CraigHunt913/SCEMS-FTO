@@ -1,0 +1,1902 @@
+{
+ "source": "SCEMS Field Training Tracker Master",
+ "capturedFrom": "live workbook, 23 Aug 2026",
+ "tabs": [
+  {
+   "name": "TRAINEES",
+   "headerRow": 4,
+   "headers": [
+    "Anicia Scipp",
+    "Advanced EMT",
+    "Phase 4",
+    "2.0",
+    "13 days ago",
+    "2.0",
+    "0 of 25",
+    "",
+    "",
+    "False",
+    "False"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "PORTAL AUDIT",
+   "headerRow": 4,
+   "headers": [
+    "WHEN",
+    "WHAT",
+    "WHO",
+    "DETAIL",
+    "VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "PORTAL ASSIGNMENT LOG",
+   "headerRow": 4,
+   "headers": [
+    "RUN",
+    "TAB",
+    "ROW",
+    "COLUMN",
+    "TRAINEE",
+    "WAS",
+    "NOW",
+    "BY",
+    "VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "PORTAL RENAME LOG",
+   "headerRow": 4,
+   "headers": [
+    "RUN",
+    "TAB",
+    "ROW",
+    "COL",
+    "HEADER",
+    "WAS",
+    "NOW",
+    "BY",
+    "VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "PORTAL RETIRE LOG",
+   "headerRow": 4,
+   "headers": [
+    "RUN",
+    "TAB",
+    "ROW",
+    "COLUMN",
+    "NAME",
+    "WAS",
+    "NOW",
+    "REASON",
+    "BY",
+    "VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "PORTAL ROSTER LOG",
+   "headerRow": 4,
+   "headers": [
+    "RUN",
+    "TAB",
+    "ROW",
+    "COLUMN",
+    "EMAIL",
+    "NAME",
+    "BY",
+    "VERSION",
+    "CODE"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "HOME",
+   "headerRow": 4,
+   "headers": [],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "00 README - CONTROL",
+   "headerRow": 4,
+   "headers": [
+    "CONTROL VALUES",
+    "",
+    "WHAT THIS DIAL DOES",
+    "",
+    "",
+    "FTO ROSTER MOVED",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "EMAIL"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "01 TRAINEE MASTER",
+   "headerRow": 4,
+   "headers": [
+    "Trainee",
+    "Employee ID",
+    "Level",
+    "Entry Profile",
+    "Assigned FTO",
+    "Start Date",
+    "Current Phase",
+    "Set Status",
+    "Trainee Email",
+    "PHASE START DATE",
+    "NRT Date",
+    "ENTRY PROFILE KEY",
+    "Clearance Date",
+    "Notes"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "05 SKILLS PROGRESS",
+   "headerRow": 4,
+   "headers": [
+    "TRAINEE",
+    "SKILL",
+    "STAGE",
+    "LAST DATE",
+    "LAST FTO",
+    "LEVEL",
+    "READINESS",
+    "SIGN-OFF",
+    "DOMAIN",
+    "SKILL ID",
+    "SUCCESSFUL REPS",
+    "INDEPENDENT REPS",
+    "DISTINCT DATES",
+    "DISTINCT FTOS",
+    "LAST OUTCOME",
+    "LAST CONTEXT",
+    "SIGNED BY",
+    "SIGNED DATE",
+    "EXPIRATION",
+    "DECISION / EVIDENCE NOTE",
+    "",
+    "Not started"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "20 SKILL VALIDATION QUEUE",
+   "headerRow": 4,
+   "headers": [
+    "READY DATE",
+    "TRAINEE",
+    "SKILL ID",
+    "DOMAIN",
+    "SKILL",
+    "EVIDENCE SUMMARY",
+    "DECISION",
+    "DECIDED BY",
+    "DECISION DATE",
+    "EXPIRATION",
+    "RATIONALE",
+    "RECORD STATUS",
+    "LAST EVIDENCE DATE",
+    "REVIEW",
+    "REQUEST ID",
+    "RECORD"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "12 DECISION QUEUE",
+   "headerRow": 4,
+   "headers": [
+    "FILED",
+    "TRAINEE",
+    "ITEM",
+    "",
+    "DECISION DUE",
+    "DECISION",
+    "DECIDED BY",
+    "DATED",
+    "STATUS"
+   ],
+   "formulaColumns": {
+    "E": {
+     "header": "DECISION DUE",
+     "formula": "=IF(A{r}=\"\",\"\",A{r}+3)",
+     "agreeing": 39
+    },
+    "I": {
+     "header": "STATUS",
+     "formula": "=IF($B{r}=\"\",\"\",IF($F{r}<>\"\",\"CLOSED\",IF(AND($E{r}<>\"\",$E{r}<NOW()),\"BREACHED\",\"OPEN\")))",
+     "agreeing": 60
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "13 AUDIT - EXCEPTION LOG",
+   "headerRow": 4,
+   "headers": [
+    "TRAINEE",
+    "ADV vs SCORE",
+    "REFLECT vs SCORE",
+    "NO NARRATIVE",
+    "SILENT RECORD",
+    "FTO SCOPE",
+    "PHASE MISMATCH",
+    "",
+    "",
+    "ack (auto)",
+    "ack name (auto)"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "TRAINEE",
+     "formula": "=IF('06 PHASE - STATUS ENGINE'!A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!A{r})",
+     "agreeing": 40
+    },
+    "B": {
+     "header": "ADV vs SCORE",
+     "formula": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,B$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(AND(COUNTIFS('02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$AG$5:$AG$975,\"Yes\",'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-'00 README - CONTROL'!$B$9,'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">\"&IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))>0,OR(AND('06 PHASE - STATUS ENGINE'!J{r}<>\"\",'06 PHASE - STATUS ENGINE'!J{r}<'00 README - CONTROL'!$B$7),'06 PHASE - STATUS ENGINE'!N{r}>0)),\"FLAG\",\"\")))",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "REFLECT vs SCORE",
+     "formula": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,C$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(AND(COUNTIFS('03 SELF-REFLECTION RAW'!$B$5:$B$500,$A{r},'03 SELF-REFLECTION RAW'!$H$5:$H$500,\"No\",'03 SELF-REFLECTION RAW'!$C$5:$C$500,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'03 SELF-REFLECTION RAW'!$C$5:$C$500,\">\"&IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))>=2,'06 PHASE - STATUS ENGINE'!J{r}<>\"\",'06 PHASE - STATUS ENGINE'!J{r}>=4),\"FLAG\",\"\")))",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "NO NARRATIVE",
+     "formula": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,D$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(SUMPRODUCT(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$S$5:$S$975=\"No\")*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>=TODAY()-'00 README - CONTROL'!$B$9)*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))*(((('02 FTO SHIFT EVAL RAW'!$M$5:$M$975=1)+('02 FTO SHIFT EVAL RAW'!$M$5:$M$975=5))+(('02 FTO SHIFT EVAL RAW'!$N$5:$N$975=1)+('02 FTO SHIFT EVAL RAW'!$N$5:$N$975=5))+(('02 FTO SHIFT EVAL RAW'!$O$5:$O$975=1)+('02 FTO SHIFT EVAL RAW'!$O$5:$O$975=5))+(('02 FTO SHIFT EVAL RAW'!$P$5:$P$975=1)+('02 FTO SHIFT EVAL RAW'!$P$5:$P$975=5))+(('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975=1)+('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975=5))+(('02 FTO SHIFT EVAL RAW'!$R$5:$R$975=1)+('02 FTO SHIFT EVAL RAW'!$R$5:$R$975=5)))>0))>0,\"FLAG\",\"\")))",
+     "agreeing": 39
+    },
+    "E": {
+     "header": "SILENT RECORD",
+     "formula": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,E$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(AND(COUNTIF('02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>0,MINIFS('02 FTO SHIFT EVAL RAW'!$G$5:$G$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})<=TODAY()-('00 README - CONTROL'!$B$8),COUNTIFS('03 SELF-REFLECTION RAW'!$B$5:$B$500,$A{r},'03 SELF-REFLECTION RAW'!$C$5:$C$500,\">=\"&TODAY()-('00 README - CONTROL'!$B$8))=0,(TODAY()-IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))>('00 README - CONTROL'!$B$8)),\"FLAG\",\"\")))",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "PHASE MISMATCH",
+     "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F\"&\"$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"\")",
+     "agreeing": 32
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "07 WEEKLY STATUS REPORT",
+   "headerRow": 4,
+   "headers": [
+    "Trainee",
+    "Level",
+    "Entry Profile",
+    "Phase",
+    "Shifts",
+    "Trend",
+    "Status",
+    "Open Flags",
+    "Next Decision Due",
+    "Owner"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "Trainee",
+     "formula": "=IF('06 PHASE - STATUS ENGINE'!A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!A{r})",
+     "agreeing": 40
+    },
+    "B": {
+     "header": "Level",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!B{r})",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "Entry Profile",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!C{r})",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "Phase",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!E{r})",
+     "agreeing": 40
+    },
+    "E": {
+     "header": "Shifts",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!G{r})",
+     "agreeing": 40
+    },
+    "F": {
+     "header": "Trend",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!L{r})",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "Status",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!R{r})",
+     "agreeing": 40
+    },
+    "H": {
+     "header": "Open Flags",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!M{r})",
+     "agreeing": 40
+    },
+    "I": {
+     "header": "Next Decision Due",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!S{r})",
+     "agreeing": 40
+    },
+    "J": {
+     "header": "Owner",
+     "formula": "=IF($A{r}=\"\",\"\",\"Training and Compliance Officer\")",
+     "agreeing": 40
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "08 FTO VIEW",
+   "headerRow": 4,
+   "headers": [
+    "Assigned FTO",
+    "Trainee",
+    "Phase",
+    "Status",
+    "Last Eval",
+    "Days Since",
+    "Unsigned Skills",
+    "Open Flags",
+    "Next Decision Due",
+    "Submit Today"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "Assigned FTO",
+     "formula": "=IF('06 PHASE - STATUS ENGINE'!A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!D{r})",
+     "agreeing": 40
+    },
+    "B": {
+     "header": "Trainee",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!A{r})",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "Phase",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!E{r})",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "Status",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!R{r})",
+     "agreeing": 40
+    },
+    "E": {
+     "header": "Last Eval",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!H{r})",
+     "agreeing": 40
+    },
+    "F": {
+     "header": "Days Since",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!I{r})",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "Unsigned Skills",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!N{r})",
+     "agreeing": 40
+    },
+    "H": {
+     "header": "Open Flags",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!M{r})",
+     "agreeing": 40
+    },
+    "I": {
+     "header": "Next Decision Due",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!S{r})",
+     "agreeing": 40
+    },
+    "J": {
+     "header": "Submit Today",
+     "formula": "=IF($A{r}=\"\",\"\",\"Use the Hub QR : SCEMS FTO Shift Evaluation\")",
+     "agreeing": 40
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "09 TRAINEE VIEW",
+   "headerRow": 4,
+   "headers": [
+    "Trainee",
+    "Level",
+    "Entry Profile",
+    "Phase",
+    "Shifts",
+    "Trend",
+    "Latest Strength",
+    "Latest Improvement Focus",
+    "Next Shift Focus",
+    "Skills Still Unsigned",
+    "Next Decision Due",
+    "Card Note"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "Trainee",
+     "formula": "=IF('06 PHASE - STATUS ENGINE'!A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!A{r})",
+     "agreeing": 40
+    },
+    "B": {
+     "header": "Level",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!B{r})",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "Entry Profile",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!C{r})",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "Phase",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!E{r})",
+     "agreeing": 40
+    },
+    "E": {
+     "header": "Shifts",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!G{r})",
+     "agreeing": 40
+    },
+    "F": {
+     "header": "Trend",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!L{r})",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "Latest Strength",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(LOOKUP(2,1/(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$V$5:$V$975<>\"\")),'02 FTO SHIFT EVAL RAW'!$V$5:$V$975),\"\"))",
+     "agreeing": 40
+    },
+    "H": {
+     "header": "Latest Improvement Focus",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(LOOKUP(2,1/(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$W$5:$W$975<>\"\")),'02 FTO SHIFT EVAL RAW'!$W$5:$W$975),\"\"))",
+     "agreeing": 40
+    },
+    "I": {
+     "header": "Next Shift Focus",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(LOOKUP(2,1/(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$X$5:$X$975<>\"\")),'02 FTO SHIFT EVAL RAW'!$X$5:$X$975),\"\"))",
+     "agreeing": 40
+    },
+    "J": {
+     "header": "Skills Still Unsigned",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!N{r})",
+     "agreeing": 40
+    },
+    "K": {
+     "header": "Next Decision Due",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!S{r})",
+     "agreeing": 40
+    },
+    "L": {
+     "header": "Card Note",
+     "formula": "=IF($A{r}=\"\",\"\",IF('06 PHASE - STATUS ENGINE'!I{r}=\"\",\"\",IF('06 PHASE - STATUS ENGINE'!I{r}>'00 README - CONTROL'!$B$5,\"A shift evaluation is overdue. Check with your FTO.\",\"On schedule.\")))",
+     "agreeing": 40
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "10 TRAINING DIVISION DASH",
+   "headerRow": 4,
+   "headers": [
+    "PROGRAM AT A GLANCE",
+    "",
+    "",
+    "BY LEVEL",
+    "",
+    "",
+    "",
+    "",
+    "TRAINEES BY FTO"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "PROGRAM AT A GLANCE",
+     "formula": "=IF('07 WEEKLY STATUS REPORT'!A5=\"\",\"\",'07 WEEKLY STATUS REPORT'!A5)",
+     "agreeing": 1
+    },
+    "B": {
+     "header": "",
+     "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$A$5:$A$44,\"<>\")-COUNTIF('06 PHASE - STATUS ENGINE'!$A$5:$A$44,\"\")",
+     "agreeing": 1
+    },
+    "C": {
+     "header": "",
+     "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D5)",
+     "agreeing": 1
+    },
+    "D": {
+     "header": "BY LEVEL",
+     "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F5)",
+     "agreeing": 1
+    },
+    "E": {
+     "header": "",
+     "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$B$5:$B$44,\"EMT\")",
+     "agreeing": 1
+    },
+    "F": {
+     "header": "",
+     "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H5)",
+     "agreeing": 1
+    },
+    "G": {
+     "header": "",
+     "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I5)",
+     "agreeing": 1
+    },
+    "I": {
+     "header": "TRAINEES BY FTO",
+     "formula": "='00 README - CONTROL'!F{r}",
+     "agreeing": 21
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "11 MEDICAL DIRECTOR VIEW",
+   "headerRow": 4,
+   "headers": [
+    "TRAINEE",
+    "LEVEL",
+    "PHASE",
+    "ASSESSMENT AVG",
+    "TREATMENT AVG",
+    "CLINICAL DISAGREEMENT",
+    "CS EVENTS",
+    "LAST EVALUATION",
+    "PROGRAM STATUS"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "TRAINEE",
+     "formula": "=IF('06 PHASE - STATUS ENGINE'!A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!A{r})",
+     "agreeing": 40
+    },
+    "B": {
+     "header": "LEVEL",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!B{r})",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "PHASE",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!E{r})",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "ASSESSMENT AVG",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND(AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r}),2),\"\"))",
+     "agreeing": 40
+    },
+    "E": {
+     "header": "TREATMENT AVG",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND(AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r}),2),\"\"))",
+     "agreeing": 40
+    },
+    "F": {
+     "header": "CLINICAL DISAGREEMENT",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!Q{r})",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "CS EVENTS",
+     "formula": "=IF($A{r}=\"\",\"\",COUNTIFS('02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$AB$5:$AB$975,\"Yes\"))",
+     "agreeing": 40
+    },
+    "H": {
+     "header": "LAST EVALUATION",
+     "formula": "=IF($A{r}=\"\",\"\",IF('06 PHASE - STATUS ENGINE'!H{r}=\"\",\"none\",'06 PHASE - STATUS ENGINE'!H{r}))",
+     "agreeing": 40
+    },
+    "I": {
+     "header": "PROGRAM STATUS",
+     "formula": "=IF($A{r}=\"\",\"\",'06 PHASE - STATUS ENGINE'!R{r})",
+     "agreeing": 40
+    }
+   },
+   "hidden": false
+  },
+  {
+   "name": "23 TRAINEE SKILLS",
+   "headerRow": 4,
+   "headers": [
+    "",
+    "TRAINEE",
+    "Colton Blackwell",
+    "SHOW ME",
+    "Recent activity"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "15 SKILL CATALOG",
+   "headerRow": 4,
+   "headers": [
+    "SKILL ID",
+    "DOMAIN",
+    "SKILL",
+    "EMT REQUIRED",
+    "AEMT REQUIRED",
+    "PARAMEDIC REQUIRED",
+    "ACTIVE",
+    "ALLOWED CONTEXT",
+    "MIN SUCCESSFUL REPS",
+    "MIN INDEPENDENT REPS",
+    "MIN DISTINCT DATES",
+    "MIN DISTINCT FTOS",
+    "SIGN-OFF AUTHORITY",
+    "STANDARD / SOURCE",
+    "EFFECTIVE DATE",
+    "RETIRE DATE",
+    "APPROVAL STATUS"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "22 FTO ROSTER",
+   "headerRow": 4,
+   "headers": [
+    "FTO NAME",
+    "SHIFT",
+    "CERT LEVEL",
+    "TRAINS EMT",
+    "TRAINS AEMT",
+    "TRAINS PARAMEDIC",
+    "ACTIVE",
+    "NOTES",
+    "EMAIL",
+    "EMPLOYEE ID"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "14 ANALYTICS",
+   "headerRow": 4,
+   "headers": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Communication",
+    "4.11"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "06 PHASE - STATUS ENGINE",
+   "headerRow": 4,
+   "headers": [
+    "Trainee",
+    "Level",
+    "Entry Profile",
+    "Assigned FTO",
+    "Phase",
+    "Human-Set Status",
+    "Shifts Logged",
+    "Last Eval Date",
+    "Days Since Eval",
+    "Avg (Window)",
+    "Avg (Prior Window)",
+    "Trend",
+    "Open Red Flags",
+    "SKILLS READY FOR VALIDATION",
+    "Advancement Requested",
+    "NRT Filed",
+    "Clinical Disagreement",
+    "Computed Status",
+    "Next Decision Due",
+    "MIN SHIFTS",
+    "DAYS IN PHASE",
+    "SNOOZE",
+    "reminder (auto)"
+   ],
+   "formulaColumns": {
+    "A": {
+     "header": "Trainee",
+     "formula": "=IF('01 TRAINEE MASTER'!A{r}=\"\",\"\",'01 TRAINEE MASTER'!A{r})",
+     "agreeing": 38
+    },
+    "B": {
+     "header": "Level",
+     "formula": "=IF($A{r}=\"\",\"\",'01 TRAINEE MASTER'!C{r})",
+     "agreeing": 40
+    },
+    "C": {
+     "header": "Entry Profile",
+     "formula": "=IF($A{r}=\"\",\"\",'01 TRAINEE MASTER'!D{r})",
+     "agreeing": 40
+    },
+    "D": {
+     "header": "Assigned FTO",
+     "formula": "=IF($A{r}=\"\",\"\",'01 TRAINEE MASTER'!E{r})",
+     "agreeing": 40
+    },
+    "E": {
+     "header": "Phase",
+     "formula": "=IF($A{r}=\"\",\"\",'01 TRAINEE MASTER'!G{r})",
+     "agreeing": 40
+    },
+    "F": {
+     "header": "Human-Set Status",
+     "formula": "=IF($A{r}=\"\",\"\",'01 TRAINEE MASTER'!H{r})",
+     "agreeing": 40
+    },
+    "G": {
+     "header": "Shifts Logged",
+     "formula": "=IF($A{r}=\"\",\"\",COUNTIF('02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r}))",
+     "agreeing": 40
+    },
+    "H": {
+     "header": "Last Eval Date",
+     "formula": "=IF($A{r}=\"\",\"\",IF(G{r}=0,\"\",MAXIFS('02 FTO SHIFT EVAL RAW'!$G$5:$G$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})))",
+     "agreeing": 40
+    },
+    "I": {
+     "header": "Days Since Eval",
+     "formula": "=IF($A{r}=\"\",\"\",IF(H{r}=\"\",\"\",TODAY()-H{r}))",
+     "agreeing": 40
+    },
+    "J": {
+     "header": "Avg (Window)",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1)))/6,2),\"\"))",
+     "agreeing": 39
+    },
+    "K": {
+     "header": "Avg (Prior Window)",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6)))/6,2),\"\"))",
+     "agreeing": 39
+    },
+    "L": {
+     "header": "Trend",
+     "formula": "=IF($A{r}=\"\",\"\",IF(J{r}=\"\",\"\",IF(K{r}=\"\",\"New\",IF(J{r}-K{r}>=0.15,\"Rising\",IF(K{r}-J{r}>=0.15,\"Falling\",\"Steady\")))))",
+     "agreeing": 39
+    },
+    "M": {
+     "header": "Open Red Flags",
+     "formula": "=IF($A{r}=\"\",\"\",COUNTIFS('02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$Z$5:$Z$975,\"Yes\")+COUNTIF('04 URGENT CONCERNS RAW'!$E$5:$E$500,$A{r}))",
+     "agreeing": 40
+    },
+    "N": {
+     "header": "SKILLS READY FOR VALIDATION",
+     "formula": "=IF($A{r}=\"\",\"\",COUNTIFS('05 SKILLS PROGRESS'!$A$5:$A$3000,$A{r},'05 SKILLS PROGRESS'!$G$5:$G$3000,\"READY FOR VALIDATION\"))",
+     "agreeing": 40
+    },
+    "O": {
+     "header": "Advancement Requested",
+     "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"Advancement*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+     "agreeing": 39
+    },
+    "P": {
+     "header": "NRT Filed",
+     "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"*NRT*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+     "agreeing": 39
+    },
+    "Q": {
+     "header": "Clinical Disagreement",
+     "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"Clinical*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+     "agreeing": 39
+    },
+    "R": {
+     "header": "Computed Status",
+     "formula": "=IF($A{r}=\"\",\"\",IF(F{r}<>\"\",F{r}&\" (engine: \"&IF(I{r}=\"\",\"No Evals Yet\",IF(P{r}=\"Yes\",\"NRT Filed\",IF(I{r}>'00 README - CONTROL'!$B$5,\"Delayed\",IF(O{r}=\"Yes\",\"Advancement Review Due\",IF(M{r}>0,\"Needs Attention\",IF(AND(J{r}<>\"\",J{r}<'00 README - CONTROL'!$B$7),\"Needs Attention\",\"On Track\"))))))&\")\",IF(I{r}=\"\",\"No Evals Yet\",IF(P{r}=\"Yes\",\"NRT Filed : Decision Due\",IF(I{r}>'00 README - CONTROL'!$B$5,\"Delayed / No Recent Submission\",IF(O{r}=\"Yes\",\"Advancement Review Due\",IF(M{r}>0,\"Active / Needs Attention\",IF(AND(J{r}<>\"\",J{r}<'00 README - CONTROL'!$B$7),\"Active / Needs Attention\",\"Active / On Track\"))))))))",
+     "agreeing": 40
+    },
+    "S": {
+     "header": "Next Decision Due",
+     "formula": "=IF($A{r}=\"\",\"\",IFERROR(IF(MINIFS('12 DECISION QUEUE'!$E$5:$E$299,'12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$F$5:$F$299,\"\")=0,\"\",MINIFS('12 DECISION QUEUE'!$E$5:$E$299,'12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$F$5:$F$299,\"\")),\"\"))",
+     "agreeing": 39
+    },
+    "U": {
+     "header": "DAYS IN PHASE",
+     "formula": "=IF($A{r}=\"\",\"\",IF('01 TRAINEE MASTER'!$J{r}=\"\",\"set start date\",TODAY()-'01 TRAINEE MASTER'!$J{r}))",
+     "agreeing": 40
+    },
+    "V": {
+     "header": "SNOOZE",
+     "formula": "=IF($A{r}=\"\",\"\",IF(AND($I{r}<>\"\",$I{r}>'00 README - CONTROL'!$B$5,$W{r}<>\"\",TODAY()-$W{r}<=3),\"SNOOZED\",\"\"))",
+     "agreeing": 40
+    }
+   },
+   "hidden": true
+  },
+  {
+   "name": "02 FTO SHIFT EVAL RAW",
+   "headerRow": 4,
+   "headers": [
+    "Timestamp",
+    "FTO",
+    "Trainee",
+    "Level",
+    "Entry Profile",
+    "Phase",
+    "Shift Date",
+    "Shift",
+    "Unit / Station",
+    "Calls Run",
+    "Trainee Role",
+    "Focus Area",
+    "Assessment",
+    "Treatment",
+    "Communication",
+    "Documentation",
+    "Scene Leadership",
+    "Professionalism",
+    "Scored 1 or 5",
+    "Documented Situation",
+    "Call Numbers",
+    "Strength",
+    "Improve",
+    "Next Shift Focus",
+    "Skills Progressed",
+    "Red Flag",
+    "Red Flag Detail",
+    "CS Issue",
+    "Documentation Issue",
+    "NRT",
+    "Prior Coaching",
+    "Still Not Improving",
+    "Advancement Review",
+    "TO Review",
+    "Clinical Disagreement"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "03 SELF-REFLECTION RAW",
+   "headerRow": 4,
+   "headers": [
+    "Timestamp",
+    "Trainee",
+    "Shift Date",
+    "Phase",
+    "Went Well",
+    "Was Hard",
+    "Work On",
+    "Progressing",
+    "Confidence",
+    "Feedback",
+    "Concern Flag",
+    "Concern Detail"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "04 URGENT CONCERNS RAW",
+   "headerRow": 4,
+   "headers": [
+    "Timestamp",
+    "TRAINING OFFICER CONTACTED",
+    "Reporter",
+    "Role",
+    "Trainee",
+    "Date",
+    "Shift",
+    "Category",
+    "What Happened",
+    "Action Taken",
+    "RESOLUTION (TCO)",
+    "DATE CLOSED",
+    "STATUS",
+    "OWNER"
+   ],
+   "formulaColumns": {
+    "M": {
+     "header": "STATUS",
+     "formula": "=IF($A{r}=\"\",\"\",IF($K{r}=\"\",\"OPEN\",\"CLOSED\"))",
+     "agreeing": 60
+    }
+   },
+   "hidden": true
+  },
+  {
+   "name": "16 DECISIONS RAW",
+   "headerRow": 4,
+   "headers": [
+    "TIMESTAMP",
+    "FILED BY",
+    "ROLE",
+    "TRAINEE",
+    "ITEM TYPE",
+    "DECISION",
+    "RATIONALE",
+    "EFFECTIVE DATE",
+    "PHASE AT DECISION"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "17 TRAINEE ARCHIVE",
+   "headerRow": 4,
+   "headers": [
+    "DATE ARCHIVED",
+    "TRAINEE",
+    "LEVEL",
+    "ENTRY PROFILE",
+    "FTO",
+    "PHASE AT EXIT",
+    "FINAL STATUS",
+    "EVALS LOGGED",
+    "NOTES"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "19 SKILL EVIDENCE LOG",
+   "headerRow": 4,
+   "headers": [
+    "EVENT ID",
+    "TIMESTAMP",
+    "SHIFT DATE",
+    "TRAINEE",
+    "LEVEL AT EVENT",
+    "PHASE",
+    "FTO",
+    "SKILL ID",
+    "DOMAIN",
+    "SKILL",
+    "CONTEXT",
+    "STAGE",
+    "OUTCOME",
+    "PROMPTING",
+    "CALL / SCENARIO REF",
+    "EVIDENCE NOTE",
+    "SOURCE FORM",
+    "SOURCE ROW",
+    "VALIDATION RESULT",
+    "ATTESTATION",
+    "SOURCE FORM ID",
+    "SOURCE RESPONSE ID",
+    "WRITER VERSION",
+    "PERSON ID",
+    "ASSIGNMENT ID"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "21 SKILL SIGN-OFF LOG",
+   "headerRow": 4,
+   "headers": [
+    "DECISION ID",
+    "TIMESTAMP",
+    "TRAINEE",
+    "SKILL ID",
+    "SKILL",
+    "DECISION",
+    "DECIDED BY",
+    "DECISION DATE",
+    "EXPIRATION",
+    "RATIONALE",
+    "SOURCE QUEUE ROW",
+    "STANDARD / CATALOG VERSION",
+    "REQUEST ID",
+    "SUPERSEDES",
+    "DECIDED BY PERSON ID",
+    "WRITER VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "18 SYSTEM LOG",
+   "headerRow": 4,
+   "headers": [
+    "TIMESTAMP",
+    "SEVERITY",
+    "EVENT",
+    "DETAIL",
+    "EXECUTED BY"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "90 PERSON REGISTRY",
+   "headerRow": 4,
+   "headers": [
+    "PERSON ID",
+    "TYPE",
+    "DISPLAY NAME",
+    "NORMALIZED NAME",
+    "EMPLOYEE ID",
+    "EMAIL",
+    "CERT LEVEL",
+    "SHIFT",
+    "TRAINS EMT",
+    "TRAINS AEMT",
+    "TRAINS PARAMEDIC",
+    "ROLE",
+    "ACTIVE",
+    "SOURCE",
+    "CREATED",
+    "NOTES"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "91 INGESTION LEDGER",
+   "headerRow": 4,
+   "headers": [
+    "LEDGER KEY",
+    "FORM ID",
+    "RESPONSE ID",
+    "FORM TITLE",
+    "KIND",
+    "RECEIVED AT",
+    "STATE",
+    "DETAIL",
+    "EVENTS WRITTEN",
+    "PROCESSED AT",
+    "WRITER VERSION"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "92 ASSIGNMENT HISTORY",
+   "headerRow": 4,
+   "headers": [
+    "ASSIGNMENT ID",
+    "PERSON ID",
+    "TRAINEE",
+    "LEVEL",
+    "ENTRY PROFILE",
+    "FTO",
+    "FTO PERSON ID",
+    "PHASE",
+    "PHASE START",
+    "STATUS",
+    "OPENED",
+    "CLOSED",
+    "SOURCE",
+    "NOTES"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "93 ACCESS LOG",
+   "headerRow": 4,
+   "headers": [
+    "ACCESS ID",
+    "TIMESTAMP",
+    "KIND",
+    "REQUESTED BY",
+    "VERIFIED EMAIL",
+    "AUTHORIZED",
+    "SUBJECT",
+    "DELIVERED TO",
+    "REASON",
+    "DETAIL"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "Form Responses 30",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "FTO name",
+    "Trainee",
+    "Shift date",
+    "Airway / Ventilation [BVM ventilation]",
+    "Airway / Ventilation [CPAP application]",
+    "Airway / Ventilation [Endotracheal intubation]",
+    "Airway / Ventilation [OPA / NPA insertion]",
+    "Airway / Ventilation [Oxygen delivery devices]",
+    "Airway / Ventilation [Suctioning]",
+    "Airway / Ventilation [Supraglottic airway]",
+    "Airway / Ventilation [Surgical airway : per protocol]",
+    "Airway / Ventilation [Video laryngoscopy]",
+    "Airway / Ventilation : repetitions",
+    "Assessment [ALS patient assessment]",
+    "Assessment [Advanced patient assessment]",
+    "Assessment [Blood glucose measurement]",
+    "Assessment [Patient assessment : medical]",
+    "Assessment [Scene size-up and safety]",
+    "Assessment [Vital signs : manual]",
+    "Assessment : repetitions",
+    "Cardiology / Resuscitation [12-lead acquisition]",
+    "Cardiology / Resuscitation [12-lead interpretation]",
+    "Cardiology / Resuscitation [CPR / AED operation]",
+    "Cardiology / Resuscitation [Manual defibrillation]",
+    "Cardiology / Resuscitation [Synchronized cardioversion]",
+    "Cardiology / Resuscitation [Transcutaneous pacing]",
+    "Cardiology / Resuscitation : repetitions",
+    "Medication / Pharmacology [Controlled substance administration and documentation]",
+    "Medication / Pharmacology [Controlled substance waste and witness procedure]",
+    "Medication / Pharmacology [Medication administration : AEMT scope]",
+    "Medication / Pharmacology [Medication administration : full scope]",
+    "Medication / Pharmacology [Nitrous oxide administration]",
+    "Medication / Pharmacology : repetitions",
+    "Operations / Communication [OLMC consultation and orders]",
+    "Operations / Communication [Radio report]",
+    "Operations / Communication [Stretcher and stair chair operations]",
+    "Operations / Communication [ePCR documentation]",
+    "Operations / Communication : repetitions",
+    "Trauma [Hemorrhage control / tourniquet]",
+    "Trauma [Needle decompression]",
+    "Trauma [Patient assessment : trauma]",
+    "Trauma [Spinal motion restriction]",
+    "Trauma [Splinting]",
+    "Trauma : repetitions",
+    "Vascular Access [Fluid therapy]",
+    "Vascular Access [IO access]",
+    "Vascular Access [IV access]",
+    "Vascular Access : repetitions",
+    "Classroom or skills lab [BVM ventilation]",
+    "Classroom or skills lab [CPAP application]",
+    "Classroom or skills lab [Endotracheal intubation]",
+    "Classroom or skills lab [OPA / NPA insertion]",
+    "Classroom or skills lab [Oxygen delivery devices]",
+    "Classroom or skills lab [Suctioning]",
+    "Classroom or skills lab [Supraglottic airway]",
+    "Classroom or skills lab [Surgical airway : per protocol]",
+    "Classroom or skills lab [Video laryngoscopy]",
+    "Classroom or skills lab [ALS patient assessment]",
+    "Classroom or skills lab [Advanced patient assessment]",
+    "Classroom or skills lab [Blood glucose measurement]",
+    "Classroom or skills lab [Patient assessment : medical]",
+    "Classroom or skills lab [Scene size-up and safety]",
+    "Classroom or skills lab [Vital signs : manual]",
+    "Classroom or skills lab [12-lead acquisition]",
+    "Classroom or skills lab [12-lead interpretation]",
+    "Classroom or skills lab [CPR / AED operation]",
+    "Classroom or skills lab [Manual defibrillation]",
+    "Classroom or skills lab [Synchronized cardioversion]",
+    "Classroom or skills lab [Transcutaneous pacing]",
+    "Classroom or skills lab [Controlled substance administration and documentation]",
+    "Classroom or skills lab [Controlled substance waste and witness procedure]",
+    "Classroom or skills lab [Medication administration : AEMT scope]",
+    "Classroom or skills lab [Medication administration : full scope]",
+    "Classroom or skills lab [Nitrous oxide administration]",
+    "Classroom or skills lab [OLMC consultation and orders]",
+    "Classroom or skills lab [Radio report]",
+    "Classroom or skills lab [Stretcher and stair chair operations]",
+    "Classroom or skills lab [ePCR documentation]",
+    "Classroom or skills lab [Hemorrhage control / tourniquet]",
+    "Classroom or skills lab [Needle decompression]",
+    "Classroom or skills lab [Patient assessment : trauma]",
+    "Classroom or skills lab [Spinal motion restriction]",
+    "Classroom or skills lab [Splinting]",
+    "Classroom or skills lab [Fluid therapy]",
+    "Classroom or skills lab [IO access]",
+    "Classroom or skills lab [IV access]",
+    "Classroom or skills lab : repetitions",
+    "Reference call",
+    "Any skill above unsuccessful or unsafe",
+    "Evidence note",
+    "Attestation"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 29",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Filed by",
+    "Your role",
+    "Trainee",
+    "Item type",
+    "Decision",
+    "Rationale",
+    "Effective date"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 28",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Have you called or texted the Division Chief of Training?",
+    "Your name",
+    "Your role",
+    "Trainee involved",
+    "Date",
+    "Shift",
+    "Category",
+    "What happened",
+    "Immediate action taken"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 27",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Trainee",
+    "Shift date",
+    "Current phase",
+    "What went well",
+    "What was hard",
+    "What I want to work on",
+    "Am I progressing?",
+    "Confidence this week",
+    "Feedback on your training and your FTO",
+    "Concern for the Division Chief of Training directly?",
+    "Concern detail"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 26",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "FTO name",
+    "Trainee",
+    "Certification level",
+    "Entry profile",
+    "Current phase",
+    "Shift date",
+    "Shift",
+    "Unit / station",
+    "Calls run this shift",
+    "Trainee role on calls",
+    "Focus area this shift",
+    "Assessment",
+    "Treatment",
+    "Communication",
+    "Documentation",
+    "Scene Leadership",
+    "Professionalism",
+    "Any domain scored 1 or 5?",
+    "Documented Situation narrative",
+    "Call number(s)",
+    "One clear strength",
+    "One thing to improve",
+    "Next shift focus",
+    "Skill Quick Log reminder (legacy field \u00e2\u20ac\u201d leave blank)",
+    "Red flag this shift?",
+    "Red flag detail",
+    "Controlled-substance issue?",
+    "Documentation issue?",
+    "Not Responding to Training?",
+    "Prior coaching and remediation provided",
+    "What is still not improving",
+    "Request advancement review?",
+    "Division Chief of Training review needed?",
+    "Clinical disagreement to the Medical Director?"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "Form Responses 25",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "FTO name",
+    "Trainee",
+    "Certification level",
+    "Entry profile",
+    "Current phase",
+    "Shift date",
+    "Shift",
+    "Unit / station",
+    "Calls run this shift",
+    "Trainee role on calls",
+    "Focus area this shift",
+    "Assessment",
+    "Treatment",
+    "Communication",
+    "Documentation",
+    "Scene Leadership",
+    "Professionalism",
+    "Any domain scored 1 or 5?",
+    "Documented Situation narrative",
+    "Call number(s)",
+    "One clear strength",
+    "One thing to improve",
+    "Next shift focus",
+    "Skill Quick Log reminder (legacy field \u00e2\u20ac\u201d leave blank)",
+    "Red flag this shift?",
+    "Red flag detail",
+    "Controlled-substance issue?",
+    "Documentation issue?",
+    "Not Responding to Training?",
+    "Prior coaching and remediation provided",
+    "What is still not improving",
+    "Request advancement review?",
+    "Division Chief of Training review needed?",
+    "Clinical disagreement to the Medical Director?"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "Form Responses 24",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Email Address",
+    "FTO name",
+    "Trainee",
+    "Shift date",
+    "Airway / Ventilation [BVM ventilation]",
+    "Airway / Ventilation [CPAP application]",
+    "Airway / Ventilation [Endotracheal intubation]",
+    "Airway / Ventilation [OPA / NPA insertion]",
+    "Airway / Ventilation [Oxygen delivery devices]",
+    "Airway / Ventilation [Suctioning]",
+    "Airway / Ventilation [Supraglottic airway]",
+    "Airway / Ventilation [Surgical airway : per protocol]",
+    "Airway / Ventilation [Video laryngoscopy]",
+    "Airway / Ventilation : repetitions",
+    "Assessment [ALS patient assessment]",
+    "Assessment [Advanced patient assessment]",
+    "Assessment [Blood glucose measurement]",
+    "Assessment [Patient assessment : medical]",
+    "Assessment [Scene size-up and safety]",
+    "Assessment [Vital signs : manual]",
+    "Assessment : repetitions",
+    "Cardiology / Resuscitation [12-lead acquisition]",
+    "Cardiology / Resuscitation [12-lead interpretation]",
+    "Cardiology / Resuscitation [CPR / AED operation]",
+    "Cardiology / Resuscitation [Manual defibrillation]",
+    "Cardiology / Resuscitation [Synchronized cardioversion]",
+    "Cardiology / Resuscitation [Transcutaneous pacing]",
+    "Cardiology / Resuscitation : repetitions",
+    "Medication / Pharmacology [Controlled substance administration and documentation]",
+    "Medication / Pharmacology [Controlled substance waste and witness procedure]",
+    "Medication / Pharmacology [Medication administration : AEMT scope]",
+    "Medication / Pharmacology [Medication administration : full scope]",
+    "Medication / Pharmacology [Nitrous oxide administration]",
+    "Medication / Pharmacology : repetitions",
+    "Operations / Communication [OLMC consultation and orders]",
+    "Operations / Communication [Radio report]",
+    "Operations / Communication [Stretcher and stair chair operations]",
+    "Operations / Communication [ePCR documentation]",
+    "Operations / Communication : repetitions",
+    "Trauma [Hemorrhage control / tourniquet]",
+    "Trauma [Needle decompression]",
+    "Trauma [Patient assessment : trauma]",
+    "Trauma [Spinal motion restriction]",
+    "Trauma [Splinting]",
+    "Trauma : repetitions",
+    "Vascular Access [Fluid therapy]",
+    "Vascular Access [IO access]",
+    "Vascular Access [IV access]",
+    "Vascular Access : repetitions",
+    "Classroom or skills lab [BVM ventilation]",
+    "Classroom or skills lab [CPAP application]",
+    "Classroom or skills lab [Endotracheal intubation]",
+    "Classroom or skills lab [OPA / NPA insertion]",
+    "Classroom or skills lab [Oxygen delivery devices]",
+    "Classroom or skills lab [Suctioning]",
+    "Classroom or skills lab [Supraglottic airway]",
+    "Classroom or skills lab [Surgical airway : per protocol]",
+    "Classroom or skills lab [Video laryngoscopy]",
+    "Classroom or skills lab [ALS patient assessment]",
+    "Classroom or skills lab [Advanced patient assessment]",
+    "Classroom or skills lab [Blood glucose measurement]",
+    "Classroom or skills lab [Patient assessment : medical]",
+    "Classroom or skills lab [Scene size-up and safety]",
+    "Classroom or skills lab [Vital signs : manual]",
+    "Classroom or skills lab [12-lead acquisition]",
+    "Classroom or skills lab [12-lead interpretation]",
+    "Classroom or skills lab [CPR / AED operation]",
+    "Classroom or skills lab [Manual defibrillation]",
+    "Classroom or skills lab [Synchronized cardioversion]",
+    "Classroom or skills lab [Transcutaneous pacing]",
+    "Classroom or skills lab [Controlled substance administration and documentation]",
+    "Classroom or skills lab [Controlled substance waste and witness procedure]",
+    "Classroom or skills lab [Medication administration : AEMT scope]",
+    "Classroom or skills lab [Medication administration : full scope]",
+    "Classroom or skills lab [Nitrous oxide administration]",
+    "Classroom or skills lab [OLMC consultation and orders]",
+    "Classroom or skills lab [Radio report]",
+    "Classroom or skills lab [Stretcher and stair chair operations]",
+    "Classroom or skills lab [ePCR documentation]",
+    "Classroom or skills lab [Hemorrhage control / tourniquet]",
+    "Classroom or skills lab [Needle decompression]",
+    "Classroom or skills lab [Patient assessment : trauma]",
+    "Classroom or skills lab [Spinal motion restriction]",
+    "Classroom or skills lab [Splinting]",
+    "Classroom or skills lab [Fluid therapy]",
+    "Classroom or skills lab [IO access]",
+    "Classroom or skills lab [IV access]",
+    "Classroom or skills lab : repetitions",
+    "Reference call",
+    "Any skill above unsuccessful or unsafe",
+    "Evidence note",
+    "Attestation"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 23",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Email Address",
+    "FTO name",
+    "Trainee",
+    "Shift date",
+    "Airway / Ventilation [BVM ventilation]",
+    "Airway / Ventilation [CPAP application]",
+    "Airway / Ventilation [OPA / NPA insertion]",
+    "Airway / Ventilation [Oxygen delivery devices]",
+    "Airway / Ventilation [Suctioning]",
+    "Airway / Ventilation [Supraglottic airway]",
+    "Airway / Ventilation : repetitions",
+    "Assessment [Advanced patient assessment]",
+    "Assessment [Blood glucose measurement]",
+    "Assessment [Patient assessment : medical]",
+    "Assessment [Scene size-up and safety]",
+    "Assessment [Vital signs : manual]",
+    "Assessment : repetitions",
+    "Cardiology / Resuscitation [12-lead acquisition]",
+    "Cardiology / Resuscitation [CPR / AED operation]",
+    "Cardiology / Resuscitation : repetitions",
+    "Medication / Pharmacology [Medication administration : AEMT scope]",
+    "Medication / Pharmacology [Nitrous oxide administration]",
+    "Medication / Pharmacology : repetitions",
+    "Operations / Communication [Radio report]",
+    "Operations / Communication [Stretcher and stair chair operations]",
+    "Operations / Communication [ePCR documentation]",
+    "Operations / Communication : repetitions",
+    "Trauma [Hemorrhage control / tourniquet]",
+    "Trauma [Patient assessment : trauma]",
+    "Trauma [Spinal motion restriction]",
+    "Trauma [Splinting]",
+    "Trauma : repetitions",
+    "Vascular Access [Fluid therapy]",
+    "Vascular Access [IO access]",
+    "Vascular Access [IV access]",
+    "Vascular Access : repetitions",
+    "Classroom or skills lab [BVM ventilation]",
+    "Classroom or skills lab [CPAP application]",
+    "Classroom or skills lab [OPA / NPA insertion]",
+    "Classroom or skills lab [Oxygen delivery devices]",
+    "Classroom or skills lab [Suctioning]",
+    "Classroom or skills lab [Supraglottic airway]",
+    "Classroom or skills lab [Advanced patient assessment]",
+    "Classroom or skills lab [Blood glucose measurement]",
+    "Classroom or skills lab [Patient assessment : medical]",
+    "Classroom or skills lab [Scene size-up and safety]",
+    "Classroom or skills lab [Vital signs : manual]",
+    "Classroom or skills lab [12-lead acquisition]",
+    "Classroom or skills lab [CPR / AED operation]",
+    "Classroom or skills lab [Medication administration : AEMT scope]",
+    "Classroom or skills lab [Nitrous oxide administration]",
+    "Classroom or skills lab [Radio report]",
+    "Classroom or skills lab [Stretcher and stair chair operations]",
+    "Classroom or skills lab [ePCR documentation]",
+    "Classroom or skills lab [Hemorrhage control / tourniquet]",
+    "Classroom or skills lab [Patient assessment : trauma]",
+    "Classroom or skills lab [Spinal motion restriction]",
+    "Classroom or skills lab [Splinting]",
+    "Classroom or skills lab [Fluid therapy]",
+    "Classroom or skills lab [IO access]",
+    "Classroom or skills lab [IV access]",
+    "Classroom or skills lab : repetitions",
+    "Reference call",
+    "Any skill above unsuccessful or unsafe",
+    "Evidence note",
+    "Attestation"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 22",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Email Address",
+    "FTO name",
+    "Trainee",
+    "Shift date",
+    "Airway / Ventilation [BVM ventilation]",
+    "Airway / Ventilation [CPAP application]",
+    "Airway / Ventilation [OPA / NPA insertion]",
+    "Airway / Ventilation [Oxygen delivery devices]",
+    "Airway / Ventilation [Suctioning]",
+    "Airway / Ventilation [Supraglottic airway]",
+    "Airway / Ventilation : repetitions",
+    "Assessment [Blood glucose measurement]",
+    "Assessment [Patient assessment : medical]",
+    "Assessment [Scene size-up and safety]",
+    "Assessment [Vital signs : manual]",
+    "Assessment : repetitions",
+    "Cardiology / Resuscitation [12-lead acquisition]",
+    "Cardiology / Resuscitation [CPR / AED operation]",
+    "Cardiology / Resuscitation : repetitions",
+    "Operations / Communication [Radio report]",
+    "Operations / Communication [Stretcher and stair chair operations]",
+    "Operations / Communication [ePCR documentation]",
+    "Operations / Communication : repetitions",
+    "Trauma [Hemorrhage control / tourniquet]",
+    "Trauma [Patient assessment : trauma]",
+    "Trauma [Spinal motion restriction]",
+    "Trauma [Splinting]",
+    "Trauma : repetitions",
+    "Classroom or skills lab [BVM ventilation]",
+    "Classroom or skills lab [CPAP application]",
+    "Classroom or skills lab [OPA / NPA insertion]",
+    "Classroom or skills lab [Oxygen delivery devices]",
+    "Classroom or skills lab [Suctioning]",
+    "Classroom or skills lab [Supraglottic airway]",
+    "Classroom or skills lab [Blood glucose measurement]",
+    "Classroom or skills lab [Patient assessment : medical]",
+    "Classroom or skills lab [Scene size-up and safety]",
+    "Classroom or skills lab [Vital signs : manual]",
+    "Classroom or skills lab [12-lead acquisition]",
+    "Classroom or skills lab [CPR / AED operation]",
+    "Classroom or skills lab [Radio report]",
+    "Classroom or skills lab [Stretcher and stair chair operations]",
+    "Classroom or skills lab [ePCR documentation]",
+    "Classroom or skills lab [Hemorrhage control / tourniquet]",
+    "Classroom or skills lab [Patient assessment : trauma]",
+    "Classroom or skills lab [Spinal motion restriction]",
+    "Classroom or skills lab [Splinting]",
+    "Classroom or skills lab : repetitions",
+    "Reference call",
+    "Any skill above unsuccessful or unsafe",
+    "Evidence note",
+    "Attestation"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 21",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Email Address",
+    "Your name",
+    "Trainee you are covering",
+    "Reason"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 19",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "FTO name",
+    "Trainee",
+    "Shift date",
+    "Current phase",
+    "Context",
+    "Skill",
+    "Stage",
+    "Outcome",
+    "Prompting",
+    "Call / scenario reference",
+    "Evidence note",
+    "Attestation",
+    "FTO name 2",
+    "Trainee 2",
+    "Shift date 2",
+    "Context 2",
+    "Call / scenario reference 2",
+    "Airway / Ventilation [BVM ventilation]",
+    "Airway / Ventilation [CPAP application]",
+    "Airway / Ventilation [Endotracheal intubation]",
+    "Airway / Ventilation [OPA / NPA insertion]",
+    "Airway / Ventilation [Oxygen delivery devices]",
+    "Airway / Ventilation [Suctioning]",
+    "Airway / Ventilation [Supraglottic airway]",
+    "Airway / Ventilation [Surgical airway : per protocol]",
+    "Airway / Ventilation [Video laryngoscopy]",
+    "Assessment [ALS patient assessment]",
+    "Assessment [Advanced patient assessment]",
+    "Assessment [Blood glucose measurement]",
+    "Assessment [Patient assessment : medical]",
+    "Assessment [Scene size-up and safety]",
+    "Assessment [Vital signs : manual]",
+    "Cardiology / Resuscitation [12-lead acquisition]",
+    "Cardiology / Resuscitation [12-lead interpretation]",
+    "Cardiology / Resuscitation [CPR / AED operation]",
+    "Cardiology / Resuscitation [Manual defibrillation]",
+    "Cardiology / Resuscitation [Synchronized cardioversion]",
+    "Cardiology / Resuscitation [Transcutaneous pacing]",
+    "Medication / Pharmacology [Row 1]",
+    "Medication / Pharmacology [Controlled substance administration and documentation]",
+    "Medication / Pharmacology [Controlled substance waste and witness procedure]",
+    "Medication / Pharmacology [Medication administration : AEMT scope]",
+    "Medication / Pharmacology [Medication administration : full scope]",
+    "Medication / Pharmacology [Nitrous oxide administration]",
+    "Operations / Communication [OLMC consultation and orders]",
+    "Operations / Communication [Radio report]",
+    "Operations / Communication [Stretcher and stair chair operations]",
+    "Operations / Communication [ePCR documentation]",
+    "Trauma [Hemorrhage control / tourniquet]",
+    "Trauma [Needle decompression]",
+    "Trauma [Patient assessment : trauma]",
+    "Trauma [Spinal motion restriction]",
+    "Trauma [Splinting]",
+    "Vascular Access [Fluid therapy]",
+    "Vascular Access [IO access]",
+    "Vascular Access [IV access]",
+    "Any skill above unsuccessful or unsafe",
+    "Evidence note 2",
+    "Attestation 2",
+    "FTO name 3",
+    "Trainee 3",
+    "Shift date 3",
+    "Airway / Ventilation [BVM ventilation] 2",
+    "Airway / Ventilation [CPAP application] 2",
+    "Airway / Ventilation [Endotracheal intubation] 2",
+    "Airway / Ventilation [OPA / NPA insertion] 2",
+    "Airway / Ventilation [Oxygen delivery devices] 2",
+    "Airway / Ventilation [Suctioning] 2",
+    "Airway / Ventilation [Supraglottic airway] 2",
+    "Airway / Ventilation [Surgical airway : per protocol] 2",
+    "Airway / Ventilation [Video laryngoscopy] 2",
+    "Airway / Ventilation : repetitions",
+    "Assessment [ALS patient assessment] 2",
+    "Assessment [Advanced patient assessment] 2",
+    "Assessment [Blood glucose measurement] 2",
+    "Assessment [Patient assessment : medical] 2",
+    "Assessment [Scene size-up and safety] 2",
+    "Assessment [Vital signs : manual] 2",
+    "Assessment : repetitions",
+    "Cardiology / Resuscitation [12-lead acquisition] 2",
+    "Cardiology / Resuscitation [12-lead interpretation] 2",
+    "Cardiology / Resuscitation [CPR / AED operation] 2",
+    "Cardiology / Resuscitation [Manual defibrillation] 2",
+    "Cardiology / Resuscitation [Synchronized cardioversion] 2",
+    "Cardiology / Resuscitation [Transcutaneous pacing] 2",
+    "Cardiology / Resuscitation : repetitions",
+    "Medication / Pharmacology [Controlled substance administration and documentation] 2",
+    "Medication / Pharmacology [Controlled substance waste and witness procedure] 2",
+    "Medication / Pharmacology [Medication administration : AEMT scope] 2",
+    "Medication / Pharmacology [Medication administration : full scope] 2",
+    "Medication / Pharmacology [Nitrous oxide administration] 2",
+    "Medication / Pharmacology : repetitions",
+    "Operations / Communication [OLMC consultation and orders] 2",
+    "Operations / Communication [Radio report] 2",
+    "Operations / Communication [Stretcher and stair chair operations] 2",
+    "Operations / Communication [ePCR documentation] 2",
+    "Operations / Communication : repetitions",
+    "Trauma [Hemorrhage control / tourniquet] 2",
+    "Trauma [Needle decompression] 2",
+    "Trauma [Patient assessment : trauma] 2",
+    "Trauma [Spinal motion restriction] 2",
+    "Trauma [Splinting] 2",
+    "Trauma : repetitions",
+    "Vascular Access [Fluid therapy] 2",
+    "Vascular Access [IO access] 2",
+    "Vascular Access [IV access] 2",
+    "Vascular Access : repetitions",
+    "Classroom or skills lab [BVM ventilation]",
+    "Classroom or skills lab [CPAP application]",
+    "Classroom or skills lab [Endotracheal intubation]",
+    "Classroom or skills lab [OPA / NPA insertion]",
+    "Classroom or skills lab [Oxygen delivery devices]",
+    "Classroom or skills lab [Suctioning]",
+    "Classroom or skills lab [Supraglottic airway]",
+    "Classroom or skills lab [Surgical airway : per protocol]",
+    "Classroom or skills lab [Video laryngoscopy]",
+    "Classroom or skills lab [ALS patient assessment]",
+    "Classroom or skills lab [Advanced patient assessment]",
+    "Classroom or skills lab [Blood glucose measurement]",
+    "Classroom or skills lab [Patient assessment : medical]",
+    "Classroom or skills lab [Scene size-up and safety]",
+    "Classroom or skills lab [Vital signs : manual]",
+    "Classroom or skills lab [12-lead acquisition]",
+    "Classroom or skills lab [12-lead interpretation]",
+    "Classroom or skills lab [CPR / AED operation]",
+    "Classroom or skills lab [Manual defibrillation]",
+    "Classroom or skills lab [Synchronized cardioversion]",
+    "Classroom or skills lab [Transcutaneous pacing]",
+    "Classroom or skills lab [Controlled substance administration and documentation]",
+    "Classroom or skills lab [Controlled substance waste and witness procedure]",
+    "Classroom or skills lab [Medication administration : AEMT scope]",
+    "Classroom or skills lab [Medication administration : full scope]",
+    "Classroom or skills lab [Nitrous oxide administration]",
+    "Classroom or skills lab [OLMC consultation and orders]",
+    "Classroom or skills lab [Radio report]",
+    "Classroom or skills lab [Stretcher and stair chair operations]",
+    "Classroom or skills lab [ePCR documentation]",
+    "Classroom or skills lab [Hemorrhage control / tourniquet]",
+    "Classroom or skills lab [Needle decompression]",
+    "Classroom or skills lab [Patient assessment : trauma]",
+    "Classroom or skills lab [Spinal motion restriction]",
+    "Classroom or skills lab [Splinting]",
+    "Classroom or skills lab [Fluid therapy]",
+    "Classroom or skills lab [IO access]",
+    "Classroom or skills lab [IV access]",
+    "Classroom or skills lab : repetitions",
+    "Reference call",
+    "Any skill above unsuccessful or unsafe 2",
+    "Evidence note 3",
+    "Attestation 3"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 7",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Filed by",
+    "Your role",
+    "Trainee",
+    "Item type",
+    "Decision",
+    "Rationale",
+    "Effective date"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 1",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "FTO name",
+    "Trainee",
+    "Certification level",
+    "Entry profile",
+    "Current phase",
+    "Shift date",
+    "Shift",
+    "Unit / station",
+    "Calls run this shift",
+    "Trainee role on calls",
+    "Focus area this shift",
+    "Assessment",
+    "Treatment",
+    "Communication",
+    "Documentation",
+    "Scene Leadership",
+    "Professionalism",
+    "Any domain scored 1 or 5?",
+    "Documented Situation narrative",
+    "Call number(s)",
+    "One clear strength",
+    "One thing to improve",
+    "Next shift focus",
+    "Skill Quick Log reminder (legacy field \u00e2\u20ac\u201d leave blank)",
+    "Red flag this shift?",
+    "Red flag detail",
+    "Controlled-substance issue?",
+    "Documentation issue?",
+    "Not Responding to Training?",
+    "Prior coaching and remediation provided",
+    "What is still not improving",
+    "Request advancement review?",
+    "Division Chief of Training review needed?",
+    "Clinical disagreement to the Medical Director?"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 2",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Trainee",
+    "Shift date",
+    "Current phase",
+    "What went well",
+    "What was hard",
+    "What I want to work on",
+    "Am I progressing?",
+    "Confidence this week",
+    "Feedback on your training and your FTO",
+    "Concern for the Division Chief of Training directly?",
+    "Concern detail"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "Form Responses 3",
+   "headerRow": 1,
+   "headers": [
+    "Timestamp",
+    "Have you called or texted the Division Chief of Training?",
+    "Your name",
+    "Your role",
+    "Trainee involved",
+    "Date",
+    "Shift",
+    "Category",
+    "What happened",
+    "Immediate action taken"
+   ],
+   "formulaColumns": {},
+   "hidden": false
+  },
+  {
+   "name": "05 SKILLS PROGRESS LEGACY V18",
+   "headerRow": 4,
+   "headers": [
+    "TRAINEE",
+    "SKILL",
+    "STAGE (O/A/P/I)",
+    "LAST DATE",
+    "FTO",
+    "LEVEL",
+    "",
+    "SIGN-OFF (TCO)",
+    "FTO Initials",
+    "STAGE KEY"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  },
+  {
+   "name": "15 SKILL CATALOG LEGACY V18",
+   "headerRow": 4,
+   "headers": [
+    "LEVEL",
+    "SKILL",
+    "STATUS",
+    "",
+    "HOW TO USE"
+   ],
+   "formulaColumns": {},
+   "hidden": true
+  }
+ ]
+}

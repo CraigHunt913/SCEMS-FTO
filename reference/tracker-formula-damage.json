@@ -1,0 +1,1347 @@
+[
+ {
+  "tab": "13 AUDIT - EXCEPTION LOG",
+  "col": "D",
+  "header": "NO NARRATIVE",
+  "kept": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,D$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(SUMPRODUCT(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$S$5:$S$975=\"No\")*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>=TODAY()-'00 README - CONTROL'!$B$9)*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))*(((('02 FTO SHIFT EVAL RAW'!$M$5:$M$975=1)+('02 FTO SHIFT EVAL RAW'!$M$5:$M$975=5))+(('02 FTO SHIFT EVAL RAW'!$N$5:$N$975=1)+('02 FTO SHIFT EVAL RAW'!$N$5:$N$975=5))+(('02 FTO SHIFT EVAL RAW'!$O$5:$O$975=1)+('02 FTO SHIFT EVAL RAW'!$O$5:$O$975=5))+(('02 FTO SHIFT EVAL RAW'!$P$5:$P$975=1)+('02 FTO SHIFT EVAL RAW'!$P$5:$P$975=5))+(('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975=1)+('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975=5))+(('02 FTO SHIFT EVAL RAW'!$R$5:$R$975=1)+('02 FTO SHIFT EVAL RAW'!$R$5:$R$975=5)))>0))>0,\"FLAG\",\"\")))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,D$4)>0,\"ACK\",IF($A{r}=\"\",\"\",IF(SUMPRODUCT(('02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r})*('02 FTO SHIFT EVAL RAW'!$S$5:$S$975=\"No\")*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>=TODAY()-'00 README - CONTROL'!$B$9)*('02 FTO SHIFT EVAL RAW'!$G$5:$G$975>IF($K{r}=$A{r},IF($J{r}=\"\",0,$J{r}),0))*(((('02 FTO SHIFT EVAL RAW'!$M$5:$M$975=1)+('02 FTO SHIFT EVAL RAW'!$M$5:$M$975={r}))+(('02 FTO SHIFT EVAL RAW'!$N$5:$N$975=1)+('02 FTO SHIFT EVAL RAW'!$N$5:$N$975={r}))+(('02 FTO SHIFT EVAL RAW'!$O$5:$O$975=1)+('02 FTO SHIFT EVAL RAW'!$O$5:$O$975={r}))+(('02 FTO SHIFT EVAL RAW'!$P$5:$P$975=1)+('02 FTO SHIFT EVAL RAW'!$P$5:$P$975={r}))+(('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975=1)+('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975={r}))+(('02 FTO SHIFT EVAL RAW'!$R$5:$R$975=1)+('02 FTO SHIFT EVAL RAW'!$R$5:$R$975={r})))>0))>0,\"FLAG\",\"\")))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "13 AUDIT - EXCEPTION LOG",
+  "col": "G",
+  "header": "PHASE MISMATCH",
+  "kept": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F\"&\"$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"\")",
+  "kept_count": 32,
+  "discarded": [
+   {
+    "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F$975,'0\"&\"2 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"FLAG\")",
+    "rows": 3
+   },
+   {
+    "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F$975,'0\"&\"2 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"\")",
+    "rows": 2
+   },
+   {
+    "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F\"&\"$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"#REF!\")",
+    "rows": 1
+   },
+   {
+    "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IF(COUNTIFS($B$48:$B$67,$A{r},$C$48:$C$67,G$4)>0,\"\"ACK\"\",IF($A{r}=\"\"\"\",\"\"\"\",IFERROR(IF(AND(MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})>IF($K{r}=$A{r},IF($J{r}=\"\"\"\",0,$J{r}),0),INDEX(FILTER('02 FTO SHIFT EVAL RAW'!$F$5:$F\"&\"$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975=$A{r},'02 FTO SHIFT EVAL RAW'!$A$5:$A$975=MAXIFS('02 FTO SHIFT EVAL RAW'!$A$5:$A$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r})),1)<>'01 TRAINEE MASTER'!$G{r}),\"\"FLAG\"\",\"\"\"\"),\"\"\"\")))\"),\"FLAG\")",
+    "rows": 2
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "A",
+  "header": "PROGRAM AT A GLANCE",
+  "kept": "=IF('07 WEEKLY STATUS REPORT'!A5=\"\",\"\",'07 WEEKLY STATUS REPORT'!A5)",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A6=\"\",\"\",'07 WEEKLY STATUS REPORT'!A6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A7=\"\",\"\",'07 WEEKLY STATUS REPORT'!A7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A8=\"\",\"\",'07 WEEKLY STATUS REPORT'!A8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A9=\"\",\"\",'07 WEEKLY STATUS REPORT'!A9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A10=\"\",\"\",'07 WEEKLY STATUS REPORT'!A10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A11=\"\",\"\",'07 WEEKLY STATUS REPORT'!A11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A12=\"\",\"\",'07 WEEKLY STATUS REPORT'!A12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A13=\"\",\"\",'07 WEEKLY STATUS REPORT'!A13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A14=\"\",\"\",'07 WEEKLY STATUS REPORT'!A14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A15=\"\",\"\",'07 WEEKLY STATUS REPORT'!A15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A16=\"\",\"\",'07 WEEKLY STATUS REPORT'!A16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A17=\"\",\"\",'07 WEEKLY STATUS REPORT'!A17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A18=\"\",\"\",'07 WEEKLY STATUS REPORT'!A18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A19=\"\",\"\",'07 WEEKLY STATUS REPORT'!A19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A20=\"\",\"\",'07 WEEKLY STATUS REPORT'!A20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A21=\"\",\"\",'07 WEEKLY STATUS REPORT'!A21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A22=\"\",\"\",'07 WEEKLY STATUS REPORT'!A22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A23=\"\",\"\",'07 WEEKLY STATUS REPORT'!A23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A24=\"\",\"\",'07 WEEKLY STATUS REPORT'!A24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A25=\"\",\"\",'07 WEEKLY STATUS REPORT'!A25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A26=\"\",\"\",'07 WEEKLY STATUS REPORT'!A26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A27=\"\",\"\",'07 WEEKLY STATUS REPORT'!A27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A28=\"\",\"\",'07 WEEKLY STATUS REPORT'!A28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A29=\"\",\"\",'07 WEEKLY STATUS REPORT'!A29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A30=\"\",\"\",'07 WEEKLY STATUS REPORT'!A30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A31=\"\",\"\",'07 WEEKLY STATUS REPORT'!A31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A32=\"\",\"\",'07 WEEKLY STATUS REPORT'!A32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A33=\"\",\"\",'07 WEEKLY STATUS REPORT'!A33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A34=\"\",\"\",'07 WEEKLY STATUS REPORT'!A34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A35=\"\",\"\",'07 WEEKLY STATUS REPORT'!A35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A36=\"\",\"\",'07 WEEKLY STATUS REPORT'!A36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A37=\"\",\"\",'07 WEEKLY STATUS REPORT'!A37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A38=\"\",\"\",'07 WEEKLY STATUS REPORT'!A38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A39=\"\",\"\",'07 WEEKLY STATUS REPORT'!A39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A40=\"\",\"\",'07 WEEKLY STATUS REPORT'!A40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A41=\"\",\"\",'07 WEEKLY STATUS REPORT'!A41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A42=\"\",\"\",'07 WEEKLY STATUS REPORT'!A42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A43=\"\",\"\",'07 WEEKLY STATUS REPORT'!A43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF('07 WEEKLY STATUS REPORT'!A44=\"\",\"\",'07 WEEKLY STATUS REPORT'!A44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "B",
+  "header": "",
+  "kept": "=COUNTIF('06 PHASE - STATUS ENGINE'!$A$5:$A$44,\"<>\")-COUNTIF('06 PHASE - STATUS ENGINE'!$A$5:$A$44,\"\")",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=COUNTIFS('06 PHASE - STATUS ENGINE'!$I$5:$I$44,\">\"&'00 README - CONTROL'!$B$5,'06 PHASE - STATUS ENGINE'!$A$5:$A$44,\"<>\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$R$5:$R$44,\"Active / Needs Attention\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$R$5:$R$44,\"Advancement Review Due\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$R$5:$R$44,\"NRT Filed : Decision Due\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$F$5:$F$44,\"Formal Remediation\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,\"<>\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")",
+    "rows": 1
+   },
+   {
+    "formula": "=SUM('06 PHASE - STATUS ENGINE'!$M$5:$M$44)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B5)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!B44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "C",
+  "header": "",
+  "kept": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D5)",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!D44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "D",
+  "header": "BY LEVEL",
+  "kept": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F5)",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!F44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "E",
+  "header": "",
+  "kept": "=COUNTIF('06 PHASE - STATUS ENGINE'!$B$5:$B$44,\"EMT\")",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$B$5:$B$44,\"Advanced EMT\")",
+    "rows": 1
+   },
+   {
+    "formula": "=COUNTIF('06 PHASE - STATUS ENGINE'!$B$5:$B$44,\"Paramedic\")",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G5)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!G44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "F",
+  "header": "",
+  "kept": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H5)",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!H44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "10 TRAINING DIVISION DASH",
+  "col": "G",
+  "header": "",
+  "kept": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I5)",
+  "kept_count": 1,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I6)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I7)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I8)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I9)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I11)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I12)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I13)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I14)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I15)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I16)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I17)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I18)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I19)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I20)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I21)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I22)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I23)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I24)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I25)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I26)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I27)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I28)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I29)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I30)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I31)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I32)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I33)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I34)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I35)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I36)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I37)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I38)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I39)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I40)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I41)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I42)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I43)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF($A{r}=\"\",\"\",'07 WEEKLY STATUS REPORT'!I44)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "A",
+  "header": "Trainee",
+  "kept": "=IF('01 TRAINEE MASTER'!A{r}=\"\",\"\",'01 TRAINEE MASTER'!A{r})",
+  "kept_count": 38,
+  "discarded": [
+   {
+    "formula": "=IF('01 TRAINEE MASTER'!A10=\"\",\"\",'01 TRAINEE MASTER'!A10)",
+    "rows": 1
+   },
+   {
+    "formula": "=IF(#REF!=\"\",\"\",#REF!)",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "J",
+  "header": "Avg (Window)",
+  "kept": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1)))/6,2),\"\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-('00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-(-1)))/{r},2),\"\"))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "K",
+  "header": "Avg (Prior Window)",
+  "kept": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6)))/6,2),\"\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IFERROR(ROUND((AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$M$5:$M$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$N$5:$N$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$O$5:$O$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$P$5:$P$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$Q$5:$Q$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6))+AVERAGEIFS('02 FTO SHIFT EVAL RAW'!$R$5:$R$975,'02 FTO SHIFT EVAL RAW'!$C$5:$C$975,$A{r},'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\">=\"&TODAY()-(2*'00 README - CONTROL'!$B$6),'02 FTO SHIFT EVAL RAW'!$G$5:$G$975,\"<\"&TODAY()-('00 README - CONTROL'!$B$6)))/{r},2),\"\"))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "L",
+  "header": "Trend",
+  "kept": "=IF($A{r}=\"\",\"\",IF(J{r}=\"\",\"\",IF(K{r}=\"\",\"New\",IF(J{r}-K{r}>=0.15,\"Rising\",IF(K{r}-J{r}>=0.15,\"Falling\",\"Steady\")))))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IF(J{r}=\"\",\"\",IF(K{r}=\"\",\"New\",IF(J{r}-K{r}>=0.{r},\"Rising\",IF(K{r}-J{r}>=0.{r},\"Falling\",\"Steady\")))))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "O",
+  "header": "Advancement Requested",
+  "kept": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"Advancement*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('{r} DECISION QUEUE'!$B$5:$B$299,$A{r},'{r} DECISION QUEUE'!$C$5:$C$299,\"Advancement*\",'{r} DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "P",
+  "header": "NRT Filed",
+  "kept": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"*NRT*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('{r} DECISION QUEUE'!$B$5:$B$299,$A{r},'{r} DECISION QUEUE'!$C$5:$C$299,\"*NRT*\",'{r} DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "Q",
+  "header": "Clinical Disagreement",
+  "kept": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$C$5:$C$299,\"Clinical*\",'12 DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IF(COUNTIFS('{r} DECISION QUEUE'!$B$5:$B$299,$A{r},'{r} DECISION QUEUE'!$C$5:$C$299,\"Clinical*\",'{r} DECISION QUEUE'!$F$5:$F$299,\"\")>0,\"Yes\",\"No\"))",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "tab": "06 PHASE - STATUS ENGINE",
+  "col": "S",
+  "header": "Next Decision Due",
+  "kept": "=IF($A{r}=\"\",\"\",IFERROR(IF(MINIFS('12 DECISION QUEUE'!$E$5:$E$299,'12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$F$5:$F$299,\"\")=0,\"\",MINIFS('12 DECISION QUEUE'!$E$5:$E$299,'12 DECISION QUEUE'!$B$5:$B$299,$A{r},'12 DECISION QUEUE'!$F$5:$F$299,\"\")),\"\"))",
+  "kept_count": 39,
+  "discarded": [
+   {
+    "formula": "=IF($A{r}=\"\",\"\",IFERROR(IF(MINIFS('{r} DECISION QUEUE'!$E$5:$E$299,'{r} DECISION QUEUE'!$B$5:$B$299,$A{r},'{r} DECISION QUEUE'!$F$5:$F$299,\"\")=0,\"\",MINIFS('{r} DECISION QUEUE'!$E$5:$E$299,'{r} DECISION QUEUE'!$B$5:$B$299,$A{r},'{r} DECISION QUEUE'!$F$5:$F$299,\"\")),\"\"))",
+    "rows": 1
+   }
+  ]
+ }
+]

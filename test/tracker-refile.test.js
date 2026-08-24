@@ -55,11 +55,11 @@ const unfiled = units.filter(u => u.kind === 'decl' && !fileFor(u));
 ok(unfiled.length === 0,
    'nothing falls through to a default bucket: ' +
    (unfiled.length ? unfiled.map(u => u.name).join(', ') : 'none unfiled'));
-ok(FILES.length === 15, 'fifteen files, each with a stated purpose');
+ok(FILES.length === 16, 'sixteen files, each with a stated purpose');
 FILES.forEach(([name]) => {
   if (!fs.existsSync(path.join(SRC, name + '.gs'))) ok(false, name + '.gs exists');
 });
-ok(FILES.every(([n]) => fs.existsSync(path.join(SRC, n + '.gs'))), 'and all fifteen are on disk');
+ok(FILES.every(([n]) => fs.existsSync(path.join(SRC, n + '.gs'))), 'and all of them are on disk');
 
 // ---------------------------------------------------------------- //
 section('The build is what is checked in');
@@ -129,7 +129,7 @@ const addonOutsideHeaders = FILES.filter(([name]) => {
 }).map(f => f[0]);
 ok(addonOutsideHeaders.length === 0,
    'no ADD-ON survives as a block of code: every mention is now inside a file header — ' +
-   (addonOutsideHeaders.join(', ') || 'all fifteen clean'));
+   (addonOutsideHeaders.join(', ') || 'every file clean'));
 ok(/ADD-ON : Record a skill I witnessed/.test(SHIPPED),
    'while the reason each one was written is kept, word for word');
 const src40 = fs.readFileSync(path.join(SRC, '50_decisions.gs'), 'utf8');
