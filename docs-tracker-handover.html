@@ -1,0 +1,365 @@
+<title>Tracker Handover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+:root{
+  --navy:#12233b; --paper:#ffffff; --ground:#f2f4f8; --line:#dee4ec; --line-soft:#edf0f5;
+  --ink:#12233b; --ink-2:#42536b; --ink-3:#73819a; --ink-4:#98a3b5;
+  --gold:#9d7718; --gold-soft:#f7f0da;
+  --safe:#2f7d4f; --safe-soft:#e9f4ed;
+  --check:#8a6a14; --check-soft:#fdf4df;
+  --stop:#a8342b; --stop-soft:#fbeae8;
+  --code-bg:#f0f3f8; --code-ink:#12233b;
+  --chip-bg:#12233b; --chip-ink:#ffffff;
+  --shadow:0 1px 2px rgba(18,35,59,.05), 0 14px 30px -22px rgba(18,35,59,.5);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --navy:#0c1725; --paper:#161d28; --ground:#0d131a; --line:#28313e; --line-soft:#1e2630;
+  --ink:#e8edf4; --ink-2:#b2bece; --ink-3:#828fa2; --ink-4:#66717f;
+  --gold:#d3ac52; --gold-soft:#241e10;
+  --safe:#6bbd8a; --safe-soft:#14231a;
+  --check:#d3ac52; --check-soft:#241f11;
+  --stop:#e58f86; --stop-soft:#2a1715;
+  --code-bg:#0f161f; --code-ink:#cbd6e4;
+  --chip-bg:#e8edf4; --chip-ink:#0c1725;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 30px -22px rgba(0,0,0,.95);
+}}
+:root[data-theme="dark"]{
+  --navy:#0c1725; --paper:#161d28; --ground:#0d131a; --line:#28313e; --line-soft:#1e2630;
+  --ink:#e8edf4; --ink-2:#b2bece; --ink-3:#828fa2; --ink-4:#66717f;
+  --gold:#d3ac52; --gold-soft:#241e10;
+  --safe:#6bbd8a; --safe-soft:#14231a;
+  --check:#d3ac52; --check-soft:#241f11;
+  --stop:#e58f86; --stop-soft:#2a1715;
+  --code-bg:#0f161f; --code-ink:#cbd6e4;
+  --chip-bg:#e8edf4; --chip-ink:#0c1725;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 30px -22px rgba(0,0,0,.95);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16.5px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;}
+.page{max-width:800px;margin:0 auto;padding:0 24px 90px;}
+
+header{padding:52px 0 32px;}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold);font-weight:600;}
+h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:clamp(2.5rem,7vw,3.9rem);
+  line-height:1;margin:.16em 0 0;letter-spacing:-.012em;text-wrap:balance;}
+.standfirst{font-size:1.13rem;color:var(--ink-2);margin:18px 0 0;max-width:58ch;}
+
+.headline{border:1px solid var(--stop);background:var(--stop-soft);border-radius:5px;
+  padding:20px 22px;margin:30px 0 0;}
+.headline b{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--stop);margin-bottom:7px;}
+.headline p{margin:0 0 10px;color:var(--ink-2);}
+.headline p:last-child{margin-bottom:0;}
+
+.phase{margin:48px 0 0;}
+.phasehead{display:flex;align-items:center;gap:13px;padding-bottom:11px;
+  border-bottom:2px solid var(--navy);}
+.pnum{flex:none;width:34px;height:34px;border-radius:50%;background:var(--chip-bg);color:var(--chip-ink);
+  font-family:"IBM Plex Mono",monospace;font-size:.92rem;font-weight:500;
+  display:flex;align-items:center;justify-content:center;}
+.phasehead h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.6rem;
+  margin:0;line-height:1.1;letter-spacing:-.004em;}
+.state{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:600;padding:3px 9px;border-radius:3px;border:1px solid currentColor;}
+.s-safe{color:var(--safe);}.s-stop{color:var(--stop);}.s-check{color:var(--check);}
+.phaseblurb{color:var(--ink-3);font-size:.95rem;margin:12px 0 0;max-width:62ch;}
+
+ol.steps{list-style:none;counter-reset:st;padding:0;margin:20px 0 0;}
+ol.steps > li{counter-increment:st;position:relative;padding:0 0 22px 40px;}
+ol.steps > li::before{content:counter(st) ".";position:absolute;left:0;top:0;
+  font-family:"IBM Plex Mono",monospace;font-size:.95rem;color:var(--ink-4);font-weight:500;}
+ol.steps h3{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.14rem;
+  margin:0 0 5px;}
+ol.steps p{margin:0 0 9px;color:var(--ink-2);font-size:.96rem;}
+ol.steps p:last-child{margin-bottom:0;}
+
+pre{background:var(--code-bg);color:var(--code-ink);border:1px solid var(--line);border-radius:4px;
+  padding:12px 14px;margin:0 0 10px;overflow-x:auto;
+  font-family:"IBM Plex Mono",monospace;font-size:.86rem;line-height:1.6;}
+code{font-family:"IBM Plex Mono",monospace;font-size:.88em;background:var(--code-bg);
+  padding:1px 5px;border-radius:3px;}
+pre code{background:none;padding:0;font-size:1em;}
+
+.expect{border-left:3px solid var(--safe);background:var(--safe-soft);padding:10px 13px;
+  border-radius:0 4px 4px 0;font-size:.9rem;color:var(--ink-2);margin:0 0 10px;}
+.expect b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.68rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--safe);display:block;margin-bottom:3px;}
+.watch{border-left:3px solid var(--check);background:var(--check-soft);padding:10px 13px;
+  border-radius:0 4px 4px 0;font-size:.9rem;color:var(--ink-2);margin:0 0 10px;}
+.watch b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.68rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--check);display:block;margin-bottom:3px;}
+.danger{border-left:3px solid var(--stop);background:var(--stop-soft);padding:12px 14px;
+  border-radius:0 4px 4px 0;font-size:.92rem;color:var(--ink-2);margin:0 0 10px;}
+.danger b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.68rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--stop);display:block;margin-bottom:3px;}
+
+.gate{margin:44px 0 0;border:2px solid var(--stop);border-radius:5px;overflow:hidden;
+  box-shadow:var(--shadow);}
+.gate .bar{background:var(--stop);color:#fff;padding:9px 20px;
+  font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.78rem;
+  letter-spacing:.17em;text-transform:uppercase;}
+:root[data-theme="dark"] .gate .bar,
+.gate .bar{color:#fff;}
+.gate .body{background:var(--paper);padding:20px 22px;}
+.gate .body p{margin:0 0 11px;color:var(--ink-2);}
+.gate .body p:last-child{margin-bottom:0;}
+.gate ul{margin:0 0 11px;padding-left:20px;color:var(--ink-2);font-size:.95rem;}
+.gate li{margin-bottom:6px;}
+
+footer{margin-top:62px;padding-top:22px;border-top:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--ink-4);line-height:1.75;}
+::selection{background:var(--gold-soft);}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+@media (max-width:620px){header{padding:34px 0 24px;} .page{padding:0 18px 60px;}}
+</style>
+
+<div class="page">
+
+<header>
+  <div class="eyebrow">Sumter County EMS · Field Training</div>
+  <h1>Tracker Handover</h1>
+  <p class="standfirst">Getting a clean tracker without losing the forms, the responses, the
+  thirteen thousand lines of script, or a single record. About an hour, and reversible
+  until step 11.</p>
+
+  <div class="headline">
+    <b>Read this before anything else</b>
+    <p>The Apps Script lives <em>inside</em> the spreadsheet. Deleting the spreadsheet deletes all
+    13,726 lines of it and every trigger with it. Your nine forms survive — their responses are
+    stored in the forms, not in the sheet — but the machinery that turns a submission into a record
+    does not.</p>
+    <p><strong>So nothing gets deleted.</strong> We copy, clean the copy, move the forms across one
+    at a time, and leave the original sitting there working until the new one has proved itself.</p>
+  </div>
+</header>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">1</span><h2>Before you touch anything</h2>
+    <span class="state s-safe">Nothing at risk</span></div>
+  <p class="phaseblurb">Two minutes, and it is the difference between a bad afternoon and a
+  disaster.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>Save the backup</h3>
+      <p>The zip I sent has all 52 tabs and 4,604 rows as CSV. Put it somewhere that is not
+      Google Drive. If everything below goes wrong, that file is the floor you land on.</p>
+    </li>
+    <li>
+      <h3>Take Google's own backup too</h3>
+      <p>In the tracker's script editor, run this. It writes a dated copy into your backup folder,
+      and it is a native Google copy, so it keeps things a CSV cannot.</p>
+      <pre><code>fullBackupV20_1()</code></pre>
+    </li>
+    <li>
+      <h3>Write down the old spreadsheet's id</h3>
+      <p>It is the long string in the address bar between <code>/d/</code> and <code>/edit</code>.
+      You will need it at the end to be certain you are retiring the right file.</p>
+    </li>
+  </ol>
+</div>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">2</span><h2>Make the copy and clean it</h2>
+    <span class="state s-safe">Nothing at risk</span></div>
+  <p class="phaseblurb">The copy is a new file. Everything you do to it is invisible to the tracker
+  everyone is still using.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>File → Make a copy</h3>
+      <p>Name it something you will recognise — <em>SCEMS Field Training Tracker v21</em> will do.
+      Google copies the Apps Script with it, which is why this method works at all.</p>
+      <div class="expect"><b>What you should see</b>A new spreadsheet with all 52 tabs and, under
+      Extensions → Apps Script, the whole script already there.</div>
+      <div class="watch"><b>What does not come across</b>Triggers. The copy has the code but nothing
+      is scheduled and no form is bound. That is fixed in phase 4, and until then the copy is inert,
+      which is exactly what you want while you work on it.</div>
+    </li>
+    <li>
+      <h3>Paste the new script into the copy</h3>
+      <p>In the copy: Extensions → Apps Script → select all → delete → paste the
+      <code>Code.gs</code> I sent → Save. Do this in the copy only.</p>
+    </li>
+    <li>
+      <h3>See what would come out</h3>
+      <pre><code>freshStartReport()</code></pre>
+      <p>Read it. It lists every removable tab with its row count and changes nothing. It will
+      only ever offer you two kinds: a <code>Form Responses N</code> that no form is writing to,
+      and a tab ending <code>LEGACY V18</code>.</p>
+      <div class="expect"><b>What you should see</b>Around seventeen tabs offered, and the tabs a
+      form <em>is</em> writing to listed separately as kept. Nothing the code names is ever on the
+      removal list.</div>
+    </li>
+    <li>
+      <h3>Take them out</h3>
+      <p>The token includes the spreadsheet's own name, so a command pasted from somewhere else
+      cannot run against the wrong file. Copy it from the end of the report.</p>
+      <pre><code>freshStartClean("CLEAN <em>your copy's name</em>")</code></pre>
+    </li>
+    <li>
+      <h3>Fix what is actually broken</h3>
+      <p>In this order. Each one reports before it writes.</p>
+      <pre><code>engineHealthCheck()
+previewEngineRepairV20_6()
+applyEngineRepairV20_6("REPAIR THE ENGINE KEY COLUMN")
+repairDecisionQueueHeaderV20_4()
+protectRecordTabsV20_2()</code></pre>
+      <div class="expect"><b>What you should see</b>The engine check finds one <code>#REF!</code>
+      and one crossed cell, then finds nothing on the second run. Give the sheet a few seconds to
+      recalculate between the repair and the re-check.</div>
+      <div class="watch"><b>Two rows it will not fix</b>Two rows on the trainee master hold a
+      clearance and no name. Only you know who they are. Putting a name on a personnel record is
+      not something a tool should decide, so it reports them and stops.</div>
+    </li>
+    <li>
+      <h3>Look at it</h3>
+      <p>Open every tab. The dashboard and the views should have no <code>#REF!</code> anywhere.
+      This is the moment to decide you like it, because the next phase is the one that commits.</p>
+    </li>
+  </ol>
+</div>
+
+<div class="gate">
+  <div class="bar">The point of no return is the next step</div>
+  <div class="body">
+    <p>Everything so far can be undone by closing the copy and walking away. Relinking the first
+    form cannot: a form has exactly one destination, so pointing it at the copy points it away
+    from the original. The original stops receiving new submissions from that form.</p>
+    <p>Before you go on:</p>
+    <ul>
+      <li>The backup is saved somewhere outside Drive.</li>
+      <li>The copy has no <code>#REF!</code> left in it.</li>
+      <li>Nobody is mid-shift about to submit an evaluation. Early morning is the right time.</li>
+    </ul>
+    <p>Old responses are not at risk either way — Google copies every existing response into the
+    new destination when you relink. It is only the <em>next</em> submission that follows the form.</p>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">3</span><h2>Move the nine forms</h2>
+    <span class="state s-stop">Commits, one form at a time</span></div>
+  <p class="phaseblurb">One at a time, verifying each before starting the next. If something looks
+  wrong on form one, you have eight still pointing at the old tracker and a working system to go
+  back to.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>For each form, in turn</h3>
+      <p>Open the form → <strong>Responses</strong> → the sheets icon → <strong>Select existing
+      spreadsheet</strong> → choose the copy.</p>
+      <div class="expect"><b>What you should see</b>A new tab appears in the copy holding every
+      response that form has ever had. Check the row count against the same form's tab in the old
+      tracker before moving on.</div>
+    </li>
+    <li>
+      <h3>Do not stop halfway</h3>
+      <div class="danger"><b>The window that drops submissions</b>Between relinking a form and
+      installing its trigger in phase 4, a submission to that form lands in the sheet but nothing
+      turns it into a record. <code>onHubFormSubmit</code> refuses it, because that form is meant to
+      be handled by its own bound trigger.
+      <p style="margin:8px 0 0">Do all nine and then phase 4 in one sitting. If you must stop,
+      stop <em>before</em> you start, not between forms.</p></div>
+    </li>
+  </ol>
+</div>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">4</span><h2>Wake the copy up</h2>
+    <span class="state s-check">Verify each</span></div>
+  <p class="phaseblurb">The copy has all the code and none of the wiring. This puts the wiring back.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>Find the forms, then rebuild every trigger</h3>
+      <pre><code>rebuildFormIdsNow()
+repairAllTriggersNow()</code></pre>
+      <p>The first rescans Drive for the nine forms and prefers the ones now linked to this
+      spreadsheet. The second removes every stale trigger and installs eight scheduled ones plus
+      the form-bound ones.</p>
+      <div class="expect"><b>What you should see</b><code>9 of 9 form-bound</code>. Anything less
+      names the forms it could not find, and a form with no bound trigger drops its submissions —
+      do not leave it at eight.</div>
+    </li>
+    <li>
+      <h3>Prove it end to end</h3>
+      <p>Submit one real evaluation through a form. Watch it appear in <code>02 FTO SHIFT EVAL
+      RAW</code> and in <code>91 INGESTION LEDGER</code>. That single test exercises the form, the
+      trigger, the handler, the mirror and the ledger in one go.</p>
+    </li>
+    <li>
+      <h3>Catch anything that arrived in the gap</h3>
+      <pre><code>catchUpUnprocessedPreview()
+catchUpUnprocessed()</code></pre>
+      <p>Replays any response that landed while nothing was listening. Safe to run twice — the
+      ledger stops it doubling.</p>
+    </li>
+  </ol>
+</div>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">5</span><h2>Point the portal at it</h2>
+    <span class="state s-check">Verify each</span></div>
+  <p class="phaseblurb">The portal is a separate script project, so it survives all of this
+  untouched. It just needs to be told where to look.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>Give it the new id</h3>
+      <p>In the portal project: Project Settings → Script Properties →
+      <code>PORTAL_PRODUCTION_SPREADSHEET_ID</code> → paste the copy's id. Then, in order:</p>
+      <pre><code>pointAtProductionReadOnly()
+productionReadinessCheck()
+goLive()</code></pre>
+      <div class="expect"><b>What you should see</b>The readiness check naming the new spreadsheet,
+      and every tab found. Read it before running <code>goLive()</code>.</div>
+    </li>
+    <li>
+      <h3>Deploy</h3>
+      <p>Deploy → Manage deployments → edit → New version. Your QR code and the <code>/exec</code>
+      address do not change.</p>
+    </li>
+  </ol>
+</div>
+
+<div class="phase">
+  <div class="phasehead"><span class="pnum">6</span><h2>Retire the old one — not yet</h2>
+    <span class="state s-safe">Reversible</span></div>
+  <p class="phaseblurb">The temptation is to delete it today. Don't.</p>
+
+  <ol class="steps">
+    <li>
+      <h3>Run the full review on the new one</h3>
+      <pre><code>fullSystemReviewV20_1()
+tabNameCheck()
+engineHealthCheck()</code></pre>
+      <p>All three read-only. Do not retire anything until these come back clean.</p>
+    </li>
+    <li>
+      <h3>Rename the old one so nobody opens it by accident</h3>
+      <p><em>ZZ OLD TRACKER — DO NOT USE — replaced 23 Aug 2026</em>. Check the id against the one
+      you wrote down in phase 1 before you rename it.</p>
+    </li>
+    <li>
+      <h3>Leave it alone for thirty days</h3>
+      <p>It costs nothing to keep and it is the only thing that can answer a question the new one
+      gets wrong. After a month of the new tracker working, delete it or don't — by then it does
+      not matter.</p>
+    </li>
+  </ol>
+</div>
+
+<footer>
+  Nothing in this procedure deletes anything from the original tracker.<br>
+  Every command listed reports before it writes, and the ones that write are gated twice:<br>
+  a token that names what it is about to do, and an authorisation check on top of it.
+</footer>
+
+</div>
