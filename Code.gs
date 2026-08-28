@@ -1263,6 +1263,7 @@ function onOpen(e) {
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
         .addItem('Make the estate elite (safe repairs)', 'ELITE_ESTATE')
+        .addItem('Elite estate — finish (recover + matrix)', 'ELITE_ESTATE_FINISH')
         .addSeparator()
         .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
         .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
@@ -12042,11 +12043,17 @@ function liveFormIdSetV20_6_() {
 /**
  * Inventory of Drive form files whose titles are "Copy of …" versions of the
  * nine live forms. Never includes a live FORM_IDS entry. Writes nothing.
+ *
+ * light=true skips opening each form for response counts (much faster; used
+ * when we only need ids/titles to archive).
  */
-function formCopyInventoryV20_6_() {
+function formCopyInventoryV20_6_(light) {
   var live = liveFormIdSetV20_6_();
   var found = [];
-  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false';
+  // Title filter: scanning every form in Drive was taking minutes and blowing
+  // the 6-minute Apps Script limit before later elite-estate steps could run.
+  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false ' +
+          'and title contains "Copy of SCEMS"';
   var it = DriveApp.searchFiles(q);
   while (it.hasNext()) {
     var file = it.next();
@@ -12056,12 +12063,14 @@ function formCopyInventoryV20_6_() {
     var id = file.getId();
     if (live[id]) continue;
     var responses = null, accepting = null, dest = '';
-    try {
-      var f = FormApp.openById(id);
-      responses = f.getResponses().length;
-      accepting = f.isAcceptingResponses();
-      try { dest = f.getDestinationId() || ''; } catch (e2) {}
-    } catch (e3) {}
+    if (!light) {
+      try {
+        var f = FormApp.openById(id);
+        responses = f.getResponses().length;
+        accepting = f.isAcceptingResponses();
+        try { dest = f.getDestinationId() || ''; } catch (e2) {}
+      } catch (e3) {}
+    }
     found.push({
       id: id,
       title: title,
@@ -12091,7 +12100,7 @@ function formEstateReport() {
   });
   L.push('');
 
-  var copies = formCopyInventoryV20_6_();
+  var copies = formCopyInventoryV20_6_(false);
   L.push('Backup form clones still in Drive : ' + copies.length);
   if (!copies.length) {
     L.push('None. The form estate is clean.');
@@ -12141,7 +12150,7 @@ function archiveFormCopies(confirmToken) {
 
 function archiveFormCopiesV20_6_(confirmToken) {
   var TOKEN = 'ARCHIVE FORM COPIES';
-  var copies = formCopyInventoryV20_6_();
+  var copies = formCopyInventoryV20_6_(true);
   var L = ['ARCHIVE FORM COPIES', '',
     'Candidates : ' + copies.length, ''];
 
@@ -12290,7 +12299,7 @@ function neutralizeBackupFormClonesV20_6_(backupSpreadsheetId, stamp) {
   // Belt-and-braces: any brand-new "Copy of" SCEMS form created in the last
   // few minutes whose destination is the backup id.
   try {
-    formCopyInventoryV20_6_().forEach(function (c) {
+    formCopyInventoryV20_6_(true).forEach(function (c) {
       if (c.destination === backupSpreadsheetId) archiveOne(c.id, c.title);
     });
   } catch (eInv) {}
@@ -12398,7 +12407,7 @@ function estateHealthItemsV20_6_() {
   } catch (e3) {}
 
   try {
-    var copies = formCopyInventoryV20_6_();
+    var copies = formCopyInventoryV20_6_(true);
     if (copies.length) {
       add('WARN',
         copies.length + ' backup form clone(s) ("Copy of …") still sit in Drive. ' +
@@ -13199,17 +13208,21 @@ function MAKE_IT_PROFESSIONAL() {
 }
 
 /**
- * Correctness of the estate — not cosmetics. Runs every safe repair that
- * does not delete a record or a live form, in dependency order, then the
- * standing health check. Orphan Form Responses tabs and the live workbook
- * itself are deliberately left alone: those need a Drive copy first
- * (freshStartClean / the handover doc).
+ * Correctness of the estate — not cosmetics.
  *
- * Safe to run repeatedly. Writes no permanent personnel record.
+ * Apps Script kills any run at six minutes. The first live run archived 53
+ * form clones and repaired the engine, then died before recovery/matrix.
+ * This is now two commands, each safe to repeat:
+ *
+ *   ELITE_ESTATE()        — forms, engine, headers, queue, protections, triggers
+ *   ELITE_ESTATE_FINISH() — recover lost submissions, rebuild matrix, health check
+ *
+ * Orphan Form Responses tabs are reported only; clean those on a Drive copy
+ * via freshStartClean / the handover doc.
  */
 function ELITE_ESTATE() {
   if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE', ''];
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 1 of 2)', ''];
   function step(n, what, fn) {
     try {
       var r = fn();
@@ -13234,40 +13247,72 @@ function ELITE_ESTATE() {
     return stop;
   }
 
-  step(1, 'Form estate inventory (read-only)', formEstateReport);
-  step(2, 'Archive backup form clones', function () {
+  // Light inventory + archive (no per-form response counts — that alone
+  // burned minutes on 53 clones and tripped the execution ceiling).
+  step(1, 'Archive backup form clones', function () {
     return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
   });
-  step(3, 'Engine key column repair', function () {
+  step(2, 'Engine key column repair', function () {
     return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
   });
-  step(4, 'Decision queue header', repairDecisionQueueHeaderV20_4);
-  step(5, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
-  step(6, 'Protect record tabs', protectRecordTabsV20_2);
-  step(7, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
-  step(8, 'Recover lost form submissions (idempotent)', function () {
-    // Blank cutoff — recoverLostSubmissionsV20_2 prompts in UI; call the
-    // underlying replay with no date floor so July responses are included.
-    if (typeof replayMissingSinceV20_1_ === 'function') {
-      return replayMissingSinceV20_1_('');
+  step(3, 'Decision queue header', repairDecisionQueueHeaderV20_4);
+  step(4, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
+  step(5, 'Protect record tabs', protectRecordTabsV20_2);
+  step(6, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
+
+  L.push('');
+  L.push('Part 1 done. Next, run ELITE_ESTATE_FINISH() — recovers lost');
+  L.push('submissions, rebuilds the skill matrix, and prints the health check.');
+  L.push('Those are the slow steps; keeping them separate avoids the 6-minute kill.');
+  L.push('');
+  L.push('Orphan Form Responses tabs stay until you clean a COPY:');
+  L.push('  freshStartReport() then freshStartClean("CLEAN <copy name>")');
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE PART 1', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Part 2: recover lost submissions, rebuild matrix, health check.
+ *  Safe after part 1, and safe to run on its own if part 1 already finished. */
+function ELITE_ESTATE_FINISH() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 2 of 2)', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
     }
-    return recoverLostSubmissionsV20_2();
+  }
+
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    return 'STOPPED. Orphan twin. Open the starred Master.';
+  }
+
+  step(1, 'Recover lost form submissions (blank cutoff, idempotent)', function () {
+    return replayMissingSinceV20_1_('');
   });
-  step(9, 'Skill matrix rebuild', function () {
+  step(2, 'Skill matrix rebuild', function () {
     rebuildSkillMatrixV19_();
     return 'matrix rebuilt';
   });
-  step(10, 'Orphan Form Responses report (read-only — clean on a COPY only)', freshStartReport);
+  step(3, 'Engine health (confirm key column)', engineHealthCheck);
+  step(4, 'Orphan Form Responses report (read-only)', freshStartReport);
+  step(5, 'Health check', healthCheckV20_2);
 
   L.push('');
   L.push('NOT done here on purpose (needs a Drive copy of the workbook first):');
   L.push('  freshStartClean("CLEAN <copy name>")  — removes orphan Form Responses tabs');
-  L.push('  Retiring the original after the copy has proved itself');
-  L.push('');
-  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
 
   var msg = L.join('\n');
-  systemLog_('WARN', 'ELITE ESTATE RUN', SCEMS_VERSION);
+  systemLog_('WARN', 'ELITE ESTATE PART 2', SCEMS_VERSION);
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;

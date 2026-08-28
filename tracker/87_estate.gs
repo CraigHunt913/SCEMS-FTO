@@ -75,11 +75,17 @@ function liveFormIdSetV20_6_() {
 /**
  * Inventory of Drive form files whose titles are "Copy of …" versions of the
  * nine live forms. Never includes a live FORM_IDS entry. Writes nothing.
+ *
+ * light=true skips opening each form for response counts (much faster; used
+ * when we only need ids/titles to archive).
  */
-function formCopyInventoryV20_6_() {
+function formCopyInventoryV20_6_(light) {
   var live = liveFormIdSetV20_6_();
   var found = [];
-  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false';
+  // Title filter: scanning every form in Drive was taking minutes and blowing
+  // the 6-minute Apps Script limit before later elite-estate steps could run.
+  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false ' +
+          'and title contains "Copy of SCEMS"';
   var it = DriveApp.searchFiles(q);
   while (it.hasNext()) {
     var file = it.next();
@@ -89,12 +95,14 @@ function formCopyInventoryV20_6_() {
     var id = file.getId();
     if (live[id]) continue;
     var responses = null, accepting = null, dest = '';
-    try {
-      var f = FormApp.openById(id);
-      responses = f.getResponses().length;
-      accepting = f.isAcceptingResponses();
-      try { dest = f.getDestinationId() || ''; } catch (e2) {}
-    } catch (e3) {}
+    if (!light) {
+      try {
+        var f = FormApp.openById(id);
+        responses = f.getResponses().length;
+        accepting = f.isAcceptingResponses();
+        try { dest = f.getDestinationId() || ''; } catch (e2) {}
+      } catch (e3) {}
+    }
     found.push({
       id: id,
       title: title,
@@ -124,7 +132,7 @@ function formEstateReport() {
   });
   L.push('');
 
-  var copies = formCopyInventoryV20_6_();
+  var copies = formCopyInventoryV20_6_(false);
   L.push('Backup form clones still in Drive : ' + copies.length);
   if (!copies.length) {
     L.push('None. The form estate is clean.');
@@ -174,7 +182,7 @@ function archiveFormCopies(confirmToken) {
 
 function archiveFormCopiesV20_6_(confirmToken) {
   var TOKEN = 'ARCHIVE FORM COPIES';
-  var copies = formCopyInventoryV20_6_();
+  var copies = formCopyInventoryV20_6_(true);
   var L = ['ARCHIVE FORM COPIES', '',
     'Candidates : ' + copies.length, ''];
 
@@ -323,7 +331,7 @@ function neutralizeBackupFormClonesV20_6_(backupSpreadsheetId, stamp) {
   // Belt-and-braces: any brand-new "Copy of" SCEMS form created in the last
   // few minutes whose destination is the backup id.
   try {
-    formCopyInventoryV20_6_().forEach(function (c) {
+    formCopyInventoryV20_6_(true).forEach(function (c) {
       if (c.destination === backupSpreadsheetId) archiveOne(c.id, c.title);
     });
   } catch (eInv) {}
@@ -431,7 +439,7 @@ function estateHealthItemsV20_6_() {
   } catch (e3) {}
 
   try {
-    var copies = formCopyInventoryV20_6_();
+    var copies = formCopyInventoryV20_6_(true);
     if (copies.length) {
       add('WARN',
         copies.length + ' backup form clone(s) ("Copy of …") still sit in Drive. ' +

@@ -331,13 +331,20 @@ ok(/estateHealthItemsV20_6_/.test(healthSrc),
 section('ELITE_ESTATE is the ordered safe repair path');
 // ---------------------------------------------------------------- //
 const eliteSrc = ELITE_ESTATE.toString();
-ok(/formEstateReport/.test(eliteSrc), 'starts with the form estate report');
-ok(/archiveFormCopiesV20_6_/.test(eliteSrc), 'archives form clones');
-ok(/engineRepairV20_6_/.test(eliteSrc), 'repairs the engine key');
-ok(/repairDecisionQueueHeaderV20_4/.test(eliteSrc), 'fixes the decision queue header');
-ok(/replayMissingSinceV20_1_/.test(eliteSrc), 'recovers lost submissions with blank cutoff');
-ok(/freshStartReport/.test(eliteSrc), 'reports orphan tabs without deleting them on live');
+ok(/archiveFormCopiesV20_6_/.test(eliteSrc), 'part 1 archives form clones');
+ok(/engineRepairV20_6_/.test(eliteSrc), 'part 1 repairs the engine key');
+ok(/repairDecisionQueueHeaderV20_4/.test(eliteSrc), 'part 1 fixes the decision queue header');
+ok(!/replayMissingSinceV20_1_/.test(eliteSrc),
+   'part 1 does NOT recover submissions — that blew the 6-minute limit');
 ok(/ORPHAN_TWIN_SPREADSHEET_ID/.test(eliteSrc), 'refuses to run on the twin');
+
+const finishSrc = ELITE_ESTATE_FINISH.toString();
+ok(/replayMissingSinceV20_1_/.test(finishSrc), 'part 2 recovers lost submissions with blank cutoff');
+ok(/rebuildSkillMatrixV19_/.test(finishSrc), 'part 2 rebuilds the matrix');
+ok(/freshStartReport/.test(finishSrc), 'part 2 reports orphan tabs without deleting them on live');
+ok(/healthCheckV20_2/.test(finishSrc), 'part 2 ends on the health check');
+ok(/title contains "Copy of SCEMS"/.test(formCopyInventoryV20_6_.toString()),
+   'Drive search is narrowed so it cannot scan every form in the account');
 ok(/neutralizeBackupFormClonesV20_6_/.test(fs.readFileSync('/home/user/SCEMS-FTO/tracker/70_admin_health.gs', 'utf8')) ||
    /neutralizeBackupFormClonesV20_6_/.test(backupSrc),
    'backup path stays hooked');

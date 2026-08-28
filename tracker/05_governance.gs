@@ -694,6 +694,7 @@ function onOpen(e) {
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
         .addItem('Make the estate elite (safe repairs)', 'ELITE_ESTATE')
+        .addItem('Elite estate — finish (recover + matrix)', 'ELITE_ESTATE_FINISH')
         .addSeparator()
         .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
         .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
