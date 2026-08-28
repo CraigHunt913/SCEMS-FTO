@@ -87,22 +87,188 @@ function traineeRowsV1_() {
   }).filter(Boolean);
 }
 
+/** Catalog threshold helpers — four convictions that make a skill ready. */
+function cellNumV1_(r, t, names, fallback) {
+  for (var i = 0; i < names.length; i++) {
+    if (t.col[names[i]] !== undefined) {
+      var n = Number(r[t.col[names[i]]]);
+      return isNaN(n) ? (fallback || 0) : n;
+    }
+  }
+  return fallback || 0;
+}
+
 function skillsForV1_(norm) {
   var t = readTabAllV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var successful = cellNumV1_(r, t, ['SUCCESSFUL REPS', 'SUCCESSFUL'], 0);
+    var independent = cellNumV1_(r, t, ['INDEPENDENT REPS', 'INDEPENDENT'], 0);
+    var dates = cellNumV1_(r, t, ['DISTINCT DATES', 'DATES', 'DISTINCT DATE COUNT'], 0);
+    var ftos = cellNumV1_(r, t, ['DISTINCT FTOS', 'DISTINCT FTO', 'FTOS', 'FTO COUNT'], 0);
+    var needS = cellNumV1_(r, t, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL', 'SUCCESSFUL NEED'], 3) || 3;
+    var needI = cellNumV1_(r, t, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT', 'INDEPENDENT NEED'], 2) || 2;
+    var needD = cellNumV1_(r, t, ['NEED DATES', 'REQUIRED DATES', 'DATES NEED'], 2) || 2;
+    var needF = cellNumV1_(r, t, ['NEED FTOS', 'REQUIRED FTOS', 'FTOS NEED'], 2) || 2;
+    // If threshold columns are absent, keep classic defaults so bars still teach.
+    if (t.col['NEED SUCCESSFUL'] === undefined && t.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = Math.max(needS, 3); needI = Math.max(needI, 2);
+      needD = Math.max(needD, 2); needF = Math.max(needF, 2);
+    }
+    var readiness = String(r[t.col['READINESS']] || '').trim();
+    var signed = String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
+                 readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
-      readiness: String(r[t.col['READINESS']] || '').trim(),
-      signed: String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
-              String(r[t.col['READINESS']] || '').trim() === 'SIGNED OFF',
-      successful: Number(r[t.col['SUCCESSFUL REPS']]) || 0,
-      independent: Number(r[t.col['INDEPENDENT REPS']]) || 0
+      readiness: readiness,
+      signed: signed,
+      successful: successful,
+      independent: independent,
+      distinctDates: dates,
+      distinctFtos: ftos,
+      bars: [
+        { label: 'Successful', have: successful, need: needS },
+        { label: 'Independent', have: independent, need: needI },
+        { label: 'Dates', have: dates, need: needD },
+        { label: 'FTOs', have: ftos, need: needF }
+      ]
     });
   });
   return out;
+}
+
+/** Hours since a Date, or -1. */
+function hoursSinceV1_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return -1;
+  return Math.floor((new Date() - d) / 3600000);
+}
+
+/** Parse "3/2 · 2/2 · …" style evidence summaries into four counts when columns lack them. */
+function parseEvidenceBarsV1_(text) {
+  var s = String(text || '');
+  var m = s.match(/(\d+)\s*\/\s*(\d+)/g);
+  if (!m || m.length < 2) return null;
+  var bars = [];
+  var labels = ['Successful', 'Independent', 'Dates', 'FTOs'];
+  for (var i = 0; i < Math.min(m.length, 4); i++) {
+    var p = m[i].match(/(\d+)\s*\/\s*(\d+)/);
+    bars.push({ label: labels[i], have: Number(p[1]), need: Number(p[2]) });
+  }
+  while (bars.length < 4) bars.push({ label: labels[bars.length], have: 0, need: 1 });
+  return bars;
+}
+
+/** Eval heat for a trainee: count, days since last, optional domain average. */
+function evalHeatForV1_(norm) {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  var out = { count: 0, days: -1, avg: null, lastEval: 'never' };
+  if (!t.ok) return out;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return out;
+  var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation',
+                 'Scene Leadership', 'Professionalism'];
+  var latest = null, sum = 0, nScores = 0;
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[iWho]) !== norm) return;
+    out.count++;
+    var d = asDateV1_(r[iWhen]);
+    if (d && (!latest || d > latest)) latest = d;
+    domains.forEach(function (h) {
+      if (t.col[h] === undefined) return;
+      var v = Number(r[t.col[h]]);
+      if (v >= 1 && v <= 5) { sum += v; nScores++; }
+    });
+  });
+  if (latest) {
+    out.days = Math.floor((new Date() - latest) / 86400000);
+    out.lastEval = daysAgoTextV1_(latest);
+  }
+  if (nScores) out.avg = Math.round((sum / nScores) * 100) / 100;
+  return out;
+}
+
+/** Day count in current phase (or since start). */
+function dayInPhaseV1_(t) {
+  var d = t.phaseStart || t.started;
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((new Date() - d) / 86400000));
+}
+
+/** Imperative next-move cards — replace "flags" language for humans. */
+function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
+  var moves = [];
+  (coaching || []).forEach(function (c) {
+    if (c.acknowledged) return;
+    moves.push({
+      kind: 'coaching', urgency: 'soon', title: 'Acknowledge coaching from ' + (c.from || 'your FTO'),
+      blurb: String(c.text || '').slice(0, 120), action: 'ack', row: c.row
+    });
+  });
+  var reflectAgo = '';
+  (freshness || []).forEach(function (f) {
+    if (/reflect/i.test(f.title || '')) reflectAgo = f.ago;
+  });
+  if (reflectAgo === 'never' || /days ago/.test(reflectAgo)) {
+    var n = parseInt(reflectAgo, 10);
+    if (reflectAgo === 'never' || (n && n >= 7)) {
+      moves.push({
+        kind: 'reflect', urgency: 'soon',
+        title: 'File your reflection',
+        blurb: reflectAgo === 'never' ? 'None on file yet. Two minutes.' :
+               'Last one was ' + reflectAgo + '.',
+        action: 'reflect'
+      });
+    }
+  }
+  if (heat.days < 0) {
+    moves.push({
+      kind: 'eval', urgency: 'due',
+      title: 'No evaluation on file yet',
+      blurb: 'Your FTO files one after a shift together.',
+      action: 'wait'
+    });
+  } else if (heat.days > 14) {
+    moves.push({
+      kind: 'eval', urgency: 'soon',
+      title: heat.days + ' days since an evaluation',
+      blurb: 'Ask your FTO to schedule one.',
+      action: 'wait'
+    });
+  }
+  (waiting || []).forEach(function (q) {
+    moves.push({
+      kind: 'queue', urgency: 'ok',
+      title: q.skill + ' is with Training Division',
+      blurb: 'Ready ' + (q.since || '') + '. Nothing for you to do.',
+      action: 'wait'
+    });
+  });
+  return moves.slice(0, 6);
+}
+
+function nextMoveFromFindingV1_(why, name) {
+  var w = String(why || '');
+  if (!w) return null;
+  var title = w, blurb = 'Open their chart and decide the next honest move.', urgency = 'soon';
+  if (/never evaluated/i.test(w)) {
+    title = 'Get an evaluation on the board'; blurb = name + ' has never been evaluated.'; urgency = 'due';
+  } else if (/days since/i.test(w)) {
+    title = 'Schedule an evaluation'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  } else if (/no training officer|no one on the roster|has left|sentence, not a name/i.test(w)) {
+    title = 'Fix the training officer assignment'; blurb = capFindingV1_(w) + '.'; urgency = 'due';
+  } else if (/not responding|remediation|concern/i.test(w)) {
+    title = 'Address status: ' + w; blurb = 'This stays visible until the status changes.'; urgency = 'due';
+  } else if (/missing|incomplete/i.test(w)) {
+    title = 'Finish the trainee record'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  }
+  return { kind: 'finding', urgency: urgency, title: title, blurb: blurb, finding: w };
+}
+function capFindingV1_(s) {
+  s = String(s || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function openQueueV1_() {
@@ -111,6 +277,11 @@ function openQueueV1_() {
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var since = asDateV1_(r[t.col['READY DATE']]);
+    var evidence = String(r[t.col['EVIDENCE SUMMARY']] || '').trim();
+    var bars = parseEvidenceBarsV1_(evidence);
+    var recommend = String(r[t.col['FTO RECOMMENDATION']] || r[t.col['RECOMMENDATION']] ||
+                           r[t.col['FTO NOTES']] || '').trim();
     out.push({
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
@@ -118,13 +289,12 @@ function openQueueV1_() {
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
-      evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
-      since: asDateV1_(r[t.col['READY DATE']]),
+      evidence: evidence,
+      bars: bars,
+      recommend: recommend,
+      since: since,
+      hours: hoursSinceV1_(since),
       requestId: String(r[t.col['REQUEST ID']] || '').trim(),
-      // A row can be OPEN and already carry a decision: that is one the portal
-      // (or somebody in the sheet) has staged, waiting for the tracker to
-      // record it. It is not still waiting on the Chief, and counting it as
-      // though it were is how a queue never appears to go down.
       decision: String(r[t.col['DECISION']] || '').trim(),
       decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
@@ -201,25 +371,30 @@ function traineePayloadV1_(viewer) {
   var signed = skills.filter(function (s) { return s.signed; }).length;
   var waiting = openQueueV1_().filter(function (q) { return q.norm === me.norm; });
   var coaching = coachingForV1_(me.norm);
+  var heat = evalHeatForV1_(me.norm);
+  var freshness = safeFormsV1_(function () { return freshnessForV1_(me.name); });
+  var day = dayInPhaseV1_(me);
+  var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
+    product: 'THE LINE',
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
-    lastEval: daysAgoTextV1_(lastEvalForV1_(me.norm)),
+    dayInPhase: day,
+    lastEval: heat.lastEval,
+    evalCount: heat.count,
+    evalAvg: heat.avg,
     signed: signed, applicable: skills.length,
     percent: skills.length ? Math.round(signed / skills.length * 100) : 0,
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
-    coaching: coaching.filter(function (c) { return !c.acknowledged; })
-      .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+    coaching: unacked.map(function (c) { return { row: c.row, from: c.from, text: c.text,
                                    book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
+    nextMoves: nextMovesForTraineeV1_(me, heat, waiting, coaching, freshness),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
     }),
-    // How current each kind of submission is. The record itself is fetched on
-    // demand, so a person with two years of history does not pay for it on
-    // every page load.
-    freshness: safeFormsV1_(function () { return freshnessForV1_(me.name); })
+    freshness: freshness
   };
 }
 
@@ -227,19 +402,31 @@ function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
   return {
+    product: 'THE LINE',
     name: viewer.name,
-    // Each trainee carries the forms for THAT trainee, with the FTO's name,
-    // the trainee's name, and the skills log for their level already chosen.
-    // The FTO picks a person, not a form and not a level.
     trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
-               setupComplete: t.setupComplete,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
-                   { fto: viewer.name, trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+      var heat = evalHeatForV1_(t.norm);
+      var waiting = openQueueV1_().filter(function (q) { return q.norm === t.norm && !q.decision; });
+      var urgency = '';
+      if (!t.setupComplete) urgency = 'soon';
+      else if (heat.days < 0 || heat.days > 7) urgency = 'due';
+      else if (heat.days > 4) urgency = 'soon';
+      return {
+        name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+        dayInPhase: dayInPhaseV1_(t),
+        lastEval: heat.lastEval,
+        evalCount: heat.count,
+        evalAvg: heat.avg,
+        daysSinceEval: heat.days,
+        waitingCount: waiting.length,
+        urgency: urgency,
+        setupComplete: t.setupComplete,
+        forms: safeFormsV1_(function () {
+          return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
+            { fto: viewer.name, trainee: t.name });
+        }),
+        freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); })
+      };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
@@ -308,9 +495,17 @@ function divisionPayloadV1_() {
     activeCount: active.length,
     closedCount: all.length - active.length,
     queue: queue.slice(0, 25).map(function (q) {
-      return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId,
-               row: q.row, from: q.from };
+      var hours = q.hours;
+      var clock = 72;
+      if (hours < 0) hours = 0;
+      var left = Math.max(0, clock - hours);
+      return {
+        trainee: q.trainee, skill: q.skill, evidence: q.evidence,
+        bars: q.bars, recommend: q.recommend || '',
+        since: daysAgoTextV1_(q.since), hours: hours, hoursLeft: left,
+        clockPct: Math.max(0, Math.min(100, Math.round((left / clock) * 100))),
+        requestId: q.requestId, row: q.row, from: q.from
+      };
     }),
     queueCount: queue.length,
     // Decisions already made here and waiting on the tracker to make them
@@ -356,9 +551,11 @@ function divisionPayloadV1_() {
       // finding is not cleared and never can be - it moves out of the alarm
       // list until the hold runs out, and comes straight back after.
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
+      var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
                days: days, status: t.status || '', needs: why, ack: ack,
+               nextMove: move,
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),
@@ -372,7 +569,8 @@ function divisionPayloadV1_() {
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
-    mode: modeV1_()
+    mode: modeV1_(),
+    product: 'THE LINE'
   };
 }
 
@@ -380,13 +578,37 @@ function supervisorPayloadV1_(viewer) {
   var shift = normNameV1_(viewer.shift);
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && (!shift || normNameV1_(t.shift) === shift); });
+  var hot = 0;
+  var trainees = mine.map(function (t) {
+    var heat = evalHeatForV1_(t.norm);
+    var why = '';
+    var urgency = '';
+    if (heat.days < 0) { why = 'never evaluated'; urgency = 'due'; hot++; }
+    else if (heat.days > 14) { why = heat.days + 'd silent'; urgency = 'due'; hot++; }
+    else if (heat.days > 7) { why = heat.days + 'd since eval'; urgency = 'soon'; hot++; }
+    var ftoWhy = ftoProblemV1_(t);
+    if (ftoWhy) { why = ftoWhy; urgency = 'due'; hot++; }
+    return {
+      name: t.name, level: t.level, levelKey: t.levelKey,
+      phase: t.phase, fto: t.fto,
+      lastEval: heat.lastEval,
+      daysSinceEval: heat.days,
+      evalCount: heat.count,
+      why: why,
+      urgency: urgency,
+      nextMove: why ? nextMoveFromFindingV1_(why, t.name) : null
+    };
+  });
+  // Hot first — the strip should put tonight's problems at the start.
+  trainees.sort(function (a, b) {
+    var rank = { due: 0, soon: 1, '': 2 };
+    return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
+  });
   return {
+    product: 'THE LINE',
     shift: viewer.shift || 'All shifts',
-    trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey,
-               phase: t.phase, fto: t.fto,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
-    }),
+    hotCount: hot,
+    trainees: trainees,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.SUPERVISOR, { fto: viewer.name });
     })

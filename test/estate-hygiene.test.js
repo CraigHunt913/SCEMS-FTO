@@ -361,7 +361,10 @@ ok(/PORTAL_STAGING_ARCHIVE_FOLDER|SCEMS Portal Staging — ARCHIVE/.test(staging
 ok(/Sheet1/.test(stagingSrc), 'drops Google\'s default Sheet1 from a new sandbox');
 
 const portalCfg = fs.readFileSync('/home/user/SCEMS-FTO/portal/00_Config.gs', 'utf8');
-ok(/portal-1\.4\.0/.test(portalCfg), 'portal version bumped for the estate fix');
+ok(/portal-2\.0\.0/.test(portalCfg), 'portal version is THE LINE 2.0');
+ok(/THE LINE/.test(portalCfg), 'portal product name is THE LINE');
+ok(/returnSignoffV1/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs', 'utf8')),
+   'Return is a first-class write path');
 
 // ---------------------------------------------------------------- //
 section('Version stamp');

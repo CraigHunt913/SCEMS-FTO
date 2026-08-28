@@ -5,18 +5,13 @@
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
 <style>
 /* ------------------------------------------------------------------ *
-   Sumter County EMS — Field Training
+   THE LINE — Sumter County EMS Field Training
 
-   Built for one hand, at the end of a shift, on a phone, by somebody who
-   has been awake for fourteen hours. Every rule below follows from that.
-
-   The colour of a card's spine is the only thing that has to be read from
-   across a room: red means it wants you now, amber means soon, and no spine
-   at all means it is fine and you can stop looking at it. Everything else
-   is there to be read once you have decided to read it.
+   One living chart per trainee. Tonight for FTOs. Waiting on you for
+   Training. Built for one hand, end of shift, fourteen hours awake.
  * ------------------------------------------------------------------ */
 :root{
   --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;
@@ -207,6 +202,65 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 :focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;border-radius:4px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}
   .card.act:active,.btn:active{transform:none;}}
+
+/* --- THE LINE: phase track, evidence bars, clock, moves, strip --- */
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:500;}
+.phase-track{display:flex;gap:4px;margin:14px 0 0;}
+.phase-track .p{flex:1;}
+.phase-track .pip{height:5px;border-radius:3px;background:var(--line);}
+.phase-track .pip.on{background:var(--gold);}
+.phase-track .pip.now{background:var(--emt);}
+.phase-track .lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.6rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}
+.phase-track .lab.on{color:var(--ink);}
+.stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);}
+.stats .n{font-family:"IBM Plex Mono",monospace;font-size:1.15rem;line-height:1;}
+.stats .l{font-size:.74rem;color:var(--ink-3);margin-top:2px;}
+.bars4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px;}
+.seg{display:flex;gap:2px;margin-bottom:4px;}
+.seg i{display:block;width:8px;height:14px;border-radius:1px;background:var(--line);}
+.seg i.on{background:var(--emt);}
+.bars4 .have{font-family:"IBM Plex Mono",monospace;font-size:.74rem;}
+.bars4 .have span{color:var(--ink-3);}
+.bars4 .bl{font-size:.66rem;color:var(--ink-3);line-height:1.25;margin-top:1px;}
+.move{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;
+  border-radius:10px;border:1px solid var(--warn);background:var(--warn-bg);}
+.move.due{border-color:var(--stop);background:var(--stop-bg);}
+.move.ok{border-color:var(--ok);background:var(--ok-bg);}
+.move .bd{flex:1;min-width:0;}
+.move .h{font-weight:600;font-size:.95rem;}
+.move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}
+.move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;
+  padding:10px 13px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.9rem;
+  cursor:pointer;min-height:44px;}
+.move.due .go-btn{background:var(--stop);color:#fff;}
+.clock{position:relative;width:52px;height:52px;flex:none;}
+.clock svg{display:block;}
+.clock .nums{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;line-height:1;}
+.clock .nums b{font-family:"IBM Plex Mono",monospace;font-size:.92rem;font-weight:500;}
+.clock .nums span{font-family:"Barlow Semi Condensed",sans-serif;font-size:.52rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:1px;}
+.decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-shadow:var(--lift-2);
+  overflow:hidden;margin-bottom:16px;}
+.decision .top{display:flex;padding:15px 16px 0;}
+.decision .body{flex:1;min-width:0;padding:0 0 14px;}
+.strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;}
+.strip .tile{flex:0 0 148px;scroll-snap-align:start;background:var(--raised);border:1px solid var(--line);
+  border-radius:10px;padding:12px;box-shadow:var(--lift);}
+.strip .tile.due{border-color:var(--stop);}
+.strip .tile.soon{border-color:var(--warn);}
+.strip .tile .h{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.05rem;
+  line-height:1.15;margin:0;}
+.strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}
+.strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}
+.btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shadow:none;margin-top:8px;}
+.btn.ghost-danger[disabled]{opacity:.35;}
+.line-mark{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.62rem;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}
+@keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}
 </style>
 </head>
 <body>
@@ -217,7 +271,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
          tracker; a 49,000-character line in here made the file that has to be
          pasted into Apps Script fragile enough to break on the way in. -->
     <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGYAAABvCAMAAAApDkWYAAABgFBMVEUAAAAAAAC6wbr0+Pfk6um2u7fT2Nb9/v7EysYnKCgXFxc2NzdGSEiVl5ZmaGhVV1amqah1d3fd4+GGh4fr8fDs8/Hs8vHs8vHr8fG9w8Hs8/Ha4N7n6Oh+gYGeoqHl6+uqqqrc3Nzo7u3n7ezp7u3p7u7m7eycoZ1eYGC/v7+4//8/QEHMzMzX1/bZ6enV//9/f398gXydn6C5v8DZ3+AeHyAfICAA/wAA//8gIB8+QD5VVVVcX2Cqqv+2ttqq1NSq/6rAx78AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB9M5mmAAAAgHRSTlP/AP7+/v7+A/7//////v///v/+/9CwTHCP/jH+E//+LAMJ1qtMcZD//wQD/wULEAYC////////AQH//wP/AwcGA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD5YO4UAAAvTSURBVHjanZoHf9o8E8ANGpa8BxAghGa0TdP5rHfv7/+l3rvTsGzLhEb9lQA2+vumTiNZXWxp+kJ/fzkddzcfn7aPj9y2x83244fd7niy96XppX6SS4wX+mm6+7DdQMcs0gC33d8cv1vUz2PMb067/Wbon0upDgLb+qBk5y8A68Px3/ijz3/9GQwxfjl+2HLXvyjb+ovOkqBleVH157XkFrXfnfzjXYEh4b8enRhS3NU66JxespBWlcrcCqSHOCiJCnK8MQwu7oqgx6IRXGDPHORToin7tjZXdHWWRNrsj/D7l/QyBiEPO6Mr2VRGCt2WQiDtNyTDGz34gCKB6L6iJBLf7l5mIiVTCAiCN9+eay9GgV+08EbgG+wyL+oWn6NRPd5QMtGT1EV5SyLdnCagZALZkyCiMgxNLI3fSXij8Fph2DljpXsOI4VocxCsOhgQdJZGMPfwpdFWV9qeEnji2ndTo0lAnspcqxnrE0/kyrhbQRakRyWJJpiUIGSRVjt/wq6ahJQlFRNokpa7ziujR/s0LThBqYxGQfySk0QPXnOJVxdBDp/sbb3VBlocdC+hqxyeupBM+L6tXGgy031OsreNTjID2jkTIWaA1F4LMjG2pb6QoVhZMK6FvZL03krod+UQWqBaJgoAYY/bo9FcgriHPflm7QMEni+3PibMn6JivGQcwDxzT5B79aFZlHE25JvOcnRMvv+OnAT+gwtzJuGx86pvC6sRpzXUBxolI8ORYHSlcZrCd6Wxem2FaRu8N09qBR2D5lKUZgvvOzAn0c3ja6e1nrQGP22wN7hWW+cD5+baKQnuzYpWSJTmjhw9b0yEgctwtr9PkxNSSk1uhQ5lwkFYzefG1xREe06X8kFOq73CB1BmhXG6wxt1A93frJIdpKfC5ikIxlpS1FTut5LhM5JFBH6nlaqsNNYXwEjlkPfQMmUe9lDBUPU9ebJaKIY4gPY3bnsxztrja1G2eZCYtR5SAGQAY//MpGpVVdxpF7TNd8nW2hTMwfu2L8uysnbtDZxyZaGTpZa3wmbzgp6nzE2udgGG1kIM965jm9RkFNaQx1STbuumgces6NVJVvSK7kRhNDmQUF43oL6bZOMwSWkeyj5Hb8fNekphzZnlLSsFG13SNVioNAZRZnzwv2D75NE5Jo26udaFiZWkUlI1VTbVUcPw9Q/ox+S7UbNpp/EZwmI+gjTdRO9DfMdaybRu8gPP8mEgGFpV+VyaBMPVU8LIY8mWDWmo4C4iok1LcFCd846rolm4z2X2AMM9pkWX72NWH7cvFGYFvC4JnQ9uhp842yYuQIy2yNGWKZmurd0zASUHZEAdFaiVMpAf8lqIMVav45rQdd8oqMkOQX1AFdz6ORJTWeCFujOYLHmlZbWtxDh3SodxwTbG6ld+DekPPO0VjK6ajgim08aFNvfNZBFRL/VjMJ2+xMBMwoMmSmpCYevwG/OY4F2yLC5Is4jJZgzOb9fUv1pTxX6L8imrRSzdVZ/HMJsg2UxaUXZTBrTO9A9zAmy3gxp7ZgzFDtPuyAW2cUy9jjAIY5oaML1L99Z67RSDDv00yj8uolQc4jESpiIOY8Ls4DHT7iA8n5KPEYeEC5xfxNg3hMmdnW2bmpqSzU0ktxxYN+6cjTFiDUWKwxgP0v5WGclwH6EWYHcz/AhxCxrqQozAGaG0GOtoOZPS3C7iGD5L6FWAgWiAh28VGzACUg5MQh3GdNsqcTA/mA0PNHoe5/yWDYzySwUd/k/JwaEVzHShWRegbotGCcQPHjHqjn1ITnw0oo4wEgbPzESIsCCQpuuEgLrKYaokL5Wiu7qYo2H1tUu+zpOaw5AL9spyhLo1GELxAfMrQIR5FO8R45GbH5PVPD7rAFNYCvmX6lAIztfi1kjTsU6tLWRtrKZmQQh2PSWreeDkDgMVUbP2GJRIQpeSK4eR6B/BDcA9x1La12T1gU3TQyZ92mhV2AmCUDXd2tpmPb4K12apBqNzCzOCHZ9VQoJZaTK1nje0v8PMrs3qOvJnwERcrbSYplTRzni3hFkf9NzR2A4w/5qPOC4+b6M9gaYg4mX0CYSqYo6Gs7XtLEc7H7gdnGiqN46OEHkAkUc84ISYZR/gC89sMDxC4XdRD0gBs+wDiyCDUTNd8vmg0qIHICad11Bh8uRyLa6QBiGuypk8McxxYYobMc6gtTiIMDLIDxYyL8ZwuEsR8xmNc5fE880CCDFy+AgJhy8MNsY04ND/XUXGAgwqNxiYd3Ikjgw/q9YVh361yLc7NM0LLaZ827DZAA7TEFBD1+HIQlXfCCNH7qzaMszp86i5R8z9ah+da8BcWWe0qqnYSGmzqFF+1NOR4unBLA2BS7O51kKemltmhHEuMB8FwJ33IIdZ6Do9RrQWTJ0njhbNARQ1ZWQyeqSloZXVWrsAKZ4jWVrGUg3kgHpe8JHO7Hrakbnp0fQ+N8xPOVzFUurz38c/7ykF+EXIH4/R2bPuVTx5UnUTuaBUmU9i8zhg0tUNi02/a7mUoRcwYLZqHHzbVTqsdeLY1kUmWwvD2iJGqOeJA7wPMItOoOfq9xh6glktkI8TzeZbugoxR8Zjc9BqIs5QkSnzdwQS6tfxuot1gGEdGtN0bD1gEjPtF1eC0seiWo88TmQjb+YsnWLes/mUIZmUgzACa2No2dn6QvcDSKh6QRi/eL8oTlDc4qbKCLNGS+TPa1dml+PQ5PyUzjC7uHWCUh193jiFshht1uGcYvWSMMNWRLp6imecWvnMeOcwQgUYqJHlQUxrJ5iLMS9MiHnHeCx2knK9lq6mHjDKYbQdXtfjZS8RChPs35A4ZQzjpoRYMXiMdJhPdkiT+aRoeRyECTEpiBPLbCKcIzuM9BhfCU9qFrYL9onC3Sicg0SGNzfvpLJF+yQpLObA+HwyCIXzU3Q3CsU5bSJTR19Mmd0DNxIIK03mNJpP7P9uAUMxOp/UDTP+c4A5OE+zs/txhaZgVguV2dJOIcZos7RKQMWcHuVR7Seqo5/BaLZ5SC9sSKZsprZPHoMXtHJLUDAVxXxsl4TGK8ITlU23VykXTOrgdrTmo+2CHTRRPmu/VhOYBr3sZpVe3MXFgUdNZlvWyNZqvf1sSj9nOTXKMts0vYwhbysn4WwXjr15TdPDxloY1yC9KZoubX1TzhmZp6iqqm3bu958mT035wab3QQS+Onc5KFhdqv01R129GpWJG9sGgyzn1Ei5wXQPPxWj5ahC9PgWek1KWr6k9VVW+vJUhzbfk6vwaQpRI/KRkv+pmW0g5+bL3RS89kOz5nxTToXJnr6YZVuxnsJuKMFrTGYijYtII92TOJ+PvtzEJeziFk+y2Hc4Bxi5PAO4l0w3ErK4EOdgYNkQfZ3hdk1R0aMG5ShNIfD76qnQwJMQqyUqDRyddGGM8lZXF48mfIZs0F4HsBu/cG7VrGeHVpUWtb/4Xb8nCvvRwnz1XM2lHXcxBdVlePUDd/VJT5ARZhMF33n5scFj7ry5eM8WL07eXLaGMN/4AL1J2b227OaYt9uChNlu3hwaPnUEHFKpzSzgwKYf6K3Zag03HNvcCMhf5Vy4QzUwPFxg5gqwbM2pLSCtmtl7SgPf0nfcNTKcDB+ctvwna4bPKhUUBLLiyLPrI9tH1ZvOGrl/UDpyS6JP4ISVkts++MC5SLGxs+oAKvUaFvbp/79yyXKZQzmg80ka2ncGD1k4yVL9OQ3H4Mz00U8HTFEusbjCb8FR7oyYWL/IuU1DHB+wLjAXH18/l3lNcsKyVu/oUTD2GXKqxjUODqcnVQqedY504deG0XSWPBulb7Wy6uYVXqPazqM0xj9qZVtwTJVZYUz/uYKyhUYcoStUVymGllp9qeqk1D+ZefXwuWnMNDPf9BAGO+fQHl4BqOwZrlZXUO5DoMW3uHRoiYIVTx7Asa/v4ZyJQY5JxSoc6UVKewqs/wMhlTzHgUyy+aQNSEmH66lXI9Bj/uGR/54mZljK+9XV1N+AmPOsdHhL7T99t2rMflGDPb7D3NQ8loPexOGukZX+DlRoP0f5fOq4z32+bYAAAAASUVORK5CYII=" alt="Sumter County EMS">
-    <div><div class="s">Sumter County EMS</div><div class="t">Field Training</div></div>
+    <div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div>
     <span class="mode" id="mode">…</span>
   </div>
   <div class="wrap" id="view"><p class="sub">Loading…</p></div>
@@ -336,34 +390,87 @@ function render(){
 }
 function paint(h){ el('view').innerHTML = h; window.scrollTo(0,0); }
 
-/* ---------------- trainee ---------------- */
+/* ---------------- trainee — My Line ---------------- */
+function phaseTrackHtml(phase){
+  var cur = 1;
+  var m = String(phase||'').match(/(\d)/);
+  if (m) cur = Number(m[1]);
+  var names = ['Phase 1','Phase 2','Phase 3','Phase 4'];
+  var h = '<div class="phase-track">';
+  for (var i=1;i<=4;i++){
+    var cls = i < cur ? 'on' : (i === cur ? 'now' : '');
+    h += '<div class="p"><div class="pip '+cls+'"></div><div class="lab'+(i<=cur?' on':'')+'">'+names[i-1]+'</div></div>';
+  }
+  return h + '</div>';
+}
+function barsHtml(bars, colorVar){
+  if (!bars || !bars.length) return '';
+  var fill = colorVar || 'var(--emt)';
+  var h = '<div class="bars4">';
+  bars.forEach(function(b){
+    var need = Math.max(1, Number(b.need)||1);
+    var have = Math.max(0, Number(b.have)||0);
+    var cells = '';
+    for (var i=0;i<need;i++) cells += '<i class="'+(i<have?'on':'')+'" style="'+(i<have?'background:'+fill:'')+'"></i>';
+    h += '<div><div class="seg">'+cells+'</div>'+
+         '<div class="have">'+have+'<span>/'+need+'</span></div>'+
+         '<div class="bl">'+esc(b.label)+'</div></div>';
+  });
+  return h + '</div>';
+}
+function skillBars(s){
+  if (s.bars && s.bars.length) return s.bars;
+  return [
+    { label: 'Successful', have: Number(s.successful)||0, need: 3 },
+    { label: 'Independent', have: Number(s.independent)||0, need: 2 },
+    { label: 'Dates', have: Number(s.distinctDates)||0, need: 2 },
+    { label: 'FTOs', have: Number(s.distinctFtos)||0, need: 2 }
+  ];
+}
+function clockHtml(hoursLeft, pct){
+  var color = hoursLeft <= 12 ? 'var(--stop)' : (hoursLeft <= 36 ? 'var(--warn)' : 'var(--ok)');
+  var r = 22, c = 2*Math.PI*r;
+  var dash = Math.max(0, Math.min(c, c * ((pct||0)/100)));
+  return '<div class="clock"><svg width="52" height="52" viewBox="0 0 52 52">'+
+    '<circle cx="26" cy="26" r="22" fill="none" stroke="var(--line)" stroke-width="4"/>'+
+    '<circle cx="26" cy="26" r="22" fill="none" stroke="'+color+'" stroke-width="4" stroke-linecap="round" '+
+    'stroke-dasharray="'+dash+' '+c+'" transform="rotate(-90 26 26)"/></svg>'+
+    '<div class="nums"><b style="color:'+color+'">'+esc(String(hoursLeft))+'</b><span>hrs</span></div></div>';
+}
+
 function paintTrainee(d){
   if (d.error) return paint(hero('', 'No record', '')+
     '<div class="note n-stop"><b>Not found</b>'+esc(d.error)+'</div>');
-  var h = hero('Your training', d.name,
+  var h = hero('My Line', d.name,
     lvlChip(d.levelKey,d.level)+' &nbsp; '+esc(d.phase||'no phase set'));
-  h += '<div class="panel"><div class="lab">Skills signed off</div><div class="big">'+d.signed+
-       ' <small>of '+d.applicable+'</small></div><div class="prog"><i style="width:'+d.percent+
-       '%;background:var(--'+esc(d.levelKey)+')"></i></div>'+
-       '<div style="font-size:.85rem;color:var(--ink-3)">'+
-       (d.waiting.length ? d.waiting.length+' waiting on the Training Division' : 'Nothing waiting on anyone else')+
+
+  h += '<div class="panel">'+
+       '<div class="lab">Where you are</div>'+
+       '<div style="display:flex;align-items:baseline;gap:9px">'+
+       '<div class="big" style="font-size:1.85rem">'+(esc(d.phase)||'Phase ?')+'</div>'+
+       (d.dayInPhase!=null ? '<div class="mono" style="color:var(--ink-3)">day '+d.dayInPhase+'</div>' : '')+
+       '</div>'+
+       phaseTrackHtml(d.phase)+
+       '<div class="stats">'+
+       '<div><div class="n">'+esc(String(d.evalCount||0))+'</div><div class="l">shifts evaluated</div></div>'+
+       '<div><div class="n">'+(d.evalAvg!=null?esc(String(d.evalAvg)):'—')+'</div><div class="l">average</div></div>'+
+       '<div><div class="n" style="color:var(--ok)">'+esc(String(d.signed))+'</div><div class="l">skills signed off</div></div>'+
        '</div></div>';
 
-  h += sec('Waiting on you');
-  // In staging the reflection is filed in the portal so the flow can be tried
-  // end to end. Against the real tracker the existing self-reflection FORM is
-  // the one that files it - that form has the trigger and the destination, and
-  // this portal must not become a second writer into a tab it does not own.
-  //
-  // This used to read canWrite(), which meant STAGING when it was written and
-  // quietly came to mean STAGING or LIVE when the third mode was added. The
-  // button reappeared against the live tracker without anybody deciding it
-  // should. isPractice() cannot drift that way.
-  if (isPractice()){
-    h += '<button class="card act"'+spine('due')+' onclick="S.screen=\'reflect\';render()">'+
-         '<span class="bd"><span class="h">Weekly reflection</span>'+
-         '<span class="m">Your own words. Takes about four minutes.</span></span>'+
-         '<span class="go">&rsaquo;</span></button>';
+  var moves = d.nextMoves || [];
+  if (moves.length){
+    h += sec('Waiting on you', moves.length);
+    moves.forEach(function(m){
+      var cls = m.urgency==='due'?'due':(m.urgency==='ok'?'ok':'');
+      h += '<div class="move '+cls+'"><div class="bd"><div class="h">'+esc(m.title)+'</div>'+
+           '<div class="m">'+esc(m.blurb||'')+'</div></div>';
+      if (m.action==='ack' && canWrite() && m.row){
+        h += '<button class="go-btn" onclick="ack('+m.row+')">Got it</button>';
+      } else if (m.action==='reflect' && isPractice()){
+        h += '<button class="go-btn" onclick="S.screen=\'reflect\';render()">File it</button>';
+      }
+      h += '</div>';
+    });
   }
   h += formCards(d.forms);
   (d.coaching||[]).forEach(function(c){
@@ -371,15 +478,29 @@ function paintTrainee(d){
       h += '<button class="card act"'+spine('soon')+' onclick="ack('+c.row+')">'+
            '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
            '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
-    } else {
-      h += '<div class="card"'+spine('soon')+'><div class="h">Coaching from '+esc(c.from)+'</div>'+
-           '<div class="m">'+esc(c.text)+'</div>'+
-           (c.book ? '<div class="m" style="color:var(--ink-3)">from '+esc(c.book)+'</div>' : '')+
-           '</div>';
     }
   });
 
-  h += sec('Where things stand');
+  if (d.skills && d.skills.length){
+    var withDiv = [], building = [], done = [];
+    d.skills.forEach(function(s){
+      if (s.signed) done.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
+      else building.push(s);
+    });
+    h += sec('What each skill still needs', d.skills.length);
+    h += '<p class="sub">Four bars each. All four full and it goes to Training Division.</p>';
+    withDiv.concat(building).slice(0,8).forEach(function(s){
+      var tag = s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Building');
+      var tagCls = s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute';
+      h += '<div class="card"><div class="hd"><span class="h" style="font-size:1rem">'+esc(s.skill)+'</span>'+
+           '<span class="chip '+tagCls+'">'+esc(tag)+'</span></div>'+
+           barsHtml(skillBars(s), 'var(--'+esc(d.levelKey||'emt')+')')+'</div>';
+    });
+    if (done.length) h += '<p class="sub">'+done.length+' already signed off.</p>';
+  }
+
+  h += sec('Your chart');
   h += freshRow(d.freshness);
   h += '<div class="panel">'+
        kv('Training officer', d.fto || 'not assigned')+
@@ -389,41 +510,6 @@ function paintTrainee(d){
        '<span class="bd"><span class="h">My whole record</span>'+
        '<span class="m">Everything ever submitted about you, newest first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
-
-  /* Not the whole catalogue. What is with the Division is the only part that
-     is out of your hands; the rest is a count and a button. A screen you have
-     to scroll past is a screen nobody reads. */
-  if (d.skills && d.skills.length){
-    var withDiv = [], building = [], done = [];
-    d.skills.forEach(function(s){
-      if (s.signed) done.push(s);
-      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
-      else building.push(s);
-    });
-    h += sec('Your skills', d.skills.length);
-    h += '<p class="sub" style="margin-bottom:10px">'+done.length+' signed off &middot; '+
-         withDiv.length+' with the Division &middot; '+building.length+' still building</p>';
-    if (withDiv.length){
-      h += '<div class="panel">';
-      withDiv.forEach(function(s){
-        h += kv(s.skill, '<span class="chip c-warn">With the Division</span>');
-      });
-      h += '</div>';
-    }
-    if (building.length){
-      h += picker('pick-skill', building.length+' still building\u2026',
-        building.map(function(s,i){ return { value: String(i), label: s.skill }; }),
-        'pickSkill', (S.skillPick == null ? '' : S.skillPick));
-      var picked = (S.skillPick == null) ? null : building[S.skillPick];
-      if (picked){
-        h += '<div class="panel">'+
-             kv('Successful reps', String(picked.successful))+
-             kv('Independent reps', String(picked.independent))+
-             kv('Where it stands', '<span class="chip c-mute">'+
-                esc(picked.readiness || 'building')+'</span>')+'</div>';
-      }
-    }
-  }
   h += '<div class="next"><b>What happens next</b>Anything you file goes to your training officer and the Training Division. Nobody else sees it.</div>';
   paint(h);
 }
@@ -494,24 +580,35 @@ function ack(row){
     .withFailureHandler(function(e){ alert(e.message||e); }).ackCoachingV1(row);
 }
 
-/* ---------------- fto ---------------- */
+/* ---------------- fto — Tonight ---------------- */
 function paintFto(d){
-  var h = hero('Field Training Officer', 'Your trainees',
-    d.trainees.length+(d.trainees.length===1?' person':' people')+' ride with you');
+  var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;
+  var h = hero('Tonight', 'Who did you ride with?',
+    (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+
+    (hot ? ' &middot; <span style="color:var(--gold)">'+hot+' need you</span>' : ''));
   if (!d.trainees.length) h += '<div class="note n-info"><b>Nobody assigned</b>No trainees list you as their training officer.</div>';
-  d.trainees.forEach(function(t,i){
-    h += '<button class="card act"'+spine(t.setupComplete ? '' : 'soon')+
-      ' onclick="openTrainee('+i+')">'+
+
+  // Hot first — already sorted loosely by urgency in payload; re-sort for display.
+  var list = (d.trainees||[]).slice().sort(function(a,b){
+    var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);
+  });
+  list.forEach(function(t){
+    var i = d.trainees.indexOf(t);
+    var chip = t.urgency==='due'
+      ? '<span class="chip c-stop">'+(t.daysSinceEval<0?'Never evaluated':(t.daysSinceEval+'d silent'))+'</span>'
+      : (t.urgency==='soon' ? '<span class="chip c-warn">Due soon</span>' : '');
+    h += '<button class="card act"'+spine(t.urgency||'')+' onclick="openTrainee('+i+')">'+
       '<span class="bd">'+
-      '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
-      '<span class="m">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.lastEval)+'</span>'+
-      (t.setupComplete ? '' : '<span class="flag">Setup incomplete &mdash; tell the Division</span>')+
+      '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+chip+'</span>'+
+      '<span class="m">'+esc(t.phase||'no phase')+
+      (t.dayInPhase!=null?' &middot; day '+t.dayInPhase:'')+
+      ' &middot; '+esc(String(t.evalCount||0))+' evals'+
+      (t.evalAvg!=null?' &middot; avg '+t.evalAvg:'')+'</span>'+
+      (t.setupComplete?'':'<span class="flag">Setup incomplete — tell Training Division</span>')+
       '</span><span class="go">&rsaquo;</span></button>';
   });
-  if (d.forms && d.forms.length){
-    h += sec('Anything else')+formCards(d.forms);
-  }
-  h += '<div class="next"><b>How this works</b>Pick the person, not the form. The skills log you get is already the one for their level, with both names filled in.</div>';
+  if (d.forms && d.forms.length) h += sec('Anything else')+formCards(d.forms);
+  h += '<div class="next"><b>How Tonight works</b>Pick the person. The eval and skills log open with both names filled — for their level. You never hunt a form title.</div>';
   paint(h);
 }
 function openTrainee(i){
@@ -521,11 +618,15 @@ function openTrainee(i){
 }
 function paintTraineeSheet(){
   var t = S.ctx || {};
-  var h = hero('Your trainee', t.name,
+  var h = hero('Tonight', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
-    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back to Tonight</button>';
   h += freshRow(t.freshness);
-  h += '<div class="panel">'+kv('Last evaluation', esc(t.lastEval))+
+  h += '<div class="panel">'+
+       kv('Last evaluation', esc(t.lastEval))+
+       kv('Evals on file', esc(String(t.evalCount||0))+
+          (t.evalAvg!=null?' &middot; avg '+esc(String(t.evalAvg)):''))+
+       kv('Waiting on Division', esc(String(t.waitingCount||0)))+
        kv('Setup', t.setupComplete ? '<span class="chip c-ok">Complete</span>'
                                    : '<span class="chip c-warn">Incomplete</span>')+'</div>';
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
@@ -536,7 +637,7 @@ function paintTraineeSheet(){
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
-  h += '<div class="next"><b>Where it goes</b>Straight into the tracker, the same way it always has. Nothing about your forms changed.</div>';
+  h += '<div class="next"><b>Where it goes</b>Straight into the tracker vault — same forms, same record. THE LINE just opens the right door.</div>';
   paint(h);
 }
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
@@ -562,37 +663,36 @@ function paintDivision(d){
     if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});
   });
 
-  var h = hero('Training Division',
-    q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
-             : 'Nothing waiting on you',
-    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
-    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look')+
-    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));
+  var h = hero('Waiting on you',
+    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')
+             : 'Queue clear',
+    d.activeCount+' on THE LINE'+
+    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves')+
+    (seen.length ? ' &middot; '+seen.length+' holding' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
-         ' mode, so sign-offs cannot be approved from here yet.</div>';
+         ' mode, so sign-offs cannot be decided from here yet.</div>';
 
   h += warnRow(d.warnings);
 
-  /* Something wrong with the system rather than with a person. It belongs at
-     the top with the other system-level alerts, not floating between two
-     groups of people where it reads as a third sign-off. */
   (d.retiredForms||[]).forEach(function(f){
     h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere in this portal. '+esc(f.why)+
-         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
+         ' is no longer offered anywhere. '+esc(f.why)+'</div>';
   });
 
-
   if (!q.length){
-    h += '<div class="note n-ok"><b>Sign-offs clear</b>No skill is waiting on your decision.</div>';
+    h += '<div class="note n-ok"><b>Queue clear</b>No skill is waiting on your decision. Every staged decision is on the sign-off path with your name against it.</div>';
   } else {
-    h += sec('Sign-offs', d.queueCount);
-    q.forEach(function(x){ h += signoffCard(x); });
+    // Lead card — the oldest / first decision dominates the viewport.
+    var lead = q[0];
+    h += decisionLeadHtml(lead);
+    if (q.length > 1){
+      h += sec('Behind it', q.length - 1);
+      q.slice(1).forEach(function(x){ h += signoffCard(x); });
+    }
     if (d.queueCount > q.length)
-      h += '<p class="sub" style="margin-top:-2px">Showing the oldest '+q.length+' of '+
-           d.queueCount+'.</p>';
+      h += '<p class="sub">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';
   }
 
   /* Decisions already made here, waiting on the tracker to make them
@@ -612,7 +712,7 @@ function paintDivision(d){
   }
 
   if (flagged.length){
-    h += sec('Needs a look', flagged.length);
+    h += sec('Next moves', flagged.length);
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
@@ -648,15 +748,56 @@ function paintDivision(d){
   paint(h);
 }
 
-/* Approving writes a decision into the queue. Against a tracker this portal
-   cannot write, the item is shown and the decision is recorded where it has
-   always been recorded, rather than offered and then refused. */
+/* Approving / returning writes a decision into the queue. Against a tracker
+   this portal cannot write, the item is shown and the decision is recorded
+   where it has always been recorded. */
+function decisionLeadHtml(q){
+  var left = (q.hoursLeft != null) ? q.hoursLeft : 72;
+  var pct = (q.clockPct != null) ? q.clockPct : 100;
+  var h = '<div class="decision"><div class="top">'+
+    '<div style="width:5px;background:var(--'+esc((BOOT.data.people||[]).reduce(function(k,p){
+      return normMatch(p.name,q.trainee)?p.levelKey:k;},'gold'))+');flex:none;margin:-15px 0 0 -16px;align-self:stretch;border-radius:11px 0 0 0"></div>'+
+    '<div class="body" style="padding-left:12px;flex:1">'+
+    '<div style="display:flex;gap:12px;align-items:flex-start">'+
+    '<div style="flex:1;min-width:0">'+
+    '<div class="lab" style="margin:0">Evidence met the bar. The call is yours.</div>'+
+    '<div class="h" style="font-size:1.44rem;margin-top:2px">'+esc(q.skill)+'</div>'+
+    '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+
+    clockHtml(left, pct)+
+    '</div>';
+  if (q.bars && q.bars.length){
+    h += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'+
+         '<div class="lab">Evidence against the catalog</div>'+barsHtml(q.bars)+'</div>';
+  } else if (q.evidence){
+    h += '<div style="margin-top:12px;font-size:.9rem;color:var(--ink-2)">'+esc(q.evidence)+'</div>';
+  }
+  if (q.recommend){
+    h += '<div class="note n-info" style="margin-top:12px"><b>FTO recommendation</b>'+esc(q.recommend)+'</div>';
+  }
+  h += '</div></div>';
+  if (canWrite() && !q.from){
+    h += '<div style="padding:0 16px 16px">'+
+         '<button class="btn" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
+         jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">Decide</button>'+
+         '<div class="next" style="margin-top:10px"><b>You see the record before you write it</b>'+
+         'Approve or return — both require your words. The tracker makes it permanent.</div></div>';
+  } else {
+    h += '<div style="padding:0 16px 16px"><div class="flag" style="--accent:var(--warn)">'+
+         (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'
+                 : 'Read only — decide in the tracker.')+'</div></div>';
+  }
+  return h + '</div>';
+}
+function normMatch(a,b){
+  return String(a||'').toLowerCase().replace(/\s+/g,'')===String(b||'').toLowerCase().replace(/\s+/g,'');
+}
 function signoffCard(q){
   if (canWrite() && !q.from){
     return '<button class="card act"'+spine('gold')+' onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
       jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">'+
       '<span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
-      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span>'+
+      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+
+      (q.hoursLeft!=null?' &middot; '+q.hoursLeft+'h left':'')+'</span>'+
       (q.evidence ? '<span class="m" style="color:var(--ink-2)">'+esc(short(q.evidence, 64))+'</span>' : '')+
       '</span><span class="go">&rsaquo;</span></button>';
   }
@@ -680,9 +821,10 @@ function personCard(t, i, missing){
     '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
     '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no training officer')+'</span>'+
     (why ? '<span class="flag"'+(held ? ' style="--accent:var(--ink-3)"' : '')+'>'+
-           esc(cap(why))+'</span>' : '')+
+           esc(t.nextMove && t.nextMove.title ? t.nextMove.title : cap(why))+'</span>' : '')+
     (held ? '<span class="m">Seen '+esc(t.ack.when)+' &middot; back on the list '+
             esc(t.ack.until)+'</span>' : '')+
+    (t.nextMove && t.nextMove.blurb && !held ? '<span class="m">'+esc(t.nextMove.blurb)+'</span>' : '')+
     '</span><span class="go">&rsaquo;</span></button>';
 }
 function urgentNeedV(w){
@@ -799,49 +941,104 @@ function sendAck(){
 }
 
 function openSignoff(row,trainee,skill,evidence,requestId){
-  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'' };
+  var q = (BOOT.data.queue||[]).filter(function(x){ return Number(x.row)===Number(row); })[0] || {};
+  S.ctx = {
+    row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'',
+    bars: q.bars || null, recommend: q.recommend || '', hoursLeft: q.hoursLeft, clockPct: q.clockPct
+  };
   S.screen = 'signoff'; render();
 }
 function paintSignoff(){
   var c = S.ctx || {};
-  paint(hero('The decision', c.skill, esc(c.trainee))+
-    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<div class="panel"><div class="lab">Evidence on file</div>'+
-    '<div style="font-size:.93rem">'+esc(c.evidence)+'</div></div>'+
-    '<div class="panel"><div class="lab">Why are you approving this</div>'+
-    '<textarea id="why" placeholder="This goes on the permanent record in your name."></textarea></div>'+
-    '<button class="btn" id="ap" onclick="approve()">Approve sign-off</button>'+
-    '<div class="next"><b>No pre-filled wording</b>The old system wrote "Evidence thresholds met" without checking anything. You type it, or nothing is written.</div>'+
-    '<div class="next"><b>Where this goes</b>Your decision, your name and your reason go onto the queue row. '+
-    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+
-    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only thing '+
-    'allowed to write the sign-off log, and it runs the authority and evidence checks on the way.</div>');
+  var h = hero('The decision', c.skill, esc(c.trainee))+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.hoursLeft != null){
+    h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'+
+         clockHtml(c.hoursLeft, c.clockPct||0)+
+         '<div class="m">Hours left on the 72-hour clock before this goes stale on the desk.</div></div>';
+  }
+  if (c.bars && c.bars.length){
+    h += '<div class="panel"><div class="lab">Evidence against the catalog</div>'+barsHtml(c.bars)+'</div>';
+  } else {
+    h += '<div class="panel"><div class="lab">Evidence on file</div>'+
+         '<div style="font-size:.93rem">'+esc(c.evidence||'—')+'</div></div>';
+  }
+  if (c.recommend){
+    h += '<div class="note n-info"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';
+  }
+  h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
+    '<textarea id="why" placeholder="This goes on the permanent record in your name. No default wording." '+
+    'oninput="syncDecideBtns()"></textarea></div>'+
+    '<button class="btn" id="ap" disabled onclick="approve()">Approve sign-off</button>'+
+    '<button class="btn ghost-danger" id="ret" disabled onclick="returnSkill()">Return for more evidence</button>'+
+    '<div class="next"><b>Friction belongs here</b>Approve is one clear act with your words. Return stays dead until you type why — never invent an FTO\'s words.</div>'+
+    '<div class="next"><b>Where this goes</b>Your decision stages on the queue. The tracker turns it into a permanent sign-off (or sends it back) — one writer, every gate.</div>';
+  paint(h);
+  syncDecideBtns();
+}
+function syncDecideBtns(){
+  var why = (el('why') && el('why').value || '').trim();
+  var ok = why.length >= 8;
+  if (el('ap')) el('ap').disabled = !ok || S.busy;
+  if (el('ret')) el('ret').disabled = !ok || S.busy;
 }
 function approve(){
   if (S.busy) return;
   var why = el('why').value.trim();
   if (why.length < 8) { alert('Type why you are approving this.'); return; }
   S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';
+  if (el('ret')) el('ret').disabled = true;
   google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
-    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approve sign-off';
+    .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncDecideBtns();
       alert(e.message||e); })
     .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
 }
+function returnSkill(){
+  if (S.busy) return;
+  var why = el('why').value.trim();
+  if (why.length < 8) { alert('Type why you are returning this.'); return; }
+  S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';
+  if (el('ap')) el('ap').disabled = true;
+  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
+    .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence'; syncDecideBtns();
+      alert(e.message||e); })
+    .returnSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
+}
 
-/* ---------------- supervisor / medical ---------------- */
+/* ---------------- supervisor — shift strip ---------------- */
 function paintSupervisor(d){
-  var h = hero('Shift supervisor', d.shift,
-    'Read only. Nothing here asks you to do anything.');
-  if (!d.trainees.length) h += '<div class="note n-ok"><b>Nobody on shift</b>No active trainees are assigned to this shift.</div>';
-  d.trainees.forEach(function(t){
-    h += '<div class="card"><div class="hd"><span class="h">'+esc(t.name)+'</span>'+
-      lvlChip(t.levelKey,t.level)+'</div>'+
-      '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last evaluation '+esc(t.lastEval)+'</div></div>';
-  });
+  var hot = d.hotCount || 0;
+  var h = hero('My shift', d.shift,
+    (d.trainees||[]).length+' on the line'+
+    (hot ? ' &middot; <span style="color:var(--gold)">'+hot+' hot tonight</span>' : ' &middot; all quiet'));
+  if (!d.trainees.length){
+    h += '<div class="note n-ok"><b>Nobody on shift</b>No active trainees are assigned to this shift.</div>';
+  } else {
+    h += '<p class="sub">Swipe the strip. Red wants a look tonight. Tap a name for the next move.</p>';
+    h += '<div class="strip">';
+    d.trainees.forEach(function(t){
+      h += '<div class="tile '+(t.urgency||'')+'">'+
+           '<div class="h">'+esc(t.name)+'</div>'+
+           '<div class="m">'+esc(t.phase||'')+' &middot; '+esc(short(t.fto,18)||'no FTO')+'</div>'+
+           (t.why ? '<div class="flag">'+esc(t.nextMove && t.nextMove.title ? t.nextMove.title : t.why)+'</div>'
+                  : '<div class="m" style="margin-top:8px;color:var(--ok)">Clear</div>')+
+           '</div>';
+    });
+    h += '</div>';
+    h += sec('Everyone', d.trainees.length);
+    d.trainees.forEach(function(t){
+      h += '<div class="card"'+spine(t.urgency||'')+'>'+
+        '<div class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</div>'+
+        '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+
+        ' &middot; last eval '+esc(t.lastEval)+'</div>'+
+        (t.nextMove ? '<div class="flag">'+esc(t.nextMove.title)+'</div>' : '')+
+        '</div>';
+    });
+  }
   if (d.forms && d.forms.length){
     h += sec('If something cannot wait')+formCards(d.forms);
   }
-  h += '<div class="next"><b>Deliberately thin</b>Supervisors get situational awareness, not personnel-development detail.</div>';
+  h += '<div class="next"><b>Deliberately thin</b>You get situational awareness for tonight — not a second Training desk.</div>';
   paint(h);
 }
 function paintMedical(d){

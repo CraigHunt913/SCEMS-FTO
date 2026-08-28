@@ -186,19 +186,26 @@ function headerNameV1_(t, headers) {
  *  result is exactly as defensible as a decision typed into the sheet by
  *  hand, because that is now literally what it is. */
 function approveSignoffV1(row, reason, requestId) {
+  return stageSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
+}
+
+/** Division stages a return — same gates as approve, different decision word.
+ *  Typed reason required; the button on the page stays dead until it is filled. */
+function returnSignoffV1(row, reason, requestId) {
+  return stageSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
+}
+
+function stageSignoffDecisionV1_(row, reason, requestId, decision) {
   requireWritableV1_('stage a sign-off decision');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
+  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may decide a sign-off.');
   var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
+  if (why.length < 8) throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
 
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
+  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
 
-  // Every column checked before any of them is written. A throw halfway
-  // through leaves a decision with no reason attached to it, which is worse
-  // than no decision at all.
   var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
   var missing = [];
   need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
@@ -208,10 +215,6 @@ function approveSignoffV1(row, reason, requestId) {
   }
 
   var live = t.rows[r - t.firstDataRow] || [];
-
-  // The screen was built some time ago, and the queue re-sorts itself every
-  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
-  // the one on screen is how you sign off the wrong person's skill.
   var want = String(requestId == null ? '' : requestId).trim();
   var have = t.col['REQUEST ID'] === undefined ? ''
            : String(live[t.col['REQUEST ID']] || '').trim();
@@ -232,14 +235,13 @@ function approveSignoffV1(row, reason, requestId) {
 
   var today = new Date();
   today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
+  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
   t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  // RECORD STATUS is deliberately not touched. See the note above.
   forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
-    ' | ' + why.slice(0, 120));
+  auditV1_('SIGN-OFF STAGED', viewer.email, decision + ' | row ' + r +
+    (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
   return 'Staged. The tracker records it.';
 }
 

@@ -1,25 +1,22 @@
-# SCEMS Field Training Portal — v1.3
+# SCEMS Field Training Portal — THE LINE (portal-2.0.0)
 
 One front door for the whole programme. A separate Apps Script project that
-serves a different screen to each role, and hands each person the one form
-their situation calls for.
+serves **THE LINE**: My Line (trainee), Tonight (FTO), Waiting on you (Training
+Division), My shift (supervisor), clinical review (Medical Director).
+
+The Google Sheet is the **vault**. Humans run the program here.
+
+See [`THE-LINE.md`](../THE-LINE.md) for the product doctrine.
 
 ## How this fits the system you already have
 
-**The forms write. The portal reads.**
+**The forms write. THE LINE reads — and stages a few gated decisions.**
 
-Your nine Google Forms do not change. Not their questions, not their
-triggers, not their response destinations. They are still the only thing that
-puts a row in the tracker, and they still do it exactly the way they do now.
+Your nine Google Forms do not change. Against the live tracker, everyday writes
+are: acknowledge coaching, stage Approve / Return on a queue row (with a typed
+reason), acknowledge a finding hold. Sign-offs become permanent only when the
+tracker records them — one writer, every gate.
 
-What was missing was the front. Nine forms is nine decisions before anyone has
-done any work: which form, which level, whose name, which link did the Chief
-send in March. The portal takes all of that away. An FTO opens one link, taps
-the person they worked with, and gets the evaluation and the skills log for
-*that trainee's level*, with both names already filled in.
-
-Nothing in the portal writes to a live record. Against the real tracker every
-write path refuses, by design and under test.
 
 ---
 

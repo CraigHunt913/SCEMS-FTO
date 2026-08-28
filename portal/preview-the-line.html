@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>THE LINE — preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#12233b; --gold:#b08a2e; --paper:#fff; --surface:#f4f6f9; --line:#e2e7ee;
+  --ink:#12233b; --ink2:#46566d; --ink3:#78859a; --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b;
+  --ok:#2f7d4f; --okbg:#eaf4ee; --warn:#8a6a14; --warnbg:#fdf5e2; --stop:#a8342b; --stopbg:#fbeceb;
+}
+*{box-sizing:border-box} body{margin:0;font-family:"Source Sans 3",sans-serif;background:#0c1828;color:var(--ink)}
+.page{max-width:1200px;margin:0 auto;padding:28px 18px 60px}
+.brand{color:#fff;margin-bottom:22px}
+.brand .mark{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.brand h1{font-family:"Barlow Semi Condensed",sans-serif;font-size:2.4rem;margin:4px 0;line-height:1}
+.brand p{color:#9db0c8;max-width:520px;margin:8px 0 0;font-size:.95rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.phone{background:var(--surface);border-radius:18px;overflow:hidden;box-shadow:0 20px 50px -20px #000;border:1px solid #1b3454}
+.bar{background:var(--navy);color:#fff;padding:12px 14px;display:flex;gap:10px;align-items:center;border-bottom:2px solid var(--gold)}
+.shield{width:28px;height:30px;background:var(--gold);clip-path:polygon(50% 0,100% 22%,100% 72%,50% 100%,0 72%,0 22%)}
+.bar .t{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1rem;line-height:1.05}
+.bar .s{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:#9db0c8;font-family:"Barlow Semi Condensed",sans-serif;font-weight:600}
+.hero{background:var(--navy);color:#fff;padding:8px 14px 18px;border-radius:0 0 16px 16px}
+.hero .ey{font-family:"Barlow Semi Condensed",sans-serif;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.hero h2{font-family:"Barlow Semi Condensed",sans-serif;font-size:1.7rem;margin:2px 0 0;line-height:1.05}
+.hero .sub{color:#a9bcd3;font-size:.85rem;margin-top:4px}
+.body{padding:14px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:8px;position:relative;overflow:hidden}
+.card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,transparent)}
+.h{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.1rem;line-height:1.15}
+.m{font-size:.8rem;color:var(--ink3);margin-top:3px}
+.flag{font-size:.8rem;font-weight:600;color:var(--stop);margin-top:5px}
+.chip{display:inline-block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:2px 6px;border:1px solid currentColor;border-radius:3px;margin-left:6px}
+.c-emt{color:var(--emt)}.c-warn{color:var(--warn);background:var(--warnbg)}.c-stop{color:var(--stop);background:var(--stopbg)}.c-ok{color:var(--ok);background:var(--okbg)}
+.phase{display:flex;gap:3px;margin-top:10px}
+.phase i{flex:1;height:4px;border-radius:2px;background:var(--line)}
+.phase i.on{background:var(--gold)}.phase i.now{background:var(--emt)}
+.stats{display:flex;gap:14px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.stats b{font-family:"IBM Plex Mono",monospace;font-size:1.05rem;display:block}
+.stats span{font-size:.68rem;color:var(--ink3)}
+.move{background:var(--warnbg);border:1px solid var(--warn);border-radius:9px;padding:10px;margin-bottom:8px;display:flex;gap:8px;align-items:center}
+.move .go{margin-left:auto;background:var(--warn);border:0;border-radius:6px;padding:8px 10px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.85rem}
+.bars{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.seg{display:flex;gap:2px;margin-bottom:2px}
+.seg i{width:7px;height:12px;border-radius:1px;background:var(--line)}.seg i.on{background:var(--emt)}
+.bl{font-family:"IBM Plex Mono",monospace;font-size:.68rem}.bl span{color:var(--ink3)}
+.lab{font-size:.62rem;color:var(--ink3)}
+.strip{display:flex;gap:6px;overflow:auto;padding-bottom:6px}
+.tile{flex:0 0 120px;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:10px}
+.tile.due{border-color:var(--stop)}
+.btn{display:block;width:100%;background:var(--navy);color:#fff;border:0;border-radius:10px;padding:12px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1rem;margin-top:8px}
+.note{font-size:.78rem;color:var(--ink2);margin:8px 0;padding:8px 10px;border-left:3px solid var(--ok);background:var(--okbg);border-radius:0 8px 8px 0}
+.check{margin-top:28px;color:#9db0c8;font-size:.9rem;line-height:1.55;max-width:640px}
+.check b{color:#fff}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brand">
+    <div class="mark">Sumter County EMS</div>
+    <h1>THE LINE</h1>
+    <p>One living chart per trainee. Tonight for FTOs. Waiting on you for Training. Same vault data — a product humans can run.</p>
+  </div>
+  <div class="grid">
+
+    <div class="phone" id="trainee">
+      <div class="bar"><div class="shield"></div><div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div></div>
+      <div class="hero"><div class="ey">My Line</div><h2>Latavia Cole</h2><div class="sub"><span class="chip c-emt">Advanced EMT</span> Phase 1</div></div>
+      <div class="body">
+        <div class="card">
+          <div class="lab">Where you are</div>
+          <div class="h">Phase 1 <span style="font-family:IBM Plex Mono,monospace;color:var(--ink3);font-size:.9rem;font-weight:500">day 18</span></div>
+          <div class="phase"><i class="now"></i><i></i><i></i><i></i></div>
+          <div class="stats"><div><b>6</b><span>evals</span></div><div><b>3.8</b><span>average</span></div><div><b style="color:var(--ok)">2</b><span>signed</span></div></div>
+        </div>
+        <div class="move"><div><div class="h" style="font-size:.95rem">Your reflection is due</div><div class="m">Last one was 8 days ago.</div></div><button class="go">File it</button></div>
+        <div class="card">
+          <div class="h" style="font-size:1rem">IV access <span class="chip c-warn">With Division</span></div>
+          <div class="bars">
+            <div><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="bl">3<span>/3</span></div><div class="lab">Successful</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">Independent</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">Dates</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">FTOs</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone" id="fto">
+      <div class="bar"><div class="shield"></div><div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div></div>
+      <div class="hero"><div class="ey">Tonight</div><h2>Who did you ride with?</h2><div class="sub">2 people on your line · 1 need you</div></div>
+      <div class="body">
+        <div class="card" style="--accent:var(--stop)">
+          <div class="h">Elizabeth McInville <span class="chip c-stop">5d silent</span></div>
+          <div class="m">EMT · Phase 2 · day 21 · 4 evals · avg 2.33</div>
+          <div class="flag">Schedule an evaluation</div>
+        </div>
+        <div class="card" style="--accent:var(--emt)">
+          <div class="h">Harley Simms</div>
+          <div class="m">AEMT · Phase 1 · day 9 · last eval yesterday</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone" id="chief">
+      <div class="bar"><div class="shield"></div><div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div></div>
+      <div class="hero"><div class="ey">Waiting on you</div><h2>One decision</h2><div class="sub">12 on THE LINE · 2 next moves</div></div>
+      <div class="body">
+        <div class="card" style="box-shadow:0 8px 24px -12px rgba(18,35,59,.4)">
+          <div class="lab">Evidence met the bar. The call is yours.</div>
+          <div class="h" style="font-size:1.35rem">IV access</div>
+          <div class="m">Latavia Cole · ready 2 days ago</div>
+          <div class="bars" style="margin-top:12px">
+            <div><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="bl">3<span>/3</span></div><div class="lab">Successful</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">Independent</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">Dates</div></div>
+            <div><div class="seg"><i class="on"></i><i class="on"></i></div><div class="bl">2<span>/2</span></div><div class="lab">FTOs</div></div>
+          </div>
+          <button class="btn">Decide</button>
+          <div class="m" style="margin-top:8px">Approve or Return — both need your words. You see the record before you write it.</div>
+        </div>
+        <div class="note"><b>Queue clear after you decide</b> — staged decisions wait on the tracker vault to become permanent.</div>
+      </div>
+    </div>
+
+    <div class="phone" id="supervisor">
+      <div class="bar"><div class="shield"></div><div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div></div>
+      <div class="hero"><div class="ey">My shift</div><h2>Shift B</h2><div class="sub">4 on the line · 2 hot tonight</div></div>
+      <div class="body">
+        <div class="strip">
+          <div class="tile due"><div class="h" style="font-size:.95rem">McInville</div><div class="m">Phase 2 · Moye</div><div class="flag" style="font-size:.72rem">5d silent</div></div>
+          <div class="tile due"><div class="h" style="font-size:.95rem">Boyd</div><div class="m">Phase 1 · —</div><div class="flag" style="font-size:.72rem">Fix FTO</div></div>
+          <div class="tile"><div class="h" style="font-size:.95rem">Cole</div><div class="m">Phase 1 · Whitlock</div><div class="m" style="color:var(--ok);margin-top:6px">Clear</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="check">
+    <b>Self-review</b><br>
+    Does this work for a human at 02:00? Tonight is one tap. Waiting on you is one card. Flags are next moves.<br>
+    Practical? Forms still write the vault; THE LINE stages decisions with typed reasons — no second source of truth.<br>
+    Belonging? Navy, gold shield, level spine — SCEMS ops, not SaaS purple.<br>
+    Live data: point the portal at the Master (`goLive`) — payloads read the same tabs you already have.
+  </div>
+</div>
+</body>
+</html>

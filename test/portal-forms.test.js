@@ -833,7 +833,7 @@ if (api3) {
   let html = nodes['view'].innerHTML;
   const rows = cards(html);
 
-  ok(/Nothing waiting on you/.test(html),
+  ok(/Queue clear/.test(html),
      'with no sign-offs pending it says so at the top, in one line');
   ok(/Latavia Cole/.test(rows), 'the one trainee who needs something gets a row');
   ok(/no training officer is named/i.test(rows), 'with the reason on it');
@@ -889,7 +889,7 @@ ok(!!api4, 'it renders with a decision waiting');
 
 if (api4) {
   const html = nodes['view'].innerHTML;
-  ok(/1 decision waiting/.test(html), 'the headline is the decision, not the roster');
+  ok(/One decision|1 decisions/.test(html), 'the headline is the decision, not the roster');
   ok(html.indexOf('IV access') < html.indexOf('Latavia Cole'),
      'and the decision comes before anybody else on the page');
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
@@ -940,25 +940,18 @@ if (api5) {
   let html = nodes['view'].innerHTML;
   const rows = cards(html);
 
-  ok(/1 signed off &middot; 1 with the Division &middot; 18 still building/.test(html) ||
-     /1 signed off · 1 with the Division · 18 still building/.test(html),
-     'the three counts are one line');
+  ok(/What each skill still needs/.test(html),
+     'skills are framed as what is still needed, not a raw catalogue');
   ok(/IV access/.test(rows),
      'the skill sitting with the Division is on the page, because it is out of their hands');
-  ok(!/Building skill 1</.test(rows),
-     'the eighteen still building are not eighteen rows');
-  ok(/<select class="pick" id="pick-skill"/.test(html), 'they are a dropdown');
-  ok(/18 still building/.test(html), 'labelled with the count');
-  ok((html.match(/<option value="\d+">Building skill/g) || []).length === 18,
-     'holding every one of them');
-  ok(!/selectedIndex=0/.test((html.match(/id="pick-skill"[^>]*/) || [''])[0]),
-     'and this one stays where you put it, because the choice is what is being shown');
-
-  api5.pickSkill('2');
-  html = nodes['view'].innerHTML;
-  ok(/Successful reps/.test(html) && /Independent reps/.test(html),
-     'picking a skill shows its reps underneath');
-  ok(/<option value="2"[^>]*selected/.test(html), 'with that skill still selected in the box');
+  ok(/With Division|READY FOR VALIDATION|With the Division/i.test(html),
+     'and it is tagged as with Division');
+  ok(/Building skill 1/.test(html),
+     'building skills appear as evidence cards (four bars), not a buried list');
+  ok(/already signed off/.test(html),
+     'signed-off skills are counted, not dumped as eighteen more rows');
+  ok(/bars4|Successful|Independent/.test(html),
+     'four-bar evidence language is on the page');
 }
 
 // ---------------------------------------------------------------- //
@@ -1019,13 +1012,16 @@ const divHtml = (function () {
 })();
 
 ok(/<div class="hero">/.test(divHtml), 'the Division screen renders one');
-ok(/class="eyebrow">Training Division</.test(divHtml), 'which names the role');
-ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('Sign-offs'),
+ok(/class="eyebrow">Waiting on you</.test(divHtml), 'which names the product beat');
+ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('IV access'),
    'above everything else on the page');
 ok(divHtml.indexOf('IV access') < divHtml.indexOf('waiting on the tracker'),
    'a decision still waiting on you sits above one you have already made');
-ok(divHtml.indexOf('Retired form still open') < divHtml.indexOf('Sign-offs'),
+ok(divHtml.indexOf('Retired form still open') < divHtml.indexOf('IV access'),
    'and a broken form is a system alert, so it sits above the queue rather than inside it');
+ok(/returnSignoffV1|Return for more evidence/.test(pageSrc),
+   'Return is a first-class decision path on THE LINE');
+ok(/THE LINE/.test(pageSrc), 'the product name is on the page');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-1.4.0
- * Build 5aa8dd17
+ * SCEMS FIELD TRAINING PORTAL — portal-2.0.0
+ * Build a94a4b3a
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-1.4.0',
+  VERSION: 'portal-2.0.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -43,7 +43,9 @@ var PORTAL = Object.freeze({
   MODE_PRODUCTION: 'PRODUCTION',
   MODE_LIVE: 'LIVE',
 
-  TITLE: 'Sumter County EMS Field Training',
+  /** Product name on the page. County name stays in the bar. */
+  TITLE: 'THE LINE — Sumter County EMS Field Training',
+  PRODUCT: 'THE LINE',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */
@@ -1291,22 +1293,188 @@ function traineeRowsV1_() {
   }).filter(Boolean);
 }
 
+/** Catalog threshold helpers — four convictions that make a skill ready. */
+function cellNumV1_(r, t, names, fallback) {
+  for (var i = 0; i < names.length; i++) {
+    if (t.col[names[i]] !== undefined) {
+      var n = Number(r[t.col[names[i]]]);
+      return isNaN(n) ? (fallback || 0) : n;
+    }
+  }
+  return fallback || 0;
+}
+
 function skillsForV1_(norm) {
   var t = readTabAllV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return [];
   var out = [];
   t.rows.forEach(function (r) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var successful = cellNumV1_(r, t, ['SUCCESSFUL REPS', 'SUCCESSFUL'], 0);
+    var independent = cellNumV1_(r, t, ['INDEPENDENT REPS', 'INDEPENDENT'], 0);
+    var dates = cellNumV1_(r, t, ['DISTINCT DATES', 'DATES', 'DISTINCT DATE COUNT'], 0);
+    var ftos = cellNumV1_(r, t, ['DISTINCT FTOS', 'DISTINCT FTO', 'FTOS', 'FTO COUNT'], 0);
+    var needS = cellNumV1_(r, t, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL', 'SUCCESSFUL NEED'], 3) || 3;
+    var needI = cellNumV1_(r, t, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT', 'INDEPENDENT NEED'], 2) || 2;
+    var needD = cellNumV1_(r, t, ['NEED DATES', 'REQUIRED DATES', 'DATES NEED'], 2) || 2;
+    var needF = cellNumV1_(r, t, ['NEED FTOS', 'REQUIRED FTOS', 'FTOS NEED'], 2) || 2;
+    // If threshold columns are absent, keep classic defaults so bars still teach.
+    if (t.col['NEED SUCCESSFUL'] === undefined && t.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = Math.max(needS, 3); needI = Math.max(needI, 2);
+      needD = Math.max(needD, 2); needF = Math.max(needF, 2);
+    }
+    var readiness = String(r[t.col['READINESS']] || '').trim();
+    var signed = String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
+                 readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
-      readiness: String(r[t.col['READINESS']] || '').trim(),
-      signed: String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
-              String(r[t.col['READINESS']] || '').trim() === 'SIGNED OFF',
-      successful: Number(r[t.col['SUCCESSFUL REPS']]) || 0,
-      independent: Number(r[t.col['INDEPENDENT REPS']]) || 0
+      readiness: readiness,
+      signed: signed,
+      successful: successful,
+      independent: independent,
+      distinctDates: dates,
+      distinctFtos: ftos,
+      bars: [
+        { label: 'Successful', have: successful, need: needS },
+        { label: 'Independent', have: independent, need: needI },
+        { label: 'Dates', have: dates, need: needD },
+        { label: 'FTOs', have: ftos, need: needF }
+      ]
     });
   });
   return out;
+}
+
+/** Hours since a Date, or -1. */
+function hoursSinceV1_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return -1;
+  return Math.floor((new Date() - d) / 3600000);
+}
+
+/** Parse "3/2 · 2/2 · …" style evidence summaries into four counts when columns lack them. */
+function parseEvidenceBarsV1_(text) {
+  var s = String(text || '');
+  var m = s.match(/(\d+)\s*\/\s*(\d+)/g);
+  if (!m || m.length < 2) return null;
+  var bars = [];
+  var labels = ['Successful', 'Independent', 'Dates', 'FTOs'];
+  for (var i = 0; i < Math.min(m.length, 4); i++) {
+    var p = m[i].match(/(\d+)\s*\/\s*(\d+)/);
+    bars.push({ label: labels[i], have: Number(p[1]), need: Number(p[2]) });
+  }
+  while (bars.length < 4) bars.push({ label: labels[bars.length], have: 0, need: 1 });
+  return bars;
+}
+
+/** Eval heat for a trainee: count, days since last, optional domain average. */
+function evalHeatForV1_(norm) {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  var out = { count: 0, days: -1, avg: null, lastEval: 'never' };
+  if (!t.ok) return out;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return out;
+  var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation',
+                 'Scene Leadership', 'Professionalism'];
+  var latest = null, sum = 0, nScores = 0;
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[iWho]) !== norm) return;
+    out.count++;
+    var d = asDateV1_(r[iWhen]);
+    if (d && (!latest || d > latest)) latest = d;
+    domains.forEach(function (h) {
+      if (t.col[h] === undefined) return;
+      var v = Number(r[t.col[h]]);
+      if (v >= 1 && v <= 5) { sum += v; nScores++; }
+    });
+  });
+  if (latest) {
+    out.days = Math.floor((new Date() - latest) / 86400000);
+    out.lastEval = daysAgoTextV1_(latest);
+  }
+  if (nScores) out.avg = Math.round((sum / nScores) * 100) / 100;
+  return out;
+}
+
+/** Day count in current phase (or since start). */
+function dayInPhaseV1_(t) {
+  var d = t.phaseStart || t.started;
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((new Date() - d) / 86400000));
+}
+
+/** Imperative next-move cards — replace "flags" language for humans. */
+function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
+  var moves = [];
+  (coaching || []).forEach(function (c) {
+    if (c.acknowledged) return;
+    moves.push({
+      kind: 'coaching', urgency: 'soon', title: 'Acknowledge coaching from ' + (c.from || 'your FTO'),
+      blurb: String(c.text || '').slice(0, 120), action: 'ack', row: c.row
+    });
+  });
+  var reflectAgo = '';
+  (freshness || []).forEach(function (f) {
+    if (/reflect/i.test(f.title || '')) reflectAgo = f.ago;
+  });
+  if (reflectAgo === 'never' || /days ago/.test(reflectAgo)) {
+    var n = parseInt(reflectAgo, 10);
+    if (reflectAgo === 'never' || (n && n >= 7)) {
+      moves.push({
+        kind: 'reflect', urgency: 'soon',
+        title: 'File your reflection',
+        blurb: reflectAgo === 'never' ? 'None on file yet. Two minutes.' :
+               'Last one was ' + reflectAgo + '.',
+        action: 'reflect'
+      });
+    }
+  }
+  if (heat.days < 0) {
+    moves.push({
+      kind: 'eval', urgency: 'due',
+      title: 'No evaluation on file yet',
+      blurb: 'Your FTO files one after a shift together.',
+      action: 'wait'
+    });
+  } else if (heat.days > 14) {
+    moves.push({
+      kind: 'eval', urgency: 'soon',
+      title: heat.days + ' days since an evaluation',
+      blurb: 'Ask your FTO to schedule one.',
+      action: 'wait'
+    });
+  }
+  (waiting || []).forEach(function (q) {
+    moves.push({
+      kind: 'queue', urgency: 'ok',
+      title: q.skill + ' is with Training Division',
+      blurb: 'Ready ' + (q.since || '') + '. Nothing for you to do.',
+      action: 'wait'
+    });
+  });
+  return moves.slice(0, 6);
+}
+
+function nextMoveFromFindingV1_(why, name) {
+  var w = String(why || '');
+  if (!w) return null;
+  var title = w, blurb = 'Open their chart and decide the next honest move.', urgency = 'soon';
+  if (/never evaluated/i.test(w)) {
+    title = 'Get an evaluation on the board'; blurb = name + ' has never been evaluated.'; urgency = 'due';
+  } else if (/days since/i.test(w)) {
+    title = 'Schedule an evaluation'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  } else if (/no training officer|no one on the roster|has left|sentence, not a name/i.test(w)) {
+    title = 'Fix the training officer assignment'; blurb = capFindingV1_(w) + '.'; urgency = 'due';
+  } else if (/not responding|remediation|concern/i.test(w)) {
+    title = 'Address status: ' + w; blurb = 'This stays visible until the status changes.'; urgency = 'due';
+  } else if (/missing|incomplete/i.test(w)) {
+    title = 'Finish the trainee record'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  }
+  return { kind: 'finding', urgency: urgency, title: title, blurb: blurb, finding: w };
+}
+function capFindingV1_(s) {
+  s = String(s || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function openQueueV1_() {
@@ -1315,6 +1483,11 @@ function openQueueV1_() {
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var since = asDateV1_(r[t.col['READY DATE']]);
+    var evidence = String(r[t.col['EVIDENCE SUMMARY']] || '').trim();
+    var bars = parseEvidenceBarsV1_(evidence);
+    var recommend = String(r[t.col['FTO RECOMMENDATION']] || r[t.col['RECOMMENDATION']] ||
+                           r[t.col['FTO NOTES']] || '').trim();
     out.push({
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
@@ -1322,13 +1495,12 @@ function openQueueV1_() {
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
-      evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
-      since: asDateV1_(r[t.col['READY DATE']]),
+      evidence: evidence,
+      bars: bars,
+      recommend: recommend,
+      since: since,
+      hours: hoursSinceV1_(since),
       requestId: String(r[t.col['REQUEST ID']] || '').trim(),
-      // A row can be OPEN and already carry a decision: that is one the portal
-      // (or somebody in the sheet) has staged, waiting for the tracker to
-      // record it. It is not still waiting on the Chief, and counting it as
-      // though it were is how a queue never appears to go down.
       decision: String(r[t.col['DECISION']] || '').trim(),
       decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
@@ -1405,25 +1577,30 @@ function traineePayloadV1_(viewer) {
   var signed = skills.filter(function (s) { return s.signed; }).length;
   var waiting = openQueueV1_().filter(function (q) { return q.norm === me.norm; });
   var coaching = coachingForV1_(me.norm);
+  var heat = evalHeatForV1_(me.norm);
+  var freshness = safeFormsV1_(function () { return freshnessForV1_(me.name); });
+  var day = dayInPhaseV1_(me);
+  var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
+    product: 'THE LINE',
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
-    lastEval: daysAgoTextV1_(lastEvalForV1_(me.norm)),
+    dayInPhase: day,
+    lastEval: heat.lastEval,
+    evalCount: heat.count,
+    evalAvg: heat.avg,
     signed: signed, applicable: skills.length,
     percent: skills.length ? Math.round(signed / skills.length * 100) : 0,
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
-    coaching: coaching.filter(function (c) { return !c.acknowledged; })
-      .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+    coaching: unacked.map(function (c) { return { row: c.row, from: c.from, text: c.text,
                                    book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
+    nextMoves: nextMovesForTraineeV1_(me, heat, waiting, coaching, freshness),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
     }),
-    // How current each kind of submission is. The record itself is fetched on
-    // demand, so a person with two years of history does not pay for it on
-    // every page load.
-    freshness: safeFormsV1_(function () { return freshnessForV1_(me.name); })
+    freshness: freshness
   };
 }
 
@@ -1431,19 +1608,31 @@ function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
   return {
+    product: 'THE LINE',
     name: viewer.name,
-    // Each trainee carries the forms for THAT trainee, with the FTO's name,
-    // the trainee's name, and the skills log for their level already chosen.
-    // The FTO picks a person, not a form and not a level.
     trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
-               setupComplete: t.setupComplete,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
-                   { fto: viewer.name, trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+      var heat = evalHeatForV1_(t.norm);
+      var waiting = openQueueV1_().filter(function (q) { return q.norm === t.norm && !q.decision; });
+      var urgency = '';
+      if (!t.setupComplete) urgency = 'soon';
+      else if (heat.days < 0 || heat.days > 7) urgency = 'due';
+      else if (heat.days > 4) urgency = 'soon';
+      return {
+        name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+        dayInPhase: dayInPhaseV1_(t),
+        lastEval: heat.lastEval,
+        evalCount: heat.count,
+        evalAvg: heat.avg,
+        daysSinceEval: heat.days,
+        waitingCount: waiting.length,
+        urgency: urgency,
+        setupComplete: t.setupComplete,
+        forms: safeFormsV1_(function () {
+          return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
+            { fto: viewer.name, trainee: t.name });
+        }),
+        freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); })
+      };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
@@ -1512,9 +1701,17 @@ function divisionPayloadV1_() {
     activeCount: active.length,
     closedCount: all.length - active.length,
     queue: queue.slice(0, 25).map(function (q) {
-      return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId,
-               row: q.row, from: q.from };
+      var hours = q.hours;
+      var clock = 72;
+      if (hours < 0) hours = 0;
+      var left = Math.max(0, clock - hours);
+      return {
+        trainee: q.trainee, skill: q.skill, evidence: q.evidence,
+        bars: q.bars, recommend: q.recommend || '',
+        since: daysAgoTextV1_(q.since), hours: hours, hoursLeft: left,
+        clockPct: Math.max(0, Math.min(100, Math.round((left / clock) * 100))),
+        requestId: q.requestId, row: q.row, from: q.from
+      };
     }),
     queueCount: queue.length,
     // Decisions already made here and waiting on the tracker to make them
@@ -1560,9 +1757,11 @@ function divisionPayloadV1_() {
       // finding is not cleared and never can be - it moves out of the alarm
       // list until the hold runs out, and comes straight back after.
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
+      var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
                days: days, status: t.status || '', needs: why, ack: ack,
+               nextMove: move,
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),
@@ -1576,7 +1775,8 @@ function divisionPayloadV1_() {
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
-    mode: modeV1_()
+    mode: modeV1_(),
+    product: 'THE LINE'
   };
 }
 
@@ -1584,13 +1784,37 @@ function supervisorPayloadV1_(viewer) {
   var shift = normNameV1_(viewer.shift);
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && (!shift || normNameV1_(t.shift) === shift); });
+  var hot = 0;
+  var trainees = mine.map(function (t) {
+    var heat = evalHeatForV1_(t.norm);
+    var why = '';
+    var urgency = '';
+    if (heat.days < 0) { why = 'never evaluated'; urgency = 'due'; hot++; }
+    else if (heat.days > 14) { why = heat.days + 'd silent'; urgency = 'due'; hot++; }
+    else if (heat.days > 7) { why = heat.days + 'd since eval'; urgency = 'soon'; hot++; }
+    var ftoWhy = ftoProblemV1_(t);
+    if (ftoWhy) { why = ftoWhy; urgency = 'due'; hot++; }
+    return {
+      name: t.name, level: t.level, levelKey: t.levelKey,
+      phase: t.phase, fto: t.fto,
+      lastEval: heat.lastEval,
+      daysSinceEval: heat.days,
+      evalCount: heat.count,
+      why: why,
+      urgency: urgency,
+      nextMove: why ? nextMoveFromFindingV1_(why, t.name) : null
+    };
+  });
+  // Hot first — the strip should put tonight's problems at the start.
+  trainees.sort(function (a, b) {
+    var rank = { due: 0, soon: 1, '': 2 };
+    return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
+  });
   return {
+    product: 'THE LINE',
     shift: viewer.shift || 'All shifts',
-    trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey,
-               phase: t.phase, fto: t.fto,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
-    }),
+    hotCount: hot,
+    trainees: trainees,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.SUPERVISOR, { fto: viewer.name });
     })
@@ -1883,19 +2107,26 @@ function headerNameV1_(t, headers) {
  *  result is exactly as defensible as a decision typed into the sheet by
  *  hand, because that is now literally what it is. */
 function approveSignoffV1(row, reason, requestId) {
+  return stageSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
+}
+
+/** Division stages a return — same gates as approve, different decision word.
+ *  Typed reason required; the button on the page stays dead until it is filled. */
+function returnSignoffV1(row, reason, requestId) {
+  return stageSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
+}
+
+function stageSignoffDecisionV1_(row, reason, requestId, decision) {
   requireWritableV1_('stage a sign-off decision');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
+  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may decide a sign-off.');
   var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
+  if (why.length < 8) throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
 
   var t = readTabV1_(PORTAL.TAB.QUEUE);
   if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
+  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
 
-  // Every column checked before any of them is written. A throw halfway
-  // through leaves a decision with no reason attached to it, which is worse
-  // than no decision at all.
   var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
   var missing = [];
   need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
@@ -1905,10 +2136,6 @@ function approveSignoffV1(row, reason, requestId) {
   }
 
   var live = t.rows[r - t.firstDataRow] || [];
-
-  // The screen was built some time ago, and the queue re-sorts itself every
-  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
-  // the one on screen is how you sign off the wrong person's skill.
   var want = String(requestId == null ? '' : requestId).trim();
   var have = t.col['REQUEST ID'] === undefined ? ''
            : String(live[t.col['REQUEST ID']] || '').trim();
@@ -1929,14 +2156,13 @@ function approveSignoffV1(row, reason, requestId) {
 
   var today = new Date();
   today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
+  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
   t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
   t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  // RECORD STATUS is deliberately not touched. See the note above.
   forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
-    ' | ' + why.slice(0, 120));
+  auditV1_('SIGN-OFF STAGED', viewer.email, decision + ' | row ' + r +
+    (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
   return 'Staged. The tracker records it.';
 }
 
@@ -7200,18 +7426,14 @@ var PORTAL_PAGE_HTML = [
   "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n",
   "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n",
   "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Barlow+Semi+Condense",
-  "d:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap\">\n",
+  "d:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&dis",
+  "play=swap\">\n",
   "<style>\n",
   "/* ------------------------------------------------------------------ *\n",
-  "   Sumter County EMS — Field Training\n",
+  "   THE LINE — Sumter County EMS Field Training\n",
   "\n",
-  "   Built for one hand, at the end of a shift, on a phone, by somebody who\n",
-  "   has been awake for fourteen hours. Every rule below follows from that.\n",
-  "\n",
-  "   The colour of a card's spine is the only thing that has to be read from\n",
-  "   across a room: red means it wants you now, amber means soon, and no spine\n",
-  "   at all means it is fine and you can stop looking at it. Everything else\n",
-  "   is there to be read once you have decided to read it.\n",
+  "   One living chart per trainee. Tonight for FTOs. Waiting on you for\n",
+  "   Training. Built for one hand, end of shift, fourteen hours awake.\n",
   " * ------------------------------------------------------------------ */\n",
   ":root{\n",
   "  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;\n",
@@ -7456,6 +7678,77 @@ var PORTAL_PAGE_HTML = [
   "@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!importan",
   "t;}\n",
   "  .card.act:active,.btn:active{transform:none;}}\n",
+  "\n",
+  "/* --- THE LINE: phase track, evidence bars, clock, moves, strip --- */\n",
+  ".mono{font-family:\"IBM Plex Mono\",ui-monospace,monospace;font-weight:500;}\n",
+  ".phase-track{display:flex;gap:4px;margin:14px 0 0;}\n",
+  ".phase-track .p{flex:1;}\n",
+  ".phase-track .pip{height:5px;border-radius:3px;background:var(--line);}\n",
+  ".phase-track .pip.on{background:var(--gold);}\n",
+  ".phase-track .pip.now{background:var(--emt);}\n",
+  ".phase-track .lab{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.6rem;letter-sp",
+  "acing:.08em;\n",
+  "  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}\n",
+  ".phase-track .lab.on{color:var(--ink);}\n",
+  ".stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--l",
+  "ine);}\n",
+  ".stats .n{font-family:\"IBM Plex Mono\",monospace;font-size:1.15rem;line-height:1;}\n",
+  ".stats .l{font-size:.74rem;color:var(--ink-3);margin-top:2px;}\n",
+  ".bars4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px;",
+  "}\n",
+  ".seg{display:flex;gap:2px;margin-bottom:4px;}\n",
+  ".seg i{display:block;width:8px;height:14px;border-radius:1px;background:var(--line);}\n",
+  ".seg i.on{background:var(--emt);}\n",
+  ".bars4 .have{font-family:\"IBM Plex Mono\",monospace;font-size:.74rem;}\n",
+  ".bars4 .have span{color:var(--ink-3);}\n",
+  ".bars4 .bl{font-size:.66rem;color:var(--ink-3);line-height:1.25;margin-top:1px;}\n",
+  ".move{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;\n",
+  "  border-radius:10px;border:1px solid var(--warn);background:var(--warn-bg);}\n",
+  ".move.due{border-color:var(--stop);background:var(--stop-bg);}\n",
+  ".move.ok{border-color:var(--ok);background:var(--ok-bg);}\n",
+  ".move .bd{flex:1;min-width:0;}\n",
+  ".move .h{font-weight:600;font-size:.95rem;}\n",
+  ".move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}\n",
+  ".move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;\n",
+  "  padding:10px 13px;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-si",
+  "ze:.9rem;\n",
+  "  cursor:pointer;min-height:44px;}\n",
+  ".move.due .go-btn{background:var(--stop);color:#fff;}\n",
+  ".clock{position:relative;width:52px;height:52px;flex:none;}\n",
+  ".clock svg{display:block;}\n",
+  ".clock .nums{position:absolute;inset:0;display:flex;flex-direction:column;align-items:cent",
+  "er;\n",
+  "  justify-content:center;line-height:1;}\n",
+  ".clock .nums b{font-family:\"IBM Plex Mono\",monospace;font-size:.92rem;font-weight:500;}\n",
+  ".clock .nums span{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.52rem;letter-s",
+  "pacing:.1em;\n",
+  "  text-transform:uppercase;color:var(--ink-3);margin-top:1px;}\n",
+  ".decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-sha",
+  "dow:var(--lift-2);\n",
+  "  overflow:hidden;margin-bottom:16px;}\n",
+  ".decision .top{display:flex;padding:15px 16px 0;}\n",
+  ".decision .body{flex:1;min-width:0;padding:0 0 14px;}\n",
+  ".strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:",
+  "touch;\n",
+  "  scroll-snap-type:x mandatory;}\n",
+  ".strip .tile{flex:0 0 148px;scroll-snap-align:start;background:var(--raised);border:1px so",
+  "lid var(--line);\n",
+  "  border-radius:10px;padding:12px;box-shadow:var(--lift);}\n",
+  ".strip .tile.due{border-color:var(--stop);}\n",
+  ".strip .tile.soon{border-color:var(--warn);}\n",
+  ".strip .tile .h{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:1",
+  ".05rem;\n",
+  "  line-height:1.15;margin:0;}\n",
+  ".strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}\n",
+  ".strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}\n",
+  ".btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shado",
+  "w:none;margin-top:8px;}\n",
+  ".btn.ghost-danger[disabled]{opacity:.35;}\n",
+  ".line-mark{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:.62rem",
+  ";\n",
+  "  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}\n",
+  "@keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}\n",
+  ".wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}\n",
   "</style>\n",
   "</head>\n",
   "<body>\n",
@@ -7520,7 +7813,7 @@ var PORTAL_PAGE_HTML = [
   "GO+fQHl4BqOwZrlZXUO5DoMW3uHRoiYIVTx7Asa/v4ZyJQY5JxSoc6UVKewqs/wMhlTzHgUyy+aQNSEmH66lXI9Bj/",
   "uGR/54mZljK+9XV1N+AmPOsdHhL7T99t2rMflGDPb7D3NQ8loPexOGukZX+DlRoP0f5fOq4z32+bYAAAAASUVORK5C",
   "YII=\" alt=\"Sumter County EMS\">\n",
-  "    <div><div class=\"s\">Sumter County EMS</div><div class=\"t\">Field Training</div></div>\n",
+  "    <div><div class=\"s\">Sumter County EMS</div><div class=\"t\">THE LINE</div></div>\n",
   "    <span class=\"mode\" id=\"mode\">…</span>\n",
   "  </div>\n",
   "  <div class=\"wrap\" id=\"view\"><p class=\"sub\">Loading…</p></div>\n",
@@ -7645,38 +7938,98 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function paint(h){ el('view').innerHTML = h; window.scrollTo(0,0); }\n",
   "\n",
-  "/* ---------------- trainee ---------------- */\n",
+  "/* ---------------- trainee — My Line ---------------- */\n",
+  "function phaseTrackHtml(phase){\n",
+  "  var cur = 1;\n",
+  "  var m = String(phase||'').match(/(\\d)/);\n",
+  "  if (m) cur = Number(m[1]);\n",
+  "  var names = ['Phase 1','Phase 2','Phase 3','Phase 4'];\n",
+  "  var h = '<div class=\"phase-track\">';\n",
+  "  for (var i=1;i<=4;i++){\n",
+  "    var cls = i < cur ? 'on' : (i === cur ? 'now' : '');\n",
+  "    h += '<div class=\"p\"><div class=\"pip '+cls+'\"></div><div class=\"lab'+(i<=cur?' on':'')",
+  "+'\">'+names[i-1]+'</div></div>';\n",
+  "  }\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function barsHtml(bars, colorVar){\n",
+  "  if (!bars || !bars.length) return '';\n",
+  "  var fill = colorVar || 'var(--emt)';\n",
+  "  var h = '<div class=\"bars4\">';\n",
+  "  bars.forEach(function(b){\n",
+  "    var need = Math.max(1, Number(b.need)||1);\n",
+  "    var have = Math.max(0, Number(b.have)||0);\n",
+  "    var cells = '';\n",
+  "    for (var i=0;i<need;i++) cells += '<i class=\"'+(i<have?'on':'')+'\" style=\"'+(i<have?'b",
+  "ackground:'+fill:'')+'\"></i>';\n",
+  "    h += '<div><div class=\"seg\">'+cells+'</div>'+\n",
+  "         '<div class=\"have\">'+have+'<span>/'+need+'</span></div>'+\n",
+  "         '<div class=\"bl\">'+esc(b.label)+'</div></div>';\n",
+  "  });\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function skillBars(s){\n",
+  "  if (s.bars && s.bars.length) return s.bars;\n",
+  "  return [\n",
+  "    { label: 'Successful', have: Number(s.successful)||0, need: 3 },\n",
+  "    { label: 'Independent', have: Number(s.independent)||0, need: 2 },\n",
+  "    { label: 'Dates', have: Number(s.distinctDates)||0, need: 2 },\n",
+  "    { label: 'FTOs', have: Number(s.distinctFtos)||0, need: 2 }\n",
+  "  ];\n",
+  "}\n",
+  "function clockHtml(hoursLeft, pct){\n",
+  "  var color = hoursLeft <= 12 ? 'var(--stop)' : (hoursLeft <= 36 ? 'var(--warn)' : 'var(--",
+  "ok)');\n",
+  "  var r = 22, c = 2*Math.PI*r;\n",
+  "  var dash = Math.max(0, Math.min(c, c * ((pct||0)/100)));\n",
+  "  return '<div class=\"clock\"><svg width=\"52\" height=\"52\" viewBox=\"0 0 52 52\">'+\n",
+  "    '<circle cx=\"26\" cy=\"26\" r=\"22\" fill=\"none\" stroke=\"var(--line)\" stroke-width=\"4\"/>'+\n",
+  "    '<circle cx=\"26\" cy=\"26\" r=\"22\" fill=\"none\" stroke=\"'+color+'\" stroke-width=\"4\" stroke",
+  "-linecap=\"round\" '+\n",
+  "    'stroke-dasharray=\"'+dash+' '+c+'\" transform=\"rotate(-90 26 26)\"/></svg>'+\n",
+  "    '<div class=\"nums\"><b style=\"color:'+color+'\">'+esc(String(hoursLeft))+'</b><span>hrs<",
+  "/span></div></div>';\n",
+  "}\n",
+  "\n",
   "function paintTrainee(d){\n",
   "  if (d.error) return paint(hero('', 'No record', '')+\n",
   "    '<div class=\"note n-stop\"><b>Not found</b>'+esc(d.error)+'</div>');\n",
-  "  var h = hero('Your training', d.name,\n",
+  "  var h = hero('My Line', d.name,\n",
   "    lvlChip(d.levelKey,d.level)+' &nbsp; '+esc(d.phase||'no phase set'));\n",
-  "  h += '<div class=\"panel\"><div class=\"lab\">Skills signed off</div><div class=\"big\">'+d.si",
-  "gned+\n",
-  "       ' <small>of '+d.applicable+'</small></div><div class=\"prog\"><i style=\"width:'+d.per",
-  "cent+\n",
-  "       '%;background:var(--'+esc(d.levelKey)+')\"></i></div>'+\n",
-  "       '<div style=\"font-size:.85rem;color:var(--ink-3)\">'+\n",
-  "       (d.waiting.length ? d.waiting.length+' waiting on the Training Division' : 'Nothing",
-  " waiting on anyone else')+\n",
+  "\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       '<div class=\"lab\">Where you are</div>'+\n",
+  "       '<div style=\"display:flex;align-items:baseline;gap:9px\">'+\n",
+  "       '<div class=\"big\" style=\"font-size:1.85rem\">'+(esc(d.phase)||'Phase ?')+'</div>'+\n",
+  "       (d.dayInPhase!=null ? '<div class=\"mono\" style=\"color:var(--ink-3)\">day '+d.dayInPh",
+  "ase+'</div>' : '')+\n",
+  "       '</div>'+\n",
+  "       phaseTrackHtml(d.phase)+\n",
+  "       '<div class=\"stats\">'+\n",
+  "       '<div><div class=\"n\">'+esc(String(d.evalCount||0))+'</div><div class=\"l\">shifts eva",
+  "luated</div></div>'+\n",
+  "       '<div><div class=\"n\">'+(d.evalAvg!=null?esc(String(d.evalAvg)):'—')+'</div><div cla",
+  "ss=\"l\">average</div></div>'+\n",
+  "       '<div><div class=\"n\" style=\"color:var(--ok)\">'+esc(String(d.signed))+'</div><div cl",
+  "ass=\"l\">skills signed off</div></div>'+\n",
   "       '</div></div>';\n",
   "\n",
-  "  h += sec('Waiting on you');\n",
-  "  // In staging the reflection is filed in the portal so the flow can be tried\n",
-  "  // end to end. Against the real tracker the existing self-reflection FORM is\n",
-  "  // the one that files it - that form has the trigger and the destination, and\n",
-  "  // this portal must not become a second writer into a tab it does not own.\n",
-  "  //\n",
-  "  // This used to read canWrite(), which meant STAGING when it was written and\n",
-  "  // quietly came to mean STAGING or LIVE when the third mode was added. The\n",
-  "  // button reappeared against the live tracker without anybody deciding it\n",
-  "  // should. isPractice() cannot drift that way.\n",
-  "  if (isPractice()){\n",
-  "    h += '<button class=\"card act\"'+spine('due')+' onclick=\"S.screen=\\'reflect\\';render()\"",
+  "  var moves = d.nextMoves || [];\n",
+  "  if (moves.length){\n",
+  "    h += sec('Waiting on you', moves.length);\n",
+  "    moves.forEach(function(m){\n",
+  "      var cls = m.urgency==='due'?'due':(m.urgency==='ok'?'ok':'');\n",
+  "      h += '<div class=\"move '+cls+'\"><div class=\"bd\"><div class=\"h\">'+esc(m.title)+'</div",
   ">'+\n",
-  "         '<span class=\"bd\"><span class=\"h\">Weekly reflection</span>'+\n",
-  "         '<span class=\"m\">Your own words. Takes about four minutes.</span></span>'+\n",
-  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "           '<div class=\"m\">'+esc(m.blurb||'')+'</div></div>';\n",
+  "      if (m.action==='ack' && canWrite() && m.row){\n",
+  "        h += '<button class=\"go-btn\" onclick=\"ack('+m.row+')\">Got it</button>';\n",
+  "      } else if (m.action==='reflect' && isPractice()){\n",
+  "        h += '<button class=\"go-btn\" onclick=\"S.screen=\\'reflect\\';render()\">File it</butt",
+  "on>';\n",
+  "      }\n",
+  "      h += '</div>';\n",
+  "    });\n",
   "  }\n",
   "  h += formCards(d.forms);\n",
   "  (d.coaching||[]).forEach(function(c){\n",
@@ -7685,17 +8038,32 @@ var PORTAL_PAGE_HTML = [
   "           '<span class=\"bd\"><span class=\"h\">Coaching from '+esc(c.from)+'</span>'+\n",
   "           '<span class=\"m\">'+esc(c.text)+'</span></span><span class=\"go\">&rsaquo;</span><",
   "/button>';\n",
-  "    } else {\n",
-  "      h += '<div class=\"card\"'+spine('soon')+'><div class=\"h\">Coaching from '+esc(c.from)+",
-  "'</div>'+\n",
-  "           '<div class=\"m\">'+esc(c.text)+'</div>'+\n",
-  "           (c.book ? '<div class=\"m\" style=\"color:var(--ink-3)\">from '+esc(c.book)+'</div>",
-  "' : '')+\n",
-  "           '</div>';\n",
   "    }\n",
   "  });\n",
   "\n",
-  "  h += sec('Where things stand');\n",
+  "  if (d.skills && d.skills.length){\n",
+  "    var withDiv = [], building = [], done = [];\n",
+  "    d.skills.forEach(function(s){\n",
+  "      if (s.signed) done.push(s);\n",
+  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
+  "      else building.push(s);\n",
+  "    });\n",
+  "    h += sec('What each skill still needs', d.skills.length);\n",
+  "    h += '<p class=\"sub\">Four bars each. All four full and it goes to Training Division.</",
+  "p>';\n",
+  "    withDiv.concat(building).slice(0,8).forEach(function(s){\n",
+  "      var tag = s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness ||",
+  " 'Building');\n",
+  "      var tagCls = s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute';\n",
+  "      h += '<div class=\"card\"><div class=\"hd\"><span class=\"h\" style=\"font-size:1rem\">'+esc",
+  "(s.skill)+'</span>'+\n",
+  "           '<span class=\"chip '+tagCls+'\">'+esc(tag)+'</span></div>'+\n",
+  "           barsHtml(skillBars(s), 'var(--'+esc(d.levelKey||'emt')+')')+'</div>';\n",
+  "    });\n",
+  "    if (done.length) h += '<p class=\"sub\">'+done.length+' already signed off.</p>';\n",
+  "  }\n",
+  "\n",
+  "  h += sec('Your chart');\n",
   "  h += freshRow(d.freshness);\n",
   "  h += '<div class=\"panel\">'+\n",
   "       kv('Training officer', d.fto || 'not assigned')+\n",
@@ -7706,43 +8074,6 @@ var PORTAL_PAGE_HTML = [
   "       '<span class=\"m\">Everything ever submitted about you, newest first.</span></span>'+",
   "\n",
   "       '<span class=\"go\">&rsaquo;</span></button>';\n",
-  "\n",
-  "  /* Not the whole catalogue. What is with the Division is the only part that\n",
-  "     is out of your hands; the rest is a count and a button. A screen you have\n",
-  "     to scroll past is a screen nobody reads. */\n",
-  "  if (d.skills && d.skills.length){\n",
-  "    var withDiv = [], building = [], done = [];\n",
-  "    d.skills.forEach(function(s){\n",
-  "      if (s.signed) done.push(s);\n",
-  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
-  "      else building.push(s);\n",
-  "    });\n",
-  "    h += sec('Your skills', d.skills.length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:10px\">'+done.length+' signed off &middot; '+",
-  "\n",
-  "         withDiv.length+' with the Division &middot; '+building.length+' still building</p",
-  ">';\n",
-  "    if (withDiv.length){\n",
-  "      h += '<div class=\"panel\">';\n",
-  "      withDiv.forEach(function(s){\n",
-  "        h += kv(s.skill, '<span class=\"chip c-warn\">With the Division</span>');\n",
-  "      });\n",
-  "      h += '</div>';\n",
-  "    }\n",
-  "    if (building.length){\n",
-  "      h += picker('pick-skill', building.length+' still building\\u2026',\n",
-  "        building.map(function(s,i){ return { value: String(i), label: s.skill }; }),\n",
-  "        'pickSkill', (S.skillPick == null ? '' : S.skillPick));\n",
-  "      var picked = (S.skillPick == null) ? null : building[S.skillPick];\n",
-  "      if (picked){\n",
-  "        h += '<div class=\"panel\">'+\n",
-  "             kv('Successful reps', String(picked.successful))+\n",
-  "             kv('Independent reps', String(picked.independent))+\n",
-  "             kv('Where it stands', '<span class=\"chip c-mute\">'+\n",
-  "                esc(picked.readiness || 'building')+'</span>')+'</div>';\n",
-  "      }\n",
-  "    }\n",
-  "  }\n",
   "  h += '<div class=\"next\"><b>What happens next</b>Anything you file goes to your training ",
   "officer and the Training Division. Nobody else sees it.</div>';\n",
   "  paint(h);\n",
@@ -7827,29 +8158,41 @@ var PORTAL_PAGE_HTML = [
   "    .withFailureHandler(function(e){ alert(e.message||e); }).ackCoachingV1(row);\n",
   "}\n",
   "\n",
-  "/* ---------------- fto ---------------- */\n",
+  "/* ---------------- fto — Tonight ---------------- */\n",
   "function paintFto(d){\n",
-  "  var h = hero('Field Training Officer', 'Your trainees',\n",
-  "    d.trainees.length+(d.trainees.length===1?' person':' people')+' ride with you');\n",
+  "  var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;\n",
+  "  var h = hero('Tonight', 'Who did you ride with?',\n",
+  "    (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+\n",
+  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">'+hot+' need you</span>' : ''));\n",
   "  if (!d.trainees.length) h += '<div class=\"note n-info\"><b>Nobody assigned</b>No trainees",
   " list you as their training officer.</div>';\n",
-  "  d.trainees.forEach(function(t,i){\n",
-  "    h += '<button class=\"card act\"'+spine(t.setupComplete ? '' : 'soon')+\n",
-  "      ' onclick=\"openTrainee('+i+')\">'+\n",
+  "\n",
+  "  // Hot first — already sorted loosely by urgency in payload; re-sort for display.\n",
+  "  var list = (d.trainees||[]).slice().sort(function(a,b){\n",
+  "    var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);\n",
+  "  });\n",
+  "  list.forEach(function(t){\n",
+  "    var i = d.trainees.indexOf(t);\n",
+  "    var chip = t.urgency==='due'\n",
+  "      ? '<span class=\"chip c-stop\">'+(t.daysSinceEval<0?'Never evaluated':(t.daysSinceEval",
+  "+'d silent'))+'</span>'\n",
+  "      : (t.urgency==='soon' ? '<span class=\"chip c-warn\">Due soon</span>' : '');\n",
+  "    h += '<button class=\"card act\"'+spine(t.urgency||'')+' onclick=\"openTrainee('+i+')\">'+",
+  "\n",
   "      '<span class=\"bd\">'+\n",
   "      '<span class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level",
-  ")+'</span>'+\n",
-  "      '<span class=\"m\">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.l",
-  "astEval)+'</span>'+\n",
-  "      (t.setupComplete ? '' : '<span class=\"flag\">Setup incomplete &mdash; tell the Divisi",
-  "on</span>')+\n",
+  ")+chip+'</span>'+\n",
+  "      '<span class=\"m\">'+esc(t.phase||'no phase')+\n",
+  "      (t.dayInPhase!=null?' &middot; day '+t.dayInPhase:'')+\n",
+  "      ' &middot; '+esc(String(t.evalCount||0))+' evals'+\n",
+  "      (t.evalAvg!=null?' &middot; avg '+t.evalAvg:'')+'</span>'+\n",
+  "      (t.setupComplete?'':'<span class=\"flag\">Setup incomplete — tell Training Division</s",
+  "pan>')+\n",
   "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "  });\n",
-  "  if (d.forms && d.forms.length){\n",
-  "    h += sec('Anything else')+formCards(d.forms);\n",
-  "  }\n",
-  "  h += '<div class=\"next\"><b>How this works</b>Pick the person, not the form. The skills l",
-  "og you get is already the one for their level, with both names filled in.</div>';\n",
+  "  if (d.forms && d.forms.length) h += sec('Anything else')+formCards(d.forms);\n",
+  "  h += '<div class=\"next\"><b>How Tonight works</b>Pick the person. The eval and skills log",
+  " open with both names filled — for their level. You never hunt a form title.</div>';\n",
   "  paint(h);\n",
   "}\n",
   "function openTrainee(i){\n",
@@ -7859,11 +8202,16 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function paintTraineeSheet(){\n",
   "  var t = S.ctx || {};\n",
-  "  var h = hero('Your trainee', t.name,\n",
+  "  var h = hero('Tonight', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
-  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back to Tonight</but",
+  "ton>';\n",
   "  h += freshRow(t.freshness);\n",
-  "  h += '<div class=\"panel\">'+kv('Last evaluation', esc(t.lastEval))+\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       kv('Last evaluation', esc(t.lastEval))+\n",
+  "       kv('Evals on file', esc(String(t.evalCount||0))+\n",
+  "          (t.evalAvg!=null?' &middot; avg '+esc(String(t.evalAvg)):''))+\n",
+  "       kv('Waiting on Division', esc(String(t.waitingCount||0)))+\n",
   "       kv('Setup', t.setupComplete ? '<span class=\"chip c-ok\">Complete</span>'\n",
   "                                   : '<span class=\"chip c-warn\">Incomplete</span>')+'</div",
   ">';\n",
@@ -7876,8 +8224,8 @@ var PORTAL_PAGE_HTML = [
   "    ? formCards(t.forms)\n",
   "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
   "he registry could not reach them.</div>';\n",
-  "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker, the same way it a",
-  "lways has. Nothing about your forms changed.</div>';\n",
+  "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker vault — same forms",
+  ", same record. THE LINE just opens the right door.</div>';\n",
   "  paint(h);\n",
   "}\n",
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
@@ -7903,40 +8251,38 @@ var PORTAL_PAGE_HTML = [
   "    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});\n",
   "  });\n",
   "\n",
-  "  var h = hero('Training Division',\n",
-  "    q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'\n",
-  "             : 'Nothing waiting on you',\n",
-  "    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+\n",
-  "    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look",
+  "  var h = hero('Waiting on you',\n",
+  "    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')\n",
+  "             : 'Queue clear',\n",
+  "    d.activeCount+' on THE LINE'+\n",
+  "    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves",
   "')+\n",
-  "    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));\n",
+  "    (seen.length ? ' &middot; '+seen.length+' holding' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
   "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
-  "         ' mode, so sign-offs cannot be approved from here yet.</div>';\n",
+  "         ' mode, so sign-offs cannot be decided from here yet.</div>';\n",
   "\n",
   "  h += warnRow(d.warnings);\n",
   "\n",
-  "  /* Something wrong with the system rather than with a person. It belongs at\n",
-  "     the top with the other system-level alerts, not floating between two\n",
-  "     groups of people where it reads as a third sign-off. */\n",
   "  (d.retiredForms||[]).forEach(function(f){\n",
   "    h += '<div class=\"note n-stop\"><b>Retired form still open</b>'+esc(f.title)+\n",
-  "         ' is no longer offered anywhere in this portal. '+esc(f.why)+\n",
-  "         ' Anything already submitted to it is sitting in the form, not in the tracker.</d",
-  "iv>';\n",
+  "         ' is no longer offered anywhere. '+esc(f.why)+'</div>';\n",
   "  });\n",
   "\n",
-  "\n",
   "  if (!q.length){\n",
-  "    h += '<div class=\"note n-ok\"><b>Sign-offs clear</b>No skill is waiting on your decisio",
-  "n.</div>';\n",
+  "    h += '<div class=\"note n-ok\"><b>Queue clear</b>No skill is waiting on your decision. E",
+  "very staged decision is on the sign-off path with your name against it.</div>';\n",
   "  } else {\n",
-  "    h += sec('Sign-offs', d.queueCount);\n",
-  "    q.forEach(function(x){ h += signoffCard(x); });\n",
+  "    // Lead card — the oldest / first decision dominates the viewport.\n",
+  "    var lead = q[0];\n",
+  "    h += decisionLeadHtml(lead);\n",
+  "    if (q.length > 1){\n",
+  "      h += sec('Behind it', q.length - 1);\n",
+  "      q.slice(1).forEach(function(x){ h += signoffCard(x); });\n",
+  "    }\n",
   "    if (d.queueCount > q.length)\n",
-  "      h += '<p class=\"sub\" style=\"margin-top:-2px\">Showing the oldest '+q.length+' of '+\n",
-  "           d.queueCount+'.</p>';\n",
+  "      h += '<p class=\"sub\">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';\n",
   "  }\n",
   "\n",
   "  /* Decisions already made here, waiting on the tracker to make them\n",
@@ -7959,7 +8305,7 @@ var PORTAL_PAGE_HTML = [
   "  }\n",
   "\n",
   "  if (flagged.length){\n",
-  "    h += sec('Needs a look', flagged.length);\n",
+  "    h += sec('Next moves', flagged.length);\n",
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
@@ -7996,16 +8342,67 @@ var PORTAL_PAGE_HTML = [
   "  paint(h);\n",
   "}\n",
   "\n",
-  "/* Approving writes a decision into the queue. Against a tracker this portal\n",
-  "   cannot write, the item is shown and the decision is recorded where it has\n",
-  "   always been recorded, rather than offered and then refused. */\n",
+  "/* Approving / returning writes a decision into the queue. Against a tracker\n",
+  "   this portal cannot write, the item is shown and the decision is recorded\n",
+  "   where it has always been recorded. */\n",
+  "function decisionLeadHtml(q){\n",
+  "  var left = (q.hoursLeft != null) ? q.hoursLeft : 72;\n",
+  "  var pct = (q.clockPct != null) ? q.clockPct : 100;\n",
+  "  var h = '<div class=\"decision\"><div class=\"top\">'+\n",
+  "    '<div style=\"width:5px;background:var(--'+esc((BOOT.data.people||[]).reduce(function(k",
+  ",p){\n",
+  "      return normMatch(p.name,q.trainee)?p.levelKey:k;},'gold'))+');flex:none;margin:-15px",
+  " 0 0 -16px;align-self:stretch;border-radius:11px 0 0 0\"></div>'+\n",
+  "    '<div class=\"body\" style=\"padding-left:12px;flex:1\">'+\n",
+  "    '<div style=\"display:flex;gap:12px;align-items:flex-start\">'+\n",
+  "    '<div style=\"flex:1;min-width:0\">'+\n",
+  "    '<div class=\"lab\" style=\"margin:0\">Evidence met the bar. The call is yours.</div>'+\n",
+  "    '<div class=\"h\" style=\"font-size:1.44rem;margin-top:2px\">'+esc(q.skill)+'</div>'+\n",
+  "    '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+\n",
+  "    clockHtml(left, pct)+\n",
+  "    '</div>';\n",
+  "  if (q.bars && q.bars.length){\n",
+  "    h += '<div style=\"margin-top:14px;padding-top:12px;border-top:1px solid var(--line)\">'",
+  "+\n",
+  "         '<div class=\"lab\">Evidence against the catalog</div>'+barsHtml(q.bars)+'</div>';\n",
+  "  } else if (q.evidence){\n",
+  "    h += '<div style=\"margin-top:12px;font-size:.9rem;color:var(--ink-2)\">'+esc(q.evidence",
+  ")+'</div>';\n",
+  "  }\n",
+  "  if (q.recommend){\n",
+  "    h += '<div class=\"note n-info\" style=\"margin-top:12px\"><b>FTO recommendation</b>'+esc(",
+  "q.recommend)+'</div>';\n",
+  "  }\n",
+  "  h += '</div></div>';\n",
+  "  if (canWrite() && !q.from){\n",
+  "    h += '<div style=\"padding:0 16px 16px\">'+\n",
+  "         '<button class=\"btn\" onclick=\"openSignoff('+q.row+','+jsStr(q.trainee)+','+\n",
+  "         jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">Decide</butto",
+  "n>'+\n",
+  "         '<div class=\"next\" style=\"margin-top:10px\"><b>You see the record before you write",
+  " it</b>'+\n",
+  "         'Approve or return — both require your words. The tracker makes it permanent.</di",
+  "v></div>';\n",
+  "  } else {\n",
+  "    h += '<div style=\"padding:0 16px 16px\"><div class=\"flag\" style=\"--accent:var(--warn)\">",
+  "'+\n",
+  "         (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'\n",
+  "                 : 'Read only — decide in the tracker.')+'</div></div>';\n",
+  "  }\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function normMatch(a,b){\n",
+  "  return String(a||'').toLowerCase().replace(/\\s+/g,'')===String(b||'').toLowerCase().repl",
+  "ace(/\\s+/g,'');\n",
+  "}\n",
   "function signoffCard(q){\n",
   "  if (canWrite() && !q.from){\n",
   "    return '<button class=\"card act\"'+spine('gold')+' onclick=\"openSignoff('+q.row+','+jsS",
   "tr(q.trainee)+','+\n",
   "      jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">'+\n",
   "      '<span class=\"bd\"><span class=\"h\">'+esc(q.skill)+'</span>'+\n",
-  "      '<span class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span>'+\n",
+  "      '<span class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+\n",
+  "      (q.hoursLeft!=null?' &middot; '+q.hoursLeft+'h left':'')+'</span>'+\n",
   "      (q.evidence ? '<span class=\"m\" style=\"color:var(--ink-2)\">'+esc(short(q.evidence, 64",
   "))+'</span>' : '')+\n",
   "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
@@ -8034,9 +8431,12 @@ var PORTAL_PAGE_HTML = [
   "    '<span class=\"m\">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no tra",
   "ining officer')+'</span>'+\n",
   "    (why ? '<span class=\"flag\"'+(held ? ' style=\"--accent:var(--ink-3)\"' : '')+'>'+\n",
-  "           esc(cap(why))+'</span>' : '')+\n",
+  "           esc(t.nextMove && t.nextMove.title ? t.nextMove.title : cap(why))+'</span>' : '",
+  "')+\n",
   "    (held ? '<span class=\"m\">Seen '+esc(t.ack.when)+' &middot; back on the list '+\n",
   "            esc(t.ack.until)+'</span>' : '')+\n",
+  "    (t.nextMove && t.nextMove.blurb && !held ? '<span class=\"m\">'+esc(t.nextMove.blurb)+'<",
+  "/span>' : '')+\n",
   "    '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "}\n",
   "function urgentNeedV(w){\n",
@@ -8172,60 +8572,123 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "\n",
   "function openSignoff(row,trainee,skill,evidence,requestId){\n",
-  "  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId|",
-  "|'' };\n",
+  "  var q = (BOOT.data.queue||[]).filter(function(x){ return Number(x.row)===Number(row); })",
+  "[0] || {};\n",
+  "  S.ctx = {\n",
+  "    row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'',\n",
+  "    bars: q.bars || null, recommend: q.recommend || '', hoursLeft: q.hoursLeft, clockPct: ",
+  "q.clockPct\n",
+  "  };\n",
   "  S.screen = 'signoff'; render();\n",
   "}\n",
   "function paintSignoff(){\n",
   "  var c = S.ctx || {};\n",
-  "  paint(hero('The decision', c.skill, esc(c.trainee))+\n",
-  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>'+\n",
-  "    '<div class=\"panel\"><div class=\"lab\">Evidence on file</div>'+\n",
-  "    '<div style=\"font-size:.93rem\">'+esc(c.evidence)+'</div></div>'+\n",
-  "    '<div class=\"panel\"><div class=\"lab\">Why are you approving this</div>'+\n",
-  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name.\"></te",
-  "xtarea></div>'+\n",
-  "    '<button class=\"btn\" id=\"ap\" onclick=\"approve()\">Approve sign-off</button>'+\n",
-  "    '<div class=\"next\"><b>No pre-filled wording</b>The old system wrote \"Evidence threshol",
-  "ds met\" without checking anything. You type it, or nothing is written.</div>'+\n",
-  "    '<div class=\"next\"><b>Where this goes</b>Your decision, your name and your reason go o",
-  "nto the queue row. '+\n",
-  "    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+\n",
-  "    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only t",
-  "hing '+\n",
-  "    'allowed to write the sign-off log, and it runs the authority and evidence checks on t",
-  "he way.</div>');\n",
+  "  var h = hero('The decision', c.skill, esc(c.trainee))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "  if (c.hoursLeft != null){\n",
+  "    h += '<div style=\"display:flex;align-items:center;gap:12px;margin-bottom:12px\">'+\n",
+  "         clockHtml(c.hoursLeft, c.clockPct||0)+\n",
+  "         '<div class=\"m\">Hours left on the 72-hour clock before this goes stale on the des",
+  "k.</div></div>';\n",
+  "  }\n",
+  "  if (c.bars && c.bars.length){\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Evidence against the catalog</div>'+barsHtml",
+  "(c.bars)+'</div>';\n",
+  "  } else {\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Evidence on file</div>'+\n",
+  "         '<div style=\"font-size:.93rem\">'+esc(c.evidence||'—')+'</div></div>';\n",
+  "  }\n",
+  "  if (c.recommend){\n",
+  "    h += '<div class=\"note n-info\"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';\n",
+  "  }\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
+  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name. No de",
+  "fault wording.\" '+\n",
+  "    'oninput=\"syncDecideBtns()\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"ap\" disabled onclick=\"approve()\">Approve sign-off</button>'+\n",
+  "    '<button class=\"btn ghost-danger\" id=\"ret\" disabled onclick=\"returnSkill()\">Return for",
+  " more evidence</button>'+\n",
+  "    '<div class=\"next\"><b>Friction belongs here</b>Approve is one clear act with your word",
+  "s. Return stays dead until you type why — never invent an FTO\\'s words.</div>'+\n",
+  "    '<div class=\"next\"><b>Where this goes</b>Your decision stages on the queue. The tracke",
+  "r turns it into a permanent sign-off (or sends it back) — one writer, every gate.</div>';\n",
+  "  paint(h);\n",
+  "  syncDecideBtns();\n",
+  "}\n",
+  "function syncDecideBtns(){\n",
+  "  var why = (el('why') && el('why').value || '').trim();\n",
+  "  var ok = why.length >= 8;\n",
+  "  if (el('ap')) el('ap').disabled = !ok || S.busy;\n",
+  "  if (el('ret')) el('ret').disabled = !ok || S.busy;\n",
   "}\n",
   "function approve(){\n",
   "  if (S.busy) return;\n",
   "  var why = el('why').value.trim();\n",
   "  if (why.length < 8) { alert('Type why you are approving this.'); return; }\n",
   "  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';\n",
+  "  if (el('ret')) el('ret').disabled = true;\n",
   "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
   "; })\n",
-  "    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approv",
-  "e sign-off';\n",
+  "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncD",
+  "ecideBtns();\n",
   "      alert(e.message||e); })\n",
   "    .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');\n",
   "}\n",
+  "function returnSkill(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = el('why').value.trim();\n",
+  "  if (why.length < 8) { alert('Type why you are returning this.'); return; }\n",
+  "  S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';\n",
+  "  if (el('ap')) el('ap').disabled = true;\n",
+  "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
+  "; })\n",
+  "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence",
+  "'; syncDecideBtns();\n",
+  "      alert(e.message||e); })\n",
+  "    .returnSignoffV1(S.ctx.row, why, S.ctx.requestId||'');\n",
+  "}\n",
   "\n",
-  "/* ---------------- supervisor / medical ---------------- */\n",
+  "/* ---------------- supervisor — shift strip ---------------- */\n",
   "function paintSupervisor(d){\n",
-  "  var h = hero('Shift supervisor', d.shift,\n",
-  "    'Read only. Nothing here asks you to do anything.');\n",
-  "  if (!d.trainees.length) h += '<div class=\"note n-ok\"><b>Nobody on shift</b>No active tra",
-  "inees are assigned to this shift.</div>';\n",
-  "  d.trainees.forEach(function(t){\n",
-  "    h += '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+\n",
-  "      lvlChip(t.levelKey,t.level)+'</div>'+\n",
-  "      '<div class=\"m\">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last eva",
-  "luation '+esc(t.lastEval)+'</div></div>';\n",
-  "  });\n",
+  "  var hot = d.hotCount || 0;\n",
+  "  var h = hero('My shift', d.shift,\n",
+  "    (d.trainees||[]).length+' on the line'+\n",
+  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">'+hot+' hot tonight</span>' : ' &mid",
+  "dot; all quiet'));\n",
+  "  if (!d.trainees.length){\n",
+  "    h += '<div class=\"note n-ok\"><b>Nobody on shift</b>No active trainees are assigned to ",
+  "this shift.</div>';\n",
+  "  } else {\n",
+  "    h += '<p class=\"sub\">Swipe the strip. Red wants a look tonight. Tap a name for the nex",
+  "t move.</p>';\n",
+  "    h += '<div class=\"strip\">';\n",
+  "    d.trainees.forEach(function(t){\n",
+  "      h += '<div class=\"tile '+(t.urgency||'')+'\">'+\n",
+  "           '<div class=\"h\">'+esc(t.name)+'</div>'+\n",
+  "           '<div class=\"m\">'+esc(t.phase||'')+' &middot; '+esc(short(t.fto,18)||'no FTO')+",
+  "'</div>'+\n",
+  "           (t.why ? '<div class=\"flag\">'+esc(t.nextMove && t.nextMove.title ? t.nextMove.t",
+  "itle : t.why)+'</div>'\n",
+  "                  : '<div class=\"m\" style=\"margin-top:8px;color:var(--ok)\">Clear</div>')+\n",
+  "           '</div>';\n",
+  "    });\n",
+  "    h += '</div>';\n",
+  "    h += sec('Everyone', d.trainees.length);\n",
+  "    d.trainees.forEach(function(t){\n",
+  "      h += '<div class=\"card\"'+spine(t.urgency||'')+'>'+\n",
+  "        '<div class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.leve",
+  "l)+'</div>'+\n",
+  "        '<div class=\"m\">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+\n",
+  "        ' &middot; last eval '+esc(t.lastEval)+'</div>'+\n",
+  "        (t.nextMove ? '<div class=\"flag\">'+esc(t.nextMove.title)+'</div>' : '')+\n",
+  "        '</div>';\n",
+  "    });\n",
+  "  }\n",
   "  if (d.forms && d.forms.length){\n",
   "    h += sec('If something cannot wait')+formCards(d.forms);\n",
   "  }\n",
-  "  h += '<div class=\"next\"><b>Deliberately thin</b>Supervisors get situational awareness, n",
-  "ot personnel-development detail.</div>';\n",
+  "  h += '<div class=\"next\"><b>Deliberately thin</b>You get situational awareness for tonigh",
+  "t — not a second Training desk.</div>';\n",
   "  paint(h);\n",
   "}\n",
   "function paintMedical(d){\n",
@@ -8392,7 +8855,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '5aa8dd17';
+var PORTAL_BUILD = 'a94a4b3a';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
