@@ -94,7 +94,8 @@ put('75_presentation', ['BRAND_V20_5', 'sheetPurposeV20_5_', 'badgeBlobV20_5_', 
   'unwrapAuditFormulasV20_1']);
 
 put('70_admin_health', ['repairCancelledQueueRowsV20_2', 'reviewSectionV20_1_', 'reviewCoreV20_1',
-  'reviewDeepV20_1', 'fullSystemReviewV20_1', 'hasStrayV19_', 'applyOperationalTabsV20_1']);
+  'reviewDeepV20_1', 'fullSystemReviewV20_1', 'hasStrayV19_', 'applyOperationalTabsV20_1',
+  'rebuildSkillMatrix']);
 
 put('90_recovery', ['phantomRowsV20_1_', 'previewPhantomRepairV20_1', 'fixPhantomsNowV20_1',
   'stepD_fixPhantoms', 'stepE_replayLostResponses', 'recoverLostSubmissionsV20_2',

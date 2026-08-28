@@ -239,6 +239,18 @@ function seedTraineeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
 function organizeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
+/** Public name for the skill-matrix rebuild. The underscore form is easy to
+ *  miss in the Apps Script Run dropdown; this is the one to pick. */
+function rebuildSkillMatrix() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  rebuildSkillMatrixV19_();
+  var msg = 'Skill matrix rebuilt from the evidence and sign-off logs.';
+  systemLog_('INFO', 'SKILL MATRIX REBUILT', 'rebuildSkillMatrix');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
 function skillsKey() { try { applySkillsLayoutV19_(); } catch (e) {} }
 
 function parseSkills(v) {

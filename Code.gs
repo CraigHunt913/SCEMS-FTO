@@ -1292,6 +1292,7 @@ function onOpen(e) {
         .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
         .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
         .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+        .addItem('Rebuild the skill matrix', 'rebuildSkillMatrix')
         .addSeparator()
         .addItem('Which mode am I in?', 'whichMode')
         .addItem('Version report', 'versionReportV20_1')
@@ -8959,6 +8960,18 @@ function scemsFixSelfTest() {
 function seedTraineeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
 function organizeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
+
+/** Public name for the skill-matrix rebuild. The underscore form is easy to
+ *  miss in the Apps Script Run dropdown; this is the one to pick. */
+function rebuildSkillMatrix() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  rebuildSkillMatrixV19_();
+  var msg = 'Skill matrix rebuilt from the evidence and sign-off logs.';
+  systemLog_('INFO', 'SKILL MATRIX REBUILT', 'rebuildSkillMatrix');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
 
 function skillsKey() { try { applySkillsLayoutV19_(); } catch (e) {} }
 

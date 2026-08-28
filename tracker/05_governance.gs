@@ -723,6 +723,7 @@ function onOpen(e) {
         .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
         .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
         .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+        .addItem('Rebuild the skill matrix', 'rebuildSkillMatrix')
         .addSeparator()
         .addItem('Which mode am I in?', 'whichMode')
         .addItem('Version report', 'versionReportV20_1')
