@@ -384,6 +384,58 @@ function clean_(v) {
   return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
 }
 
+/**
+ * Training Division brings a new trainee onto THE LINE from the web app.
+ *
+ * Writes one row to 01 TRAINEE MASTER and refreshes Trainee LIST choices on
+ * the registered Google Forms so the forms already in service offer them.
+ */
+function addTraineeV1(payload) {
+  requireWritableV1_('add a trainee');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add a trainee from THE LINE.');
+  }
+  var req = parseAddTraineeRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) throw new Error('Type their work email — that is how they sign in.');
+  if (!req.level) {
+    throw new Error('Pick a level: EMT, Advanced EMT, or Paramedic.');
+  }
+
+  var plan = addTraineePlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the trainee master.');
+  }
+  if (plan.closed.length) {
+    throw new Error(plan.closed[0].name +
+      ' is closed/released on the master. Re-opening them is a person decision in the tracker.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (plan.badFto.length) {
+    throw new Error((plan.badFto[0].fto || 'That officer') +
+      ' is not on the active FTO roster. Add them with addFto first, or leave FTO blank.');
+  }
+  if (plan.incomplete.length || !plan.add.length) {
+    throw new Error('Name, email, and level are required.');
+  }
+
+  var note = applyAddTraineePlanV1_(plan);
+  var msg = typeof note === 'string' ? note : String(note || '');
+  auditV1_('TRAINEE ADDED', viewer.email, req.name + ' | ' + req.level + ' | ' + req.email);
+  // Short message for the phone; full note is in Executions / Logger.
+  return {
+    ok: true,
+    name: req.name,
+    level: req.level,
+    message: req.name + ' is on THE LINE and on the existing forms.'
+  };
+}
+
 /** The portal's own log. It is a WRITE, so it obeys the same rule everything
  *  else does: in PRODUCTION this portal puts nothing in the live book, not
  *  even a note about itself. Read paths call this too, which is exactly why

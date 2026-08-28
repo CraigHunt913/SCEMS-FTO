@@ -271,8 +271,17 @@ function addFto() {
     L.push('No row already on the roster was read, moved or changed.');
     L.push('');
     rebuiltNoteV1_(L);
-    refreshDropdownsNoteV1_(L);
-    L.push('');
+    var sync = null;
+    try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  FTO name dropdowns on ' + sync.forms + ' registered form(s) now include');
+      L.push('  the new officer. Same forms already in service — nothing new created.');
+      L.push('');
+    } else {
+      refreshDropdownsNoteV1_(L);
+      L.push('');
+    }
     L.push('NOW YOU CAN ASSIGN THEM');
     L.push('  The ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' is a dropdown');
     L.push('  fed by this roster, which is why the name had to go here first.');

@@ -10,7 +10,7 @@ Sumter County EMS Field Training — the product humans open.
 | --- | --- | --- |
 | Trainee | **My Line** | Where I am, what’s waiting on me, four bars per skill |
 | FTO | **Tonight** | Who I rode with → file for that person |
-| Training Division | **Waiting on you** | One decision card, evidence visible, Approve or Return with typed reason |
+| Training Division | **Waiting on you** | One decision card · Approve/Return · **Bring someone on** (new trainee → existing forms) |
 | Supervisor | **My shift** | Hot strip — who’s silent tonight |
 | Medical Director | Clinical review | Urgent concerns only |
 
@@ -33,6 +33,18 @@ Live data is whatever spreadsheet `PORTAL_TARGET` points at — staging sandbox 
 - Does Return stay dead until a reason is typed?
 - Would someone at 02:00 need a HOW-TO doc? If yes, the screen failed.
 
+## Bring someone on
+
+Training Division (STAGING or LIVE) can add a trainee from Waiting on you:
+
+1. **Bring someone on → New trainee**
+2. Name, work email, level (required). Phase, FTO, entry letter optional.
+3. THE LINE writes one row on `01 TRAINEE MASTER` and refreshes **Trainee** dropdowns on the Google Forms already registered — no new form is created.
+
+Afterward: open the tracker once (or run `rebuildSkillMatrix`) if their skill-progress rows need to appear. Evaluations and skills logs work as soon as the form lists refresh.
+
 ## Version
 
+`portal-2.0.4` — Bring someone on (add trainee + sync existing form lists).
+`portal-2.0.3` — Quiet desk (no machinery banners).
 `portal-2.0.0` — THE LINE.

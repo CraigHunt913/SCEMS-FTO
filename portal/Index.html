@@ -180,6 +180,12 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 textarea{width:100%;min-height:104px;border:1px solid var(--line);border-radius:var(--r-sm);
   padding:12px 13px;font:inherit;color:inherit;background:var(--paper);resize:vertical;}
 textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
+.field{margin-bottom:12px;}
+.field .lab{margin-bottom:6px;}
+.field input,.field select{width:100%;padding:14px 13px;font:inherit;font-size:1.05rem;
+  color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-sm);}
+.field input:focus,.field select:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
+.field .hint{font-size:.82rem;color:var(--ink-3);margin-top:5px;}
 .pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:none;
   background-color:var(--raised);color:inherit;border:1px solid var(--line);border-radius:var(--r);
   padding:15px 42px 15px 16px;font:inherit;cursor:pointer;margin-bottom:10px;min-height:56px;
@@ -420,6 +426,7 @@ function render(){
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
   if (S.screen === 'record')   return paintRecord();
+  if (S.screen === 'addTrainee') return paintAddTrainee();
 
   switch (v.role) {
     case 'TRAINEE':            return paintTrainee(d);
@@ -757,6 +764,16 @@ function paintDivision(d){
 
   if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
 
+  // Bring someone on — Division only, when the portal can write.
+  if (d.canAddTrainee) {
+    h += sec('Bring someone on');
+    h += '<button class="card act"'+spine('gold')+' onclick="openAddTrainee()">'+
+         '<span class="bd"><span class="h">New trainee</span>'+
+         '<span class="m">Put them on THE LINE and on the forms already in service. '+
+         'Name, email, level — then they show up for FTOs.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+
   // Same-day duplicates are a human call — keep them visible but quiet, at the end.
   var house = housekeeping(d);
   if (house) h += sec('Settle')+house;
@@ -1002,6 +1019,91 @@ function openSignoff(row,trainee,skill,evidence,requestId){
   };
   S.screen = 'signoff'; render();
 }
+
+/* ---------------- bring someone on ---------------- */
+function openAddTrainee(){
+  S.screen = 'addTrainee'; render();
+}
+function paintAddTrainee(){
+  var d = BOOT.data || {};
+  var officers = d.officers || [];
+  var h = hero('Bring someone on', 'New trainee',
+    'They land on THE LINE and on the forms already in service.')+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+
+  h += '<div class="panel">'+
+    '<div class="field"><div class="lab">Full name</div>'+
+    '<input id="at-name" autocomplete="name" placeholder="Casey Holt" /></div>'+
+    '<div class="field"><div class="lab">Work email</div>'+
+    '<input id="at-email" type="email" autocomplete="email" placeholder="casey.holt@example.org" />'+
+    '<div class="hint">How they sign into THE LINE.</div></div>'+
+    '<div class="field"><div class="lab">Level</div>'+
+    '<select id="at-level">'+
+    '<option value="">Pick one…</option>'+
+    '<option value="EMT">EMT</option>'+
+    '<option value="Advanced EMT">Advanced EMT</option>'+
+    '<option value="Paramedic">Paramedic</option>'+
+    '</select>'+
+    '<div class="hint">Chooses which skills log their FTO gets.</div></div>'+
+    '<div class="field"><div class="lab">Starting phase</div>'+
+    '<select id="at-phase">'+
+    '<option value="Phase 1">Phase 1</option>'+
+    '<option value="Phase 2">Phase 2</option>'+
+    '<option value="Phase 3">Phase 3</option>'+
+    '<option value="Phase 4">Phase 4</option>'+
+    '</select></div>'+
+    '<div class="field"><div class="lab">Training officer</div>'+
+    '<select id="at-fto"><option value="">Assign later…</option>';
+  officers.forEach(function(o){
+    h += '<option value="'+esc(o.name)+'">'+esc(o.name)+'</option>';
+  });
+  h += '</select>'+
+    (officers.length ? '' :
+      '<div class="hint">No active FTOs on the roster yet. Add an FTO first, or leave blank.</div>')+
+    '</div>'+
+    '<div class="field"><div class="lab">Entry profile (optional)</div>'+
+    '<input id="at-entry" maxlength="1" placeholder="A" style="max-width:4.5rem;text-transform:uppercase" />'+
+    '<div class="hint">Letter from the ENTRY PROFILE KEY on the master.</div></div>'+
+    '</div>';
+
+  h += '<button class="btn" id="at-go" onclick="submitAddTrainee()">Add to THE LINE</button>'+
+    '<div class="next"><b>What this does</b>Writes one row on the trainee master and refreshes '+
+    'Trainee dropdowns on the Google Forms you already use. No new form is created.</div>'+
+    '<div class="next"><b>Afterward</b>Open the tracker once if their skill matrix rows need a rebuild. '+
+    'Evaluations and skills logs work as soon as the form lists refresh.</div>';
+  paint(h);
+}
+function submitAddTrainee(){
+  if (S.busy) return;
+  var name = (el('at-name') && el('at-name').value || '').trim();
+  var email = (el('at-email') && el('at-email').value || '').trim();
+  var level = (el('at-level') && el('at-level').value || '').trim();
+  var phase = (el('at-phase') && el('at-phase').value || 'Phase 1').trim();
+  var fto = (el('at-fto') && el('at-fto').value || '').trim();
+  var entry = (el('at-entry') && el('at-entry').value || '').trim().toUpperCase();
+  if (!name) { alert('Type their full name.'); return; }
+  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }
+  if (!level) { alert('Pick a level.'); return; }
+
+  S.busy = true;
+  var b = el('at-go');
+  if (b) { b.disabled = true; b.textContent = 'Adding…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || (name + ' is on THE LINE.'));
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.disabled = false; b.textContent = 'Add to THE LINE'; }
+      alert(e.message || e);
+    })
+    .addTraineeV1({ name: name, email: email, level: level, phase: phase,
+                    fto: fto, entry: entry });
+}
+
 function paintSignoff(){
   var c = S.ctx || {};
   var h = hero('The decision', c.skill, esc(c.trainee))+

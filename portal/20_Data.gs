@@ -565,6 +565,17 @@ function divisionPayloadV1_() {
       return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
     }),
     retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
+    // Officers the Bring-someone-on form can assign. Exact roster spellings.
+    officers: (function () {
+      try {
+        return rosterActivePeopleV1_().map(function (p) {
+          return { name: p.name, email: p.email || '' };
+        }).sort(function (a, b) {
+          return String(a.name).localeCompare(String(b.name));
+        });
+      } catch (e) { return []; }
+    })(),
+    canAddTrainee: mayWriteV1_(),
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
