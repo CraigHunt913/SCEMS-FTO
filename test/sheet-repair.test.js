@@ -206,9 +206,13 @@ ok(daily.indexOf(TAB.SKILL_VALIDATION) >= 0, 'the sign-off queue stays visible')
 ok(daily.indexOf(TAB.MASTER) >= 0, 'the trainee master stays visible');
 ok(daily.indexOf(TAB.SKILLS) >= 0, 'the skills matrix stays visible');
 ok(daily.indexOf(TAB.AUDIT) >= 0, 'the audit tab stays visible — flags matter');
-[TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.LOG, TAB.LEDGER, TAB.ACCESS, TAB.REGISTRY].forEach(t => {
+ok(daily.indexOf(TAB.FTO_ROSTER) >= 0, 'the roster stays visible');
+[TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.LOG, TAB.LEDGER, TAB.ACCESS, TAB.REGISTRY,
+ TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.MD_VIEW, TAB.WEEKLY, TAB.DASH].forEach(t => {
   ok(daily.indexOf(t) < 0, '"' + t + '" is machinery and gets hidden');
 });
+ok(/YOUR DESK IS READY/.test(organizeTabsV20_2.toString()),
+   'organizing speaks like a desk, not a warehouse');
 ok(order[0] === TAB_CONSOLE_V20_3, 'TRAINEES sorts first — v20.3 made it the start of the day');
 ok(order.indexOf('HOME') === 1, 'HOME sits right behind it');
 ok(order.indexOf(TAB.SKILL_VALIDATION) < order.indexOf(TAB.LOG),

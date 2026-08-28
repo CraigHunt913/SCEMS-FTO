@@ -288,14 +288,21 @@ ok(!/setValue|setValues|deleteRow|clearContent/.test(rsrc),
    'the readability pass changes formatting only — it never touches a cell value');
 
 // ---------------------------------------------------------------- //
-section('SIMPLIFY_EVERYTHING ties it together');
+section('MAKE_IT_SIMPLE ties it together');
 // ---------------------------------------------------------------- //
-const ssrc = SIMPLIFY_EVERYTHING.toString();
+const ssrc = MAKE_IT_SIMPLE.toString();
 ['buildTraineeConsoleV20_3', 'makeSheetsReadableV20_3', 'organizeTabsV20_2'].forEach(n =>
   ok(ssrc.indexOf(n) > 0, 'it runs ' + n));
 ok(!/deleteRow|deleteSheet|clearContent/.test(ssrc), 'and destroys nothing');
+ok(SIMPLIFY_EVERYTHING.toString().indexOf('MAKE_IT_SIMPLE') > 0,
+   'the old name still routes here');
 ok(tabOrderV20_2_()[0] === TAB_CONSOLE_V20_3, 'TRAINEES sorts to the far left');
 ok(dailyTabsV20_2_().indexOf(TAB_CONSOLE_V20_3) >= 0, 'and is never hidden');
-
+[TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.MD_VIEW].forEach(t =>
+  ok(dailyTabsV20_2_().indexOf(t) < 0, '"' + t + '" is portal work, not the desk'));
+ok(/Make this spreadsheet simple/.test(onOpen.toString()),
+   'the menu leads with Make this spreadsheet simple');
+ok(!/createMenu\('Admin'\)/.test(onOpen.toString()),
+   'the old Admin catalogue is gone — More ▸ Advanced holds the rare tools');
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

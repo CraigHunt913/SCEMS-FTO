@@ -45,6 +45,192 @@ function MAKE_IT_PROFESSIONAL() {
   return msg;
 }
 
+/**
+ * THE button for "this is too confusing."
+ *
+ * Builds the TRAINEES desk, hides Form Responses and every other machinery
+ * tab, and leaves you on TRAINEES. Does not delete data. Does not touch
+ * forms. Safe to run any time the tab bar looks like a junk drawer.
+ */
+function MAKE_IT_SIMPLE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — MAKE IT SIMPLE', '',
+    'Goal: a desk you can run the program from, not a warehouse of tabs.', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 105));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180));
+    }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Refresh AUDIT tab layout (flags stay formula-driven)', function () {
+    return redoAuditTabV20_1();
+  });
+  step(4, 'Hide Form Responses and other machinery', organizeTabsV20_2);
+  L.push('');
+  L.push('How to use this system from now on:');
+  L.push('  1. SCEMS ▸ Trainees — start here');
+  L.push('  2. SCEMS ▸ Work my queue');
+  L.push('  3. SCEMS ▸ Work audit flags  (RED cells on AUDIT — own them or fix data)');
+  L.push('  4. SCEMS ▸ What needs attention?  when something feels off');
+  L.push('  5. SCEMS ▸ Backup now  about once a month');
+  L.push('');
+  L.push('Flags do not clear by editing the AUDIT grid. Fix the source data,');
+  L.push('or Accept with a reason (flag stays visible until data catches up).');
+  L.push('The portal is for FTOs / trainees / Medical Director views.');
+  L.push('This spreadsheet is for you — Training — to decide and record.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'MAKE IT SIMPLE', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Alias kept so older instructions that say SIMPLIFY_EVERYTHING still work. */
+function SIMPLIFY_EVERYTHING() { return MAKE_IT_SIMPLE(); }
+
+/**
+ * Correctness of the estate — not cosmetics.
+ *
+ * Apps Script kills any run at six minutes. The first live run archived 53
+ * form clones and repaired the engine, then died before recovery/matrix.
+ * This is now two commands, each safe to repeat:
+ *
+ *   ELITE_ESTATE()        — forms, engine, headers, queue, protections, triggers
+ *   ELITE_ESTATE_FINISH() — recover lost submissions, rebuild matrix, health check
+ *
+ * Orphan Form Responses tabs are reported only; clean those on a Drive copy
+ * via freshStartClean / the handover doc.
+ */
+function ELITE_ESTATE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 1 of 2)', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  L.push('This spreadsheet : ' + (function () {
+    try { return ss().getId(); } catch (e) { return '?'; }
+  })());
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('');
+    L.push('STOPPED. This is the orphan twin. Open the starred Master and run there.');
+    var stop = L.join('\n');
+    Logger.log(stop);
+    try { SpreadsheetApp.getUi().alert(stop.slice(0, 1400)); } catch (e) {}
+    return stop;
+  }
+
+  // Light inventory + archive (no per-form response counts — that alone
+  // burned minutes on 53 clones and tripped the execution ceiling).
+  step(1, 'Archive backup form clones', function () {
+    return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+  });
+  step(2, 'Engine key column repair', function () {
+    return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+  });
+  step(3, 'Decision queue header', repairDecisionQueueHeaderV20_4);
+  step(4, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
+  step(5, 'Protect record tabs', protectRecordTabsV20_2);
+  step(6, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
+
+  L.push('');
+  L.push('Part 1 done. Next, run ELITE_ESTATE_FINISH() — recovers lost');
+  L.push('submissions, rebuilds the skill matrix, and prints the health check.');
+  L.push('Those are the slow steps; keeping them separate avoids the 6-minute kill.');
+  L.push('');
+  L.push('Orphan Form Responses tabs stay until you clean a COPY:');
+  L.push('  freshStartReport() then freshStartClean("CLEAN <copy name>")');
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE PART 1', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Part 2: recover lost submissions, rebuild matrix, health check.
+ *  Safe after part 1, and safe to run on its own if part 1 already finished. */
+function ELITE_ESTATE_FINISH() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 2 of 2)', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    return 'STOPPED. Orphan twin. Open the starred Master.';
+  }
+
+  step(1, 'Recover lost form submissions (blank cutoff, idempotent)', function () {
+    return replayMissingSinceV20_1_('');
+  });
+  step(2, 'Skill matrix rebuild', function () {
+    rebuildSkillMatrixV19_();
+    return 'matrix rebuilt';
+  });
+  step(3, 'Engine health (confirm key column)', engineHealthCheck);
+  step(4, 'Orphan Form Responses report (read-only)', freshStartReport);
+  step(5, 'Health check', healthCheckV20_2);
+
+  L.push('');
+  L.push('NOT done here on purpose (needs a Drive copy of the workbook first):');
+  L.push('  freshStartClean("CLEAN <copy name>")  — removes orphan Form Responses tabs');
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE PART 2', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Menu wrapper: archive form copies with the required token after confirm. */
+function archiveFormCopiesPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var n = formCopyInventoryV20_6_(true).length;
+  var conf = ui.alert(
+    'Archive backup form copies?',
+    n + ' "Copy of …" SCEMS form(s) will be moved into an archive folder. ' +
+    'Live forms are never touched. Nothing is deleted.\n\nContinue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.';
+  return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+}
+
+/** Menu wrapper: apply engine repair after confirm. */
+function applyEngineRepairPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = previewEngineRepairV20_6();
+  var conf = ui.alert(
+    'Repair the phase engine key column?',
+    'Only column A of the engine tab is touched. Record tabs are not. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was written.\n\n' + preview;
+  return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+}
+
 /* ---------------------------------------------------------------- *
  *  Everything, in the right order
  * ---------------------------------------------------------------- */
@@ -77,28 +263,6 @@ function POLISH_SHEETS() {
   L.push('profile is right is a fact about that person, and this will not guess.');
   var msg = L.join('\n');
   systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** One command: build the console, make everything readable, tidy the tabs. */
-function SIMPLIFY_EVERYTHING() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
-    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
-  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
-  L.push('');
-  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
-  L.push('history as a document; tick "Release" when they are done. Nothing else is');
-  L.push('needed day to day.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;

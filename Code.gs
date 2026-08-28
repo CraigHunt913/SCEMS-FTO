@@ -929,6 +929,99 @@ function burningFlagsV20_2_() {
   return out;
 }
 
+/** True when the FLAG REVIEW LOG already has an Accepted (or in-progress)
+ *  row for this trainee + flag type. Used so health check can say
+ *  "owned" vs "nobody has touched this yet" without hiding the FLAG itself. */
+function flagHasOwnershipV20_2_(sh, trainee, flagType) {
+  var log = flagReviewLogV20_2_(sh);
+  if (!log) return false;
+  var rows = sh.getRange(log.firstEntry, 1, log.lastEntry - log.firstEntry + 1, 6).getDisplayValues();
+  var tn = normalizeNameV20_1_(trainee);
+  var ft = String(flagType || '').trim().toUpperCase();
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeNameV20_1_(rows[i][1]) !== tn) continue;
+    if (String(rows[i][2] || '').trim().toUpperCase() !== ft) continue;
+    var st = String(rows[i][5] || '').trim();
+    if (st === FLAG_ACCEPT_STATUS_V20_2 || st === 'Under review' ||
+        st === 'Action taken — awaiting data') return true;
+  }
+  return false;
+}
+
+/**
+ * THE guided path for tab 13. Explains what flags mean, what clears them,
+ * and offers Accept for the ones you are living with. Never deletes a FLAG
+ * cell and never rewrites a detection formula.
+ */
+function WORK_AUDIT_FLAGS() {
+  if (!gateV20_2_('ACCEPT AUDIT FLAG')) return;
+  var ui = SpreadsheetApp.getUi();
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) { ui.alert('Audit tab not found.'); return; }
+
+  // Layout first if the review log is missing — otherwise Accept cannot write.
+  if (!flagReviewLogV20_2_(sh)) {
+    try { redoAuditTabV20_1(); } catch (e) {}
+  }
+
+  var burning = burningFlagsV20_2_();
+  var open = [], owned = [];
+  burning.forEach(function (f) {
+    if (flagHasOwnershipV20_2_(sh, f.trainee, f.flagType)) owned.push(f);
+    else open.push(f);
+  });
+
+  var HOW =
+    'HOW FLAGS WORK\n\n' +
+    'A FLAG is a formula watching live data. You cannot delete it.\n' +
+    'It goes away only when the condition is fixed:\n\n' +
+    '  NO NARRATIVE   → FTO adds narrative on their eval (tab 02)\n' +
+    '  SILENT RECORD  → an eval or reflection starts flowing again\n' +
+    '  PHASE MISMATCH → Current Phase on tab 01 matches the latest eval\n' +
+    '  ADV / REFLECT  → scores and requests converge, or request withdrawn\n' +
+    '  FTO SCOPE      → roster/eval level corrected\n\n' +
+    'If you understand the condition and are living with it for now:\n' +
+    '  Accept it with a typed reason. It STAYS visible and still counts,\n' +
+    '  but it is on the record in your name with a review-by date.\n\n';
+
+  if (!burning.length) {
+    var clear = HOW + 'Right now: no flags are burning. Tab 13 is clean.';
+    Logger.log(clear);
+    ui.alert(clear.slice(0, 1400));
+    return clear;
+  }
+
+  var L = [HOW,
+    'Burning now : ' + burning.length +
+    '  (unowned: ' + open.length + ', already logged: ' + owned.length + ')', ''];
+  if (open.length) {
+    L.push('NEED YOU (no acceptance / review log yet):');
+    open.slice(0, 15).forEach(function (f, i) {
+      L.push('  ' + (i + 1) + '. ' + f.trainee + ' — ' + f.flagType);
+    });
+    if (open.length > 15) L.push('  …and ' + (open.length - 15) + ' more');
+    L.push('');
+  }
+  if (owned.length) {
+    L.push('ALREADY OWNED (still visible until data catches up):');
+    owned.slice(0, 10).forEach(function (f) {
+      L.push('  · ' + f.trainee + ' — ' + f.flagType);
+    });
+    L.push('');
+  }
+  L.push('Next: click OK to Accept one unowned flag, or Cancel to go fix the data.');
+
+  var preview = L.join('\n');
+  Logger.log(preview);
+  if (!open.length) {
+    ui.alert(preview.slice(0, 1400));
+    return preview;
+  }
+  var go = ui.alert('Work audit flags', preview.slice(0, 1200), ui.ButtonSet.OK_CANCEL);
+  if (go !== ui.Button.OK) return preview + '\n\nCancelled — go fix the underlying data.';
+  return acceptFlagV20_2();
+}
+
 /** ACCEPT ONE FLAG. One flag, one named human, one typed reason, one date.
  *
  *  The flag STAYS VISIBLE and keeps reading FLAG — acceptance is recorded
@@ -946,22 +1039,33 @@ function acceptFlagV20_2() {
   if (!burning.length) { ui.alert('No flags are burning. Nothing to accept.'); return; }
 
   var log = flagReviewLogV20_2_(sh);
+  if (!log) {
+    try { redoAuditTabV20_1(); } catch (e) {}
+    log = flagReviewLogV20_2_(sh);
+  }
   if (!log) { ui.alert('FLAG REVIEW LOG not found on tab 13. Run redoAuditTabV20_1 once first.'); return; }
 
-  var listing = burning.slice(0, 20).map(function (f, i) {
+  // Prefer unowned flags in the picker so people don't re-accept the same one.
+  var preferred = burning.filter(function (f) {
+    return !flagHasOwnershipV20_2_(sh, f.trainee, f.flagType);
+  });
+  var list = preferred.length ? preferred : burning;
+
+  var listing = list.slice(0, 20).map(function (f, i) {
     return (i + 1) + '  ' + f.trainee + ' — ' + f.flagType; }).join('\n');
   var r1 = ui.prompt('Accept one flag  (1 of 2)',
-    burning.length + ' flag(s) burning. Type the number of the ONE you are accepting:\n\n' +
-    listing + (burning.length > 20 ? '\n   …and ' + (burning.length - 20) + ' more' : ''),
+    list.length + ' flag(s) to choose from. Type the number of the ONE you are accepting:\n\n' +
+    listing + (list.length > 20 ? '\n   …and ' + (list.length - 20) + ' more' : '') +
+    '\n\nRemember: Accept does NOT clear the red FLAG. It records that you own it.',
     ui.ButtonSet.OK_CANCEL);
   if (r1.getSelectedButton() !== ui.Button.OK) return;
   var pick = parseInt(String(r1.getResponseText() || '').trim(), 10);
-  if (!(pick >= 1 && pick <= Math.min(burning.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
-  var flag = burning[pick - 1];
+  if (!(pick >= 1 && pick <= Math.min(list.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
+  var flag = list[pick - 1];
 
   var r2 = ui.prompt('Accept one flag  (2 of 2)',
     flag.trainee + ' — ' + flag.flagType + '\n\n' +
-    'Why is this acceptable? This goes on the record in your name.\n' +
+    'Why is this acceptable for now? This goes on the record in your name.\n' +
     'There is no default: a blank answer cancels.',
     ui.ButtonSet.OK_CANCEL);
   if (r2.getSelectedButton() !== ui.Button.OK) return;
@@ -993,13 +1097,15 @@ function acceptFlagV20_2() {
         .setAllowInvalid(true).build());
   } catch (e) {}
 
-  var msg = 'Accepted.\n\n' + flag.trainee + ' — ' + flag.flagType +
+  try { ackFlagStyleV20_1(); } catch (eStyle) {}
+
+  var msg = 'Accepted — not cleared.\n\n' + flag.trainee + ' — ' + flag.flagType +
     '\nAccepted by : ' + who +
     '\nReview by   : ' + dateKeyV20_1_(reviewBy) +
     '\nReason      : ' + reason +
-    '\n\nThe flag stays visible and still counts as outstanding. Acceptance is ' +
-    'recorded beside it, not instead of it, and it expires on the review date. ' +
-    'No detection formula was changed.';
+    '\n\nThe red/amber FLAG stays on the matrix until the underlying data ' +
+    'changes. Acceptance is in the FLAG REVIEW LOG, in your name, and expires ' +
+    'on the review date. No detection formula was changed.';
   systemLog_('WARN', 'AUDIT FLAG ACCEPTED',
     flag.trainee + ' | ' + flag.flagType + ' | by ' + who + ' | review by ' + dateKeyV20_1_(reviewBy));
   ui.alert(msg);
@@ -1151,10 +1257,22 @@ function healthCheckV20_2() {
   });
 
   guard(function () {
+    var sh = getSheetOrNullV20_1_(TAB.AUDIT);
     var f = burningFlagsV20_2_();
-    if (f.length) {
-      add('WARN', f.length + ' audit flag(s) burning. Fix the condition, or accept one on the ' +
-        'record with a reason and a review date.', 'acceptFlagV20_2');
+    if (!f.length) return;
+    var open = 0, owned = 0;
+    f.forEach(function (x) {
+      if (flagHasOwnershipV20_2_(sh, x.trainee, x.flagType)) owned++;
+      else open++;
+    });
+    if (open) {
+      add('WARN', open + ' audit flag(s) with nobody owning them yet. Fix the ' +
+        'underlying data, or Accept one with a reason (it stays visible).',
+        'WORK_AUDIT_FLAGS');
+    }
+    if (owned) {
+      add('INFO', owned + ' audit flag(s) already logged/accepted — still visible ' +
+        'until the data catches up or the review date arrives.', 'WORK_AUDIT_FLAGS');
     }
   });
 
@@ -1209,6 +1327,13 @@ function healthCheckV20_2() {
     }
   });
 
+  // Drive / tab estate: orphan Form Responses, backup form clones, the twin
+  // spreadsheet, the phase-engine #REF!, and the blank decision-queue header.
+  // These used to live only in editor-only tools and LIVE-FINDINGS.md.
+  guard(function () {
+    estateHealthItemsV20_6_().forEach(function (it) { items.push(it); });
+  });
+
   items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
 
   var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
@@ -1231,7 +1356,11 @@ function healthCheckV20_2() {
 }
 
 /* ---------------------------------------------------------------- *
- *  Menu : six verbs, everything else behind Admin
+ *  Menu : a desk, not a toolbox catalogue
+ *
+ *  Day to day you need four things. Everything else is under More.
+ *  Jargon names (ELITE_ESTATE, MAKE_IT_PROFESSIONAL) stay as function
+ *  ids so old instructions still run; the labels a human reads are plain.
  * ---------------------------------------------------------------- */
 
 /** THE ONLY onOpen IN THIS PROJECT. The two earlier definitions were deleted
@@ -1241,59 +1370,55 @@ function onOpen(e) {
   try {
     var ui = SpreadsheetApp.getUi();
     ui.createMenu('SCEMS')
-      .addItem('Trainees (start here)', 'openTraineeConsoleV20_3')
-      .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
-      .addSeparator()
+      .addItem('Trainees — start here', 'openTraineeConsoleV20_3')
       .addItem('Work my queue', 'workMyQueueV20_1')
       .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
-      .addItem('Advance a trainee', 'advanceTraineeNow')
-      .addItem('Close / release a trainee', 'closeTraineeV20_1')
       .addSeparator()
-      .addItem('Health check', 'healthCheckV20_2')
+      .addItem('What needs attention?', 'healthCheckV20_2')
+      .addItem('Work audit flags', 'WORK_AUDIT_FLAGS')
       .addItem('Backup now', 'fullBackupV20_1')
       .addSeparator()
-      .addSubMenu(ui.createMenu('Admin')
-        .addItem('Health check', 'healthCheckV20_2')
-        .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+      .addItem('Make this spreadsheet simple', 'MAKE_IT_SIMPLE')
+      .addSubMenu(ui.createMenu('More')
+        .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
+        .addItem('Advance a trainee', 'advanceTraineeNow')
+        .addItem('Close / release a trainee', 'closeTraineeV20_1')
         .addSeparator()
-        .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
-        .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
-        .addItem('Make everything simpler', 'SIMPLIFY_EVERYTHING')
-        .addItem('Fix and polish the sheet headers', 'POLISH_SHEETS')
-        .addItem('Check entry profiles (read-only)', 'auditEntryProfilesV20_4')
-        .addItem('Show every hidden column', 'showAllColumnsV20_4')
-        .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
-        .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
-        .addItem('Tidy up the tabs', 'organizeTabsV20_2')
+        .addItem('Hide the clutter (Form Responses, machinery)', 'organizeTabsV20_2')
         .addItem('Show every tab', 'showAllTabsV20_2')
-        .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
-        .addSeparator()
-        .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
-        .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
-        .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
-        .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
-        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
+        .addItem('Rebuild the skill matrix', 'rebuildSkillMatrix')
         .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
-        .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+        .addItem('Repair forms & sheets (part 1)', 'ELITE_ESTATE')
+        .addItem('Recover skills & rebuild matrix (part 2)', 'ELITE_ESTATE_FINISH')
         .addSeparator()
         .addItem('Which mode am I in?', 'whichMode')
-        .addItem('Version report', 'versionReportV20_1')
-        .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
-        .addSeparator()
-        .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
-        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
-        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
-        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
-        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
-        .addSeparator()
-        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
-        .addItem('System review — core (read-only)', 'reviewCoreV20_1')
-        .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
-        .addItem('Migration preview (read-only)', 'previewMigrationV20_1'))
-      .addSubMenu(ui.createMenu('Go live / test')
         .addItem('Go LIVE', 'goLive')
-        .addItem('Back to TEST mode', 'backToTestMode'))
+        .addItem('Back to TEST mode', 'backToTestMode')
+        .addSeparator()
+        .addSubMenu(ui.createMenu('Advanced')
+          .addItem('Explain every burning flag (read-only)', 'explainFlagsV20_1')
+          .addItem('Accept one audit flag (with a reason)', 'acceptFlagV20_2')
+          .addItem('Refresh audit tab layout', 'redoAuditTabV20_1')
+          .addItem('Unwrap old ACK formulas (if flags vanish)', 'unwrapAuditFormulasV20_1')
+          .addItem('Acknowledge phase mismatches / log ownership', 'fixAllFlagsNowV20_1')
+          .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+          .addItem('Form estate report (read-only)', 'formEstateReport')
+          .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
+          .addItem('Fresh-start report (orphan tabs)', 'freshStartReport')
+          .addItem('Engine health (read-only)', 'engineHealthCheck')
+          .addItem('Apply engine key repair', 'applyEngineRepairPrompt')
+          .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+          .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
+          .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
+          .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
+          .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
+          .addItem('Version report', 'versionReportV20_1')
+          .addItem('Full polish pass', 'MAKE_IT_PROFESSIONAL')
+          .addItem('Fix and polish sheet headers', 'POLISH_SHEETS')
+          .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
+          .addItem('System review — core (read-only)', 'reviewCoreV20_1')
+          .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
+          .addItem('Migration preview (read-only)', 'previewMigrationV20_1')))
       .addToUi();
   } catch (err) {
     Logger.log('onOpen menu skipped: ' + err);
@@ -8559,24 +8684,45 @@ function redoAuditTabV20_1() {
   if (!sh) return 'Tab 13 not found.';
   var R = [];
 
+  // ---- 0. banner (rows 1–3): one job, one path — formulas in B5:G44 stay untouched ----
+  try {
+    sh.getRange(1, 1, 3, 12).clearContent().clearNote().clearFormat();
+    sh.getRange(1, 1, 1, 7).merge()
+      .setValue('AUDIT — live conditions the desk is watching. Do not type in the FLAG grid.')
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold')
+      .setFontSize(12).setVerticalAlignment('middle');
+    sh.getRange(2, 1, 1, 7).merge()
+      .setValue('RED = nobody owns it yet   ·   AMBER = you logged / Accepted it (still counts)   ·   blank = clean')
+      .setBackground('#ECEFF1').setFontColor('#37474F').setFontWeight('bold')
+      .setVerticalAlignment('middle');
+    sh.getRange(3, 1, 1, 7).merge()
+      .setValue('Clear a FLAG: fix the underlying data (eval narrative, phase, activity…). Living with it: SCEMS → Work audit flags. Never edit B5:G44 by hand.')
+      .setBackground('#FFF8E1').setFontColor('#5D4037').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+      .setVerticalAlignment('middle');
+    sh.setRowHeight(1, 28);
+    sh.setRowHeight(2, 24);
+    sh.setRowHeight(3, 36);
+    R.push('Banner rows 1–3: how flags clear vs how you own them.');
+  } catch (eBan) { R.push('Banner skipped: ' + eBan); }
+
   // ---- 1. headers + notes (labels only; formulas untouched) ----
   var heads = [
-    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Goes out when scores support the request or it is withdrawn.'],
-    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Goes out as they converge.'],
-    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Goes out when the FTO\'s narrative is added to the eval record.'],
-    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Goes out as evals and reflections resume.'],
-    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Goes out when corrected.'],
-    ['PHASE MISMATCH', 'CURRENT PHASE on tab 01 disagrees with what the record shows. Goes out when the phase is corrected on tab 01.']
+    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Clears when scores support the request or it is withdrawn.'],
+    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Clears as they converge.'],
+    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Clears when the FTO adds narrative on the eval.'],
+    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Clears as evals and reflections resume.'],
+    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Clears when corrected.'],
+    ['PHASE MISMATCH', 'CURRENT PHASE on TRAINEES disagrees with the latest eval. Clears when phase is corrected on TRAINEES.']
   ];
   for (var c = 0; c < 6; c++) {
     var cell = sh.getRange(4, 2 + c);
     cell.setValue(heads[c][0]).setNote(heads[c][1] +
-      '\n\nFlags compute themselves from the data. Nothing here is dismissed by hand — fix the condition, or log your review below.');
+      '\n\nThis cell is a formula. You cannot dismiss it by typing. Fix the condition, or SCEMS → Work audit flags.');
   }
   sh.getRange(4, 1).setValue('TRAINEE')
-    .setNote('Names flow from the roster. The matrix B5:G44 is the machine\'s — hands off. Your space is the FLAG REVIEW LOG below.');
+    .setNote('Names flow from the roster. Matrix B5:G44 is machine-owned — hands off. Your writes go in the FLAG REVIEW LOG below.');
   sh.getRange(4, 1, 1, 7).setFontWeight('bold').setFontColor('#FFFFFF')
-    .setBackground('#546E7A').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+    .setBackground('#455A64').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
     .setVerticalAlignment('middle');
   sh.setFrozenRows(4);
   sh.setFrozenColumns(1);
@@ -8586,29 +8732,17 @@ function redoAuditTabV20_1() {
   sh.getRange(5, 2, 40, 6).setHorizontalAlignment('center');
   R.push('Headers, notes, freeze, and widths applied.');
 
-  // ---- 2. color rules for the matrix ----
-  var matrix = sh.getRange(5, 2, 40, 6);
-  sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenCellNotEmpty().setFontColor('#9E9E9E')
-      .setRanges([matrix]).build()
-  ]);
-  R.push('Flag colors set: red = burning, grey = anything else.');
-
-  // ---- 3. remove the trap checkbox ----
+  // ---- 2. remove the trap checkbox (old "clear all" bait) ----
   try {
     sh.getRange(2, 10).removeCheckboxes();
     sh.getRange(2, 10).clearContent().setNote('');
-    R.push('Trap "clear all" checkbox removed (it only ever refused).');
+    R.push('Trap "clear all" checkbox removed.');
   } catch (e1) { R.push('Checkbox removal skipped: ' + e1); }
 
-  // ---- 4. FLAG REVIEW LOG (yours) ----
+  // ---- 3. FLAG REVIEW LOG (yours) ----
   var LOG_HEADS = ['DATE', 'TRAINEE', 'FLAG TYPE', 'REVIEWER', 'ACTION TAKEN', 'STATUS'];
   var flagTypes = heads.map(function (h) { return h[0]; });
-  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved'];
+  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved', FLAG_ACCEPT_STATUS_V20_2];
   var logRow = 0;
   var scanN = Math.max(sh.getLastRow(), 60);
   var scan = sh.getRange(1, 1, scanN, 2).getValues();
@@ -8619,8 +8753,11 @@ function redoAuditTabV20_1() {
   if (!logRow) logRow = Math.max(sh.getLastRow() + 2, 47);
   if (sh.getMaxRows() < logRow + 24) sh.insertRowsAfter(sh.getMaxRows(), logRow + 24 - sh.getMaxRows());
   sh.getRange(logRow, 1, 1, 6).merge().breakApart();
-  sh.getRange(logRow, 1).setValue('FLAG REVIEW LOG — YOURS. Log what you did about each flag while the data catches up.');
-  sh.getRange(logRow, 1, 1, 6).setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold');
+  sh.getRange(logRow, 1, 1, 6).merge()
+    .setValue('FLAG REVIEW LOG — what you decided about each FLAG while the data catches up. Prefer SCEMS → Work audit flags (records name + review-by).')
+    .setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold')
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  sh.setRowHeight(logRow, 32);
   sh.getRange(logRow + 1, 1, 1, 6).setValues([LOG_HEADS])
     .setFontWeight('bold').setBackground('#FFF3D6');
   var entry = sh.getRange(logRow + 2, 1, 20, 6);
@@ -8635,7 +8772,24 @@ function redoAuditTabV20_1() {
     sh.getRange(logRow + 2, 2, 20, 1).setDataValidation(
       SpreadsheetApp.newDataValidation().requireValueInList(tl, true).setAllowInvalid(true).build());
   }
-  R.push('FLAG REVIEW LOG ready at row ' + logRow + ' — date, trainee, flag type, reviewer, action, status (dropdowns included).');
+  R.push('FLAG REVIEW LOG ready at row ' + logRow + '.');
+
+  // ---- 4. red / amber colors (amber = already in the review log) ----
+  try {
+    var styleMsg = ackFlagStyleV20_1(true);
+    R.push(String(styleMsg).split('\n')[0] || 'Flag colors applied.');
+  } catch (eStyle) {
+    var matrix = sh.getRange(5, 2, 40, 6);
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
+        .setRanges([matrix]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenCellNotEmpty().setFontColor('#9E9E9E')
+        .setRanges([matrix]).build()
+    ]);
+    R.push('Flag colors: red only (amber style failed: ' + eStyle + ').');
+  }
 
   // ---- 5. pipeline match report (read-only) ----
   var P = [];
@@ -8680,8 +8834,9 @@ function redoAuditTabV20_1() {
     ? 'Names not on the active master: ' + staleNames.join(', ') + '  ← stale rows (closed trainees linger until the matrix rebuilds)'
     : 'Every name in the matrix matches the active master.');
 
-  var msg = 'TAB 13 REDO COMPLETE\n\n' + R.join('\n') +
-    '\n\nPIPELINE MATCH REPORT (read-only — formulas untouched):\n' + P.join('\n');
+  var msg = 'AUDIT TAB READY\n\n' + R.join('\n') +
+    '\n\nPIPELINE (read-only — formulas untouched):\n' + P.join('\n') +
+    '\n\nNext: SCEMS → Work audit flags for any RED cells.';
   systemLog_('INFO', 'AUDIT TAB REDONE', 'layout/notes/review log applied; formulas untouched');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
@@ -8942,6 +9097,18 @@ function scemsFixSelfTest() {
 function seedTraineeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
 function organizeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
+
+/** Public name for the skill-matrix rebuild. The underscore form is easy to
+ *  miss in the Apps Script Run dropdown; this is the one to pick. */
+function rebuildSkillMatrix() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  rebuildSkillMatrixV19_();
+  var msg = 'Skill matrix rebuilt from the evidence and sign-off logs.';
+  systemLog_('INFO', 'SKILL MATRIX REBUILT', 'rebuildSkillMatrix');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
 
 function skillsKey() { try { applySkillsLayoutV19_(); } catch (e) {} }
 
@@ -9212,7 +9379,12 @@ function runtimeHealthCheckV20_1() {
  *  schemas/IDs/URLs/destinations/access, deployment URL, config version).
  *  The Apps Script SOURCE cannot copy itself from here; the manifest
  *  states this and the runbook's export step covers it. A workbook-only
- *  export is never called a full backup anywhere in v20.1. */
+ *  export is never called a full backup anywhere in v20.1.
+ *
+ *  v20.6: DriveApp.makeCopy clones every linked form as "Copy of …". Three
+ *  earlier backups left ~25 clones in Drive. After the copy, every clone
+ *  linked to the backup is closed, unlinked, and moved into the form-copy
+ *  archive. Live forms are never touched. */
 function fullBackupV20_1() {
   var denyV20_2 = denyV20_2_('RUN BACKUP');
   if (denyV20_2) return denyV20_2;
@@ -9221,6 +9393,14 @@ function fullBackupV20_1() {
   var it = DriveApp.getFoldersByName(folderName);
   var folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
   var wb = DriveApp.getFileById(ss().getId()).makeCopy('SCEMS_Backup_' + stamp, folder);
+
+  var cloneReport = { moved: [], failed: [] };
+  try {
+    cloneReport = neutralizeBackupFormClonesV20_6_(wb.getId(), stamp) || cloneReport;
+  } catch (eClone) {
+    cloneReport.failed = ['neutralize failed: ' + (eClone && eClone.message ? eClone.message : eClone)];
+    systemLog_('ERROR', 'BACKUP FORM CLONE CLEANUP FAILED', String(eClone));
+  }
 
   var props = PropertiesService.getScriptProperties().getProperties();
   var triggers = ScriptApp.getProjectTriggers().map(function (t) {
@@ -9247,23 +9427,31 @@ function fullBackupV20_1() {
     sourceVersion: SCEMS_VERSION,
     spreadsheetId: ss().getId(),
     workbookCopyId: wb.getId(),
+    formClonesArchived: cloneReport.moved || [],
+    formCloneFailures: cloneReport.failed || [],
     scriptProperties: props,
     triggers: triggers,
     forms: forms,
     webAppUrl: webAppUrl,
     note: 'This package restores DATA, PROPERTIES, TRIGGER INVENTORY, FORM SCHEMAS, and ' +
           'DEPLOYMENT INFO. The Apps Script SOURCE must be exported from the editor per the ' +
-          'recovery runbook — a workbook copy alone is NOT a full system backup.'
+          'recovery runbook — a workbook copy alone is NOT a full system backup. Form clones ' +
+          'created by makeCopy were archived so the live form estate stays at nine forms.'
   };
   folder.createFile('SCEMS_Manifest_' + stamp + '.json', JSON.stringify(manifest, null, 2),
     'application/json');
   PropertiesService.getScriptProperties().setProperty('LAST_FULL_BACKUP', stamp);
-  systemLog_('INFO', 'FULL BACKUP PACKAGE', 'workbook copy + manifest ' + stamp);
+  systemLog_('INFO', 'FULL BACKUP PACKAGE',
+    'workbook copy + manifest ' + stamp + '; form clones archived: ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0));
   sendMail(CONFIG.SUPERVISOR_EMAILS, 'SCEMS full backup package created : ' + stamp,
     'Workbook copy and estate manifest were written to the Drive folder "' + folderName + '".\n' +
+    'Form clones created by the copy: ' + ((cloneReport.moved && cloneReport.moved.length) || 0) +
+    ' archived (live forms untouched).\n' +
     'Remember: script source is exported from the editor per the recovery runbook.\n' +
     'Quarterly restore test due? Check the runbook schedule.');
-  return 'Backup package ' + stamp + ' created in "' + folderName + '".';
+  return 'Backup package ' + stamp + ' created in "' + folderName + '". ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0) + ' form clone(s) archived.';
 }
 
 function reviewSectionV20_1_(R, title, fn) {
@@ -10869,22 +11057,25 @@ function makeSheetsReadableV20_3() {
  *  then the machinery. Anything not listed keeps its place at the end. */
 function tabOrderV20_2_() {
   return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
+          TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER,
+          TAB.WEEKLY, TAB.DASH, TAB.TRAINEE_SKILLS, TAB.CATALOG,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.MD_VIEW,
           TAB.ANALYTICS, TAB.ENGINE,
           TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
           TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
           TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
 }
 
-/** The tabs a person actually opens. Everything else is machinery: still
- *  live, still receiving data, just not in your way. */
+/** The tabs a person actually opens day to day.
+ *
+ *  Doctrine (v20.7): this workbook is a desk, not a warehouse aisle.
+ *  Trainees → queue → roster. Role views (08/09/11) belong in the portal.
+ *  Raw form tabs, ledgers, engines, and Form Responses are machinery —
+ *  still live, just not in your face. organizeTabsV20_2 hides the rest.
+ *  showAllTabsV20_2 puts everything back when you are repairing the system. */
 function dailyTabsV20_2_() {
-  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS,
+          TAB.SKILL_VALIDATION, TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER];
 }
 
 /** Puts the tabs in a sensible order and hides the machinery.
@@ -10920,15 +11111,17 @@ function organizeTabsV20_2() {
     }
   });
 
-  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
-  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
+  var desk = S.getSheetByName(TAB_CONSOLE_V20_3) || S.getSheetByName('HOME') ||
+             S.getSheetByName(TAB.CONTROL);
+  if (desk) { try { S.setActiveSheet(desk); } catch (e) {} }
 
-  var msg = 'TABS ORGANIZED\n\n' +
-    'Ordered : ' + moved + ' tab(s)\n' +
-    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
-    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
-    '\n  ' + hidden.join('\n  ') +
-    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
+  var msg = 'YOUR DESK IS READY\n\n' +
+    'You should now see about ' + visible.length + ' tabs — the ones you use.\n' +
+    '  ' + visible.join('\n  ') +
+    '\n\nHidden (still live, still receiving data) : ' + hidden.length +
+    '\n  including Form Responses, ledgers, engines, and old role views.\n' +
+    '\nNothing was deleted. SCEMS ▸ More ▸ Show every tab puts them all back.\n' +
+    'Day to day: open TRAINEES, then Work my queue.';
   systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
@@ -10942,7 +11135,7 @@ function showAllTabsV20_2() {
     try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
   });
   var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
-    'Admin > Tidy up the tabs puts the machinery away.';
+    'SCEMS ▸ More ▸ Hide the clutter puts the machinery away.';
   systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
@@ -11238,14 +11431,23 @@ function explainFlagsV20_1() {
     }
   }
   if (!lit) L.push('No flags burning. Tab 13 is clear.');
-  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or log the review (amber).');
+  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or SCEMS → Work audit flags (amber = owned, still visible).');
   var msg = L.join('\n');
   Logger.log(msg);
+  try {
+    SpreadsheetApp.getActive().toast(
+      lit
+        ? (lit + ' FLAG(s). Clear = fix source data. Own = SCEMS → Work audit flags.')
+        : 'AUDIT is clean — no burning flags.',
+      'FLAGS', 8
+    );
+  } catch (eToast) {}
   return msg;
 }
 
-/** Run once: logged flags turn AMBER, unlogged stay RED. */
-function ackFlagStyleV20_1() {
+/** Run once: logged flags turn AMBER, unlogged stay RED.
+ *  Pass true to skip the UI alert (used by redoAuditTabV20_1). */
+function ackFlagStyleV20_1(optSilent) {
   var sh = getSheetOrNullV20_1_(TAB.AUDIT);
   if (!sh) return 'Tab 13 not found.';
   // find the review log (same scan the redo used)
@@ -11273,13 +11475,15 @@ function ackFlagStyleV20_1() {
       .whenCellNotEmpty().setFontColor('#9E9E9E')
       .setRanges([matrix]).build()
   ]);
-  var msg = 'Flag colors upgraded.\n\nRED = flag with no review logged (nobody is on it)\n' +
-    'AMBER = same flag, but your FLAG REVIEW LOG (rows ' + first + '-' + last + ') holds a matching ' +
-    'entry — same trainee, same flag type. Still true, visibly handled.\nGONE = the condition is fixed.\n\n' +
-    'To turn a red flag amber: add a log row with the trainee and flag type from the dropdowns.';
+  var msg = 'Flag colors upgraded.\n\nRED = nobody owns it yet\n' +
+    'AMBER = FLAG REVIEW LOG (rows ' + first + '-' + last + ') has the same trainee + flag type — still true, visibly handled\n' +
+    'GONE = underlying data fixed\n\n' +
+    'Turn red → amber: SCEMS → Work audit flags (or add a matching log row).';
   systemLog_('INFO', 'FLAG ACK STYLE APPLIED', 'red=unlogged, amber=logged, review log rows ' + first + '-' + last);
   Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  if (!optSilent) {
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  }
   return msg;
 }
 
@@ -11425,10 +11629,10 @@ function simplifyFlagsV20_1() {
   // dismissed by hand" onto the same tab; this dismissed all of it by hand.
   var m = 'RETIRED in v20.2. Flags are no longer silenced by rewriting the ' +
           'formulas that raise them.\n\n' +
-          'Use "Accept a flag" (acceptFlagV20_2). It records one flag, one ' +
-          'named human, one typed reason and a review-by date. The flag stays ' +
-          'visible as ACCEPTED, the detection formula is untouched, and the ' +
-          'acceptance expires instead of lasting forever.\n\n' +
+          'Use SCEMS → Work audit flags (WORK_AUDIT_FLAGS / acceptFlagV20_2). ' +
+          'It records one flag, one named human, one typed reason and a ' +
+          'review-by date. The FLAG stays visible; the detection formula is ' +
+          'untouched; acceptance expires instead of lasting forever.\n\n' +
           'If a previous run already wrapped the formulas, ' +
           'unwrapAuditFormulasV20_1() reverses it.';
   systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'simplifyFlagsV20_1');
@@ -11924,6 +12128,471 @@ function freshStartV20_6_(confirmToken) {
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;
+}
+
+
+/* ====================================================================== */
+/**
+ * SCEMS Field Training Tracker — 87_estate
+ *
+ * Keeping the Drive estate to one live workbook and nine live forms.
+ *
+ * What went wrong, in one sentence: Google Forms mint a new "Form Responses N"
+ * tab every time a form is relinked, and DriveApp.makeCopy of the workbook
+ * clones every linked form as "Copy of …" / "Copy of Copy of …". Neither is
+ * data loss. Both look like a second system, and a human submitting to a copy
+ * reaches nowhere.
+ *
+ * Rules this file will not break:
+ *   - Never delete a form or a response. Archive means move into a dated
+ *     folder. The originals stay recoverable.
+ *   - Never touch a form whose title matches the live estate exactly.
+ *   - Never delete a tab from the live workbook here. Orphan response tabs
+ *     are cleaned only by freshStartClean on a COPY (85_freshstart.gs).
+ *   - Never invent a second live spreadsheet. There is one.
+ */
+
+/** The one live workbook. Anything else with a similar name is an orphan. */
+var CANONICAL_LIVE_SPREADSHEET_ID = '1YL-9Er9Gk458tR0jpRO680DVtvswNGSLVTlugmclsRI';
+
+/** Known twin that looks real and is wired to nothing. Do not install into it. */
+var ORPHAN_TWIN_SPREADSHEET_ID = '1q7OnZox2Gs5UEp8gkYh1Osyxkzmtmogv9ViIrr2Q59M';
+
+var FORM_COPY_ARCHIVE_FOLDER_V20_6 = 'SCEMS Form Copies — ARCHIVE';
+var STAGING_ARCHIVE_FOLDER_V20_6 = 'SCEMS Portal Staging — ARCHIVE';
+
+/** A title Google minted for a form cloned by spreadsheet makeCopy. */
+function isFormCopyTitleV20_6_(title) {
+  return /^Copy of /i.test(String(title || '').trim());
+}
+
+/** Strip every leading "Copy of " until the live title underneath remains. */
+function liveTitleUnderCopyV20_6_(title) {
+  var t = String(title || '').trim();
+  while (/^Copy of /i.test(t)) t = t.replace(/^Copy of /i, '').trim();
+  return t;
+}
+
+/** True when the underlying title is one of the nine live forms. */
+function isSCEMSFormCopyTitleV20_6_(title) {
+  if (!isFormCopyTitleV20_6_(title)) return false;
+  var under = liveTitleUnderCopyV20_6_(title);
+  return EXPECTED_FORMS_V19.indexOf(under) >= 0;
+}
+
+function formIdFromUrlV20_6_(url) {
+  var m = String(url || '').match(/\/forms\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+function ensureNamedFolderV20_6_(name) {
+  var it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+function ensureDatedArchiveFolderV20_6_(parentName, stamp) {
+  var parent = ensureNamedFolderV20_6_(parentName);
+  var childName = stamp || Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm');
+  var it = parent.getFoldersByName(childName);
+  return it.hasNext() ? it.next() : parent.createFolder(childName);
+}
+
+/** Live form IDs from script properties — the only ones that may stay put. */
+function liveFormIdSetV20_6_() {
+  var set = {};
+  try {
+    storedFormIdsV20_1_().forEach(function (id) { if (id) set[id] = true; });
+  } catch (e) {}
+  return set;
+}
+
+/**
+ * Inventory of Drive form files whose titles are "Copy of …" versions of the
+ * nine live forms. Never includes a live FORM_IDS entry. Writes nothing.
+ *
+ * light=true skips opening each form for response counts (much faster; used
+ * when we only need ids/titles to archive).
+ */
+function formCopyInventoryV20_6_(light) {
+  var live = liveFormIdSetV20_6_();
+  var found = [];
+  // Title filter: scanning every form in Drive was taking minutes and blowing
+  // the 6-minute Apps Script limit before later elite-estate steps could run.
+  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false ' +
+          'and title contains "Copy of SCEMS"';
+  var it = DriveApp.searchFiles(q);
+  while (it.hasNext()) {
+    var file = it.next();
+    var title = '';
+    try { title = file.getName(); } catch (e) { continue; }
+    if (!isSCEMSFormCopyTitleV20_6_(title)) continue;
+    var id = file.getId();
+    if (live[id]) continue;
+    var responses = null, accepting = null, dest = '';
+    if (!light) {
+      try {
+        var f = FormApp.openById(id);
+        responses = f.getResponses().length;
+        accepting = f.isAcceptingResponses();
+        try { dest = f.getDestinationId() || ''; } catch (e2) {}
+      } catch (e3) {}
+    }
+    found.push({
+      id: id,
+      title: title,
+      under: liveTitleUnderCopyV20_6_(title),
+      responses: responses,
+      accepting: accepting,
+      destination: dest,
+      url: file.getUrl()
+    });
+  }
+  found.sort(function (a, b) {
+    return String(a.title).localeCompare(String(b.title));
+  });
+  return found;
+}
+
+/** Read-only: every "Copy of" SCEMS form still sitting in Drive. */
+function formEstateReport() {
+  var L = ['FORM ESTATE REPORT — READ ONLY, nothing was moved', ''];
+  var liveIds = [];
+  try { liveIds = storedFormIdsV20_1_(); } catch (e) {}
+  L.push('Live forms in FORM_IDS : ' + liveIds.length + ' of ' + EXPECTED_FORMS_V19.length);
+  EXPECTED_FORMS_V19.forEach(function (t) {
+    var f = null;
+    try { f = getStoredFormV19_(t); } catch (e) {}
+    L.push('  ' + (f ? 'OK' : 'MISSING') + '  ' + t);
+  });
+  L.push('');
+
+  var copies = formCopyInventoryV20_6_(false);
+  L.push('Backup form clones still in Drive : ' + copies.length);
+  if (!copies.length) {
+    L.push('None. The form estate is clean.');
+  } else {
+    L.push('These are Google\'s copies of a workbook backup. Submitting to one');
+    L.push('reaches nowhere useful. They will be moved, not deleted, by');
+    L.push('archiveFormCopies("ARCHIVE FORM COPIES").');
+    L.push('');
+    var totalResp = 0;
+    copies.forEach(function (c) {
+      totalResp += Number(c.responses) || 0;
+      L.push('  ' + c.title);
+      L.push('     responses: ' + (c.responses === null ? '?' : c.responses) +
+        '  accepting: ' + (c.accepting === null ? '?' : c.accepting) +
+        (c.destination ? '  dest: ' + c.destination : '  dest: (none)'));
+    });
+    L.push('');
+    L.push('  ' + totalResp + ' response(s) across all clones (also still in the live forms).');
+  }
+
+  var bookId = '';
+  try { bookId = ss().getId(); } catch (e) {}
+  L.push('');
+  L.push('This spreadsheet id : ' + bookId);
+  if (bookId === CANONICAL_LIVE_SPREADSHEET_ID) {
+    L.push('  Matches the canonical live workbook. Good.');
+  } else if (bookId === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('  BLOCKER — this is the orphan twin. Nothing is wired to it.');
+    L.push('  Open the starred Master and paste / run there instead.');
+  } else {
+    L.push('  WARN — not the documented live id. Confirm you meant this book.');
+  }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/**
+ * Move every SCEMS "Copy of …" form into a dated archive folder.
+ * Never trashes. Never touches a live FORM_IDS form. Safe to run twice.
+ */
+function archiveFormCopies(confirmToken) {
+  return archiveFormCopiesV20_6_(confirmToken);
+}
+
+function archiveFormCopiesV20_6_(confirmToken) {
+  var TOKEN = 'ARCHIVE FORM COPIES';
+  var copies = formCopyInventoryV20_6_(true);
+  var L = ['ARCHIVE FORM COPIES', '',
+    'Candidates : ' + copies.length, ''];
+
+  if (!copies.length) {
+    L.push('Nothing to archive. The form estate is already clean.');
+    var clean = L.join('\n');
+    Logger.log(clean);
+    try { SpreadsheetApp.getUi().alert(clean.slice(0, 1400)); } catch (e) {}
+    return clean;
+  }
+
+  copies.forEach(function (c) {
+    L.push('  ' + c.title + '  (' + (c.responses === null ? '?' : c.responses) + ' responses)');
+  });
+  L.push('');
+  L.push('Each will be moved into "' + FORM_COPY_ARCHIVE_FOLDER_V20_6 + '" / <stamp>.');
+  L.push('Nothing is deleted. Live forms are never touched.');
+
+  if (confirmToken !== TOKEN) {
+    L.push('');
+    L.push('NOTHING WAS MOVED. To do it:');
+    L.push('  archiveFormCopies("' + TOKEN + '")');
+    var pv = L.join('\n');
+    Logger.log(pv);
+    try { SpreadsheetApp.getUi().alert(pv.slice(0, 1400)); } catch (e) {}
+    return pv;
+  }
+
+  if (!gateV20_2_('ARCHIVE FORM COPIES')) return 'Refused: not authorised.';
+
+  var stamp = Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm');
+  var folder = ensureDatedArchiveFolderV20_6_(FORM_COPY_ARCHIVE_FOLDER_V20_6, stamp);
+  var live = liveFormIdSetV20_6_();
+  var moved = [], skipped = [], failed = [];
+
+  copies.forEach(function (c) {
+    if (live[c.id]) {
+      skipped.push(c.title + ' — listed in FORM_IDS; left alone');
+      return;
+    }
+    try {
+      var file = DriveApp.getFileById(c.id);
+      // Close accepting if still open — a clone must never take live traffic.
+      try {
+        var f = FormApp.openById(c.id);
+        if (f.isAcceptingResponses()) f.setAcceptingResponses(false);
+        try { f.removeDestination(); } catch (eDest) {}
+      } catch (eForm) {}
+      folder.addFile(file);
+      var parents = file.getParents();
+      while (parents.hasNext()) {
+        var p = parents.next();
+        if (p.getId() !== folder.getId()) {
+          try { p.removeFile(file); } catch (eRem) {}
+        }
+      }
+      moved.push(c.title);
+    } catch (e) {
+      failed.push(c.title + ' — ' + (e && e.message ? e.message : e));
+    }
+  });
+
+  SpreadsheetApp.flush();
+  systemLog_('WARN', 'FORM COPIES ARCHIVED',
+    moved.length + ' moved to ' + FORM_COPY_ARCHIVE_FOLDER_V20_6 + '/' + stamp);
+
+  L.push('');
+  L.push('DONE. Moved : ' + moved.length);
+  moved.forEach(function (t) { L.push('  ' + t); });
+  if (skipped.length) {
+    L.push('');
+    L.push('Left alone:');
+    skipped.forEach(function (t) { L.push('  ' + t); });
+  }
+  if (failed.length) {
+    L.push('');
+    L.push('Could not move:');
+    failed.forEach(function (t) { L.push('  ' + t); });
+  }
+  L.push('');
+  L.push('Archive folder: ' + folder.getUrl());
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/**
+ * After a workbook makeCopy, Google leaves cloned forms linked to the backup.
+ * Unlink them, close them, and move them into the archive so the next backup
+ * cannot invent "Copy of Copy of …". Called only from fullBackupV20_1.
+ */
+function neutralizeBackupFormClonesV20_6_(backupSpreadsheetId, stamp) {
+  if (!backupSpreadsheetId) return { moved: [], note: 'no backup id' };
+  var folder = ensureDatedArchiveFolderV20_6_(FORM_COPY_ARCHIVE_FOLDER_V20_6,
+    'backup_' + (stamp || 'unknown'));
+  var live = liveFormIdSetV20_6_();
+  var moved = [], failed = [];
+  var seen = {};
+
+  function archiveOne(formId, titleHint) {
+    if (!formId || seen[formId] || live[formId]) return;
+    seen[formId] = true;
+    try {
+      var f = FormApp.openById(formId);
+      var title = '';
+      try { title = f.getTitle(); } catch (eT) { title = titleHint || formId; }
+      // Only archive titles that are copies of our forms (or any form whose
+      // destination is the backup book — those were minted by this copy).
+      var isOurs = isSCEMSFormCopyTitleV20_6_(title) || isFormCopyTitleV20_6_(title);
+      if (!isOurs && EXPECTED_FORMS_V19.indexOf(String(title || '').trim()) >= 0) {
+        // Exact live title linked to a backup — still a clone Google made;
+        // rename awareness: leave live alone via live-id check above.
+        isOurs = true;
+      }
+      if (!isOurs) return;
+      try { if (f.isAcceptingResponses()) f.setAcceptingResponses(false); } catch (eA) {}
+      try { f.removeDestination(); } catch (eD) {}
+      var file = DriveApp.getFileById(formId);
+      folder.addFile(file);
+      var parents = file.getParents();
+      while (parents.hasNext()) {
+        var p = parents.next();
+        if (p.getId() !== folder.getId()) {
+          try { p.removeFile(file); } catch (eR) {}
+        }
+      }
+      moved.push(title);
+    } catch (e) {
+      failed.push((titleHint || formId) + ' — ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  try {
+    var backup = SpreadsheetApp.openById(backupSpreadsheetId);
+    backup.getSheets().forEach(function (sh) {
+      var url = '';
+      try { url = sh.getFormUrl() || ''; } catch (e) { return; }
+      if (!url) return;
+      archiveOne(formIdFromUrlV20_6_(url), sh.getName());
+    });
+  } catch (eOpen) {
+    failed.push('open backup: ' + (eOpen && eOpen.message ? eOpen.message : eOpen));
+  }
+
+  // Belt-and-braces: any brand-new "Copy of" SCEMS form created in the last
+  // few minutes whose destination is the backup id.
+  try {
+    formCopyInventoryV20_6_(true).forEach(function (c) {
+      if (c.destination === backupSpreadsheetId) archiveOne(c.id, c.title);
+    });
+  } catch (eInv) {}
+
+  if (moved.length) {
+    systemLog_('WARN', 'BACKUP FORM CLONES ARCHIVED',
+      moved.length + ' clone(s) from backup ' + backupSpreadsheetId);
+  }
+  return { moved: moved, failed: failed, folderUrl: folder.getUrl() };
+}
+
+/** Orphan Form Responses tabs on THIS book (no live form writing to them). */
+function orphanResponseTabsV20_6_() {
+  var remove = [];
+  var known = knownTabsV20_6_();
+  ss().getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (known[name] || /^PORTAL /.test(name)) return;
+    if (!/^Form Responses( \d+)?$/i.test(name)) return;
+    if (sheetIsLiveFormDestinationV20_6_(sh)) return;
+    var rows = 0;
+    try {
+      var last = sh.getLastRow();
+      rows = last > 1 ? last - 1 : 0;
+    } catch (e) {}
+    remove.push({ name: name, rows: rows });
+  });
+  return remove;
+}
+
+/** Engine key-column damage summary for the health check. Writes nothing. */
+function engineDamageSummaryV20_6_() {
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  if (!eng) return { missing: true, broken: 0, crossed: 0 };
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+  var broken = 0, crossed = 0;
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    if (f.indexOf('#REF!') >= 0) { broken++; return; }
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    if (m && Number(m[1]) !== row) crossed++;
+  });
+  return { missing: false, broken: broken, crossed: crossed };
+}
+
+/** Decision-queue header gap (blank column D shifting labels). */
+function decisionQueueHeaderGapV20_6_() {
+  var sh = getSheetOrNullV20_1_(TAB.QUEUE);
+  if (!sh) return { missing: true, gap: false };
+  var headers = sh.getRange(4, 1, 1, Math.max(sh.getLastColumn(), 14)).getValues()[0];
+  var blankD = String(headers[3] || '').trim() === '';
+  var hasOwner = headers.some(function (h) {
+    return String(h || '').trim().toUpperCase() === 'OWNER';
+  });
+  return { missing: false, gap: blankD && !hasOwner };
+}
+
+/**
+ * Health-check items about the Drive / tab estate. Each is {sev, headline, run}.
+ * Called from healthCheckV20_2 so estate problems surface on the standing list.
+ */
+function estateHealthItemsV20_6_() {
+  var items = [];
+  function add(sev, headline, run) { items.push({ sev: sev, headline: headline, run: run || '' }); }
+
+  try {
+    var id = ss().getId();
+    if (id === ORPHAN_TWIN_SPREADSHEET_ID) {
+      add('BLOCKER',
+        'This script is bound to the orphan twin spreadsheet. Nothing is wired to it. ' +
+        'Open the starred Master (' + CANONICAL_LIVE_SPREADSHEET_ID + ') instead.',
+        '');
+    } else if (id !== CANONICAL_LIVE_SPREADSHEET_ID) {
+      add('WARN',
+        'This spreadsheet id is not the documented live workbook. Confirm before trusting readiness numbers.',
+        'formEstateReport');
+    }
+  } catch (e) {}
+
+  try {
+    var dmg = engineDamageSummaryV20_6_();
+    if (dmg.missing) {
+      add('WARN', 'Phase engine tab is missing.', '');
+    } else if (dmg.broken || dmg.crossed) {
+      add('BLOCKER',
+        'Phase engine key column is damaged: ' + dmg.broken + ' #REF! cell(s), ' +
+        dmg.crossed + ' crossed row(s). Downstream views are silently wrong.',
+        'previewEngineRepairV20_6');
+    }
+  } catch (e2) {}
+
+  try {
+    var orphans = orphanResponseTabsV20_6_();
+    if (orphans.length) {
+      var rows = orphans.reduce(function (n, o) { return n + o.rows; }, 0);
+      add('WARN',
+        orphans.length + ' orphan Form Responses tab(s) hold ~' + rows +
+        ' row(s). Clean them only on a COPY via freshStartClean — never on live.',
+        'freshStartReport');
+    }
+  } catch (e3) {}
+
+  try {
+    var copies = formCopyInventoryV20_6_(true);
+    if (copies.length) {
+      add('WARN',
+        copies.length + ' backup form clone(s) ("Copy of …") still sit in Drive. ' +
+        'A human submitting to one reaches nowhere.',
+        'formEstateReport');
+    }
+  } catch (e4) {}
+
+  try {
+    var gap = decisionQueueHeaderGapV20_6_();
+    if (gap.gap) {
+      add('WARN',
+        'Decision queue header row has a blank column that shifts every label to its left. ' +
+        'Anything reading by header name is reading a neighbour.',
+        'repairDecisionQueueHeaderV20_4');
+    }
+  } catch (e5) {}
+
+  return items;
 }
 
 
@@ -12704,6 +13373,192 @@ function MAKE_IT_PROFESSIONAL() {
   return msg;
 }
 
+/**
+ * THE button for "this is too confusing."
+ *
+ * Builds the TRAINEES desk, hides Form Responses and every other machinery
+ * tab, and leaves you on TRAINEES. Does not delete data. Does not touch
+ * forms. Safe to run any time the tab bar looks like a junk drawer.
+ */
+function MAKE_IT_SIMPLE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — MAKE IT SIMPLE', '',
+    'Goal: a desk you can run the program from, not a warehouse of tabs.', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 105));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180));
+    }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Refresh AUDIT tab layout (flags stay formula-driven)', function () {
+    return redoAuditTabV20_1();
+  });
+  step(4, 'Hide Form Responses and other machinery', organizeTabsV20_2);
+  L.push('');
+  L.push('How to use this system from now on:');
+  L.push('  1. SCEMS ▸ Trainees — start here');
+  L.push('  2. SCEMS ▸ Work my queue');
+  L.push('  3. SCEMS ▸ Work audit flags  (RED cells on AUDIT — own them or fix data)');
+  L.push('  4. SCEMS ▸ What needs attention?  when something feels off');
+  L.push('  5. SCEMS ▸ Backup now  about once a month');
+  L.push('');
+  L.push('Flags do not clear by editing the AUDIT grid. Fix the source data,');
+  L.push('or Accept with a reason (flag stays visible until data catches up).');
+  L.push('The portal is for FTOs / trainees / Medical Director views.');
+  L.push('This spreadsheet is for you — Training — to decide and record.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'MAKE IT SIMPLE', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Alias kept so older instructions that say SIMPLIFY_EVERYTHING still work. */
+function SIMPLIFY_EVERYTHING() { return MAKE_IT_SIMPLE(); }
+
+/**
+ * Correctness of the estate — not cosmetics.
+ *
+ * Apps Script kills any run at six minutes. The first live run archived 53
+ * form clones and repaired the engine, then died before recovery/matrix.
+ * This is now two commands, each safe to repeat:
+ *
+ *   ELITE_ESTATE()        — forms, engine, headers, queue, protections, triggers
+ *   ELITE_ESTATE_FINISH() — recover lost submissions, rebuild matrix, health check
+ *
+ * Orphan Form Responses tabs are reported only; clean those on a Drive copy
+ * via freshStartClean / the handover doc.
+ */
+function ELITE_ESTATE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 1 of 2)', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  L.push('This spreadsheet : ' + (function () {
+    try { return ss().getId(); } catch (e) { return '?'; }
+  })());
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('');
+    L.push('STOPPED. This is the orphan twin. Open the starred Master and run there.');
+    var stop = L.join('\n');
+    Logger.log(stop);
+    try { SpreadsheetApp.getUi().alert(stop.slice(0, 1400)); } catch (e) {}
+    return stop;
+  }
+
+  // Light inventory + archive (no per-form response counts — that alone
+  // burned minutes on 53 clones and tripped the execution ceiling).
+  step(1, 'Archive backup form clones', function () {
+    return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+  });
+  step(2, 'Engine key column repair', function () {
+    return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+  });
+  step(3, 'Decision queue header', repairDecisionQueueHeaderV20_4);
+  step(4, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
+  step(5, 'Protect record tabs', protectRecordTabsV20_2);
+  step(6, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
+
+  L.push('');
+  L.push('Part 1 done. Next, run ELITE_ESTATE_FINISH() — recovers lost');
+  L.push('submissions, rebuilds the skill matrix, and prints the health check.');
+  L.push('Those are the slow steps; keeping them separate avoids the 6-minute kill.');
+  L.push('');
+  L.push('Orphan Form Responses tabs stay until you clean a COPY:');
+  L.push('  freshStartReport() then freshStartClean("CLEAN <copy name>")');
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE PART 1', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Part 2: recover lost submissions, rebuild matrix, health check.
+ *  Safe after part 1, and safe to run on its own if part 1 already finished. */
+function ELITE_ESTATE_FINISH() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE (part 2 of 2)', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 4).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    return 'STOPPED. Orphan twin. Open the starred Master.';
+  }
+
+  step(1, 'Recover lost form submissions (blank cutoff, idempotent)', function () {
+    return replayMissingSinceV20_1_('');
+  });
+  step(2, 'Skill matrix rebuild', function () {
+    rebuildSkillMatrixV19_();
+    return 'matrix rebuilt';
+  });
+  step(3, 'Engine health (confirm key column)', engineHealthCheck);
+  step(4, 'Orphan Form Responses report (read-only)', freshStartReport);
+  step(5, 'Health check', healthCheckV20_2);
+
+  L.push('');
+  L.push('NOT done here on purpose (needs a Drive copy of the workbook first):');
+  L.push('  freshStartClean("CLEAN <copy name>")  — removes orphan Form Responses tabs');
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE PART 2', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Menu wrapper: archive form copies with the required token after confirm. */
+function archiveFormCopiesPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var n = formCopyInventoryV20_6_(true).length;
+  var conf = ui.alert(
+    'Archive backup form copies?',
+    n + ' "Copy of …" SCEMS form(s) will be moved into an archive folder. ' +
+    'Live forms are never touched. Nothing is deleted.\n\nContinue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.';
+  return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+}
+
+/** Menu wrapper: apply engine repair after confirm. */
+function applyEngineRepairPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = previewEngineRepairV20_6();
+  var conf = ui.alert(
+    'Repair the phase engine key column?',
+    'Only column A of the engine tab is touched. Record tabs are not. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was written.\n\n' + preview;
+  return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+}
+
 /* ---------------------------------------------------------------- *
  *  Everything, in the right order
  * ---------------------------------------------------------------- */
@@ -12736,28 +13591,6 @@ function POLISH_SHEETS() {
   L.push('profile is right is a fact about that person, and this will not guess.');
   var msg = L.join('\n');
   systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** One command: build the console, make everything readable, tidy the tabs. */
-function SIMPLIFY_EVERYTHING() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
-    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
-  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
-  L.push('');
-  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
-  L.push('history as a document; tick "Release" when they are done. Nothing else is');
-  L.push('needed day to day.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;
@@ -13519,9 +14352,9 @@ var SUPERSEDED_BLOCKS_V19 = [
     by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
 ];
 
-var SCEMS_VERSION = 'v20.5.0';
+var SCEMS_VERSION = 'v20.7.1';
 
-var SCEMS_WRITER_VERSION = 'SCEMS v20.5.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.7.1';
 
 var CONFIG = Object.freeze({
 
