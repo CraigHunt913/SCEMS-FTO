@@ -69,14 +69,20 @@ function MAKE_IT_SIMPLE() {
   }
   step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
   step(2, 'Widen columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Hide Form Responses and other machinery', organizeTabsV20_2);
+  step(3, 'Refresh AUDIT tab layout (flags stay formula-driven)', function () {
+    return redoAuditTabV20_1();
+  });
+  step(4, 'Hide Form Responses and other machinery', organizeTabsV20_2);
   L.push('');
   L.push('How to use this system from now on:');
   L.push('  1. SCEMS ▸ Trainees — start here');
   L.push('  2. SCEMS ▸ Work my queue');
-  L.push('  3. SCEMS ▸ What needs attention?  when something feels off');
-  L.push('  4. SCEMS ▸ Backup now  about once a month');
+  L.push('  3. SCEMS ▸ Work audit flags  (RED cells on AUDIT — own them or fix data)');
+  L.push('  4. SCEMS ▸ What needs attention?  when something feels off');
+  L.push('  5. SCEMS ▸ Backup now  about once a month');
   L.push('');
+  L.push('Flags do not clear by editing the AUDIT grid. Fix the source data,');
+  L.push('or Accept with a reason (flag stays visible until data catches up).');
   L.push('The portal is for FTOs / trainees / Medical Director views.');
   L.push('This spreadsheet is for you — Training — to decide and record.');
   var msg = L.join('\n');

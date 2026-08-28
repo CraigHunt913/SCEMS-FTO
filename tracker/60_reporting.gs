@@ -1430,24 +1430,45 @@ function redoAuditTabV20_1() {
   if (!sh) return 'Tab 13 not found.';
   var R = [];
 
+  // ---- 0. banner (rows 1–3): one job, one path — formulas in B5:G44 stay untouched ----
+  try {
+    sh.getRange(1, 1, 3, 12).clearContent().clearNote().clearFormat();
+    sh.getRange(1, 1, 1, 7).merge()
+      .setValue('AUDIT — live conditions the desk is watching. Do not type in the FLAG grid.')
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold')
+      .setFontSize(12).setVerticalAlignment('middle');
+    sh.getRange(2, 1, 1, 7).merge()
+      .setValue('RED = nobody owns it yet   ·   AMBER = you logged / Accepted it (still counts)   ·   blank = clean')
+      .setBackground('#ECEFF1').setFontColor('#37474F').setFontWeight('bold')
+      .setVerticalAlignment('middle');
+    sh.getRange(3, 1, 1, 7).merge()
+      .setValue('Clear a FLAG: fix the underlying data (eval narrative, phase, activity…). Living with it: SCEMS → Work audit flags. Never edit B5:G44 by hand.')
+      .setBackground('#FFF8E1').setFontColor('#5D4037').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+      .setVerticalAlignment('middle');
+    sh.setRowHeight(1, 28);
+    sh.setRowHeight(2, 24);
+    sh.setRowHeight(3, 36);
+    R.push('Banner rows 1–3: how flags clear vs how you own them.');
+  } catch (eBan) { R.push('Banner skipped: ' + eBan); }
+
   // ---- 1. headers + notes (labels only; formulas untouched) ----
   var heads = [
-    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Goes out when scores support the request or it is withdrawn.'],
-    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Goes out as they converge.'],
-    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Goes out when the FTO\'s narrative is added to the eval record.'],
-    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Goes out as evals and reflections resume.'],
-    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Goes out when corrected.'],
-    ['PHASE MISMATCH', 'CURRENT PHASE on tab 01 disagrees with what the record shows. Goes out when the phase is corrected on tab 01.']
+    ['ADV vs SCORE',   'Advancement requested while recent scores do not support it. Clears when scores support the request or it is withdrawn.'],
+    ['REFLECT vs SCORE','Trainee self-assessment strongly disagrees with FTO scoring. Clears as they converge.'],
+    ['NO NARRATIVE',   'An extreme score (1 or 5) with no written justification. Clears when the FTO adds narrative on the eval.'],
+    ['SILENT RECORD',  'Activity stopped flowing for this trainee. Clears as evals and reflections resume.'],
+    ['FTO SCOPE',      'A sign-off or eval outside the FTO\'s level/scope. Clears when corrected.'],
+    ['PHASE MISMATCH', 'CURRENT PHASE on TRAINEES disagrees with the latest eval. Clears when phase is corrected on TRAINEES.']
   ];
   for (var c = 0; c < 6; c++) {
     var cell = sh.getRange(4, 2 + c);
     cell.setValue(heads[c][0]).setNote(heads[c][1] +
-      '\n\nFlags compute themselves from the data. Nothing here is dismissed by hand — fix the condition, or log your review below.');
+      '\n\nThis cell is a formula. You cannot dismiss it by typing. Fix the condition, or SCEMS → Work audit flags.');
   }
   sh.getRange(4, 1).setValue('TRAINEE')
-    .setNote('Names flow from the roster. The matrix B5:G44 is the machine\'s — hands off. Your space is the FLAG REVIEW LOG below.');
+    .setNote('Names flow from the roster. Matrix B5:G44 is machine-owned — hands off. Your writes go in the FLAG REVIEW LOG below.');
   sh.getRange(4, 1, 1, 7).setFontWeight('bold').setFontColor('#FFFFFF')
-    .setBackground('#546E7A').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+    .setBackground('#455A64').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
     .setVerticalAlignment('middle');
   sh.setFrozenRows(4);
   sh.setFrozenColumns(1);
@@ -1457,29 +1478,17 @@ function redoAuditTabV20_1() {
   sh.getRange(5, 2, 40, 6).setHorizontalAlignment('center');
   R.push('Headers, notes, freeze, and widths applied.');
 
-  // ---- 2. color rules for the matrix ----
-  var matrix = sh.getRange(5, 2, 40, 6);
-  sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
-      .setRanges([matrix]).build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenCellNotEmpty().setFontColor('#9E9E9E')
-      .setRanges([matrix]).build()
-  ]);
-  R.push('Flag colors set: red = burning, grey = anything else.');
-
-  // ---- 3. remove the trap checkbox ----
+  // ---- 2. remove the trap checkbox (old "clear all" bait) ----
   try {
     sh.getRange(2, 10).removeCheckboxes();
     sh.getRange(2, 10).clearContent().setNote('');
-    R.push('Trap "clear all" checkbox removed (it only ever refused).');
+    R.push('Trap "clear all" checkbox removed.');
   } catch (e1) { R.push('Checkbox removal skipped: ' + e1); }
 
-  // ---- 4. FLAG REVIEW LOG (yours) ----
+  // ---- 3. FLAG REVIEW LOG (yours) ----
   var LOG_HEADS = ['DATE', 'TRAINEE', 'FLAG TYPE', 'REVIEWER', 'ACTION TAKEN', 'STATUS'];
   var flagTypes = heads.map(function (h) { return h[0]; });
-  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved'];
+  var statuses = ['Under review', 'Action taken — awaiting data', 'Resolved', FLAG_ACCEPT_STATUS_V20_2];
   var logRow = 0;
   var scanN = Math.max(sh.getLastRow(), 60);
   var scan = sh.getRange(1, 1, scanN, 2).getValues();
@@ -1490,8 +1499,11 @@ function redoAuditTabV20_1() {
   if (!logRow) logRow = Math.max(sh.getLastRow() + 2, 47);
   if (sh.getMaxRows() < logRow + 24) sh.insertRowsAfter(sh.getMaxRows(), logRow + 24 - sh.getMaxRows());
   sh.getRange(logRow, 1, 1, 6).merge().breakApart();
-  sh.getRange(logRow, 1).setValue('FLAG REVIEW LOG — YOURS. Log what you did about each flag while the data catches up.');
-  sh.getRange(logRow, 1, 1, 6).setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold');
+  sh.getRange(logRow, 1, 1, 6).merge()
+    .setValue('FLAG REVIEW LOG — what you decided about each FLAG while the data catches up. Prefer SCEMS → Work audit flags (records name + review-by).')
+    .setBackground('#B7791F').setFontColor('#FFFFFF').setFontWeight('bold')
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  sh.setRowHeight(logRow, 32);
   sh.getRange(logRow + 1, 1, 1, 6).setValues([LOG_HEADS])
     .setFontWeight('bold').setBackground('#FFF3D6');
   var entry = sh.getRange(logRow + 2, 1, 20, 6);
@@ -1506,7 +1518,24 @@ function redoAuditTabV20_1() {
     sh.getRange(logRow + 2, 2, 20, 1).setDataValidation(
       SpreadsheetApp.newDataValidation().requireValueInList(tl, true).setAllowInvalid(true).build());
   }
-  R.push('FLAG REVIEW LOG ready at row ' + logRow + ' — date, trainee, flag type, reviewer, action, status (dropdowns included).');
+  R.push('FLAG REVIEW LOG ready at row ' + logRow + '.');
+
+  // ---- 4. red / amber colors (amber = already in the review log) ----
+  try {
+    var styleMsg = ackFlagStyleV20_1(true);
+    R.push(String(styleMsg).split('\n')[0] || 'Flag colors applied.');
+  } catch (eStyle) {
+    var matrix = sh.getRange(5, 2, 40, 6);
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('FLAG').setBackground('#C62828').setFontColor('#FFFFFF').setBold(true)
+        .setRanges([matrix]).build(),
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenCellNotEmpty().setFontColor('#9E9E9E')
+        .setRanges([matrix]).build()
+    ]);
+    R.push('Flag colors: red only (amber style failed: ' + eStyle + ').');
+  }
 
   // ---- 5. pipeline match report (read-only) ----
   var P = [];
@@ -1551,8 +1580,9 @@ function redoAuditTabV20_1() {
     ? 'Names not on the active master: ' + staleNames.join(', ') + '  ← stale rows (closed trainees linger until the matrix rebuilds)'
     : 'Every name in the matrix matches the active master.');
 
-  var msg = 'TAB 13 REDO COMPLETE\n\n' + R.join('\n') +
-    '\n\nPIPELINE MATCH REPORT (read-only — formulas untouched):\n' + P.join('\n');
+  var msg = 'AUDIT TAB READY\n\n' + R.join('\n') +
+    '\n\nPIPELINE (read-only — formulas untouched):\n' + P.join('\n') +
+    '\n\nNext: SCEMS → Work audit flags for any RED cells.';
   systemLog_('INFO', 'AUDIT TAB REDONE', 'layout/notes/review log applied; formulas untouched');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}

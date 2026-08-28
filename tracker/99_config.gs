@@ -180,9 +180,9 @@ var SUPERSEDED_BLOCKS_V19 = [
     by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
 ];
 
-var SCEMS_VERSION = 'v20.7.0';
+var SCEMS_VERSION = 'v20.7.1';
 
-var SCEMS_WRITER_VERSION = 'SCEMS v20.7.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.7.1';
 
 var CONFIG = Object.freeze({
 

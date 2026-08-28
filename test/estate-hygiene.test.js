@@ -366,7 +366,11 @@ ok(/portal-1\.4\.0/.test(portalCfg), 'portal version bumped for the estate fix')
 // ---------------------------------------------------------------- //
 section('Version stamp');
 // ---------------------------------------------------------------- //
-ok(SCEMS_VERSION === 'v20.7.0', 'tracker version is v20.7.0');
+ok(SCEMS_VERSION === 'v20.7.1', 'tracker version is v20.7.1');
+ok(/WORK_AUDIT_FLAGS/.test(onOpen.toString()), 'main menu has Work audit flags');
+ok(/Work audit flags/.test(MAKE_IT_SIMPLE.toString()), 'MAKE_IT_SIMPLE points at Work audit flags');
+ok(/Banner rows|AUDIT — live conditions/.test(redoAuditTabV20_1.toString()),
+   'redoAuditTab paints a how-to-use banner');
 ok(typeof CANONICAL_LIVE_SPREADSHEET_ID === 'string' &&
    CANONICAL_LIVE_SPREADSHEET_ID.indexOf('1YL-9Er') === 0,
    'canonical live spreadsheet id is documented in code');

@@ -224,7 +224,13 @@ ok(!/appendRows|setValue|recordDecisionForRow/.test(approveAllReadyV20_1.toStrin
 reset();
 out = simplifyFlagsV20_1();
 ok(/RETIRED/.test(out), 'simplifyFlagsV20_1 refuses');
-ok(/acceptFlagV20_2/.test(out), 'and points at the honest replacement');
+ok(/acceptFlagV20_2/.test(out) || /WORK_AUDIT_FLAGS/.test(out),
+   'and points at the honest replacement');
+ok(typeof WORK_AUDIT_FLAGS === 'function', 'WORK_AUDIT_FLAGS is the guided path');
+ok(/fix the condition|cannot delete/i.test(WORK_AUDIT_FLAGS.toString()),
+   'WORK_AUDIT_FLAGS explains that flags are formulas');
+ok(/flagHasOwnershipV20_2_/.test(healthCheckV20_2.toString()),
+   'health check distinguishes owned vs unowned flags');
 ok(!/setFormula|hideSheet/.test(simplifyFlagsV20_1.toString()),
    'it can no longer rewrite a detection formula or hide the tab');
 

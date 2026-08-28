@@ -360,6 +360,99 @@ function burningFlagsV20_2_() {
   return out;
 }
 
+/** True when the FLAG REVIEW LOG already has an Accepted (or in-progress)
+ *  row for this trainee + flag type. Used so health check can say
+ *  "owned" vs "nobody has touched this yet" without hiding the FLAG itself. */
+function flagHasOwnershipV20_2_(sh, trainee, flagType) {
+  var log = flagReviewLogV20_2_(sh);
+  if (!log) return false;
+  var rows = sh.getRange(log.firstEntry, 1, log.lastEntry - log.firstEntry + 1, 6).getDisplayValues();
+  var tn = normalizeNameV20_1_(trainee);
+  var ft = String(flagType || '').trim().toUpperCase();
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeNameV20_1_(rows[i][1]) !== tn) continue;
+    if (String(rows[i][2] || '').trim().toUpperCase() !== ft) continue;
+    var st = String(rows[i][5] || '').trim();
+    if (st === FLAG_ACCEPT_STATUS_V20_2 || st === 'Under review' ||
+        st === 'Action taken — awaiting data') return true;
+  }
+  return false;
+}
+
+/**
+ * THE guided path for tab 13. Explains what flags mean, what clears them,
+ * and offers Accept for the ones you are living with. Never deletes a FLAG
+ * cell and never rewrites a detection formula.
+ */
+function WORK_AUDIT_FLAGS() {
+  if (!gateV20_2_('ACCEPT AUDIT FLAG')) return;
+  var ui = SpreadsheetApp.getUi();
+  var sh = getSheetOrNullV20_1_(TAB.AUDIT);
+  if (!sh) { ui.alert('Audit tab not found.'); return; }
+
+  // Layout first if the review log is missing — otherwise Accept cannot write.
+  if (!flagReviewLogV20_2_(sh)) {
+    try { redoAuditTabV20_1(); } catch (e) {}
+  }
+
+  var burning = burningFlagsV20_2_();
+  var open = [], owned = [];
+  burning.forEach(function (f) {
+    if (flagHasOwnershipV20_2_(sh, f.trainee, f.flagType)) owned.push(f);
+    else open.push(f);
+  });
+
+  var HOW =
+    'HOW FLAGS WORK\n\n' +
+    'A FLAG is a formula watching live data. You cannot delete it.\n' +
+    'It goes away only when the condition is fixed:\n\n' +
+    '  NO NARRATIVE   → FTO adds narrative on their eval (tab 02)\n' +
+    '  SILENT RECORD  → an eval or reflection starts flowing again\n' +
+    '  PHASE MISMATCH → Current Phase on tab 01 matches the latest eval\n' +
+    '  ADV / REFLECT  → scores and requests converge, or request withdrawn\n' +
+    '  FTO SCOPE      → roster/eval level corrected\n\n' +
+    'If you understand the condition and are living with it for now:\n' +
+    '  Accept it with a typed reason. It STAYS visible and still counts,\n' +
+    '  but it is on the record in your name with a review-by date.\n\n';
+
+  if (!burning.length) {
+    var clear = HOW + 'Right now: no flags are burning. Tab 13 is clean.';
+    Logger.log(clear);
+    ui.alert(clear.slice(0, 1400));
+    return clear;
+  }
+
+  var L = [HOW,
+    'Burning now : ' + burning.length +
+    '  (unowned: ' + open.length + ', already logged: ' + owned.length + ')', ''];
+  if (open.length) {
+    L.push('NEED YOU (no acceptance / review log yet):');
+    open.slice(0, 15).forEach(function (f, i) {
+      L.push('  ' + (i + 1) + '. ' + f.trainee + ' — ' + f.flagType);
+    });
+    if (open.length > 15) L.push('  …and ' + (open.length - 15) + ' more');
+    L.push('');
+  }
+  if (owned.length) {
+    L.push('ALREADY OWNED (still visible until data catches up):');
+    owned.slice(0, 10).forEach(function (f) {
+      L.push('  · ' + f.trainee + ' — ' + f.flagType);
+    });
+    L.push('');
+  }
+  L.push('Next: click OK to Accept one unowned flag, or Cancel to go fix the data.');
+
+  var preview = L.join('\n');
+  Logger.log(preview);
+  if (!open.length) {
+    ui.alert(preview.slice(0, 1400));
+    return preview;
+  }
+  var go = ui.alert('Work audit flags', preview.slice(0, 1200), ui.ButtonSet.OK_CANCEL);
+  if (go !== ui.Button.OK) return preview + '\n\nCancelled — go fix the underlying data.';
+  return acceptFlagV20_2();
+}
+
 /** ACCEPT ONE FLAG. One flag, one named human, one typed reason, one date.
  *
  *  The flag STAYS VISIBLE and keeps reading FLAG — acceptance is recorded
@@ -377,22 +470,33 @@ function acceptFlagV20_2() {
   if (!burning.length) { ui.alert('No flags are burning. Nothing to accept.'); return; }
 
   var log = flagReviewLogV20_2_(sh);
+  if (!log) {
+    try { redoAuditTabV20_1(); } catch (e) {}
+    log = flagReviewLogV20_2_(sh);
+  }
   if (!log) { ui.alert('FLAG REVIEW LOG not found on tab 13. Run redoAuditTabV20_1 once first.'); return; }
 
-  var listing = burning.slice(0, 20).map(function (f, i) {
+  // Prefer unowned flags in the picker so people don't re-accept the same one.
+  var preferred = burning.filter(function (f) {
+    return !flagHasOwnershipV20_2_(sh, f.trainee, f.flagType);
+  });
+  var list = preferred.length ? preferred : burning;
+
+  var listing = list.slice(0, 20).map(function (f, i) {
     return (i + 1) + '  ' + f.trainee + ' — ' + f.flagType; }).join('\n');
   var r1 = ui.prompt('Accept one flag  (1 of 2)',
-    burning.length + ' flag(s) burning. Type the number of the ONE you are accepting:\n\n' +
-    listing + (burning.length > 20 ? '\n   …and ' + (burning.length - 20) + ' more' : ''),
+    list.length + ' flag(s) to choose from. Type the number of the ONE you are accepting:\n\n' +
+    listing + (list.length > 20 ? '\n   …and ' + (list.length - 20) + ' more' : '') +
+    '\n\nRemember: Accept does NOT clear the red FLAG. It records that you own it.',
     ui.ButtonSet.OK_CANCEL);
   if (r1.getSelectedButton() !== ui.Button.OK) return;
   var pick = parseInt(String(r1.getResponseText() || '').trim(), 10);
-  if (!(pick >= 1 && pick <= Math.min(burning.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
-  var flag = burning[pick - 1];
+  if (!(pick >= 1 && pick <= Math.min(list.length, 20))) { ui.alert('Not a listed number. Nothing recorded.'); return; }
+  var flag = list[pick - 1];
 
   var r2 = ui.prompt('Accept one flag  (2 of 2)',
     flag.trainee + ' — ' + flag.flagType + '\n\n' +
-    'Why is this acceptable? This goes on the record in your name.\n' +
+    'Why is this acceptable for now? This goes on the record in your name.\n' +
     'There is no default: a blank answer cancels.',
     ui.ButtonSet.OK_CANCEL);
   if (r2.getSelectedButton() !== ui.Button.OK) return;
@@ -424,13 +528,15 @@ function acceptFlagV20_2() {
         .setAllowInvalid(true).build());
   } catch (e) {}
 
-  var msg = 'Accepted.\n\n' + flag.trainee + ' — ' + flag.flagType +
+  try { ackFlagStyleV20_1(); } catch (eStyle) {}
+
+  var msg = 'Accepted — not cleared.\n\n' + flag.trainee + ' — ' + flag.flagType +
     '\nAccepted by : ' + who +
     '\nReview by   : ' + dateKeyV20_1_(reviewBy) +
     '\nReason      : ' + reason +
-    '\n\nThe flag stays visible and still counts as outstanding. Acceptance is ' +
-    'recorded beside it, not instead of it, and it expires on the review date. ' +
-    'No detection formula was changed.';
+    '\n\nThe red/amber FLAG stays on the matrix until the underlying data ' +
+    'changes. Acceptance is in the FLAG REVIEW LOG, in your name, and expires ' +
+    'on the review date. No detection formula was changed.';
   systemLog_('WARN', 'AUDIT FLAG ACCEPTED',
     flag.trainee + ' | ' + flag.flagType + ' | by ' + who + ' | review by ' + dateKeyV20_1_(reviewBy));
   ui.alert(msg);
@@ -582,10 +688,22 @@ function healthCheckV20_2() {
   });
 
   guard(function () {
+    var sh = getSheetOrNullV20_1_(TAB.AUDIT);
     var f = burningFlagsV20_2_();
-    if (f.length) {
-      add('WARN', f.length + ' audit flag(s) burning. Fix the condition, or accept one on the ' +
-        'record with a reason and a review date.', 'acceptFlagV20_2');
+    if (!f.length) return;
+    var open = 0, owned = 0;
+    f.forEach(function (x) {
+      if (flagHasOwnershipV20_2_(sh, x.trainee, x.flagType)) owned++;
+      else open++;
+    });
+    if (open) {
+      add('WARN', open + ' audit flag(s) with nobody owning them yet. Fix the ' +
+        'underlying data, or Accept one with a reason (it stays visible).',
+        'WORK_AUDIT_FLAGS');
+    }
+    if (owned) {
+      add('INFO', owned + ' audit flag(s) already logged/accepted — still visible ' +
+        'until the data catches up or the review date arrives.', 'WORK_AUDIT_FLAGS');
     }
   });
 
@@ -688,6 +806,7 @@ function onOpen(e) {
       .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
       .addSeparator()
       .addItem('What needs attention?', 'healthCheckV20_2')
+      .addItem('Work audit flags', 'WORK_AUDIT_FLAGS')
       .addItem('Backup now', 'fullBackupV20_1')
       .addSeparator()
       .addItem('Make this spreadsheet simple', 'MAKE_IT_SIMPLE')
@@ -708,6 +827,11 @@ function onOpen(e) {
         .addItem('Back to TEST mode', 'backToTestMode')
         .addSeparator()
         .addSubMenu(ui.createMenu('Advanced')
+          .addItem('Explain every burning flag (read-only)', 'explainFlagsV20_1')
+          .addItem('Accept one audit flag (with a reason)', 'acceptFlagV20_2')
+          .addItem('Refresh audit tab layout', 'redoAuditTabV20_1')
+          .addItem('Unwrap old ACK formulas (if flags vanish)', 'unwrapAuditFormulasV20_1')
+          .addItem('Acknowledge phase mismatches / log ownership', 'fixAllFlagsNowV20_1')
           .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
           .addItem('Form estate report (read-only)', 'formEstateReport')
           .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
@@ -718,7 +842,6 @@ function onOpen(e) {
           .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
           .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
           .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-          .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
           .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
           .addItem('Version report', 'versionReportV20_1')
           .addItem('Full polish pass', 'MAKE_IT_PROFESSIONAL')

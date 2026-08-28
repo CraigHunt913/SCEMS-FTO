@@ -1562,14 +1562,23 @@ function explainFlagsV20_1() {
     }
   }
   if (!lit) L.push('No flags burning. Tab 13 is clear.');
-  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or log the review (amber).');
+  else L.push(lit + ' flag(s) burning. Fix the data the formula reads, or SCEMS → Work audit flags (amber = owned, still visible).');
   var msg = L.join('\n');
   Logger.log(msg);
+  try {
+    SpreadsheetApp.getActive().toast(
+      lit
+        ? (lit + ' FLAG(s). Clear = fix source data. Own = SCEMS → Work audit flags.')
+        : 'AUDIT is clean — no burning flags.',
+      'FLAGS', 8
+    );
+  } catch (eToast) {}
   return msg;
 }
 
-/** Run once: logged flags turn AMBER, unlogged stay RED. */
-function ackFlagStyleV20_1() {
+/** Run once: logged flags turn AMBER, unlogged stay RED.
+ *  Pass true to skip the UI alert (used by redoAuditTabV20_1). */
+function ackFlagStyleV20_1(optSilent) {
   var sh = getSheetOrNullV20_1_(TAB.AUDIT);
   if (!sh) return 'Tab 13 not found.';
   // find the review log (same scan the redo used)
@@ -1597,13 +1606,15 @@ function ackFlagStyleV20_1() {
       .whenCellNotEmpty().setFontColor('#9E9E9E')
       .setRanges([matrix]).build()
   ]);
-  var msg = 'Flag colors upgraded.\n\nRED = flag with no review logged (nobody is on it)\n' +
-    'AMBER = same flag, but your FLAG REVIEW LOG (rows ' + first + '-' + last + ') holds a matching ' +
-    'entry — same trainee, same flag type. Still true, visibly handled.\nGONE = the condition is fixed.\n\n' +
-    'To turn a red flag amber: add a log row with the trainee and flag type from the dropdowns.';
+  var msg = 'Flag colors upgraded.\n\nRED = nobody owns it yet\n' +
+    'AMBER = FLAG REVIEW LOG (rows ' + first + '-' + last + ') has the same trainee + flag type — still true, visibly handled\n' +
+    'GONE = underlying data fixed\n\n' +
+    'Turn red → amber: SCEMS → Work audit flags (or add a matching log row).';
   systemLog_('INFO', 'FLAG ACK STYLE APPLIED', 'red=unlogged, amber=logged, review log rows ' + first + '-' + last);
   Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  if (!optSilent) {
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  }
   return msg;
 }
 
@@ -1749,10 +1760,10 @@ function simplifyFlagsV20_1() {
   // dismissed by hand" onto the same tab; this dismissed all of it by hand.
   var m = 'RETIRED in v20.2. Flags are no longer silenced by rewriting the ' +
           'formulas that raise them.\n\n' +
-          'Use "Accept a flag" (acceptFlagV20_2). It records one flag, one ' +
-          'named human, one typed reason and a review-by date. The flag stays ' +
-          'visible as ACCEPTED, the detection formula is untouched, and the ' +
-          'acceptance expires instead of lasting forever.\n\n' +
+          'Use SCEMS → Work audit flags (WORK_AUDIT_FLAGS / acceptFlagV20_2). ' +
+          'It records one flag, one named human, one typed reason and a ' +
+          'review-by date. The FLAG stays visible; the detection formula is ' +
+          'untouched; acceptance expires instead of lasting forever.\n\n' +
           'If a previous run already wrapped the formulas, ' +
           'unwrapAuditFormulasV20_1() reverses it.';
   systemLog_('WARN', 'RETIRED FUNCTION CALLED', 'simplifyFlagsV20_1');
