@@ -13,6 +13,7 @@ node test/ingestion-durability.test.js    # form bindings, retry safety, mail bu
 node test/queue-sweep.test.js             # stale-queue sweep + matrix rebuild guards
 node test/identity-tiers.test.js          # identity tiers + deployment checklist
 node test/sheet-repair.test.js            # cancelled-queue repair + tab tidy-up
+node test/estate-hygiene.test.js          # backup form clones, orphan tabs, staging reuse
 node test/console-and-file.test.js        # trainee console, release file, readability
 node test/header-rename.test.js           # plain-English headers + the broken header row
 node test/branding.test.js                # the badge and the masthead
@@ -27,7 +28,7 @@ node test/portal-retire.test.js          # somebody left, and what that breaks
 node test/portal-onefile.test.js         # the single pasted file matches its sources and runs alone
 ```
 
-All twenty-one exit non-zero on failure. 1,808 assertions total.
+All twenty-two exit non-zero on failure. 1,854 assertions total.
 
 The portal suites cover `portal/`, which is a separate Apps Script project. They
 `eval` its real files with the same stub approach, including a `FormApp` that

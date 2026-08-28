@@ -1209,6 +1209,13 @@ function healthCheckV20_2() {
     }
   });
 
+  // Drive / tab estate: orphan Form Responses, backup form clones, the twin
+  // spreadsheet, the phase-engine #REF!, and the blank decision-queue header.
+  // These used to live only in editor-only tools and LIVE-FINDINGS.md.
+  guard(function () {
+    estateHealthItemsV20_6_().forEach(function (it) { items.push(it); });
+  });
+
   items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
 
   var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
@@ -1255,6 +1262,7 @@ function onOpen(e) {
       .addSubMenu(ui.createMenu('Admin')
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+        .addItem('Make the estate elite (safe repairs)', 'ELITE_ESTATE')
         .addSeparator()
         .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
         .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
@@ -1267,6 +1275,14 @@ function onOpen(e) {
         .addItem('Tidy up the tabs', 'organizeTabsV20_2')
         .addItem('Show every tab', 'showAllTabsV20_2')
         .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
+        .addSeparator()
+        .addItem('Form estate report (read-only)', 'formEstateReport')
+        .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
+        .addItem('Fresh-start report (orphan tabs)', 'freshStartReport')
+        .addItem('Engine health (read-only)', 'engineHealthCheck')
+        .addItem('Preview engine key repair', 'previewEngineRepairV20_6')
+        .addItem('Apply engine key repair', 'applyEngineRepairPrompt')
+        .addItem('Tab name check (read-only)', 'tabNameCheck')
         .addSeparator()
         .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
         .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
@@ -9212,7 +9228,12 @@ function runtimeHealthCheckV20_1() {
  *  schemas/IDs/URLs/destinations/access, deployment URL, config version).
  *  The Apps Script SOURCE cannot copy itself from here; the manifest
  *  states this and the runbook's export step covers it. A workbook-only
- *  export is never called a full backup anywhere in v20.1. */
+ *  export is never called a full backup anywhere in v20.1.
+ *
+ *  v20.6: DriveApp.makeCopy clones every linked form as "Copy of …". Three
+ *  earlier backups left ~25 clones in Drive. After the copy, every clone
+ *  linked to the backup is closed, unlinked, and moved into the form-copy
+ *  archive. Live forms are never touched. */
 function fullBackupV20_1() {
   var denyV20_2 = denyV20_2_('RUN BACKUP');
   if (denyV20_2) return denyV20_2;
@@ -9221,6 +9242,14 @@ function fullBackupV20_1() {
   var it = DriveApp.getFoldersByName(folderName);
   var folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
   var wb = DriveApp.getFileById(ss().getId()).makeCopy('SCEMS_Backup_' + stamp, folder);
+
+  var cloneReport = { moved: [], failed: [] };
+  try {
+    cloneReport = neutralizeBackupFormClonesV20_6_(wb.getId(), stamp) || cloneReport;
+  } catch (eClone) {
+    cloneReport.failed = ['neutralize failed: ' + (eClone && eClone.message ? eClone.message : eClone)];
+    systemLog_('ERROR', 'BACKUP FORM CLONE CLEANUP FAILED', String(eClone));
+  }
 
   var props = PropertiesService.getScriptProperties().getProperties();
   var triggers = ScriptApp.getProjectTriggers().map(function (t) {
@@ -9247,23 +9276,31 @@ function fullBackupV20_1() {
     sourceVersion: SCEMS_VERSION,
     spreadsheetId: ss().getId(),
     workbookCopyId: wb.getId(),
+    formClonesArchived: cloneReport.moved || [],
+    formCloneFailures: cloneReport.failed || [],
     scriptProperties: props,
     triggers: triggers,
     forms: forms,
     webAppUrl: webAppUrl,
     note: 'This package restores DATA, PROPERTIES, TRIGGER INVENTORY, FORM SCHEMAS, and ' +
           'DEPLOYMENT INFO. The Apps Script SOURCE must be exported from the editor per the ' +
-          'recovery runbook — a workbook copy alone is NOT a full system backup.'
+          'recovery runbook — a workbook copy alone is NOT a full system backup. Form clones ' +
+          'created by makeCopy were archived so the live form estate stays at nine forms.'
   };
   folder.createFile('SCEMS_Manifest_' + stamp + '.json', JSON.stringify(manifest, null, 2),
     'application/json');
   PropertiesService.getScriptProperties().setProperty('LAST_FULL_BACKUP', stamp);
-  systemLog_('INFO', 'FULL BACKUP PACKAGE', 'workbook copy + manifest ' + stamp);
+  systemLog_('INFO', 'FULL BACKUP PACKAGE',
+    'workbook copy + manifest ' + stamp + '; form clones archived: ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0));
   sendMail(CONFIG.SUPERVISOR_EMAILS, 'SCEMS full backup package created : ' + stamp,
     'Workbook copy and estate manifest were written to the Drive folder "' + folderName + '".\n' +
+    'Form clones created by the copy: ' + ((cloneReport.moved && cloneReport.moved.length) || 0) +
+    ' archived (live forms untouched).\n' +
     'Remember: script source is exported from the editor per the recovery runbook.\n' +
     'Quarterly restore test due? Check the runbook schedule.');
-  return 'Backup package ' + stamp + ' created in "' + folderName + '".';
+  return 'Backup package ' + stamp + ' created in "' + folderName + '". ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0) + ' form clone(s) archived.';
 }
 
 function reviewSectionV20_1_(R, title, fn) {
@@ -11929,6 +11966,463 @@ function freshStartV20_6_(confirmToken) {
 
 /* ====================================================================== */
 /**
+ * SCEMS Field Training Tracker — 87_estate
+ *
+ * Keeping the Drive estate to one live workbook and nine live forms.
+ *
+ * What went wrong, in one sentence: Google Forms mint a new "Form Responses N"
+ * tab every time a form is relinked, and DriveApp.makeCopy of the workbook
+ * clones every linked form as "Copy of …" / "Copy of Copy of …". Neither is
+ * data loss. Both look like a second system, and a human submitting to a copy
+ * reaches nowhere.
+ *
+ * Rules this file will not break:
+ *   - Never delete a form or a response. Archive means move into a dated
+ *     folder. The originals stay recoverable.
+ *   - Never touch a form whose title matches the live estate exactly.
+ *   - Never delete a tab from the live workbook here. Orphan response tabs
+ *     are cleaned only by freshStartClean on a COPY (85_freshstart.gs).
+ *   - Never invent a second live spreadsheet. There is one.
+ */
+
+/** The one live workbook. Anything else with a similar name is an orphan. */
+var CANONICAL_LIVE_SPREADSHEET_ID = '1YL-9Er9Gk458tR0jpRO680DVtvswNGSLVTlugmclsRI';
+
+/** Known twin that looks real and is wired to nothing. Do not install into it. */
+var ORPHAN_TWIN_SPREADSHEET_ID = '1q7OnZox2Gs5UEp8gkYh1Osyxkzmtmogv9ViIrr2Q59M';
+
+var FORM_COPY_ARCHIVE_FOLDER_V20_6 = 'SCEMS Form Copies — ARCHIVE';
+var STAGING_ARCHIVE_FOLDER_V20_6 = 'SCEMS Portal Staging — ARCHIVE';
+
+/** A title Google minted for a form cloned by spreadsheet makeCopy. */
+function isFormCopyTitleV20_6_(title) {
+  return /^Copy of /i.test(String(title || '').trim());
+}
+
+/** Strip every leading "Copy of " until the live title underneath remains. */
+function liveTitleUnderCopyV20_6_(title) {
+  var t = String(title || '').trim();
+  while (/^Copy of /i.test(t)) t = t.replace(/^Copy of /i, '').trim();
+  return t;
+}
+
+/** True when the underlying title is one of the nine live forms. */
+function isSCEMSFormCopyTitleV20_6_(title) {
+  if (!isFormCopyTitleV20_6_(title)) return false;
+  var under = liveTitleUnderCopyV20_6_(title);
+  return EXPECTED_FORMS_V19.indexOf(under) >= 0;
+}
+
+function formIdFromUrlV20_6_(url) {
+  var m = String(url || '').match(/\/forms\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+function ensureNamedFolderV20_6_(name) {
+  var it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+function ensureDatedArchiveFolderV20_6_(parentName, stamp) {
+  var parent = ensureNamedFolderV20_6_(parentName);
+  var childName = stamp || Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm');
+  var it = parent.getFoldersByName(childName);
+  return it.hasNext() ? it.next() : parent.createFolder(childName);
+}
+
+/** Live form IDs from script properties — the only ones that may stay put. */
+function liveFormIdSetV20_6_() {
+  var set = {};
+  try {
+    storedFormIdsV20_1_().forEach(function (id) { if (id) set[id] = true; });
+  } catch (e) {}
+  return set;
+}
+
+/**
+ * Inventory of Drive form files whose titles are "Copy of …" versions of the
+ * nine live forms. Never includes a live FORM_IDS entry. Writes nothing.
+ */
+function formCopyInventoryV20_6_() {
+  var live = liveFormIdSetV20_6_();
+  var found = [];
+  var q = 'mimeType = "application/vnd.google-apps.form" and trashed = false';
+  var it = DriveApp.searchFiles(q);
+  while (it.hasNext()) {
+    var file = it.next();
+    var title = '';
+    try { title = file.getName(); } catch (e) { continue; }
+    if (!isSCEMSFormCopyTitleV20_6_(title)) continue;
+    var id = file.getId();
+    if (live[id]) continue;
+    var responses = null, accepting = null, dest = '';
+    try {
+      var f = FormApp.openById(id);
+      responses = f.getResponses().length;
+      accepting = f.isAcceptingResponses();
+      try { dest = f.getDestinationId() || ''; } catch (e2) {}
+    } catch (e3) {}
+    found.push({
+      id: id,
+      title: title,
+      under: liveTitleUnderCopyV20_6_(title),
+      responses: responses,
+      accepting: accepting,
+      destination: dest,
+      url: file.getUrl()
+    });
+  }
+  found.sort(function (a, b) {
+    return String(a.title).localeCompare(String(b.title));
+  });
+  return found;
+}
+
+/** Read-only: every "Copy of" SCEMS form still sitting in Drive. */
+function formEstateReport() {
+  var L = ['FORM ESTATE REPORT — READ ONLY, nothing was moved', ''];
+  var liveIds = [];
+  try { liveIds = storedFormIdsV20_1_(); } catch (e) {}
+  L.push('Live forms in FORM_IDS : ' + liveIds.length + ' of ' + EXPECTED_FORMS_V19.length);
+  EXPECTED_FORMS_V19.forEach(function (t) {
+    var f = null;
+    try { f = getStoredFormV19_(t); } catch (e) {}
+    L.push('  ' + (f ? 'OK' : 'MISSING') + '  ' + t);
+  });
+  L.push('');
+
+  var copies = formCopyInventoryV20_6_();
+  L.push('Backup form clones still in Drive : ' + copies.length);
+  if (!copies.length) {
+    L.push('None. The form estate is clean.');
+  } else {
+    L.push('These are Google\'s copies of a workbook backup. Submitting to one');
+    L.push('reaches nowhere useful. They will be moved, not deleted, by');
+    L.push('archiveFormCopies("ARCHIVE FORM COPIES").');
+    L.push('');
+    var totalResp = 0;
+    copies.forEach(function (c) {
+      totalResp += Number(c.responses) || 0;
+      L.push('  ' + c.title);
+      L.push('     responses: ' + (c.responses === null ? '?' : c.responses) +
+        '  accepting: ' + (c.accepting === null ? '?' : c.accepting) +
+        (c.destination ? '  dest: ' + c.destination : '  dest: (none)'));
+    });
+    L.push('');
+    L.push('  ' + totalResp + ' response(s) across all clones (also still in the live forms).');
+  }
+
+  var bookId = '';
+  try { bookId = ss().getId(); } catch (e) {}
+  L.push('');
+  L.push('This spreadsheet id : ' + bookId);
+  if (bookId === CANONICAL_LIVE_SPREADSHEET_ID) {
+    L.push('  Matches the canonical live workbook. Good.');
+  } else if (bookId === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('  BLOCKER — this is the orphan twin. Nothing is wired to it.');
+    L.push('  Open the starred Master and paste / run there instead.');
+  } else {
+    L.push('  WARN — not the documented live id. Confirm you meant this book.');
+  }
+
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/**
+ * Move every SCEMS "Copy of …" form into a dated archive folder.
+ * Never trashes. Never touches a live FORM_IDS form. Safe to run twice.
+ */
+function archiveFormCopies(confirmToken) {
+  return archiveFormCopiesV20_6_(confirmToken);
+}
+
+function archiveFormCopiesV20_6_(confirmToken) {
+  var TOKEN = 'ARCHIVE FORM COPIES';
+  var copies = formCopyInventoryV20_6_();
+  var L = ['ARCHIVE FORM COPIES', '',
+    'Candidates : ' + copies.length, ''];
+
+  if (!copies.length) {
+    L.push('Nothing to archive. The form estate is already clean.');
+    var clean = L.join('\n');
+    Logger.log(clean);
+    try { SpreadsheetApp.getUi().alert(clean.slice(0, 1400)); } catch (e) {}
+    return clean;
+  }
+
+  copies.forEach(function (c) {
+    L.push('  ' + c.title + '  (' + (c.responses === null ? '?' : c.responses) + ' responses)');
+  });
+  L.push('');
+  L.push('Each will be moved into "' + FORM_COPY_ARCHIVE_FOLDER_V20_6 + '" / <stamp>.');
+  L.push('Nothing is deleted. Live forms are never touched.');
+
+  if (confirmToken !== TOKEN) {
+    L.push('');
+    L.push('NOTHING WAS MOVED. To do it:');
+    L.push('  archiveFormCopies("' + TOKEN + '")');
+    var pv = L.join('\n');
+    Logger.log(pv);
+    try { SpreadsheetApp.getUi().alert(pv.slice(0, 1400)); } catch (e) {}
+    return pv;
+  }
+
+  if (!gateV20_2_('ARCHIVE FORM COPIES')) return 'Refused: not authorised.';
+
+  var stamp = Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd_HHmm');
+  var folder = ensureDatedArchiveFolderV20_6_(FORM_COPY_ARCHIVE_FOLDER_V20_6, stamp);
+  var live = liveFormIdSetV20_6_();
+  var moved = [], skipped = [], failed = [];
+
+  copies.forEach(function (c) {
+    if (live[c.id]) {
+      skipped.push(c.title + ' — listed in FORM_IDS; left alone');
+      return;
+    }
+    try {
+      var file = DriveApp.getFileById(c.id);
+      // Close accepting if still open — a clone must never take live traffic.
+      try {
+        var f = FormApp.openById(c.id);
+        if (f.isAcceptingResponses()) f.setAcceptingResponses(false);
+        try { f.removeDestination(); } catch (eDest) {}
+      } catch (eForm) {}
+      folder.addFile(file);
+      var parents = file.getParents();
+      while (parents.hasNext()) {
+        var p = parents.next();
+        if (p.getId() !== folder.getId()) {
+          try { p.removeFile(file); } catch (eRem) {}
+        }
+      }
+      moved.push(c.title);
+    } catch (e) {
+      failed.push(c.title + ' — ' + (e && e.message ? e.message : e));
+    }
+  });
+
+  SpreadsheetApp.flush();
+  systemLog_('WARN', 'FORM COPIES ARCHIVED',
+    moved.length + ' moved to ' + FORM_COPY_ARCHIVE_FOLDER_V20_6 + '/' + stamp);
+
+  L.push('');
+  L.push('DONE. Moved : ' + moved.length);
+  moved.forEach(function (t) { L.push('  ' + t); });
+  if (skipped.length) {
+    L.push('');
+    L.push('Left alone:');
+    skipped.forEach(function (t) { L.push('  ' + t); });
+  }
+  if (failed.length) {
+    L.push('');
+    L.push('Could not move:');
+    failed.forEach(function (t) { L.push('  ' + t); });
+  }
+  L.push('');
+  L.push('Archive folder: ' + folder.getUrl());
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/**
+ * After a workbook makeCopy, Google leaves cloned forms linked to the backup.
+ * Unlink them, close them, and move them into the archive so the next backup
+ * cannot invent "Copy of Copy of …". Called only from fullBackupV20_1.
+ */
+function neutralizeBackupFormClonesV20_6_(backupSpreadsheetId, stamp) {
+  if (!backupSpreadsheetId) return { moved: [], note: 'no backup id' };
+  var folder = ensureDatedArchiveFolderV20_6_(FORM_COPY_ARCHIVE_FOLDER_V20_6,
+    'backup_' + (stamp || 'unknown'));
+  var live = liveFormIdSetV20_6_();
+  var moved = [], failed = [];
+  var seen = {};
+
+  function archiveOne(formId, titleHint) {
+    if (!formId || seen[formId] || live[formId]) return;
+    seen[formId] = true;
+    try {
+      var f = FormApp.openById(formId);
+      var title = '';
+      try { title = f.getTitle(); } catch (eT) { title = titleHint || formId; }
+      // Only archive titles that are copies of our forms (or any form whose
+      // destination is the backup book — those were minted by this copy).
+      var isOurs = isSCEMSFormCopyTitleV20_6_(title) || isFormCopyTitleV20_6_(title);
+      if (!isOurs && EXPECTED_FORMS_V19.indexOf(String(title || '').trim()) >= 0) {
+        // Exact live title linked to a backup — still a clone Google made;
+        // rename awareness: leave live alone via live-id check above.
+        isOurs = true;
+      }
+      if (!isOurs) return;
+      try { if (f.isAcceptingResponses()) f.setAcceptingResponses(false); } catch (eA) {}
+      try { f.removeDestination(); } catch (eD) {}
+      var file = DriveApp.getFileById(formId);
+      folder.addFile(file);
+      var parents = file.getParents();
+      while (parents.hasNext()) {
+        var p = parents.next();
+        if (p.getId() !== folder.getId()) {
+          try { p.removeFile(file); } catch (eR) {}
+        }
+      }
+      moved.push(title);
+    } catch (e) {
+      failed.push((titleHint || formId) + ' — ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  try {
+    var backup = SpreadsheetApp.openById(backupSpreadsheetId);
+    backup.getSheets().forEach(function (sh) {
+      var url = '';
+      try { url = sh.getFormUrl() || ''; } catch (e) { return; }
+      if (!url) return;
+      archiveOne(formIdFromUrlV20_6_(url), sh.getName());
+    });
+  } catch (eOpen) {
+    failed.push('open backup: ' + (eOpen && eOpen.message ? eOpen.message : eOpen));
+  }
+
+  // Belt-and-braces: any brand-new "Copy of" SCEMS form created in the last
+  // few minutes whose destination is the backup id.
+  try {
+    formCopyInventoryV20_6_().forEach(function (c) {
+      if (c.destination === backupSpreadsheetId) archiveOne(c.id, c.title);
+    });
+  } catch (eInv) {}
+
+  if (moved.length) {
+    systemLog_('WARN', 'BACKUP FORM CLONES ARCHIVED',
+      moved.length + ' clone(s) from backup ' + backupSpreadsheetId);
+  }
+  return { moved: moved, failed: failed, folderUrl: folder.getUrl() };
+}
+
+/** Orphan Form Responses tabs on THIS book (no live form writing to them). */
+function orphanResponseTabsV20_6_() {
+  var remove = [];
+  var known = knownTabsV20_6_();
+  ss().getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (known[name] || /^PORTAL /.test(name)) return;
+    if (!/^Form Responses( \d+)?$/i.test(name)) return;
+    if (sheetIsLiveFormDestinationV20_6_(sh)) return;
+    var rows = 0;
+    try {
+      var last = sh.getLastRow();
+      rows = last > 1 ? last - 1 : 0;
+    } catch (e) {}
+    remove.push({ name: name, rows: rows });
+  });
+  return remove;
+}
+
+/** Engine key-column damage summary for the health check. Writes nothing. */
+function engineDamageSummaryV20_6_() {
+  var eng = getSheetOrNullV20_1_(TAB.ENGINE);
+  if (!eng) return { missing: true, broken: 0, crossed: 0 };
+  var first = 5;
+  var last = Math.max(eng.getLastRow(), first);
+  var formulas = eng.getRange(first, 1, last - first + 1, 1).getFormulas();
+  var broken = 0, crossed = 0;
+  formulas.forEach(function (r, i) {
+    var row = first + i;
+    var f = String(r[0] || '');
+    if (!f) return;
+    if (f.indexOf('#REF!') >= 0) { broken++; return; }
+    var m = f.match(/'?01 TRAINEE MASTER'?!A(\d+)/);
+    if (m && Number(m[1]) !== row) crossed++;
+  });
+  return { missing: false, broken: broken, crossed: crossed };
+}
+
+/** Decision-queue header gap (blank column D shifting labels). */
+function decisionQueueHeaderGapV20_6_() {
+  var sh = getSheetOrNullV20_1_(TAB.QUEUE);
+  if (!sh) return { missing: true, gap: false };
+  var headers = sh.getRange(4, 1, 1, Math.max(sh.getLastColumn(), 14)).getValues()[0];
+  var blankD = String(headers[3] || '').trim() === '';
+  var hasOwner = headers.some(function (h) {
+    return String(h || '').trim().toUpperCase() === 'OWNER';
+  });
+  return { missing: false, gap: blankD && !hasOwner };
+}
+
+/**
+ * Health-check items about the Drive / tab estate. Each is {sev, headline, run}.
+ * Called from healthCheckV20_2 so estate problems surface on the standing list.
+ */
+function estateHealthItemsV20_6_() {
+  var items = [];
+  function add(sev, headline, run) { items.push({ sev: sev, headline: headline, run: run || '' }); }
+
+  try {
+    var id = ss().getId();
+    if (id === ORPHAN_TWIN_SPREADSHEET_ID) {
+      add('BLOCKER',
+        'This script is bound to the orphan twin spreadsheet. Nothing is wired to it. ' +
+        'Open the starred Master (' + CANONICAL_LIVE_SPREADSHEET_ID + ') instead.',
+        '');
+    } else if (id !== CANONICAL_LIVE_SPREADSHEET_ID) {
+      add('WARN',
+        'This spreadsheet id is not the documented live workbook. Confirm before trusting readiness numbers.',
+        'formEstateReport');
+    }
+  } catch (e) {}
+
+  try {
+    var dmg = engineDamageSummaryV20_6_();
+    if (dmg.missing) {
+      add('WARN', 'Phase engine tab is missing.', '');
+    } else if (dmg.broken || dmg.crossed) {
+      add('BLOCKER',
+        'Phase engine key column is damaged: ' + dmg.broken + ' #REF! cell(s), ' +
+        dmg.crossed + ' crossed row(s). Downstream views are silently wrong.',
+        'previewEngineRepairV20_6');
+    }
+  } catch (e2) {}
+
+  try {
+    var orphans = orphanResponseTabsV20_6_();
+    if (orphans.length) {
+      var rows = orphans.reduce(function (n, o) { return n + o.rows; }, 0);
+      add('WARN',
+        orphans.length + ' orphan Form Responses tab(s) hold ~' + rows +
+        ' row(s). Clean them only on a COPY via freshStartClean — never on live.',
+        'freshStartReport');
+    }
+  } catch (e3) {}
+
+  try {
+    var copies = formCopyInventoryV20_6_();
+    if (copies.length) {
+      add('WARN',
+        copies.length + ' backup form clone(s) ("Copy of …") still sit in Drive. ' +
+        'A human submitting to one reaches nowhere.',
+        'formEstateReport');
+    }
+  } catch (e4) {}
+
+  try {
+    var gap = decisionQueueHeaderGapV20_6_();
+    if (gap.gap) {
+      add('WARN',
+        'Decision queue header row has a blank column that shifts every label to its left. ' +
+        'Anything reading by header name is reading a neighbour.',
+        'repairDecisionQueueHeaderV20_4');
+    }
+  } catch (e5) {}
+
+  return items;
+}
+
+
+/* ====================================================================== */
+/**
  * SCEMS Field Training Tracker — 90_recovery
  *
  * Run-once tools for when something went wrong: phantoms, lost responses,
@@ -12702,6 +13196,106 @@ function MAKE_IT_PROFESSIONAL() {
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;
+}
+
+/**
+ * Correctness of the estate — not cosmetics. Runs every safe repair that
+ * does not delete a record or a live form, in dependency order, then the
+ * standing health check. Orphan Form Responses tabs and the live workbook
+ * itself are deliberately left alone: those need a Drive copy first
+ * (freshStartClean / the handover doc).
+ *
+ * Safe to run repeatedly. Writes no permanent personnel record.
+ */
+function ELITE_ESTATE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  L.push('This spreadsheet : ' + (function () {
+    try { return ss().getId(); } catch (e) { return '?'; }
+  })());
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('');
+    L.push('STOPPED. This is the orphan twin. Open the starred Master and run there.');
+    var stop = L.join('\n');
+    Logger.log(stop);
+    try { SpreadsheetApp.getUi().alert(stop.slice(0, 1400)); } catch (e) {}
+    return stop;
+  }
+
+  step(1, 'Form estate inventory (read-only)', formEstateReport);
+  step(2, 'Archive backup form clones', function () {
+    return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+  });
+  step(3, 'Engine key column repair', function () {
+    return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+  });
+  step(4, 'Decision queue header', repairDecisionQueueHeaderV20_4);
+  step(5, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
+  step(6, 'Protect record tabs', protectRecordTabsV20_2);
+  step(7, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
+  step(8, 'Recover lost form submissions (idempotent)', function () {
+    // Blank cutoff — recoverLostSubmissionsV20_2 prompts in UI; call the
+    // underlying replay with no date floor so July responses are included.
+    if (typeof replayMissingSinceV20_1_ === 'function') {
+      return replayMissingSinceV20_1_('');
+    }
+    return recoverLostSubmissionsV20_2();
+  });
+  step(9, 'Skill matrix rebuild', function () {
+    rebuildSkillMatrixV19_();
+    return 'matrix rebuilt';
+  });
+  step(10, 'Orphan Form Responses report (read-only — clean on a COPY only)', freshStartReport);
+
+  L.push('');
+  L.push('NOT done here on purpose (needs a Drive copy of the workbook first):');
+  L.push('  freshStartClean("CLEAN <copy name>")  — removes orphan Form Responses tabs');
+  L.push('  Retiring the original after the copy has proved itself');
+  L.push('');
+  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE RUN', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Menu wrapper: archive form copies with the required token after confirm. */
+function archiveFormCopiesPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = formEstateReport();
+  var conf = ui.alert(
+    'Archive backup form copies?',
+    'This moves every "Copy of …" SCEMS form into an archive folder. ' +
+    'Live forms are never touched. Nothing is deleted.\n\nContinue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.\n\n' + preview;
+  return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+}
+
+/** Menu wrapper: apply engine repair after confirm. */
+function applyEngineRepairPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = previewEngineRepairV20_6();
+  var conf = ui.alert(
+    'Repair the phase engine key column?',
+    'Only column A of the engine tab is touched. Record tabs are not. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was written.\n\n' + preview;
+  return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
 }
 
 /* ---------------------------------------------------------------- *
@@ -13519,9 +14113,9 @@ var SUPERSEDED_BLOCKS_V19 = [
     by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
 ];
 
-var SCEMS_VERSION = 'v20.5.0';
+var SCEMS_VERSION = 'v20.6.0';
 
-var SCEMS_WRITER_VERSION = 'SCEMS v20.5.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.6.0';
 
 var CONFIG = Object.freeze({
 

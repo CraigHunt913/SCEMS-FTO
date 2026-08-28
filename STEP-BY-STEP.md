@@ -136,6 +136,13 @@ your records. It had no trigger connected, so the system discarded them while
 writing "handled" in its own log. Step 7 reconnected it. Now find what was
 missed.
 
+**Fastest path:** SCEMS → Admin → **Make the estate elite (safe repairs)**.
+That one command archives backup form clones, repairs the phase engine,
+fixes the decision-queue header, recovers lost submissions (blank cutoff),
+and prints the health check.
+
+Or do it by hand:
+
 1. **SCEMS → Admin → Ingestion reconciliation (read-only)**. Changes nothing.
    It should list responses as `NOT IN LEDGER`.
 2. **SCEMS → Admin → Recover lost form submissions**.
@@ -151,6 +158,16 @@ it came from, so a second run finds and skips them. You cannot create
 duplicates.
 
 Then run **SCEMS → Health check** once more and work down the list.
+
+## 12. Clean the Drive estate (too many sheets / form copies)
+
+Backups used to leave "Copy of SCEMS …" forms in Drive. Orphan
+"Form Responses N" tabs accumulate when forms are relinked.
+
+- Form copies: already handled by `ELITE_ESTATE`, or
+  **Admin → Archive backup form copies**.
+- Orphan response tabs: never delete them on the live book. Follow the
+  tracker handover — copy first, then clean the copy.
 
 ---
 

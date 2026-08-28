@@ -640,6 +640,13 @@ function healthCheckV20_2() {
     }
   });
 
+  // Drive / tab estate: orphan Form Responses, backup form clones, the twin
+  // spreadsheet, the phase-engine #REF!, and the blank decision-queue header.
+  // These used to live only in editor-only tools and LIVE-FINDINGS.md.
+  guard(function () {
+    estateHealthItemsV20_6_().forEach(function (it) { items.push(it); });
+  });
+
   items.sort(function (a, b) { return HEALTH_RANK_V20_2[a.sev] - HEALTH_RANK_V20_2[b.sev]; });
 
   var L = ['SCEMS HEALTH CHECK — ' + SCEMS_VERSION + ' — read only', ''];
@@ -686,6 +693,7 @@ function onOpen(e) {
       .addSubMenu(ui.createMenu('Admin')
         .addItem('Health check', 'healthCheckV20_2')
         .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+        .addItem('Make the estate elite (safe repairs)', 'ELITE_ESTATE')
         .addSeparator()
         .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
         .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
@@ -698,6 +706,14 @@ function onOpen(e) {
         .addItem('Tidy up the tabs', 'organizeTabsV20_2')
         .addItem('Show every tab', 'showAllTabsV20_2')
         .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
+        .addSeparator()
+        .addItem('Form estate report (read-only)', 'formEstateReport')
+        .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
+        .addItem('Fresh-start report (orphan tabs)', 'freshStartReport')
+        .addItem('Engine health (read-only)', 'engineHealthCheck')
+        .addItem('Preview engine key repair', 'previewEngineRepairV20_6')
+        .addItem('Apply engine key repair', 'applyEngineRepairPrompt')
+        .addItem('Tab name check (read-only)', 'tabNameCheck')
         .addSeparator()
         .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
         .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')

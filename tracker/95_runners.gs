@@ -45,6 +45,106 @@ function MAKE_IT_PROFESSIONAL() {
   return msg;
 }
 
+/**
+ * Correctness of the estate — not cosmetics. Runs every safe repair that
+ * does not delete a record or a live form, in dependency order, then the
+ * standing health check. Orphan Form Responses tabs and the live workbook
+ * itself are deliberately left alone: those need a Drive copy first
+ * (freshStartClean / the handover doc).
+ *
+ * Safe to run repeatedly. Writes no permanent personnel record.
+ */
+function ELITE_ESTATE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — ELITE ESTATE', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 3).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 110));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200));
+    }
+  }
+
+  L.push('This spreadsheet : ' + (function () {
+    try { return ss().getId(); } catch (e) { return '?'; }
+  })());
+  if (ss().getId() === ORPHAN_TWIN_SPREADSHEET_ID) {
+    L.push('');
+    L.push('STOPPED. This is the orphan twin. Open the starred Master and run there.');
+    var stop = L.join('\n');
+    Logger.log(stop);
+    try { SpreadsheetApp.getUi().alert(stop.slice(0, 1400)); } catch (e) {}
+    return stop;
+  }
+
+  step(1, 'Form estate inventory (read-only)', formEstateReport);
+  step(2, 'Archive backup form clones', function () {
+    return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+  });
+  step(3, 'Engine key column repair', function () {
+    return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+  });
+  step(4, 'Decision queue header', repairDecisionQueueHeaderV20_4);
+  step(5, 'Re-open wrongly cancelled queue rows', repairCancelledQueueRowsV20_2);
+  step(6, 'Protect record tabs', protectRecordTabsV20_2);
+  step(7, 'Repair triggers (incl. combined skills form)', repairAllTriggersNow);
+  step(8, 'Recover lost form submissions (idempotent)', function () {
+    // Blank cutoff — recoverLostSubmissionsV20_2 prompts in UI; call the
+    // underlying replay with no date floor so July responses are included.
+    if (typeof replayMissingSinceV20_1_ === 'function') {
+      return replayMissingSinceV20_1_('');
+    }
+    return recoverLostSubmissionsV20_2();
+  });
+  step(9, 'Skill matrix rebuild', function () {
+    rebuildSkillMatrixV19_();
+    return 'matrix rebuilt';
+  });
+  step(10, 'Orphan Form Responses report (read-only — clean on a COPY only)', freshStartReport);
+
+  L.push('');
+  L.push('NOT done here on purpose (needs a Drive copy of the workbook first):');
+  L.push('  freshStartClean("CLEAN <copy name>")  — removes orphan Form Responses tabs');
+  L.push('  Retiring the original after the copy has proved itself');
+  L.push('');
+  try { L.push(healthCheckV20_2()); } catch (e) { L.push('Health check failed: ' + e); }
+
+  var msg = L.join('\n');
+  systemLog_('WARN', 'ELITE ESTATE RUN', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Menu wrapper: archive form copies with the required token after confirm. */
+function archiveFormCopiesPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = formEstateReport();
+  var conf = ui.alert(
+    'Archive backup form copies?',
+    'This moves every "Copy of …" SCEMS form into an archive folder. ' +
+    'Live forms are never touched. Nothing is deleted.\n\nContinue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.\n\n' + preview;
+  return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
+}
+
+/** Menu wrapper: apply engine repair after confirm. */
+function applyEngineRepairPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var preview = previewEngineRepairV20_6();
+  var conf = ui.alert(
+    'Repair the phase engine key column?',
+    'Only column A of the engine tab is touched. Record tabs are not. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was written.\n\n' + preview;
+  return engineRepairV20_6_('REPAIR THE ENGINE KEY COLUMN');
+}
+
 /* ---------------------------------------------------------------- *
  *  Everything, in the right order
  * ---------------------------------------------------------------- */

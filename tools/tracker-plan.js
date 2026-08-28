@@ -28,6 +28,7 @@ const FILES = [
   ['75_presentation','How the sheets look and read. Three versions of this concern used to sit in three separate blocks.'],
   ['80_migration',   'One-time migrations between versions of this system.'],
   ['85_freshstart',  'Copying the tracker and cleaning the copy, without losing anything.'],
+  ['87_estate',      'One live workbook, nine live forms: backup clones, orphan tabs, estate health.'],
   ['90_recovery',    'Run-once tools for when something went wrong: phantoms, lost responses, backfills.'],
   ['95_runners',     'Triggers, the menu, and the functions a human runs by name.'],
   ['99_config',      'Constants. Nothing here does anything.']
@@ -46,7 +47,8 @@ const KEEP = {
 const BY_NAME = {};
 const put = (file, names) => names.forEach(n => { BY_NAME[n] = file; });
 
-put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'POLISH_SHEETS',
+put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'ELITE_ESTATE',
+  'archiveFormCopiesPrompt', 'applyEngineRepairPrompt', 'POLISH_SHEETS',
   'SIMPLIFY_EVERYTHING', 'FIX_MY_SHEETS', 'goLiveChecklistV20_2', 'deploymentStatusV20_2',
   'deploymentPreflight', 'traineeList', 'getList', 'engineRows', 'MANAGED_TRIGGER_HANDLERS']);
 
@@ -116,6 +118,17 @@ put('20_forms', ['goLiveV19', 'backToTestModeV19']);
 
 put('85_freshstart', ['knownTabsV20_6_', 'sheetIsLiveFormDestinationV20_6_',
   'freshStartReport', 'freshStartClean', 'freshStartV20_6_']);
+
+put('87_estate', [
+  'CANONICAL_LIVE_SPREADSHEET_ID', 'ORPHAN_TWIN_SPREADSHEET_ID',
+  'FORM_COPY_ARCHIVE_FOLDER_V20_6', 'STAGING_ARCHIVE_FOLDER_V20_6',
+  'isFormCopyTitleV20_6_', 'liveTitleUnderCopyV20_6_', 'isSCEMSFormCopyTitleV20_6_',
+  'formIdFromUrlV20_6_', 'ensureNamedFolderV20_6_', 'ensureDatedArchiveFolderV20_6_',
+  'liveFormIdSetV20_6_', 'formCopyInventoryV20_6_', 'formEstateReport',
+  'archiveFormCopies', 'archiveFormCopiesV20_6_', 'neutralizeBackupFormClonesV20_6_',
+  'orphanResponseTabsV20_6_', 'engineDamageSummaryV20_6_',
+  'decisionQueueHeaderGapV20_6_', 'estateHealthItemsV20_6_'
+]);
 
 /** Where one declaration goes. '' means nobody has said, and the build stops. */
 function fileFor(unit) {
