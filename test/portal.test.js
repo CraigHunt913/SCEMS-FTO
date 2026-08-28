@@ -636,15 +636,14 @@ ok(!vis.ok, 'so nothing is authorised');
 ok(vis.role !== PORTAL.ROLE.DIVISION,
    'NOT the Training Division, which is what the owner fallback made them');
 
-// the page itself
+// the page itself — doGet is a shell only (no spreadsheet). Identity loads via refreshV1.
 let page = doGet({});
 let bootJson = JSON.parse(page._t.boot);
-ok(bootJson.viewer.role === PORTAL.ROLE.NONE, 'doGet hands the browser no role');
+ok(bootJson.deferred === true, 'doGet serves a deferred shell so OAuth cannot blank the page');
+ok(bootJson.viewer.role === PORTAL.ROLE.NONE, 'doGet hands the browser no role yet');
 ok(JSON.stringify(bootJson.data) === '{}', 'and an empty payload');
 ok(!/Jamie Rivers|Alex Bramble|Priya Okafor/.test(page._t.boot),
-   'no trainee name reaches the browser');
-ok(/signed in with/.test(bootJson.viewer.why) || /which account/.test(bootJson.viewer.why),
-   'the page says why, in terms of what to change');
+   'no trainee name reaches the browser on first paint');
 
 // and every action a browser can reach
 PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
@@ -663,6 +662,8 @@ deployedAsOwner('chief@example.org');
 const refreshed = refreshV1();
 ok(refreshed.viewer.role === PORTAL.ROLE.NONE, 'refreshV1 gives them nothing either');
 ok(JSON.stringify(refreshed.data) === '{}', 'with no data attached');
+ok(/signed in with/.test(refreshed.viewer.why) || /which account/.test(refreshed.viewer.why),
+   'refresh explains why, in terms of what to change');
 
 // the same owner, actually signed in, is still the Division. The fix must not
 // lock the person the portal is for out of it.

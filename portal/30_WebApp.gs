@@ -1,35 +1,28 @@
 /**
  * The web app entry point.
  *
- * doGet resolves the viewer on the server, builds only that role's payload,
- * and injects it into the page. The browser receives no data belonging to
- * anyone else, so there is nothing for a client-side mistake to expose.
+ * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
+ * or Drive. Touching those during doGet is what produces Google's grey
+ * createOAuthDialog iframe that never paints THE LINE.
+ *
+ * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
 
 function doGet(e) {
-  var viewer, payload, err = '';
-  try {
-    viewer = resolveViewerV1_(whoIsVisitingV1_());
-    payload = viewer.ok ? payloadForV1_(viewer) : {};
-  } catch (ex) {
-    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
-    payload = {};
-    err = String(ex.message || ex);
-  }
-
   var boot = {
-    // The build, not just the version. A deployment serves the code as it was
-    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
-    // deploy again - and until now nothing on the page said which one it was.
-    // "Is the fix live?" is a question the page should answer by itself.
     version: PORTAL.VERSION +
       (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
-    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-              ok: viewer.ok, why: viewer.why },
-    data: payload,
-    error: err
+    deferred: true,
+    viewer: { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: '' },
+    data: {},
+    error: ''
   };
+  // Naming the visitor does not open Spreadsheets. Safe during doGet.
+  try {
+    var email = whoIsVisitingV1_();
+    if (email) boot.viewer.email = email;
+  } catch (ex) {}
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
@@ -37,11 +30,6 @@ function doGet(e) {
   var page = t.evaluate();
   page.setTitle(PORTAL.TITLE);
   page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-
-  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY. Asking for one yields
-  // undefined, and Apps Script rejects it as a null mode.
   page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
   return page;
 }
@@ -69,6 +57,50 @@ function payloadForV1_(viewer) {
     case PORTAL.ROLE.MEDICAL:    return medicalPayloadV1_();
     default:                     return {};
   }
+}
+
+/**
+ * Run ONCE from the Apps Script editor (Run ▶ authorizePortalNow).
+ * Forces Google's permission screens for Sheets / Drive / Forms so the
+ * web app is not stuck on a grey OAuth iframe.
+ */
+function authorizePortalNow() {
+  var L = ['THE LINE — authorizePortalNow', ''];
+  try {
+    var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    L.push('Signed in as: ' + (email || '(unnamed)'));
+  } catch (e) { L.push('Session: ' + e); }
+
+  try {
+    var id = targetIdV1_();
+    var name = SpreadsheetApp.openById(id).getName();
+    L.push('Spreadsheet OK: ' + name);
+  } catch (e) {
+    L.push('Spreadsheet: ' + e + ' — run setUpStaging() or pointAtProductionReadOnly() first if needed.');
+  }
+
+  try {
+    DriveApp.getRootFolder().getName();
+    L.push('Drive OK');
+  } catch (e) { L.push('Drive: ' + e); }
+
+  try {
+    var probed = false;
+    if (typeof PORTAL_FORMS !== 'undefined' && PORTAL_FORMS && PORTAL_FORMS.length && PORTAL_FORMS[0].id) {
+      FormApp.openById(PORTAL_FORMS[0].id).getTitle();
+      probed = true;
+    }
+    L.push(probed ? 'Forms OK' : 'Forms: no id to probe (OK — Sheets/Drive still authorized)');
+  } catch (e) { L.push('Forms: ' + e); }
+
+  L.push('');
+  L.push('Next: Deploy → Manage deployments → Edit → Version: New version → Deploy.');
+  L.push('Settings must be: Execute as ME, Who has access: ANYONE WITH A GOOGLE ACCOUNT.');
+  L.push('Then open the /exec link again (Incognito if you use multiple Google accounts).');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
+  return msg;
 }
 
 /* ---------------- actions ---------------- */
@@ -325,13 +357,25 @@ function recordV1(traineeName) {
   return rec;
 }
 
-/** Refreshes the current role's payload without a page reload. */
+/** Refreshes the current role's payload without a page reload.
+ *  Also the first real load after doGet's deferred shell. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-                     ok: viewer.ok, why: viewer.why },
-           data: viewer.ok ? payloadForV1_(viewer) : {},
-           mode: safeModeV1_() };
+  var viewer, payload = {}, err = '';
+  try {
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
+    payload = viewer.ok ? payloadForV1_(viewer) : {};
+  } catch (ex) {
+    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false,
+               why: String(ex.message || ex) };
+    err = String(ex.message || ex);
+  }
+  return {
+    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
+              ok: viewer.ok, why: viewer.why },
+    data: payload,
+    mode: safeModeV1_(),
+    error: err
+  };
 }
 
 /** Blocks a leading = + - @ so submitted text cannot become a formula. */

@@ -1189,17 +1189,51 @@ function recCard(s, isCurrent){
 function reload(){
   google.script.run.withSuccessHandler(function(r){
     BOOT.viewer = r.viewer; BOOT.data = r.data; BOOT.mode = r.mode;
+    BOOT.error = r.error || ''; BOOT.deferred = false;
     S.screen = 'main'; render();
   }).withFailureHandler(function(e){ alert(e.message||e); }).refreshV1();
 }
 
-render();
+function startLine(){
+  paint(hero('THE LINE', 'Opening…',
+    'Loading your desk. If Google asks for permission, allow it — then this page continues.'));
+  google.script.run
+    .withSuccessHandler(function(r){
+      BOOT.viewer = r.viewer || BOOT.viewer;
+      BOOT.data = r.data || {};
+      BOOT.mode = r.mode || BOOT.mode;
+      BOOT.error = r.error || '';
+      BOOT.deferred = false;
+      S.screen = 'main';
+      render();
+    })
+    .withFailureHandler(function(e){
+      var msg = String((e && e.message) || e || 'unknown');
+      paint(hero('THE LINE', 'Could not open', '')+
+        '<div class="note n-stop"><b>Blocked</b>'+esc(msg)+'</div>'+
+        '<div class="note n-info"><b>Do this in order</b>'+
+        '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+
+        '2. Run <b>authorizePortalNow</b> — finish every Google permission screen '+
+        '(Advanced → Go to SCEMS Portal if shown).<br>'+
+        '3. Deploy → Manage deployments → Edit → <b>New version</b> → Deploy.<br>'+
+        '4. Settings must be: Execute as <b>Me</b>, Who has access: '+
+        '<b>Anyone with a Google account</b> (not Anyone).<br>'+
+        '5. Open the /exec link in an Incognito window signed into one account only.'+
+        '</div>'+
+        '<button class="btn" onclick="startLine()">Try again</button>');
+    })
+    .refreshV1();
+}
+
+try {
+  if (BOOT.deferred) startLine();
+  else render();
 } catch (bootErr) {
   try {
     document.getElementById('view').innerHTML =
       '<div class="hero"><h1>THE LINE could not start</h1>' +
       '<p class="sub">The page loaded but the script crashed while starting. ' +
-      'In the Apps Script editor run portalPasteCheck, then Deploy → Manage deployments → Edit → New version.</p></div>' +
+      'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></div>' +
       '<div class="note n-stop"><b>Error</b>' + String((bootErr && bootErr.message) || bootErr) + '</div>';
   } catch (e2) {}
 }

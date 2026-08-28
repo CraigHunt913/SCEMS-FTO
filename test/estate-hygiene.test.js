@@ -361,10 +361,11 @@ ok(/PORTAL_STAGING_ARCHIVE_FOLDER|SCEMS Portal Staging — ARCHIVE/.test(staging
 ok(/Sheet1/.test(stagingSrc), 'drops Google\'s default Sheet1 from a new sandbox');
 
 const portalCfg = fs.readFileSync('/home/user/SCEMS-FTO/portal/00_Config.gs', 'utf8');
-ok(/portal-2\.0\.0/.test(portalCfg), 'portal version is THE LINE 2.0');
-ok(/THE LINE/.test(portalCfg), 'portal product name is THE LINE');
-ok(/returnSignoffV1/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs', 'utf8')),
-   'Return is a first-class write path');
+ok(/portal-2\.0\.1/.test(portalCfg), 'portal version is THE LINE 2.0.1');
+ok(/authorizePortalNow/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs', 'utf8')),
+   'authorizePortalNow forces OAuth from the editor');
+ok(/deferred:\s*true/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs', 'utf8')),
+   'doGet defers spreadsheet work so the grey OAuth iframe cannot blank the page');
 
 // ---------------------------------------------------------------- //
 section('Version stamp');

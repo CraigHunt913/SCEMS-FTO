@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.0.0
- * Build 00a5673b
+ * SCEMS FIELD TRAINING PORTAL — portal-2.0.1
+ * Build b0c43fa0
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.0',
+  VERSION: 'portal-2.0.1',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1922,35 +1922,28 @@ function safeBoolV1_(fn) {
 /**
  * The web app entry point.
  *
- * doGet resolves the viewer on the server, builds only that role's payload,
- * and injects it into the page. The browser receives no data belonging to
- * anyone else, so there is nothing for a client-side mistake to expose.
+ * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
+ * or Drive. Touching those during doGet is what produces Google's grey
+ * createOAuthDialog iframe that never paints THE LINE.
+ *
+ * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
 
 function doGet(e) {
-  var viewer, payload, err = '';
-  try {
-    viewer = resolveViewerV1_(whoIsVisitingV1_());
-    payload = viewer.ok ? payloadForV1_(viewer) : {};
-  } catch (ex) {
-    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
-    payload = {};
-    err = String(ex.message || ex);
-  }
-
   var boot = {
-    // The build, not just the version. A deployment serves the code as it was
-    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
-    // deploy again - and until now nothing on the page said which one it was.
-    // "Is the fix live?" is a question the page should answer by itself.
     version: PORTAL.VERSION +
       (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
-    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-              ok: viewer.ok, why: viewer.why },
-    data: payload,
-    error: err
+    deferred: true,
+    viewer: { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: '' },
+    data: {},
+    error: ''
   };
+  // Naming the visitor does not open Spreadsheets. Safe during doGet.
+  try {
+    var email = whoIsVisitingV1_();
+    if (email) boot.viewer.email = email;
+  } catch (ex) {}
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
@@ -1958,11 +1951,6 @@ function doGet(e) {
   var page = t.evaluate();
   page.setTitle(PORTAL.TITLE);
   page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-
-  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY. Asking for one yields
-  // undefined, and Apps Script rejects it as a null mode.
   page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
   return page;
 }
@@ -1990,6 +1978,50 @@ function payloadForV1_(viewer) {
     case PORTAL.ROLE.MEDICAL:    return medicalPayloadV1_();
     default:                     return {};
   }
+}
+
+/**
+ * Run ONCE from the Apps Script editor (Run ▶ authorizePortalNow).
+ * Forces Google's permission screens for Sheets / Drive / Forms so the
+ * web app is not stuck on a grey OAuth iframe.
+ */
+function authorizePortalNow() {
+  var L = ['THE LINE — authorizePortalNow', ''];
+  try {
+    var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    L.push('Signed in as: ' + (email || '(unnamed)'));
+  } catch (e) { L.push('Session: ' + e); }
+
+  try {
+    var id = targetIdV1_();
+    var name = SpreadsheetApp.openById(id).getName();
+    L.push('Spreadsheet OK: ' + name);
+  } catch (e) {
+    L.push('Spreadsheet: ' + e + ' — run setUpStaging() or pointAtProductionReadOnly() first if needed.');
+  }
+
+  try {
+    DriveApp.getRootFolder().getName();
+    L.push('Drive OK');
+  } catch (e) { L.push('Drive: ' + e); }
+
+  try {
+    var probed = false;
+    if (typeof PORTAL_FORMS !== 'undefined' && PORTAL_FORMS && PORTAL_FORMS.length && PORTAL_FORMS[0].id) {
+      FormApp.openById(PORTAL_FORMS[0].id).getTitle();
+      probed = true;
+    }
+    L.push(probed ? 'Forms OK' : 'Forms: no id to probe (OK — Sheets/Drive still authorized)');
+  } catch (e) { L.push('Forms: ' + e); }
+
+  L.push('');
+  L.push('Next: Deploy → Manage deployments → Edit → Version: New version → Deploy.');
+  L.push('Settings must be: Execute as ME, Who has access: ANYONE WITH A GOOGLE ACCOUNT.');
+  L.push('Then open the /exec link again (Incognito if you use multiple Google accounts).');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
+  return msg;
 }
 
 /* ---------------- actions ---------------- */
@@ -2246,13 +2278,25 @@ function recordV1(traineeName) {
   return rec;
 }
 
-/** Refreshes the current role's payload without a page reload. */
+/** Refreshes the current role's payload without a page reload.
+ *  Also the first real load after doGet's deferred shell. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-                     ok: viewer.ok, why: viewer.why },
-           data: viewer.ok ? payloadForV1_(viewer) : {},
-           mode: safeModeV1_() };
+  var viewer, payload = {}, err = '';
+  try {
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
+    payload = viewer.ok ? payloadForV1_(viewer) : {};
+  } catch (ex) {
+    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false,
+               why: String(ex.message || ex) };
+    err = String(ex.message || ex);
+  }
+  return {
+    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
+              ok: viewer.ok, why: viewer.why },
+    data: payload,
+    mode: safeModeV1_(),
+    error: err
+  };
 }
 
 /** Blocks a leading = + - @ so submitted text cannot become a formula. */
@@ -7856,7 +7900,6 @@ var PORTAL_PAGE_HTML = [
   "  } catch (e1) {}\n",
   "};\n",
   "\n",
-  "try {\n",
   "function esc(s){ return String(s==null?'':s).replace(/[&<>\"']/g,function(c){\n",
   "  return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]; }); }\n",
   "function lvlChip(k,l){ return '<span class=\"chip c-'+esc(k||'emt')+'\">'+esc(l||'')+'</span",
@@ -8858,18 +8901,53 @@ var PORTAL_PAGE_HTML = [
   "function reload(){\n",
   "  google.script.run.withSuccessHandler(function(r){\n",
   "    BOOT.viewer = r.viewer; BOOT.data = r.data; BOOT.mode = r.mode;\n",
+  "    BOOT.error = r.error || ''; BOOT.deferred = false;\n",
   "    S.screen = 'main'; render();\n",
   "  }).withFailureHandler(function(e){ alert(e.message||e); }).refreshV1();\n",
   "}\n",
   "\n",
-  "render();\n",
+  "function startLine(){\n",
+  "  paint(hero('THE LINE', 'Opening…',\n",
+  "    'Loading your desk. If Google asks for permission, allow it — then this page continues",
+  ".'));\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      BOOT.viewer = r.viewer || BOOT.viewer;\n",
+  "      BOOT.data = r.data || {};\n",
+  "      BOOT.mode = r.mode || BOOT.mode;\n",
+  "      BOOT.error = r.error || '';\n",
+  "      BOOT.deferred = false;\n",
+  "      S.screen = 'main';\n",
+  "      render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      var msg = String((e && e.message) || e || 'unknown');\n",
+  "      paint(hero('THE LINE', 'Could not open', '')+\n",
+  "        '<div class=\"note n-stop\"><b>Blocked</b>'+esc(msg)+'</div>'+\n",
+  "        '<div class=\"note n-info\"><b>Do this in order</b>'+\n",
+  "        '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+\n",
+  "        '2. Run <b>authorizePortalNow</b> — finish every Google permission screen '+\n",
+  "        '(Advanced → Go to SCEMS Portal if shown).<br>'+\n",
+  "        '3. Deploy → Manage deployments → Edit → <b>New version</b> → Deploy.<br>'+\n",
+  "        '4. Settings must be: Execute as <b>Me</b>, Who has access: '+\n",
+  "        '<b>Anyone with a Google account</b> (not Anyone).<br>'+\n",
+  "        '5. Open the /exec link in an Incognito window signed into one account only.'+\n",
+  "        '</div>'+\n",
+  "        '<button class=\"btn\" onclick=\"startLine()\">Try again</button>');\n",
+  "    })\n",
+  "    .refreshV1();\n",
+  "}\n",
+  "\n",
+  "try {\n",
+  "  if (BOOT.deferred) startLine();\n",
+  "  else render();\n",
   "} catch (bootErr) {\n",
   "  try {\n",
   "    document.getElementById('view').innerHTML =\n",
   "      '<div class=\"hero\"><h1>THE LINE could not start</h1>' +\n",
   "      '<p class=\"sub\">The page loaded but the script crashed while starting. ' +\n",
-  "      'In the Apps Script editor run portalPasteCheck, then Deploy → Manage deployments → ",
-  "Edit → New version.</p></div>' +\n",
+  "      'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></d",
+  "iv>' +\n",
   "      '<div class=\"note n-stop\"><b>Error</b>' + String((bootErr && bootErr.message) || boo",
   "tErr) + '</div>';\n",
   "  } catch (e2) {}\n",
@@ -8889,7 +8967,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '00a5673b';
+var PORTAL_BUILD = 'b0c43fa0';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
