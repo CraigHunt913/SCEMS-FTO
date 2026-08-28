@@ -50,12 +50,34 @@
 }
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
-html,body{margin:0;min-height:100%;background:var(--surface);background-image:var(--page);
-  background-attachment:fixed;color:var(--ink);
+html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);
   font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
-.app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var(--lift-2);}
-@media(min-width:560px){.app{margin:28px auto 40px;border-radius:18px;overflow:hidden;min-height:0;}}
+/* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */
+.app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;
+  box-shadow:none;}
+@media(min-width:700px){
+  body{background-image:radial-gradient(1400px 700px at 50% -8%, #1b3454 0%, var(--navy-3) 55%, #070d14 100%);
+    background-attachment:fixed;padding:28px 24px 48px;}
+  .app{max-width:920px;border-radius:20px;overflow:hidden;min-height:calc(100vh - 76px);
+    box-shadow:0 24px 64px -28px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04);}
+  .bar{padding:16px 28px;}
+  .bar img{width:42px;height:46px;}
+  .bar .t{font-size:1.35rem;}
+  .bar .s{font-size:.72rem;letter-spacing:.18em;}
+  .wrap{padding:0 28px 56px;}
+  .hero{margin:0 -28px 22px;padding:10px 28px 32px;border-radius:0 0 24px 24px;}
+  .hero h1{font-size:2.65rem;}
+  .hero .sub{font-size:1.05rem;}
+  .btn{padding:18px;font-size:1.2rem;min-height:60px;}
+  .decision .h{font-size:1.7rem!important;}
+  .clock{width:64px;height:64px;}
+  .clock svg{width:64px;height:64px;}
+}
+@media(min-width:1100px){
+  .app{max-width:1080px;}
+  .hero h1{font-size:3rem;}
+}
 
 /* --- the bar --- */
 .bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;gap:12px;

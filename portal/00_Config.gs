@@ -13,7 +13,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.1',
+  VERSION: 'portal-2.0.2',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 

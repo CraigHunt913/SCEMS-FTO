@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.0.1
- * Build b0c43fa0
+ * SCEMS FIELD TRAINING PORTAL — portal-2.0.2
+ * Build cbf37926
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.1',
+  VERSION: 'portal-2.0.2',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -7519,16 +7519,36 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "*{box-sizing:border-box;}\n",
   "html{-webkit-text-size-adjust:100%;}\n",
-  "html,body{margin:0;min-height:100%;background:var(--surface);background-image:var(--page);",
-  "\n",
-  "  background-attachment:fixed;color:var(--ink);\n",
+  "html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);\n",
   "  font-family:\"Source Sans 3\",system-ui,-apple-system,sans-serif;font-size:16px;line-heigh",
   "t:1.5;\n",
   "  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}\n",
-  ".app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var",
-  "(--lift-2);}\n",
-  "@media(min-width:560px){.app{margin:28px auto 40px;border-radius:18px;overflow:hidden;min-",
-  "height:0;}}\n",
+  "/* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */\n",
+  ".app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;\n",
+  "  box-shadow:none;}\n",
+  "@media(min-width:700px){\n",
+  "  body{background-image:radial-gradient(1400px 700px at 50% -8%, #1b3454 0%, var(--navy-3)",
+  " 55%, #070d14 100%);\n",
+  "    background-attachment:fixed;padding:28px 24px 48px;}\n",
+  "  .app{max-width:920px;border-radius:20px;overflow:hidden;min-height:calc(100vh - 76px);\n",
+  "    box-shadow:0 24px 64px -28px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04);}\n",
+  "  .bar{padding:16px 28px;}\n",
+  "  .bar img{width:42px;height:46px;}\n",
+  "  .bar .t{font-size:1.35rem;}\n",
+  "  .bar .s{font-size:.72rem;letter-spacing:.18em;}\n",
+  "  .wrap{padding:0 28px 56px;}\n",
+  "  .hero{margin:0 -28px 22px;padding:10px 28px 32px;border-radius:0 0 24px 24px;}\n",
+  "  .hero h1{font-size:2.65rem;}\n",
+  "  .hero .sub{font-size:1.05rem;}\n",
+  "  .btn{padding:18px;font-size:1.2rem;min-height:60px;}\n",
+  "  .decision .h{font-size:1.7rem!important;}\n",
+  "  .clock{width:64px;height:64px;}\n",
+  "  .clock svg{width:64px;height:64px;}\n",
+  "}\n",
+  "@media(min-width:1100px){\n",
+  "  .app{max-width:1080px;}\n",
+  "  .hero h1{font-size:3rem;}\n",
+  "}\n",
   "\n",
   "/* --- the bar --- */\n",
   ".bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;g",
@@ -8967,7 +8987,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'b0c43fa0';
+var PORTAL_BUILD = 'cbf37926';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
