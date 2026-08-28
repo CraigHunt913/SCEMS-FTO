@@ -39,11 +39,15 @@ Open the file and check it is full of code before moving on.
 
 ## 4. Get the new code
 
-https://github.com/CraigHunt913/SCEMS-FTO/blob/claude/multi-agent-code-review-1zeb1j/Code.gs
+https://github.com/CraigHunt913/SCEMS-FTO/blob/cursor/elite-tracker-estate-adde/Code.gs
 
 In the grey bar above the code, on the right, find the **copy icon** (two
 overlapping squares — hovering says *Copy raw file*). Click it once.
 
+**Use that branch.** The older `claude/multi-agent-code-review-…` copy does
+not have **Make the estate elite**. If Admin jumps from Deployment status
+straight to “Set the whole spreadsheet up properly”, you still have the old
+file.
 If you cannot find it: click in the code, `Ctrl` + `A`, `Ctrl` + `C`.
 
 ## 5. Paste it in

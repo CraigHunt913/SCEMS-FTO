@@ -19,7 +19,13 @@ are also on the menu under **SCEMS ▸ Admin**.
 
 ## First time
 
-1. **Paste `Code.gs`** over the existing script project and save.
+1. **Paste `Code.gs` from branch `cursor/elite-tracker-estate-adde`** over the
+   existing script project and save.
+
+   https://github.com/CraigHunt913/SCEMS-FTO/blob/cursor/elite-tracker-estate-adde/Code.gs
+
+   If Admin still has no **Make the estate elite** item, the old file is still
+   installed — paste again from that link, save, reload the sheet.
 
 2. **Reload the spreadsheet.** The `SCEMS` menu rebuilds itself on open. If
    it does not appear, the file did not save — check for a red error marker
