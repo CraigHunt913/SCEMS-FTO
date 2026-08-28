@@ -13321,13 +13321,13 @@ function ELITE_ESTATE_FINISH() {
 /** Menu wrapper: archive form copies with the required token after confirm. */
 function archiveFormCopiesPrompt() {
   var ui = SpreadsheetApp.getUi();
-  var preview = formEstateReport();
+  var n = formCopyInventoryV20_6_(true).length;
   var conf = ui.alert(
     'Archive backup form copies?',
-    'This moves every "Copy of …" SCEMS form into an archive folder. ' +
+    n + ' "Copy of …" SCEMS form(s) will be moved into an archive folder. ' +
     'Live forms are never touched. Nothing is deleted.\n\nContinue?',
     ui.ButtonSet.OK_CANCEL);
-  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.\n\n' + preview;
+  if (conf !== ui.Button.OK) return 'Cancelled. Nothing was moved.';
   return archiveFormCopiesV20_6_('ARCHIVE FORM COPIES');
 }
 
@@ -14158,9 +14158,9 @@ var SUPERSEDED_BLOCKS_V19 = [
     by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
 ];
 
-var SCEMS_VERSION = 'v20.6.0';
+var SCEMS_VERSION = 'v20.6.1';
 
-var SCEMS_WRITER_VERSION = 'SCEMS v20.6.0';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.6.1';
 
 var CONFIG = Object.freeze({
 

@@ -366,7 +366,7 @@ ok(/portal-1\.4\.0/.test(portalCfg), 'portal version bumped for the estate fix')
 // ---------------------------------------------------------------- //
 section('Version stamp');
 // ---------------------------------------------------------------- //
-ok(SCEMS_VERSION === 'v20.6.0', 'tracker version is v20.6.0');
+ok(SCEMS_VERSION === 'v20.6.1', 'tracker version is v20.6.1');
 ok(typeof CANONICAL_LIVE_SPREADSHEET_ID === 'string' &&
    CANONICAL_LIVE_SPREADSHEET_ID.indexOf('1YL-9Er') === 0,
    'canonical live spreadsheet id is documented in code');
