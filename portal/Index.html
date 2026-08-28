@@ -718,15 +718,12 @@ function paintDivision(d){
 
   h += warnRow(d.warnings);
 
-  (d.retiredForms||[]).forEach(function(f){
-    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere. '+esc(f.why)+'</div>';
-  });
+  // First viewport = decisions and people. Machinery (retired forms, staged
+  // rows) lives at the bottom under Desk details — not as red banners here.
 
   if (!q.length){
-    h += '<div class="note n-ok"><b>Queue clear</b>No skill is waiting on your decision. Every staged decision is on the sign-off path with your name against it.</div>';
+    h += '<div class="note n-ok"><b>Queue clear</b>Nothing needs your decision right now.</div>';
   } else {
-    // Lead card — the oldest / first decision dominates the viewport.
     var lead = q[0];
     h += decisionLeadHtml(lead);
     if (q.length > 1){
@@ -737,30 +734,11 @@ function paintDivision(d){
       h += '<p class="sub">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';
   }
 
-  /* Decisions already made here, waiting on the tracker to make them
-     permanent. After the queue, because what you have already decided must
-     never sit above what is still waiting on you - and not dropped either,
-     which is what they would be if the count simply stopped mentioning them. */
-  var staged = d.staged || [];
-  if (staged.length){
-    h += '<div class="note n-info"><b>'+staged.length+' waiting on the tracker</b>'+
-         'You have decided '+(staged.length===1?'this one':'these')+' already. '+
-         'The tracker turns '+(staged.length===1?'it':'them')+' into permanent sign-offs: '+
-         'tick RECORD on the row, or run &ldquo;Record pending decisions&rdquo; from its menu.</div>';
-    h += picker('pick-staged', staged.length+' already decided\u2026', staged.map(function(x){
-      return { value: x.trainee,
-               label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
-    }), 'pickRecord');
-  }
-
   if (flagged.length){
     h += sec('Next moves', flagged.length);
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
-  /* Looked at, and something said about it. Not an alarm any more, and not
-     gone either - the finding is still on the card, with who holds it and
-     until when. */
   if (seen.length){
     h += sec('Seen, and holding', seen.length);
     seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
@@ -777,16 +755,13 @@ function paintDivision(d){
     }), 'pickPerson');
   }
 
-  if (d.forms && d.forms.length) h += sec('Forms')+formCards(d.forms);
+  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
 
-  h += housekeeping(d);
+  // Same-day duplicates are a human call — keep them visible but quiet, at the end.
+  var house = housekeeping(d);
+  if (house) h += sec('Settle')+house;
 
-  h += sec('System')+'<div class="panel">'+
-    kv('Delivery mode','<span class="chip c-warn">'+esc(d.mode)+'</span>')+
-    kv('Active trainees', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed, not counted</span>')+
-    kv('Form links', d.formLinks ? '<span class="chip c-ok">Live</span>'
-                                 : '<span class="chip c-warn">Off</span>')+
-    '</div>';
+  h += deskDetails(d);
   paint(h);
 }
 
@@ -876,17 +851,15 @@ function cap(s){ s = String(s==null?'':s); return s.charAt(0).toUpperCase()+s.sl
 function short(s, n){ s = String(s==null?'':s).trim(); n = n || 44;
   return s.length > n ? s.slice(0,n)+'…' : s; }
 
-/* Data-quality work. Real, but it is not a decision about a person, so it
-   sits under a count until you ask for it. */
+/* Data-quality and vault chores. Real, but not the job of the first screen.
+   Kept behind a quiet disclosure so Waiting on you stays human. */
 function housekeeping(d){
   var subs = d.duplicateSubs || [], dupes = d.duplicates || [];
   if (!subs.length && !dupes.length) return '';
-  var h = sec('Housekeeping');
+  var h = '';
   if (subs.length){
     h += '<p class="sub" style="margin-bottom:9px">'+subs.length+' same-day '+
-         (subs.length===1?'submission':'submissions')+', where two of a kind landed on one '+
-         'day and somebody has to say which stands. Both are kept. Pick one to read them '+
-         'side by side.</p>';
+         (subs.length===1?'submission':'submissions')+' to settle — both kept; pick one to read them.</p>';
     h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x){
       return { value: x.trainee,
                label: x.trainee + ' \u2014 ' + x.source + (x.group ? ' \u00b7 ' + x.group : '') +
@@ -894,10 +867,49 @@ function housekeeping(d){
     }), 'pickRecord');
   }
   if (dupes.length){
-    h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'record':'records')+
-         '</b>'+esc(dupes.join(', '))+' '+(dupes.length===1?'appears':'appear')+
-         ' more than once in the trainee master.</div>';
+    h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'name':'names')+
+         '</b>'+esc(dupes.join(', '))+' on the trainee master.</div>';
   }
+  return h;
+}
+
+/** Folded machinery: staged decisions, retired forms, mode. Not in the hero. */
+function deskDetails(d){
+  var staged = d.staged || [];
+  var retired = d.retiredForms || [];
+  if (!staged.length && !retired.length && !d.mode) return '';
+
+  var open = !!S.showDesk;
+  var bits = [];
+  if (staged.length) bits.push(staged.length+' decided');
+  if (retired.length) bits.push(retired.length+' form note'+(retired.length===1?'':'s'));
+  var label = bits.length ? bits.join(' · ') : 'Desk details';
+
+  var h = '<button class="more" style="margin-top:22px" onclick="S.showDesk=!S.showDesk;render()">'+
+          (open ? 'Hide' : 'Show')+' '+label+'</button>';
+  if (!open) return h;
+
+  if (staged.length){
+    h += '<p class="sub">Already decided here — finish them in the tracker when you are at a computer '+
+         '(tick RECORD on the row, or SCEMS → Record pending decisions).</p>';
+    h += picker('pick-staged', staged.length+' to finish in the tracker\u2026', staged.map(function(x){
+      return { value: x.trainee,
+               label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
+    }), 'pickRecord');
+  }
+  if (retired.length){
+    h += '<p class="sub">Old form links still accepting answers somewhere. Close them in Drive when you can — '+
+         'not urgent for today&rsquo;s decisions.</p>';
+    retired.forEach(function(f){
+      h += '<div class="note n-info"><b>'+esc(f.title)+'</b>'+esc(f.why||'Retired; still open somewhere.')+'</div>';
+    });
+  }
+  h += '<div class="panel" style="margin-top:10px">'+
+    kv('Mode','<span class="chip c-mute">'+esc(d.mode)+'</span>')+
+    kv('On THE LINE', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed</span>')+
+    kv('Form links', d.formLinks ? '<span class="chip c-ok">On</span>'
+                                 : '<span class="chip c-warn">Off</span>')+
+    '</div>';
   return h;
 }
 
@@ -1090,14 +1102,6 @@ function paintMedical(d){
     total+(total===1?' open case':' open cases')+' for you. Nothing else.');
   h += warnRow(d.warnings);
 
-  /* Something wrong with the system rather than with a person. It belongs at
-     the top with the other system-level alerts, not floating between two
-     groups of people where it reads as a third sign-off. */
-  (d.retiredForms||[]).forEach(function(f){
-    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere in this portal. '+esc(f.why)+
-         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
-  });
   if (!total) h += '<div class="note n-ok"><b>Nothing pending</b>No open concern requires your authority.</div>';
   cases.forEach(function(c){
     h += '<button class="card act"'+spine('pmd')+' onclick="openRecord('+jsStr(c.trainee)+')">'+

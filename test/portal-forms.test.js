@@ -895,14 +895,26 @@ if (api4) {
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
   ok(/QR-77/.test(html),
      'carrying the request id, so a queue that re-sorted cannot be approved blind');
-  ok(/1 waiting on the tracker/.test(html),
-     'a decision already made is counted separately, not as one still waiting on you');
-  ok(/Record pending decisions/.test(html),
-     'and the screen says what turns it into a permanent sign-off');
+  ok(/Show 1 decided|1 decided/.test(html),
+     'a decision already made is noted quietly, not as a banner in the hero');
+  ok(!/waiting on the tracker/i.test(html),
+     'and does not shout "waiting on the tracker" on the main desk');
+  ok(!/Retired form still open/i.test(html),
+     'retired-form machinery is not a red banner above the decision');
   ok(!/Kaylie Vaughn/.test(cards(html)),
-     'without putting it back on the page as a row');
+     'without putting the staged person back on the page as a row');
   ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
      "and an apostrophe in a name survives instead of being stripped out");
+
+  // Open desk details: staged + retired live here, below the decision.
+  api4.S.showDesk = true; api4.render();
+  const openHtml = nodes['view'].innerHTML;
+  ok(/finish them in the tracker|finish in the tracker/i.test(openHtml),
+     'desk details explain how staged decisions become permanent');
+  ok(/Skills quick log|Retired|retired/i.test(openHtml),
+     'retired form notes appear only after you ask for desk details');
+  ok(openHtml.indexOf('IV access') < openHtml.indexOf('finish'),
+     'the live decision still sits above folded desk details');
 }
 
 // ---------------------------------------------------------------- //
@@ -1015,10 +1027,10 @@ ok(/<div class="hero">/.test(divHtml), 'the Division screen renders one');
 ok(/class="eyebrow">Waiting on you</.test(divHtml), 'which names the product beat');
 ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('IV access'),
    'above everything else on the page');
-ok(divHtml.indexOf('IV access') < divHtml.indexOf('waiting on the tracker'),
-   'a decision still waiting on you sits above one you have already made');
-ok(divHtml.indexOf('Retired form still open') < divHtml.indexOf('IV access'),
-   'and a broken form is a system alert, so it sits above the queue rather than inside it');
+ok(/Show 1 decided|deskDetails|Show .*decided/.test(pageSrc) && /deskDetails/.test(pageSrc),
+   'machinery is folded behind desk details, not the hero');
+ok(!/note n-stop.*Retired form|Retired form still open/.test(divHtml),
+   'retired forms are not a stop banner on Waiting on you');
 ok(/returnSignoffV1|Return for more evidence/.test(pageSrc),
    'Return is a first-class decision path on THE LINE');
 ok(/THE LINE/.test(pageSrc), 'the product name is on the page');
