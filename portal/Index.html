@@ -274,11 +274,21 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
     <div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div>
     <span class="mode" id="mode">…</span>
   </div>
-  <div class="wrap" id="view"><p class="sub">Loading…</p></div>
+  <div class="wrap" id="view"><p class="sub" id="boot-msg">Loading THE LINE…</p></div>
   <div class="foot" id="foot"></div>
 </div>
+<noscript>
+  <div style="max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-serif">
+    <h1>THE LINE needs JavaScript</h1>
+    <p>Turn JavaScript on for this site, then reload.</p>
+  </div>
+</noscript>
 
 <script>
+// If this script never finishes, the message below stays so a blank page is impossible.
+try {
+  document.getElementById('boot-msg').textContent = 'Starting…';
+} catch (e0) {}
 // The scriptlet below prints the payload RAW. The escaping kind would turn
 // every quote in this JSON into &quot; and make the line invalid JavaScript,
 // and the page would sit on "Loading" forever because the script died before
@@ -291,6 +301,16 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 // against the line in Code.gs that called it - nowhere near here.
 var BOOT = <?!= boot ?>;
 var S = { screen: 'main', ctx: null, busy: false };
+
+window.onerror = function (msg, src, line) {
+  try {
+    var v = document.getElementById('view');
+    if (v) v.innerHTML = '<div class="hero"><h1>THE LINE could not start</h1>' +
+      '<p class="sub">A script error stopped the page. Redeploy a new version after a full paste, or check Executions in the Apps Script editor.</p></div>' +
+      '<div class="note n-stop"><b>Error</b>' + String(msg || 'unknown') +
+      (line ? ' (line ' + line + ')' : '') + '</div>';
+  } catch (e1) {}
+};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -1174,6 +1194,15 @@ function reload(){
 }
 
 render();
+} catch (bootErr) {
+  try {
+    document.getElementById('view').innerHTML =
+      '<div class="hero"><h1>THE LINE could not start</h1>' +
+      '<p class="sub">The page loaded but the script crashed while starting. ' +
+      'In the Apps Script editor run portalPasteCheck, then Deploy → Manage deployments → Edit → New version.</p></div>' +
+      '<div class="note n-stop"><b>Error</b>' + String((bootErr && bootErr.message) || bootErr) + '</div>';
+  } catch (e2) {}
+}
 </script>
 </body>
 </html>

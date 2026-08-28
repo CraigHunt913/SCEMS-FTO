@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.0.0
- * Build a94a4b3a
+ * Build 00a5673b
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -7816,11 +7816,22 @@ var PORTAL_PAGE_HTML = [
   "    <div><div class=\"s\">Sumter County EMS</div><div class=\"t\">THE LINE</div></div>\n",
   "    <span class=\"mode\" id=\"mode\">…</span>\n",
   "  </div>\n",
-  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\">Loading…</p></div>\n",
+  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\" id=\"boot-msg\">Loading THE LINE…</p></div>\n",
   "  <div class=\"foot\" id=\"foot\"></div>\n",
   "</div>\n",
+  "<noscript>\n",
+  "  <div style=\"max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-ser",
+  "if\">\n",
+  "    <h1>THE LINE needs JavaScript</h1>\n",
+  "    <p>Turn JavaScript on for this site, then reload.</p>\n",
+  "  </div>\n",
+  "</noscript>\n",
   "\n",
   "<script>\n",
+  "// If this script never finishes, the message below stays so a blank page is impossible.\n",
+  "try {\n",
+  "  document.getElementById('boot-msg').textContent = 'Starting…';\n",
+  "} catch (e0) {}\n",
   "// The scriptlet below prints the payload RAW. The escaping kind would turn\n",
   "// every quote in this JSON into &quot; and make the line invalid JavaScript,\n",
   "// and the page would sit on \"Loading\" forever because the script died before\n",
@@ -7834,6 +7845,18 @@ var PORTAL_PAGE_HTML = [
   "var BOOT = <?!= boot ?>;\n",
   "var S = { screen: 'main', ctx: null, busy: false };\n",
   "\n",
+  "window.onerror = function (msg, src, line) {\n",
+  "  try {\n",
+  "    var v = document.getElementById('view');\n",
+  "    if (v) v.innerHTML = '<div class=\"hero\"><h1>THE LINE could not start</h1>' +\n",
+  "      '<p class=\"sub\">A script error stopped the page. Redeploy a new version after a full",
+  " paste, or check Executions in the Apps Script editor.</p></div>' +\n",
+  "      '<div class=\"note n-stop\"><b>Error</b>' + String(msg || 'unknown') +\n",
+  "      (line ? ' (line ' + line + ')' : '') + '</div>';\n",
+  "  } catch (e1) {}\n",
+  "};\n",
+  "\n",
+  "try {\n",
   "function esc(s){ return String(s==null?'':s).replace(/[&<>\"']/g,function(c){\n",
   "  return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]; }); }\n",
   "function lvlChip(k,l){ return '<span class=\"chip c-'+esc(k||'emt')+'\">'+esc(l||'')+'</span",
@@ -8840,6 +8863,17 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "\n",
   "render();\n",
+  "} catch (bootErr) {\n",
+  "  try {\n",
+  "    document.getElementById('view').innerHTML =\n",
+  "      '<div class=\"hero\"><h1>THE LINE could not start</h1>' +\n",
+  "      '<p class=\"sub\">The page loaded but the script crashed while starting. ' +\n",
+  "      'In the Apps Script editor run portalPasteCheck, then Deploy → Manage deployments → ",
+  "Edit → New version.</p></div>' +\n",
+  "      '<div class=\"note n-stop\"><b>Error</b>' + String((bootErr && bootErr.message) || boo",
+  "tErr) + '</div>';\n",
+  "  } catch (e2) {}\n",
+  "}\n",
   "</script>\n",
   "</body>\n",
   "</html>\n"
@@ -8855,7 +8889,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'a94a4b3a';
+var PORTAL_BUILD = '00a5673b';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
