@@ -47,10 +47,11 @@ const KEEP = {
 const BY_NAME = {};
 const put = (file, names) => names.forEach(n => { BY_NAME[n] = file; });
 
-put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'ELITE_ESTATE',
-  'ELITE_ESTATE_FINISH', 'archiveFormCopiesPrompt', 'applyEngineRepairPrompt', 'POLISH_SHEETS',
-  'SIMPLIFY_EVERYTHING', 'FIX_MY_SHEETS', 'goLiveChecklistV20_2', 'deploymentStatusV20_2',
-  'deploymentPreflight', 'traineeList', 'getList', 'engineRows', 'MANAGED_TRIGGER_HANDLERS']);
+put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'MAKE_IT_SIMPLE',
+  'ELITE_ESTATE', 'ELITE_ESTATE_FINISH', 'archiveFormCopiesPrompt', 'applyEngineRepairPrompt',
+  'POLISH_SHEETS', 'SIMPLIFY_EVERYTHING', 'FIX_MY_SHEETS', 'goLiveChecklistV20_2',
+  'deploymentStatusV20_2', 'deploymentPreflight', 'traineeList', 'getList', 'engineRows',
+  'MANAGED_TRIGGER_HANDLERS']);
 
 put('60_reporting', ['traineeStatusCards', 'supervisorDigest', 'systemHeartbeat', 'monthlySnapshot',
   'ftoScoreboardV20_1', 'redoAuditTabV20_1', 'traineeListSafeV20_1_', 'collectActionItemsV19_',

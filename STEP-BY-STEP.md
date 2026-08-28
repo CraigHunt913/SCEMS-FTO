@@ -114,24 +114,26 @@ Everything after it says SKIPPED; that is the design working.
 Underneath, a health check lists anything still needing attention and names
 the exact function to run for each. That is a to-do list, not an error.
 
-## 10. Get your menu back
+## 10. Make the spreadsheet feel simple
 
 1. Switch to the spreadsheet tab.
 2. Press `F5` (Mac: `⌘` + `R`).
-3. Wait for it to load. A **SCEMS** menu appears next to Help.
+3. Wait for **SCEMS** to appear next to Help.
+4. Click **SCEMS → Make this spreadsheet simple**.
+
+That hides Form Responses and the other machinery tabs (nothing is deleted)
+and leaves you on **TRAINEES**.
+
+Day to day from here:
 
 ```
+Trainees — start here
 Work my queue
-Record a skill I witnessed
-Advance a trainee
-Close / release a trainee
-Health check
+What needs attention?
 Backup now
-  Admin ▸
 ```
 
-If the menu is missing, reload once more and wait ten seconds. If it is still
-missing, the file did not save — go back to step 5.
+Everything else is under **More**. See HOW-TO-RUN.md.
 
 ## 11. Recover the 16 lost skill logs
 

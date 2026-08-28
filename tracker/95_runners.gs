@@ -46,6 +46,50 @@ function MAKE_IT_PROFESSIONAL() {
 }
 
 /**
+ * THE button for "this is too confusing."
+ *
+ * Builds the TRAINEES desk, hides Form Responses and every other machinery
+ * tab, and leaves you on TRAINEES. Does not delete data. Does not touch
+ * forms. Safe to run any time the tab bar looks like a junk drawer.
+ */
+function MAKE_IT_SIMPLE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — MAKE IT SIMPLE', '',
+    'Goal: a desk you can run the program from, not a warehouse of tabs.', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 105));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180));
+    }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Hide Form Responses and other machinery', organizeTabsV20_2);
+  L.push('');
+  L.push('How to use this system from now on:');
+  L.push('  1. SCEMS ▸ Trainees — start here');
+  L.push('  2. SCEMS ▸ Work my queue');
+  L.push('  3. SCEMS ▸ What needs attention?  when something feels off');
+  L.push('  4. SCEMS ▸ Backup now  about once a month');
+  L.push('');
+  L.push('The portal is for FTOs / trainees / Medical Director views.');
+  L.push('This spreadsheet is for you — Training — to decide and record.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'MAKE IT SIMPLE', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Alias kept so older instructions that say SIMPLIFY_EVERYTHING still work. */
+function SIMPLIFY_EVERYTHING() { return MAKE_IT_SIMPLE(); }
+
+/**
  * Correctness of the estate — not cosmetics.
  *
  * Apps Script kills any run at six minutes. The first live run archived 53
@@ -213,28 +257,6 @@ function POLISH_SHEETS() {
   L.push('profile is right is a fact about that person, and this will not guess.');
   var msg = L.join('\n');
   systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** One command: build the console, make everything readable, tidy the tabs. */
-function SIMPLIFY_EVERYTHING() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
-    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
-  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
-  L.push('');
-  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
-  L.push('history as a document; tick "Release" when they are done. Nothing else is');
-  L.push('needed day to day.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;

@@ -1238,7 +1238,11 @@ function healthCheckV20_2() {
 }
 
 /* ---------------------------------------------------------------- *
- *  Menu : six verbs, everything else behind Admin
+ *  Menu : a desk, not a toolbox catalogue
+ *
+ *  Day to day you need four things. Everything else is under More.
+ *  Jargon names (ELITE_ESTATE, MAKE_IT_PROFESSIONAL) stay as function
+ *  ids so old instructions still run; the labels a human reads are plain.
  * ---------------------------------------------------------------- */
 
 /** THE ONLY onOpen IN THIS PROJECT. The two earlier definitions were deleted
@@ -1248,70 +1252,50 @@ function onOpen(e) {
   try {
     var ui = SpreadsheetApp.getUi();
     ui.createMenu('SCEMS')
-      .addItem('Trainees (start here)', 'openTraineeConsoleV20_3')
-      .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
-      .addSeparator()
+      .addItem('Trainees — start here', 'openTraineeConsoleV20_3')
       .addItem('Work my queue', 'workMyQueueV20_1')
       .addItem('Record a skill I witnessed', 'recordSkillDirectV20_1')
-      .addItem('Advance a trainee', 'advanceTraineeNow')
-      .addItem('Close / release a trainee', 'closeTraineeV20_1')
       .addSeparator()
-      .addItem('Health check', 'healthCheckV20_2')
+      .addItem('What needs attention?', 'healthCheckV20_2')
       .addItem('Backup now', 'fullBackupV20_1')
       .addSeparator()
-      .addSubMenu(ui.createMenu('Admin')
-        .addItem('Health check', 'healthCheckV20_2')
-        .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
-        .addItem('Make the estate elite (safe repairs)', 'ELITE_ESTATE')
-        .addItem('Elite estate — finish (recover + matrix)', 'ELITE_ESTATE_FINISH')
+      .addItem('Make this spreadsheet simple', 'MAKE_IT_SIMPLE')
+      .addSubMenu(ui.createMenu('More')
+        .addItem('Refresh the trainee list', 'buildTraineeConsoleV20_3')
+        .addItem('Advance a trainee', 'advanceTraineeNow')
+        .addItem('Close / release a trainee', 'closeTraineeV20_1')
         .addSeparator()
-        .addItem('Set the whole spreadsheet up properly', 'MAKE_IT_PROFESSIONAL')
-        .addItem('Put the badge and masthead on every page', 'brandAllSheetsV20_5')
-        .addItem('Make everything simpler', 'SIMPLIFY_EVERYTHING')
-        .addItem('Fix and polish the sheet headers', 'POLISH_SHEETS')
-        .addItem('Check entry profiles (read-only)', 'auditEntryProfilesV20_4')
-        .addItem('Show every hidden column', 'showAllColumnsV20_4')
-        .addItem('Widen columns so comments are readable', 'makeSheetsReadableV20_3')
-        .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
-        .addItem('Tidy up the tabs', 'organizeTabsV20_2')
+        .addItem('Hide the clutter (Form Responses, machinery)', 'organizeTabsV20_2')
         .addItem('Show every tab', 'showAllTabsV20_2')
-        .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
-        .addSeparator()
-        .addItem('Form estate report (read-only)', 'formEstateReport')
-        .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
-        .addItem('Fresh-start report (orphan tabs)', 'freshStartReport')
-        .addItem('Engine health (read-only)', 'engineHealthCheck')
-        .addItem('Preview engine key repair', 'previewEngineRepairV20_6')
-        .addItem('Apply engine key repair', 'applyEngineRepairPrompt')
-        .addItem('Tab name check (read-only)', 'tabNameCheck')
-        .addSeparator()
-        .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
-        .addItem('Acknowledge phase mismatches / log flags', 'fixAllFlagsNowV20_1')
-        .addItem('Undo old flag-formula wrapping', 'unwrapAuditFormulasV20_1')
-        .addItem('Approve skills for trainee on tab 23', 'approveTraineeOnViewV20_1')
-        .addItem('Record pending skill decisions', 'recordPendingDecisionsV20_1')
-        .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
-        .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
         .addItem('Rebuild the skill matrix', 'rebuildSkillMatrix')
+        .addItem('Recover lost form submissions', 'recoverLostSubmissionsV20_2')
+        .addItem('Repair forms & sheets (part 1)', 'ELITE_ESTATE')
+        .addItem('Recover skills & rebuild matrix (part 2)', 'ELITE_ESTATE_FINISH')
         .addSeparator()
         .addItem('Which mode am I in?', 'whichMode')
-        .addItem('Version report', 'versionReportV20_1')
-        .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
-        .addSeparator()
-        .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
-        .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
-        .addItem('Refresh the home page', 'refreshHomeNowV20_1')
-        .addItem('Re-tidy the queue tab (formatting only)', 'makeQueueReadableV20_1')
-        .addItem('Tab 20 : show only live work', 'queueShowLiveV20_1')
-        .addItem('Tab 20 : show full history', 'queueShowAllV20_1')
-        .addSeparator()
-        .addItem('Reconcile decisions (read-only)', 'reconcileDecisionsV20')
-        .addItem('System review — core (read-only)', 'reviewCoreV20_1')
-        .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
-        .addItem('Migration preview (read-only)', 'previewMigrationV20_1'))
-      .addSubMenu(ui.createMenu('Go live / test')
         .addItem('Go LIVE', 'goLive')
-        .addItem('Back to TEST mode', 'backToTestMode'))
+        .addItem('Back to TEST mode', 'backToTestMode')
+        .addSeparator()
+        .addSubMenu(ui.createMenu('Advanced')
+          .addItem('Deployment status (read-only)', 'deploymentStatusV20_2')
+          .addItem('Form estate report (read-only)', 'formEstateReport')
+          .addItem('Archive backup form copies', 'archiveFormCopiesPrompt')
+          .addItem('Fresh-start report (orphan tabs)', 'freshStartReport')
+          .addItem('Engine health (read-only)', 'engineHealthCheck')
+          .addItem('Apply engine key repair', 'applyEngineRepairPrompt')
+          .addItem('Ingestion reconciliation (read-only)', 'reconcileIngestionV20_1')
+          .addItem('Re-open wrongly cancelled requests', 'repairCancelledQueueRowsV20_2')
+          .addItem('Protect the record tabs', 'protectRecordTabsV20_2')
+          .addItem('Sync form choices (level-safe)', 'refreshDropdowns')
+          .addItem('Accept an audit flag (with a reason)', 'acceptFlagV20_2')
+          .addItem('FTO scoreboard (email it to me)', 'ftoScoreboardV20_1')
+          .addItem('Version report', 'versionReportV20_1')
+          .addItem('Full polish pass', 'MAKE_IT_PROFESSIONAL')
+          .addItem('Fix and polish sheet headers', 'POLISH_SHEETS')
+          .addItem('My sheets look wrong — fix them', 'FIX_MY_SHEETS')
+          .addItem('System review — core (read-only)', 'reviewCoreV20_1')
+          .addItem('System review — deep (read-only)', 'reviewDeepV20_1')
+          .addItem('Migration preview (read-only)', 'previewMigrationV20_1')))
       .addToUi();
   } catch (err) {
     Logger.log('onOpen menu skipped: ' + err);
@@ -10920,22 +10904,25 @@ function makeSheetsReadableV20_3() {
  *  then the machinery. Anything not listed keeps its place at the end. */
 function tabOrderV20_2_() {
   return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
+          TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER,
+          TAB.WEEKLY, TAB.DASH, TAB.TRAINEE_SKILLS, TAB.CATALOG,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.MD_VIEW,
           TAB.ANALYTICS, TAB.ENGINE,
           TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
           TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
           TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
 }
 
-/** The tabs a person actually opens. Everything else is machinery: still
- *  live, still receiving data, just not in your way. */
+/** The tabs a person actually opens day to day.
+ *
+ *  Doctrine (v20.7): this workbook is a desk, not a warehouse aisle.
+ *  Trainees → queue → roster. Role views (08/09/11) belong in the portal.
+ *  Raw form tabs, ledgers, engines, and Form Responses are machinery —
+ *  still live, just not in your face. organizeTabsV20_2 hides the rest.
+ *  showAllTabsV20_2 puts everything back when you are repairing the system. */
 function dailyTabsV20_2_() {
-  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS,
+          TAB.SKILL_VALIDATION, TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER];
 }
 
 /** Puts the tabs in a sensible order and hides the machinery.
@@ -10971,15 +10958,17 @@ function organizeTabsV20_2() {
     }
   });
 
-  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
-  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
+  var desk = S.getSheetByName(TAB_CONSOLE_V20_3) || S.getSheetByName('HOME') ||
+             S.getSheetByName(TAB.CONTROL);
+  if (desk) { try { S.setActiveSheet(desk); } catch (e) {} }
 
-  var msg = 'TABS ORGANIZED\n\n' +
-    'Ordered : ' + moved + ' tab(s)\n' +
-    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
-    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
-    '\n  ' + hidden.join('\n  ') +
-    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
+  var msg = 'YOUR DESK IS READY\n\n' +
+    'You should now see about ' + visible.length + ' tabs — the ones you use.\n' +
+    '  ' + visible.join('\n  ') +
+    '\n\nHidden (still live, still receiving data) : ' + hidden.length +
+    '\n  including Form Responses, ledgers, engines, and old role views.\n' +
+    '\nNothing was deleted. SCEMS ▸ More ▸ Show every tab puts them all back.\n' +
+    'Day to day: open TRAINEES, then Work my queue.';
   systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
@@ -10993,7 +10982,7 @@ function showAllTabsV20_2() {
     try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
   });
   var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
-    'Admin > Tidy up the tabs puts the machinery away.';
+    'SCEMS ▸ More ▸ Hide the clutter puts the machinery away.';
   systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
@@ -13221,6 +13210,50 @@ function MAKE_IT_PROFESSIONAL() {
 }
 
 /**
+ * THE button for "this is too confusing."
+ *
+ * Builds the TRAINEES desk, hides Form Responses and every other machinery
+ * tab, and leaves you on TRAINEES. Does not delete data. Does not touch
+ * forms. Safe to run any time the tab bar looks like a junk drawer.
+ */
+function MAKE_IT_SIMPLE() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  var L = ['SCEMS ' + SCEMS_VERSION + ' — MAKE IT SIMPLE', '',
+    'Goal: a desk you can run the program from, not a warehouse of tabs.', ''];
+  function step(n, what, fn) {
+    try {
+      var r = fn();
+      L.push(n + '. ' + what + ' : OK');
+      if (r) String(r).split('\n').slice(0, 2).forEach(function (x) {
+        if (x.trim()) L.push('      ' + x.trim().slice(0, 105));
+      });
+    } catch (e) {
+      L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 180));
+    }
+  }
+  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
+  step(2, 'Widen columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
+  step(3, 'Hide Form Responses and other machinery', organizeTabsV20_2);
+  L.push('');
+  L.push('How to use this system from now on:');
+  L.push('  1. SCEMS ▸ Trainees — start here');
+  L.push('  2. SCEMS ▸ Work my queue');
+  L.push('  3. SCEMS ▸ What needs attention?  when something feels off');
+  L.push('  4. SCEMS ▸ Backup now  about once a month');
+  L.push('');
+  L.push('The portal is for FTOs / trainees / Medical Director views.');
+  L.push('This spreadsheet is for you — Training — to decide and record.');
+  var msg = L.join('\n');
+  systemLog_('WARN', 'MAKE IT SIMPLE', SCEMS_VERSION);
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
+  return msg;
+}
+
+/** Alias kept so older instructions that say SIMPLIFY_EVERYTHING still work. */
+function SIMPLIFY_EVERYTHING() { return MAKE_IT_SIMPLE(); }
+
+/**
  * Correctness of the estate — not cosmetics.
  *
  * Apps Script kills any run at six minutes. The first live run archived 53
@@ -13388,28 +13421,6 @@ function POLISH_SHEETS() {
   L.push('profile is right is a fact about that person, and this will not guess.');
   var msg = L.join('\n');
   systemLog_('WARN', 'SHEET POLISH RUN', 'v20.4');
-  Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
-  return msg;
-}
-
-/** One command: build the console, make everything readable, tidy the tabs. */
-function SIMPLIFY_EVERYTHING() {
-  if (!gateV20_2_('WORK QUEUE')) return;
-  var L = ['SIMPLIFY — ' + SCEMS_VERSION, ''];
-  function step(n, what, fn) {
-    try { var r = fn(); L.push(n + '. ' + what + ' : OK'); if (r) L.push('      ' + String(r).split('\n')[0].slice(0, 110)); }
-    catch (e) { L.push(n + '. ' + what + ' : FAILED — ' + String(e).slice(0, 200)); }
-  }
-  step(1, 'Build the TRAINEES console', function () { return buildTraineeConsoleV20_3(); });
-  step(2, 'Widen the columns so comments are readable', function () { return makeSheetsReadableV20_3(); });
-  step(3, 'Order the tabs and hide the machinery', function () { return organizeTabsV20_2(); });
-  L.push('');
-  L.push('Open the TRAINEES tab. One row per person. Tick "Open file" for their whole');
-  L.push('history as a document; tick "Release" when they are done. Nothing else is');
-  L.push('needed day to day.');
-  var msg = L.join('\n');
-  systemLog_('WARN', 'SIMPLIFY RUN', 'console + readable layout + tabs');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
   return msg;
@@ -14171,9 +14182,9 @@ var SUPERSEDED_BLOCKS_V19 = [
     by: 'v19.15.0 handover, HTML', note: 'delete the plain text one' }
 ];
 
-var SCEMS_VERSION = 'v20.6.1';
+var SCEMS_VERSION = 'v20.7.0';
 
-var SCEMS_WRITER_VERSION = 'SCEMS v20.6.1';
+var SCEMS_WRITER_VERSION = 'SCEMS v20.7.0';
 
 var CONFIG = Object.freeze({
 

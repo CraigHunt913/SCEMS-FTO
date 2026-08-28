@@ -1188,22 +1188,25 @@ function makeSheetsReadableV20_3() {
  *  then the machinery. Anything not listed keeps its place at the end. */
 function tabOrderV20_2_() {
   return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER,
+          TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER,
+          TAB.WEEKLY, TAB.DASH, TAB.TRAINEE_SKILLS, TAB.CATALOG,
+          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.MD_VIEW,
           TAB.ANALYTICS, TAB.ENGINE,
           TAB.EVAL, TAB.REFLECT, TAB.URGENT, TAB.DECISIONS, TAB.ARCHIVE,
           TAB.SKILL_EVIDENCE, TAB.SKILL_SIGNOFF, TAB.LOG,
           TAB.REGISTRY, TAB.LEDGER, TAB.ASSIGNMENTS, TAB.ACCESS];
 }
 
-/** The tabs a person actually opens. Everything else is machinery: still
- *  live, still receiving data, just not in your way. */
+/** The tabs a person actually opens day to day.
+ *
+ *  Doctrine (v20.7): this workbook is a desk, not a warehouse aisle.
+ *  Trainees → queue → roster. Role views (08/09/11) belong in the portal.
+ *  Raw form tabs, ledgers, engines, and Form Responses are machinery —
+ *  still live, just not in your face. organizeTabsV20_2 hides the rest.
+ *  showAllTabsV20_2 puts everything back when you are repairing the system. */
 function dailyTabsV20_2_() {
-  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS, TAB.SKILL_VALIDATION,
-          TAB.QUEUE, TAB.AUDIT, TAB.WEEKLY,
-          TAB.FTO_VIEW, TAB.TRAINEE_VIEW, TAB.DASH, TAB.MD_VIEW,
-          TAB.TRAINEE_SKILLS, TAB.CATALOG, TAB.FTO_ROSTER];
+  return [TAB_CONSOLE_V20_3, 'HOME', TAB.CONTROL, TAB.MASTER, TAB.SKILLS,
+          TAB.SKILL_VALIDATION, TAB.QUEUE, TAB.AUDIT, TAB.FTO_ROSTER];
 }
 
 /** Puts the tabs in a sensible order and hides the machinery.
@@ -1239,15 +1242,17 @@ function organizeTabsV20_2() {
     }
   });
 
-  var home = S.getSheetByName('HOME') || S.getSheetByName(TAB.CONTROL);
-  if (home) { try { S.setActiveSheet(home); } catch (e) {} }
+  var desk = S.getSheetByName(TAB_CONSOLE_V20_3) || S.getSheetByName('HOME') ||
+             S.getSheetByName(TAB.CONTROL);
+  if (desk) { try { S.setActiveSheet(desk); } catch (e) {} }
 
-  var msg = 'TABS ORGANIZED\n\n' +
-    'Ordered : ' + moved + ' tab(s)\n' +
-    'Visible : ' + visible.length + '\n  ' + visible.join('\n  ') +
-    '\n\nHidden (machinery, still live and still receiving data) : ' + hidden.length +
-    '\n  ' + hidden.join('\n  ') +
-    '\n\nNothing was deleted or renamed. Admin > Show every tab puts them all back.';
+  var msg = 'YOUR DESK IS READY\n\n' +
+    'You should now see about ' + visible.length + ' tabs — the ones you use.\n' +
+    '  ' + visible.join('\n  ') +
+    '\n\nHidden (still live, still receiving data) : ' + hidden.length +
+    '\n  including Form Responses, ledgers, engines, and old role views.\n' +
+    '\nNothing was deleted. SCEMS ▸ More ▸ Show every tab puts them all back.\n' +
+    'Day to day: open TRAINEES, then Work my queue.';
   systemLog_('INFO', 'TABS ORGANIZED', visible.length + ' visible, ' + hidden.length + ' hidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e) {}
@@ -1261,7 +1266,7 @@ function showAllTabsV20_2() {
     try { if (sh.isSheetHidden()) { sh.showSheet(); n++; } } catch (e) {}
   });
   var msg = 'Every tab is visible again (' + n + ' unhidden).\n\n' +
-    'Admin > Tidy up the tabs puts the machinery away.';
+    'SCEMS ▸ More ▸ Hide the clutter puts the machinery away.';
   systemLog_('INFO', 'ALL TABS SHOWN', n + ' unhidden');
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
