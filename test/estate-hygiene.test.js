@@ -361,7 +361,7 @@ ok(/PORTAL_STAGING_ARCHIVE_FOLDER|SCEMS Portal Staging — ARCHIVE/.test(staging
 ok(/Sheet1/.test(stagingSrc), 'drops Google\'s default Sheet1 from a new sandbox');
 
 const portalCfg = fs.readFileSync('/home/user/SCEMS-FTO/portal/00_Config.gs', 'utf8');
-ok(/portal-2\.0\.4/.test(portalCfg), 'portal version is THE LINE 2.0.4');
+ok(/portal-2\.0\.5/.test(portalCfg), 'portal version is THE LINE 2.0.5');
 ok(/max-width:920px|max-width:1080px/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html', 'utf8')),
    'desktop layout is a wide desk, not a 520px phone stub');
 ok(/authorizePortalNow/.test(fs.readFileSync('/home/user/SCEMS-FTO/portal/30_WebApp.gs', 'utf8')),

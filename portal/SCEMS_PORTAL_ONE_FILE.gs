@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.0.4
- * Build 3b067b75
+ * SCEMS FIELD TRAINING PORTAL — portal-2.0.5
+ * Build 0492020b
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.4',
+  VERSION: 'portal-2.0.5',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1759,8 +1759,14 @@ function divisionPayloadV1_() {
       // list until the hold runs out, and comes straight back after.
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
+      var next = nextPhaseV1_(t.phase);
+      var phase4 = phaseIndexV1_(t.phase) === 3;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
+               dayInPhase: dayInPhaseV1_(t),
+               nextPhase: next,
+               canAdvance: !!next,
+               releaseReady: phase4,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
                forms: safeFormsV1_(function () {
@@ -5092,6 +5098,278 @@ function viewAsFTO()        { return switchRoleForTestingV1('FTO'); }
 function viewAsDivision()   { return switchRoleForTestingV1('DIVISION'); }
 function viewAsSupervisor() { return switchRoleForTestingV1('SUPERVISOR'); }
 function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }
+
+
+/* ======================================================================
+ * 92_Lifecycle.gs
+ * ====================================================================== */
+
+/**
+ * Phase and release — lifecycle on THE LINE.
+ *
+ * Training Division keeps pace with CURRENT PHASE and can release someone
+ * without digging through the tracker menus. Both actions demand typed
+ * reasons and stamp who / when / why into the vault.
+ *
+ * Advance:
+ *   CURRENT PHASE → next · PHASE START DATE → today · optional assignment
+ *   history row · PORTAL AUDIT.
+ *
+ * Release:
+ *   SET STATUS → Closed / Released · archive snapshot (17 TRAINEE ARCHIVE
+ *   when present, else PORTAL RELEASE LOG) · cancel OPEN skill-queue rows ·
+ *   refresh form Trainee lists so FTOs cannot still pick them · PORTAL AUDIT.
+ *
+ * Clearance past Phase 4 is not automated here — that is still a governance
+ * call. Phase 4 people show as release-ready.
+ */
+
+var PORTAL_PHASES_V1 = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+var PORTAL_RELEASE_LOG = 'PORTAL RELEASE LOG';
+var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
+var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
+
+function phaseIndexV1_(phase) {
+  var p = String(phase || '').trim();
+  var i = PORTAL_PHASES_V1.indexOf(p);
+  if (i >= 0) return i;
+  var m = p.match(/(\d+)/);
+  if (m) {
+    var n = Number(m[1]) - 1;
+    if (n >= 0 && n < PORTAL_PHASES_V1.length) return n;
+  }
+  return -1;
+}
+
+function nextPhaseV1_(phase) {
+  var i = phaseIndexV1_(phase);
+  if (i < 0 || i >= PORTAL_PHASES_V1.length - 1) return '';
+  return PORTAL_PHASES_V1[i + 1];
+}
+
+/** Live master row for an active (or any) trainee by exact/normalized name. */
+function findTraineeOnMasterV1_(name) {
+  var want = normNameV1_(name);
+  if (!want) return null;
+  var list = traineesV1_();
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].norm === want) return list[i];
+  }
+  return null;
+}
+
+function requireDivisionWritableV1_(what) {
+  requireWritableV1_(what);
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may ' + what + '.');
+  }
+  return viewer;
+}
+
+/**
+ * Advance one phase. Typed reason required (≥8).
+ * Returns { ok, name, from, to, message }.
+ */
+function advanceTraineePhaseV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('advance a phase');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why you are advancing them. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book (' + rec.from +
+      '). Bring them onto this tracker before advancing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already closed / released.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var next = nextPhaseV1_(rec.phase);
+  if (!next) {
+    if (phaseIndexV1_(rec.phase) === PORTAL_PHASES_V1.length - 1) {
+      throw new Error(rec.name + ' is already in Phase 4. Release them when the program is complete — phase does not advance past that.');
+    }
+    throw new Error('Current phase "' + (rec.phase || '(blank)') +
+      '" is not a known phase. Fix the master row first.');
+  }
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+  if (t.col['CURRENT PHASE'] === undefined) {
+    throw new Error('CURRENT PHASE column is missing on the master.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  t.sheet.getRange(rec.row, t.col['CURRENT PHASE'] + 1).setValue(next);
+  if (t.col['PHASE START DATE'] !== undefined) {
+    t.sheet.getRange(rec.row, t.col['PHASE START DATE'] + 1).setValue(today);
+  }
+
+  try { appendAssignmentHistoryV1_(rec, next, today, viewer.email, why); }
+  catch (eHist) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('PHASE ADVANCED', viewer.email,
+    rec.name + ' | ' + rec.phase + ' → ' + next + ' | ' + why.slice(0, 200));
+
+  return {
+    ok: true,
+    name: rec.name,
+    from: rec.phase,
+    to: next,
+    message: rec.name + ' is now in ' + next + '.'
+  };
+}
+
+/**
+ * Release / close a trainee. Typed reason required.
+ * Soft-closes on the master (status) so history stays under their name,
+ * archives a snapshot, cancels open skill requests, refreshes form lists.
+ */
+function releaseTraineeV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('release a trainee');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why you are releasing them. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before releasing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already closed / released.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+
+  var statusHeader = t.col['SET STATUS'] !== undefined ? 'SET STATUS'
+                   : (t.col['PROGRAM STATUS'] !== undefined ? 'PROGRAM STATUS' : '');
+  if (!statusHeader) {
+    throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
+  }
+
+  // Snapshot first — capture who they were before the status flip.
+  writeReleaseArchiveV1_(rec, viewer.email, why);
+
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue('Closed / Released');
+
+  var cancelled = cancelOpenSkillQueueForV1_(rec.name);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var sync = null;
+  try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  auditV1_('TRAINEE RELEASED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | cancelled ' + cancelled +
+    ' | ' + why.slice(0, 180));
+
+  var msg = rec.name + ' is released. Captured on the archive with your reason.';
+  if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
+  if (sync && sync.ok) msg += ' Form Trainee lists updated.';
+  return {
+    ok: true,
+    name: rec.name,
+    phase: rec.phase,
+    cancelled: cancelled,
+    message: msg
+  };
+}
+
+function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
+  var book = targetBookV1_();
+  var sh = book.getSheetByName(PORTAL_ASSIGNMENTS_TAB);
+  if (!sh) return;
+  var t = readTabUncachedV1_(PORTAL_ASSIGNMENTS_TAB);
+  if (!t.ok) return;
+  var row = new Array(t.headers.length);
+  for (var i = 0; i < row.length; i++) row[i] = '';
+  function put(h, v) {
+    if (t.col[h] !== undefined) row[t.col[h]] = v;
+  }
+  put('TRAINEE', rec.name);
+  put('LEVEL', rec.level);
+  put('FTO', rec.fto);
+  put('PHASE', newPhase);
+  put('PHASE START', eff);
+  put('STATUS', 'ACTIVE');
+  put('OPENED', new Date());
+  put('SOURCE', 'advancement by ' + by + ' (THE LINE)');
+  put('NOTES', why);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+function writeReleaseArchiveV1_(rec, by, why) {
+  var book = targetBookV1_();
+  var stamp = new Date();
+  var payload = {
+    'DATE ARCHIVED': stamp,
+    'TRAINEE': rec.name,
+    'LEVEL': rec.level || '',
+    'FTO': rec.fto || '',
+    'PHASE AT EXIT': rec.phase || '',
+    'FINAL STATUS': 'Closed / Released',
+    'NOTES': 'Released on THE LINE by ' + by + ': ' + why,
+    'RELEASED BY': by,
+    'EMAIL': rec.email || ''
+  };
+
+  var sh = book.getSheetByName(PORTAL_ARCHIVE_TAB);
+  if (sh) {
+    var t = readTabUncachedV1_(PORTAL_ARCHIVE_TAB);
+    if (t.ok && t.headers.length) {
+      var row = new Array(t.headers.length);
+      for (var i = 0; i < row.length; i++) row[i] = '';
+      Object.keys(payload).forEach(function (h) {
+        if (t.col[h] !== undefined) row[t.col[h]] = payload[h];
+      });
+      // If NOTES exists under another name, still try NOTES.
+      sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+      return;
+    }
+  }
+
+  // Fallback log owned by the portal — always available.
+  sh = book.getSheetByName(PORTAL_RELEASE_LOG);
+  if (!sh) {
+    sh = book.insertSheet(PORTAL_RELEASE_LOG);
+    sh.getRange(1, 1).setValue(
+      'Releases captured from THE LINE. Do not edit or sort.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
+      .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
+                   'FINAL STATUS', 'RELEASED BY', 'NOTES']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+  }
+  sh.appendRow([
+    stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
+    'Closed / Released', by, why
+  ]);
+}
+
+function cancelOpenSkillQueueForV1_(traineeName) {
+  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!t.ok || t.col['TRAINEE'] === undefined) return 0;
+  if (t.col['RECORD STATUS'] === undefined) return 0;
+  var want = normNameV1_(traineeName);
+  var n = 0;
+  t.rows.forEach(function (r, i) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== want) return;
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    t.sheet.getRange(t.firstDataRow + i, t.col['RECORD STATUS'] + 1)
+      .setValue('CANCELLED : TRAINEE CLOSED');
+    n++;
+  });
+  return n;
+}
 
 
 /* ======================================================================
@@ -8689,6 +8967,8 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'ack')      return paintAck();\n",
   "  if (S.screen === 'trainee')  return paintTraineeSheet();\n",
   "  if (S.screen === 'person')   return paintPersonSheet();\n",
+  "  if (S.screen === 'advance')  return paintAdvance();\n",
+  "  if (S.screen === 'release')  return paintRelease();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
   "  if (S.screen === 'addTrainee') return paintAddTrainee();\n",
   "\n",
@@ -9057,6 +9337,26 @@ var PORTAL_PAGE_HTML = [
   "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
+  "  // Phase 4 people waiting on a release call — not an alarm, a finish line.\n",
+  "  var ready = (d.releaseReady || []).filter(function(r){\n",
+  "    return (d.people||[]).some(function(p){ return p.name === r.name; });\n",
+  "  });\n",
+  "  if (ready.length && canWrite()){\n",
+  "    h += sec('Ready to release', ready.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4. Open their record to release —",
+  " captured with your reason.</p>';\n",
+  "    ready.forEach(function(r){\n",
+  "      var idx = -1;\n",
+  "      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });\n",
+  "      if (idx < 0) return;\n",
+  "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openPerson('+idx+')\">'+\n",
+  "           '<span class=\"bd\"><span class=\"hd\"><span class=\"h\">'+esc(r.name)+'</span>'+\n",
+  "           lvlChip((d.people[idx].levelKey), r.level)+'</span>'+\n",
+  "           '<span class=\"m\">Phase 4 · tap to release</span></span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    });\n",
+  "  }\n",
+  "\n",
   "  if ((d.people||[]).length){\n",
   "    h += sec('Anyone else', (d.people||[]).length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+d.people.length+\n",
@@ -9274,6 +9574,44 @@ var PORTAL_PAGE_HTML = [
   "  var h = hero('Trainee record', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "\n",
+  "  /* Phase is the spine of the program. Show it big, then the one action that\n",
+  "     moves it — not buried under forms. */\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       '<div class=\"lab\">Where they are</div>'+\n",
+  "       phaseTrackHtml(t.phase)+\n",
+  "       (t.dayInPhase!=null\n",
+  "         ? '<div class=\"m\" style=\"margin-top:8px\">Day '+esc(t.dayInPhase)+' in this phase<",
+  "/div>'\n",
+  "         : '')+\n",
+  "       (t.releaseReady\n",
+  "         ? '<div class=\"note n-ok\" style=\"margin-top:10px\"><b>Release-ready</b>Phase 4 — w",
+  "hen the program is complete, release them here. Captured with your name and reason.</div>'",
+  "\n",
+  "         : '')+\n",
+  "       '</div>';\n",
+  "\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "    h += sec('Lifecycle');\n",
+  "    if (t.canAdvance && t.nextPhase){\n",
+  "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAdvance()\">'+\n",
+  "           '<span class=\"bd\"><span class=\"h\">Advance to '+esc(t.nextPhase)+'</span>'+\n",
+  "           '<span class=\"m\">One click after you type why. Master phase and phase-start dat",
+  "e update together.</span></span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    } else if (t.releaseReady){\n",
+  "      h += '<div class=\"note n-info\"><b>Phase 4</b>No further phase advance. Release when ",
+  "cleared.</div>';\n",
+  "    }\n",
+  "    h += '<button class=\"card act\"'+spine(t.releaseReady?'due':'')+' onclick=\"openRelease(",
+  ")\">'+\n",
+  "         '<span class=\"bd\"><span class=\"h\">Release '+esc(firstName(t.name)||'trainee')+'</",
+  "span>'+\n",
+  "         '<span class=\"m\">Closes them on THE LINE, archives who / when / why, pulls them o",
+  "ff form dropdowns.</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "\n",
   "  /* The card you tapped said why. Losing the reason on the way in is how a\n",
   "     screen becomes a dead end: three problems named on one page and nothing\n",
   "     to do about any of them on the next. */\n",
@@ -9313,6 +9651,106 @@ var PORTAL_PAGE_HTML = [
   "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
   "he registry could not reach them.</div>';\n",
   "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function openAdvance(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name || !t.nextPhase) return;\n",
+  "  S.screen = 'advance'; render();\n",
+  "}\n",
+  "function paintAdvance(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('Advance', t.name,\n",
+  "    esc(t.phase||'?')+' → '+esc(t.nextPhase||'?'))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-info\"><b>What this writes</b>CURRENT PHASE and PHASE START DATE on",
+  " the trainee master, '+\n",
+  "    'plus your reason on the audit trail. One step only — Phase 4 does not auto-clear them",
+  ".</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why you are advancing them</div>'+\n",
+  "    '<textarea id=\"adv-why\" placeholder=\"Goes on the permanent record in your name. No def",
+  "ault wording.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'adv\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"adv-go\" disabled onclick=\"submitAdvance()\">Advance to '+\n",
+  "    esc(t.nextPhase||'')+'</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('adv');\n",
+  "}\n",
+  "function submitAdvance(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('adv-why') && el('adv-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are advancing them.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('adv-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Saving…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Advanced.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'Advance to '+(S.ctx.nextPhase||''); }\n",
+  "      syncLifeBtns('adv');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .advanceTraineePhaseV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
+  "function openRelease(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name) return;\n",
+  "  S.screen = 'release'; render();\n",
+  "}\n",
+  "function paintRelease(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('Release', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-warn\"><b>This closes them on THE LINE</b>Status becomes Closed / R",
+  "eleased. '+\n",
+  "    'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archiv",
+  "ed with who and when.</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why you are releasing them</div>'+\n",
+  "    '<textarea id=\"rel-why\" placeholder=\"Program complete, cleared for independent duty — ",
+  "in your words.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'rel\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"rel-go\" disabled onclick=\"submitRelease()\">Release '+\n",
+  "    esc(firstName(t.name)||'trainee')+'</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('rel');\n",
+  "}\n",
+  "function submitRelease(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('rel-why') && el('rel-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are releasing them.'); return; }\n",
+  "  if (!confirm('Release '+((S.ctx&&S.ctx.name)||'this trainee')+'? This cannot be undone f",
+  "rom THE LINE.')) return;\n",
+  "  S.busy = true;\n",
+  "  var b = el('rel-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Releasing…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Released.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'Release '+(firstName((S.ctx||{}).name)||'trainee'); }\n",
+  "      syncLifeBtns('rel');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .releaseTraineeV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
+  "function syncLifeBtns(kind){\n",
+  "  var id = kind === 'rel' ? 'rel-why' : 'adv-why';\n",
+  "  var btn = kind === 'rel' ? 'rel-go' : 'adv-go';\n",
+  "  var why = (el(id) && el(id).value || '').trim();\n",
+  "  if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;\n",
   "}\n",
   "function openAck(name, finding){\n",
   "  S.ctx = { name:name, finding:finding, from:S.screen };\n",
@@ -9772,7 +10210,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '3b067b75';
+var PORTAL_BUILD = '0492020b';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

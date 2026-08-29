@@ -552,8 +552,14 @@ function divisionPayloadV1_() {
       // list until the hold runs out, and comes straight back after.
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
+      var next = nextPhaseV1_(t.phase);
+      var phase4 = phaseIndexV1_(t.phase) === 3;
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
+               dayInPhase: dayInPhaseV1_(t),
+               nextPhase: next,
+               canAdvance: !!next,
+               releaseReady: phase4,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
                forms: safeFormsV1_(function () {

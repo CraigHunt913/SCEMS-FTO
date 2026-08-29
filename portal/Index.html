@@ -425,6 +425,8 @@ function render(){
   if (S.screen === 'ack')      return paintAck();
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
+  if (S.screen === 'advance')  return paintAdvance();
+  if (S.screen === 'release')  return paintRelease();
   if (S.screen === 'record')   return paintRecord();
   if (S.screen === 'addTrainee') return paintAddTrainee();
 
@@ -751,6 +753,25 @@ function paintDivision(d){
     seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
+  // Phase 4 people waiting on a release call — not an alarm, a finish line.
+  var ready = (d.releaseReady || []).filter(function(r){
+    return (d.people||[]).some(function(p){ return p.name === r.name; });
+  });
+  if (ready.length && canWrite()){
+    h += sec('Ready to release', ready.length);
+    h += '<p class="sub" style="margin-bottom:9px">Phase 4. Open their record to release — captured with your reason.</p>';
+    ready.forEach(function(r){
+      var idx = -1;
+      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });
+      if (idx < 0) return;
+      h += '<button class="card act"'+spine('gold')+' onclick="openPerson('+idx+')">'+
+           '<span class="bd"><span class="hd"><span class="h">'+esc(r.name)+'</span>'+
+           lvlChip((d.people[idx].levelKey), r.level)+'</span>'+
+           '<span class="m">Phase 4 · tap to release</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    });
+  }
+
   if ((d.people||[]).length){
     h += sec('Anyone else', (d.people||[]).length);
     h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
@@ -940,6 +961,36 @@ function paintPersonSheet(){
   var h = hero('Trainee record', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+
+  /* Phase is the spine of the program. Show it big, then the one action that
+     moves it — not buried under forms. */
+  h += '<div class="panel">'+
+       '<div class="lab">Where they are</div>'+
+       phaseTrackHtml(t.phase)+
+       (t.dayInPhase!=null
+         ? '<div class="m" style="margin-top:8px">Day '+esc(t.dayInPhase)+' in this phase</div>'
+         : '')+
+       (t.releaseReady
+         ? '<div class="note n-ok" style="margin-top:10px"><b>Release-ready</b>Phase 4 — when the program is complete, release them here. Captured with your name and reason.</div>'
+         : '')+
+       '</div>';
+
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+    h += sec('Lifecycle');
+    if (t.canAdvance && t.nextPhase){
+      h += '<button class="card act"'+spine('gold')+' onclick="openAdvance()">'+
+           '<span class="bd"><span class="h">Advance to '+esc(t.nextPhase)+'</span>'+
+           '<span class="m">One click after you type why. Master phase and phase-start date update together.</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    } else if (t.releaseReady){
+      h += '<div class="note n-info"><b>Phase 4</b>No further phase advance. Release when cleared.</div>';
+    }
+    h += '<button class="card act"'+spine(t.releaseReady?'due':'')+' onclick="openRelease()">'+
+         '<span class="bd"><span class="h">Release '+esc(firstName(t.name)||'trainee')+'</span>'+
+         '<span class="m">Closes them on THE LINE, archives who / when / why, pulls them off form dropdowns.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+
   /* The card you tapped said why. Losing the reason on the way in is how a
      screen becomes a dead end: three problems named on one page and nothing
      to do about any of them on the next. */
@@ -973,6 +1024,99 @@ function paintPersonSheet(){
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
   paint(h);
+}
+
+function openAdvance(){
+  var t = S.ctx || {};
+  if (!t.name || !t.nextPhase) return;
+  S.screen = 'advance'; render();
+}
+function paintAdvance(){
+  var t = S.ctx || {};
+  var h = hero('Advance', t.name,
+    esc(t.phase||'?')+' → '+esc(t.nextPhase||'?'))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-info"><b>What this writes</b>CURRENT PHASE and PHASE START DATE on the trainee master, '+
+    'plus your reason on the audit trail. One step only — Phase 4 does not auto-clear them.</div>'+
+    '<div class="panel"><div class="lab">Why you are advancing them</div>'+
+    '<textarea id="adv-why" placeholder="Goes on the permanent record in your name. No default wording." '+
+    'oninput="syncLifeBtns(\'adv\')"></textarea></div>'+
+    '<button class="btn" id="adv-go" disabled onclick="submitAdvance()">Advance to '+
+    esc(t.nextPhase||'')+'</button>';
+  paint(h);
+  syncLifeBtns('adv');
+}
+function submitAdvance(){
+  if (S.busy) return;
+  var why = (el('adv-why') && el('adv-why').value || '').trim();
+  if (why.length < 8) { alert('Type why you are advancing them.'); return; }
+  S.busy = true;
+  var b = el('adv-go');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Advanced.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'Advance to '+(S.ctx.nextPhase||''); }
+      syncLifeBtns('adv');
+      alert(e.message||e);
+    })
+    .advanceTraineePhaseV1(S.ctx.name, why);
+}
+
+function openRelease(){
+  var t = S.ctx || {};
+  if (!t.name) return;
+  S.screen = 'release'; render();
+}
+function paintRelease(){
+  var t = S.ctx || {};
+  var h = hero('Release', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-warn"><b>This closes them on THE LINE</b>Status becomes Closed / Released. '+
+    'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archived with who and when.</div>'+
+    '<div class="panel"><div class="lab">Why you are releasing them</div>'+
+    '<textarea id="rel-why" placeholder="Program complete, cleared for independent duty — in your words." '+
+    'oninput="syncLifeBtns(\'rel\')"></textarea></div>'+
+    '<button class="btn" id="rel-go" disabled onclick="submitRelease()">Release '+
+    esc(firstName(t.name)||'trainee')+'</button>';
+  paint(h);
+  syncLifeBtns('rel');
+}
+function submitRelease(){
+  if (S.busy) return;
+  var why = (el('rel-why') && el('rel-why').value || '').trim();
+  if (why.length < 8) { alert('Type why you are releasing them.'); return; }
+  if (!confirm('Release '+((S.ctx&&S.ctx.name)||'this trainee')+'? This cannot be undone from THE LINE.')) return;
+  S.busy = true;
+  var b = el('rel-go');
+  if (b) { b.disabled = true; b.textContent = 'Releasing…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Released.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'Release '+(firstName((S.ctx||{}).name)||'trainee'); }
+      syncLifeBtns('rel');
+      alert(e.message||e);
+    })
+    .releaseTraineeV1(S.ctx.name, why);
+}
+
+function syncLifeBtns(kind){
+  var id = kind === 'rel' ? 'rel-why' : 'adv-why';
+  var btn = kind === 'rel' ? 'rel-go' : 'adv-go';
+  var why = (el(id) && el(id).value || '').trim();
+  if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;
 }
 function openAck(name, finding){
   S.ctx = { name:name, finding:finding, from:S.screen };

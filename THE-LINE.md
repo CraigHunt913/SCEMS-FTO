@@ -10,7 +10,7 @@ Sumter County EMS Field Training — the product humans open.
 | --- | --- | --- |
 | Trainee | **My Line** | Where I am, what’s waiting on me, four bars per skill |
 | FTO | **Tonight** | Who I rode with → file for that person |
-| Training Division | **Waiting on you** | One decision card · Approve/Return · **Bring someone on** (new trainee → existing forms) |
+| Training Division | **Waiting on you** | Decisions · **Bring someone on** · **Advance phase** · **Release** (captured) |
 | Supervisor | **My shift** | Hot strip — who’s silent tonight |
 | Medical Director | Clinical review | Urgent concerns only |
 
@@ -43,8 +43,17 @@ Training Division (STAGING or LIVE) can add a trainee from Waiting on you:
 
 Afterward: open the tracker once (or run `rebuildSkillMatrix`) if their skill-progress rows need to appear. Evaluations and skills logs work as soon as the form lists refresh.
 
+## Phase and release
+
+Open any trainee from Waiting on you:
+
+- **Advance to Phase N+1** — typed reason required. Writes `CURRENT PHASE` + `PHASE START DATE` and stamps the audit trail.
+- **Release** — typed reason + confirm. Sets `Closed / Released`, archives who/when/why, cancels open skill requests, drops them from form Trainee lists.
+- Phase 4 people also show under **Ready to release** on the desk.
+
 ## Version
 
+`portal-2.0.5` — Phase advance + release (one click, captured).
 `portal-2.0.4` — Bring someone on (add trainee + sync existing form lists).
 `portal-2.0.3` — Quiet desk (no machinery banners).
 `portal-2.0.0` — THE LINE.
