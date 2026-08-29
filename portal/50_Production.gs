@@ -168,7 +168,12 @@ function goLive() {
       'Nothing was changed.');
   }
 
-  var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
+  // Coaching notes need a home before FTOs can file them from Tonight.
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.COACHING + ' is not in ' +
+      'this spreadsheet and could not be created, so coaching filed from Field Training ' +
+      'would have nowhere to live. Nothing was changed.');
+  }
 
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
   PEOPLE_CACHE_V1 = null;
@@ -187,13 +192,11 @@ function goLive() {
     canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
     '',
     'WHAT JUST BECAME POSSIBLE',
-    '  A trainee can file their own reflection.',
-    '  The Training Division can approve a sign-off, with a typed reason.',
-    (canCoach
-      ? '  A trainee can acknowledge their own coaching note.'
-      : '  Acknowledging a coaching note stays unavailable: there is no tab\n' +
-        '  called ' + PORTAL.TAB.COACHING + ' for those notes to live in. Nothing\n' +
-        '  else depends on it.'),
+    '  Training Division can record a sign-off (permanent log + queue closed).',
+    '  Training Division can advance phase, clear for the truck, and enroll a trainee.',
+    '  Training Division can assign who trains whom.',
+    '  An FTO can file a coaching note; the trainee can acknowledge it.',
+    '  Self-reflection still uses the Self-reflection form in LIVE (not the practice screen).',
     '',
     (auditState === 'created'
       ? 'A tab called ' + PORTAL.TAB.AUDIT + ' has been added to record who does\n' +

@@ -710,7 +710,9 @@ function applyAdvancementV20_1(traineeName, decidedBy, effectiveDate, rationale)
 function closeTraineeV20_1() {
   if (!gateV20_2_('CLOSE TRAINEE')) return;
   var ui = SpreadsheetApp.getUi();
-  var resp = ui.prompt('Close / release trainee',
+  var resp = ui.prompt('Archive / remove trainee from the program',
+    'This archives the full master row and clears it (program exit — not graduation).\n' +
+    'For successful completion / independent partner, use Field Training → Clear for the truck.\n\n' +
     'Exact trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
   if (resp.getSelectedButton() !== ui.Button.OK) return;
   var name = cleanNameV20_1_(resp.getResponseText());

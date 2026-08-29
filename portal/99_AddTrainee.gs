@@ -398,8 +398,21 @@ function applyAddTraineePlanV1_(p) {
       L.push('');
     }
     L.push('SKILL MATRIX');
-    L.push('  Open the tracker once (or run rebuildSkillMatrix) so their skill');
-    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and Field Training already know them.');
+    var seeded = 0;
+    added.forEach(function (a) {
+      try {
+        var m = seedSkillMatrixForTraineeV1_(a.name, a.level);
+        if (m && m.ok) seeded += Number(m.added || 0);
+      } catch (eSeed) {}
+    });
+    if (seeded) {
+      L.push('  Seeded ' + seeded + ' skill row(s) on ' + PORTAL.TAB.SKILLS +
+             ' from the catalog.');
+      L.push('  Run rebuildSkillMatrix in the tracker when you want full evidence math.');
+    } else {
+      L.push('  No catalog rows were seeded (missing 15 SKILL CATALOG, or none apply).');
+      L.push('  Open the tracker and run rebuildSkillMatrix so their skill rows appear.');
+    }
     L.push('');
     L.push('To reverse an untouched blank-slate add: undoAddTrainee()');
   }

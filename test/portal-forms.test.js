@@ -123,7 +123,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -214,6 +214,10 @@ function world(mode) {
   tab(PORTAL.TAB.REFLECT, ['TIMESTAMP','TRAINEE','WENT WELL','WAS HARD','WORK ON'], []);
   tab(PORTAL.TAB.URGENT, ['TIMESTAMP','CALLED','YOUR NAME','TRAINEE INVOLVED','WHAT HAPPENED'], []);
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'], []);
+  tab(PORTAL.TAB.SIGNOFF,
+    ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION',
+     'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+    []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
 function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
@@ -230,7 +234,7 @@ ok(new Set(ids).size === 9, 'no id appears twice');
 ok(new Set(PORTAL_FORMS.map(f => f.key)).size === 9, 'no key appears twice');
 ok(ids.every(i => /^[A-Za-z0-9_-]{20,}$/.test(i)), 'every id looks like a real Drive id');
 
-const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging','92_Lifecycle','93_Acknowledge','94_Assign']
+const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(!ids.some(i => srcFiles.indexOf(i) >= 0), 'no form id is hard-coded anywhere outside the registry');
 const pageSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html', 'utf8');
@@ -909,8 +913,8 @@ if (api4) {
   // Open desk details: staged + retired live here, below the decision.
   api4.S.showDesk = true; api4.render();
   const openHtml = nodes['view'].innerHTML;
-  ok(/finish them in the tracker|finish in the tracker/i.test(openHtml),
-     'desk details explain how staged decisions become permanent');
+  ok(/half-finished|legacy|Record or clear them in the tracker/i.test(openHtml),
+     'desk details explain half-finished queue rows if any remain');
   ok(/Skills quick log|Retired|retired/i.test(openHtml),
      'retired form notes appear only after you ask for desk details');
   ok(openHtml.indexOf('IV access') < openHtml.indexOf('finish'),

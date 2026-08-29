@@ -71,7 +71,7 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 // with the registry in the picture. portal-forms.test.js proves the registry.
 global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
 
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -134,6 +134,10 @@ function world() {
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'],
     [[new Date(),'Jamie Rivers','Dana Whitlock','Radio reports still rushed.',''],
      [new Date(),'Alex Bramble','Dana Whitlock','Slow the primary survey down.','']]);
+  tab(PORTAL.TAB.SIGNOFF,
+    ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION',
+     'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+    []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
 function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
@@ -293,18 +297,21 @@ approveSignoffV1(HR + 1, 'Directly observed on two separate shifts and verified.
 let q = readTabV1_(PORTAL.TAB.QUEUE);
 ok(q.rows[0][q.col['DECISION']] === 'Approve sign-off', 'a proper approval records the decision');
 ok(q.rows[0][q.col['DECIDED BY']] === 'chief@example.org', 'against the real signed-in account');
-// The portal STAGES the decision and stops. recordDecisionForRowV20_1_ in the
-// tracker is the only writer to 21 SKILL SIGN-OFF LOG, and it refuses any row
-// that is not OPEN - so closing the row here would have meant the approval
-// never reached the permanent log AND could never be recorded afterwards.
-ok(q.rows[0][q.col['RECORD STATUS']] === 'OPEN',
-   'and leaves the row OPEN, so the tracker can still record it');
+ok(q.rows[0][q.col['RECORD STATUS']] === 'RECORDED',
+   'and closes the queue row as RECORDED');
+const so = readTabV1_(PORTAL.TAB.SIGNOFF);
+ok(so.ok && so.rows.some(r => /Jamie Rivers/.test(String(r[so.col['TRAINEE']]||'')) &&
+   /Approve sign-off|Intubation/.test(JSON.stringify(r))),
+   'and appends a permanent row on the sign-off log');
 threw = false;
 try { approveSignoffV1(HR + 1, 'Watched it again and it was clean.'); }
-catch (e) { threw = /already staged/.test(e.message); }
+catch (e) { threw = /not OPEN|already/.test(e.message); }
 ok(threw, 'and a second approval on the same row is refused rather than doubled');
 threw = false;
-try { approveSignoffV1(HR + 1, 'A perfectly good reason.', 'SOME-OTHER-REQUEST'); }
+try {
+  // fresh OPEN row 2
+  approveSignoffV1(HR + 2, 'A perfectly good reason.', 'SOME-OTHER-REQUEST');
+}
 catch (e) { threw = /not the row you were looking at/.test(e.message); }
 ok(threw, 'and a stale screen whose row has moved is refused, not written');
 
@@ -312,8 +319,8 @@ world(); as('chief@example.org');
 ok(typeof returnSignoffV1 === 'function', 'returnSignoffV1 exists in Field Training');
 returnSignoffV1(HR + 1, 'Needs two more independent reps on different dates.');
 q = readTabV1_(PORTAL.TAB.QUEUE);
-ok(q.rows[0][q.col['DECISION']] === 'Return for more evidence', 'a return stages the honest decision');
-ok(q.rows[0][q.col['RECORD STATUS']] === 'OPEN', 'and leaves the row OPEN for the tracker');
+ok(q.rows[0][q.col['DECISION']] === 'Return for more evidence', 'a return records the honest decision');
+ok(q.rows[0][q.col['RECORD STATUS']] === 'RETURNED', 'and closes the row as RETURNED');
 ok(PORTAL.PRODUCT === 'Field Training' || /Field Training/.test(PORTAL.TITLE), 'product branding is Field Training');
 
 world(); as('jamie@example.org');

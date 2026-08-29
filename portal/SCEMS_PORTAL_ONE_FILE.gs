@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.1.1
- * Build fa5c3b63
+ * SCEMS FIELD TRAINING PORTAL — portal-2.2.0
+ * Build 99b5db73
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.1.1',
+  VERSION: 'portal-2.2.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1330,6 +1330,8 @@ function skillsForV1_(norm) {
                  readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
+      skillId: t.col['SKILL ID'] !== undefined
+        ? String(r[t.col['SKILL ID']] || '').trim() : '',
       readiness: readiness,
       signed: signed,
       successful: successful,
@@ -1771,14 +1773,13 @@ function divisionPayloadV1_() {
       };
     }),
     queueCount: queue.length,
-    // Decisions already made here and waiting on the tracker to make them
-    // permanent. The portal deliberately does not close these rows: the
-    // tracker's own writer is the only thing allowed to put a sign-off in
-    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    // Legacy half-staged rows (OPEN + decision filled) — rare after portal
+    // records permanently. Still listed so Division can finish orphans.
     staged: staged.map(function (q) {
       return { trainee: q.trainee, skill: q.skill, decision: q.decision,
                by: q.decidedBy, since: daysAgoTextV1_(q.since) };
     }),
+    canAssignFto: mayWriteV1_(),
     // A column this screen leans on that is not there. Doctrine: report it,
     // never read the one beside it and hope.
     warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
@@ -2198,85 +2199,8 @@ function headerNameV1_(t, headers) {
   return '';
 }
 
-/** Division STAGES a sign-off decision. A typed reason is required — there is
- *  no default wording, because a pre-filled reason is not a reason.
- *
- *  It stages. It does not record, and that is the whole point.
- *
- *  The tracker's recordDecisionForRowV20_1_ is the single writer to
- *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
- *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
- *  The result was the worst of both: the approval never reached the sign-off
- *  log, so the skill was never actually signed off anywhere permanent — and
- *  the row was now shut against the only function that could have put it
- *  there. It also skipped that function's authority check, its evidence gate
- *  and its duplicate guard, every one of which exists because somebody
- *  decided a career decision needed them.
- *
- *  So this writes the four fields a decision is made of and leaves RECORD
- *  STATUS alone. The tracker records it — tick RECORD on the row, or run
- *  "Record pending decisions" from its menu. One writer, every gate, and the
- *  result is exactly as defensible as a decision typed into the sheet by
- *  hand, because that is now literally what it is. */
-function approveSignoffV1(row, reason, requestId) {
-  return stageSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
-}
-
-/** Division stages a return — same gates as approve, different decision word.
- *  Typed reason required; the button on the page stays dead until it is filled. */
-function returnSignoffV1(row, reason, requestId) {
-  return stageSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
-}
-
-function stageSignoffDecisionV1_(row, reason, requestId, decision) {
-  requireWritableV1_('stage a sign-off decision');
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may decide a sign-off.');
-  var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
-
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
-  if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
-
-  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
-  var missing = [];
-  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
-  if (missing.length) {
-    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
-      'written. Fix the header row in the tracker first.');
-  }
-
-  var live = t.rows[r - t.firstDataRow] || [];
-  var want = String(requestId == null ? '' : requestId).trim();
-  var have = t.col['REQUEST ID'] === undefined ? ''
-           : String(live[t.col['REQUEST ID']] || '').trim();
-  if (want && have && want !== have) {
-    throw new Error('That is not the row you were looking at any more — the queue moved ' +
-      'underneath you. Nothing was written. Reload and try again.');
-  }
-
-  var status = String(live[t.col['RECORD STATUS']] || '').trim();
-  if (status !== 'OPEN') {
-    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
-  }
-  var already = String(live[t.col['DECISION']] || '').trim();
-  if (already) {
-    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
-      'was written. Record it in the tracker, or clear it there, first.');
-  }
-
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
-  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
-  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, decision + ' | row ' + r +
-    (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
-  return 'Staged. The tracker records it.';
-}
+/* Sign-off approve / return live in 91_Record.gs — they write the permanent
+ *  sign-off log and close the queue row. Staging-only is gone on purpose. */
 
 /** The Training Division records that it has seen a finding.
  *
@@ -3100,7 +3024,12 @@ function goLive() {
       'Nothing was changed.');
   }
 
-  var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
+  // Coaching notes need a home before FTOs can file them from Tonight.
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.COACHING + ' is not in ' +
+      'this spreadsheet and could not be created, so coaching filed from Field Training ' +
+      'would have nowhere to live. Nothing was changed.');
+  }
 
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
   PEOPLE_CACHE_V1 = null;
@@ -3119,13 +3048,11 @@ function goLive() {
     canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
     '',
     'WHAT JUST BECAME POSSIBLE',
-    '  A trainee can file their own reflection.',
-    '  The Training Division can approve a sign-off, with a typed reason.',
-    (canCoach
-      ? '  A trainee can acknowledge their own coaching note.'
-      : '  Acknowledging a coaching note stays unavailable: there is no tab\n' +
-        '  called ' + PORTAL.TAB.COACHING + ' for those notes to live in. Nothing\n' +
-        '  else depends on it.'),
+    '  Training Division can record a sign-off (permanent log + queue closed).',
+    '  Training Division can advance phase, clear for the truck, and enroll a trainee.',
+    '  Training Division can assign who trains whom.',
+    '  An FTO can file a coaching note; the trainee can acknowledge it.',
+    '  Self-reflection still uses the Self-reflection form in LIVE (not the practice screen).',
     '',
     (auditState === 'created'
       ? 'A tab called ' + PORTAL.TAB.AUDIT + ' has been added to record who does\n' +
@@ -5160,6 +5087,476 @@ function viewAsFTO()        { return switchRoleForTestingV1('FTO'); }
 function viewAsDivision()   { return switchRoleForTestingV1('DIVISION'); }
 function viewAsSupervisor() { return switchRoleForTestingV1('SUPERVISOR'); }
 function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }
+
+
+/* ======================================================================
+ * 91_Record.gs
+ * ====================================================================== */
+
+/**
+ * Permanent writers that used to stop at "stage it for the tracker."
+ *
+ * Sign-off: append 21 SKILL SIGN-OFF LOG, close the queue row, touch the matrix.
+ * Coaching: FTO / Division file a note on PORTAL COACHING.
+ * Assign: Division sets ASSIGNED FTO from Field Training.
+ * Matrix seed: after enroll, put catalog rows on 05 SKILLS PROGRESS when possible.
+ */
+
+var PORTAL_OVERRIDE_MARKER = '[THRESHOLD OVERRIDE]';
+var PORTAL_CATALOG_TAB = '15 SKILL CATALOG';
+
+/** Approve — permanent. */
+function approveSignoffV1(row, reason, requestId) {
+  return recordSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
+}
+
+/** Return — permanent (RETURNED on the queue, row on the sign-off log). */
+function returnSignoffV1(row, reason, requestId) {
+  return recordSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
+}
+
+/**
+ * One writer for Division sign-off decisions from Field Training.
+ * Mirrors the tracker's recordDecisionForRow gates that matter here:
+ * OPEN only, typed reason, no prior DECISION, request-id match, evidence gate
+ * on Approve, then append the permanent log and close the queue row.
+ */
+function recordSignoffDecisionV1_(row, reason, requestId, decision) {
+  requireWritableV1_('record a sign-off decision');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may decide a sign-off.');
+  }
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
+  }
+
+  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!t.ok) throw new Error('No queue.');
+  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
+
+  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
+  var missing = [];
+  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
+  if (missing.length) {
+    throw new Error('The queue is missing ' + missing.join(', ') +
+      '. Nothing was written. Fix the header row in the tracker first.');
+  }
+
+  var live = t.rows[r - t.firstDataRow] || [];
+  var want = String(requestId == null ? '' : requestId).trim();
+  var have = t.col['REQUEST ID'] === undefined ? ''
+           : String(live[t.col['REQUEST ID']] || '').trim();
+  if (want && have && want !== have) {
+    throw new Error('That is not the row you were looking at any more — the queue moved ' +
+      'underneath you. Nothing was written. Reload and try again.');
+  }
+
+  var status = String(live[t.col['RECORD STATUS']] || '').trim();
+  if (status !== 'OPEN') {
+    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
+  }
+  var already = String(live[t.col['DECISION']] || '').trim();
+  if (already) {
+    throw new Error('A decision is already on that row (' + already +
+      '). Nothing was written. Reload — if it is still open in the tracker, finish or clear it there.');
+  }
+
+  var trainee = String(live[t.col['TRAINEE']] || '').trim();
+  var skill = String(live[t.col['SKILL']] || '').trim();
+  var skillId = t.col['SKILL ID'] !== undefined
+    ? String(live[t.col['SKILL ID']] || '').trim() : '';
+  if (!trainee) throw new Error('That queue row has no trainee. Nothing was written.');
+
+  var gate = portalEvidenceGateV1_(decision, trainee, skill, skillId, why);
+  if (gate) throw new Error(gate);
+
+  if (!ensureSignoffLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.SIGNOFF +
+      ', so nothing was written. A decision with nowhere permanent to live is worse than none.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var decisionId = 'SD-P-' + String(new Date().getTime());
+  var recordStatus = decision === 'Return for more evidence' ? 'RETURNED' : 'RECORDED';
+
+  appendSignoffLogV1_({
+    decisionId: decisionId,
+    when: new Date(),
+    trainee: trainee,
+    skill: skill,
+    skillId: skillId,
+    decision: decision,
+    decidedBy: viewer.email,
+    decisionDate: today,
+    rationale: why,
+    sourceRow: r,
+    requestId: have || want || ''
+  });
+
+  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
+  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
+  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
+  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
+  t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue(recordStatus);
+
+  try { touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision); } catch (eM) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('SIGN-OFF RECORDED', viewer.email, decision + ' | ' + decisionId +
+    ' | row ' + r + (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
+
+  return decision === 'Return for more evidence'
+    ? 'Returned. Permanent record is on the sign-off log.'
+    : 'Recorded. Permanent sign-off is on the log.';
+}
+
+/**
+ * Approve without READY FOR VALIDATION needs an explicit override in the reason.
+ * Judgement stays allowed — it must be typed, not defaulted.
+ */
+function portalEvidenceGateV1_(decision, trainee, skill, skillId, rationale) {
+  if (decision !== 'Approve sign-off') return '';
+  if (String(rationale).indexOf(PORTAL_OVERRIDE_MARKER) >= 0) return '';
+  var skills = [];
+  try { skills = skillsForV1_(normNameV1_(trainee)); } catch (e) { return ''; }
+  if (!skills.length) return '';
+  var hit = null;
+  skills.forEach(function (s) {
+    if (hit) return;
+    if (skillId && s.skillId && String(s.skillId) === String(skillId)) hit = s;
+    else if (normNameV1_(s.skill) === normNameV1_(skill)) hit = s;
+  });
+  if (!hit) return '';
+  if (hit.signed) return '';
+  if (/READY FOR VALIDATION/i.test(hit.readiness || '')) return '';
+  return 'The matrix does not call this READY FOR VALIDATION (it reads "' +
+    (hit.readiness || 'blank') + '"). Type ' + PORTAL_OVERRIDE_MARKER +
+    ' in your reason if you are overruling it. Nothing was written.';
+}
+
+function ensureSignoffLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.SIGNOFF)) return true;
+    var sh = book.insertSheet(PORTAL.TAB.SIGNOFF);
+    sh.getRange(1, 1).setValue(
+      'Permanent skill sign-off decisions. Append-only. Field Training writes here.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 12).setValues([[
+      'DECISION ID', 'TIMESTAMP', 'TRAINEE', 'SKILL ID', 'SKILL', 'DECISION',
+      'DECIDED BY', 'DECISION DATE', 'EXPIRATION', 'RATIONALE',
+      'SOURCE QUEUE ROW', 'REQUEST ID'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Header-mapped append — works against live tracker headers or staging's shorter set. */
+function appendSignoffLogV1_(f) {
+  var t = readTabV1_(PORTAL.TAB.SIGNOFF);
+  if (!t.ok) throw new Error('No sign-off log.');
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'DECISION ID') return f.decisionId || '';
+    if (H === 'TIMESTAMP' || H === 'SIGN-OFF DATE') return f.when || new Date();
+    if (H === 'TRAINEE') return f.trainee || '';
+    if (H === 'SKILL ID') return f.skillId || '';
+    if (H === 'SKILL') return f.skill || '';
+    if (H === 'DECISION') return f.decision || '';
+    if (H === 'DECIDED BY' || H === 'SIGNED OFF BY') return f.decidedBy || '';
+    if (H === 'DECISION DATE') return f.decisionDate || f.when || '';
+    if (H === 'EXPIRATION') return '';
+    if (H === 'RATIONALE') return f.rationale || '';
+    if (H === 'SOURCE QUEUE ROW') return f.sourceRow || '';
+    if (H === 'REQUEST ID') return f.requestId || '';
+    if (H === 'SUPERSEDES') return '';
+    if (H === 'STANDARD / CATALOG VERSION') return '';
+    if (H === 'DECIDED BY PERSON ID') return f.decidedBy || '';
+    if (H === 'WRITER VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(row);
+}
+
+/** Best-effort matrix touch so clearance gates see the new sign-off without a full rebuild. */
+function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision) {
+  var t = readTabV1_(PORTAL.TAB.SKILLS);
+  if (!t.ok) return;
+  if (t.col['SIGN-OFF'] === undefined && t.col['READINESS'] === undefined) return;
+  var norm = normNameV1_(trainee);
+  var skillNorm = normNameV1_(skill);
+  t.rows.forEach(function (r, i) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var idHit = skillId && t.col['SKILL ID'] !== undefined &&
+      String(r[t.col['SKILL ID']] || '').trim() === skillId;
+    var nameHit = normNameV1_(r[t.col['SKILL']]) === skillNorm;
+    if (!idHit && !nameHit) return;
+    var row = t.firstDataRow + i;
+    if (decision === 'Approve sign-off') {
+      if (t.col['SIGN-OFF'] !== undefined) {
+        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('SIGNED OFF');
+      }
+      if (t.col['READINESS'] !== undefined) {
+        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('SIGNED OFF');
+      }
+    } else if (decision === 'Return for more evidence') {
+      if (t.col['READINESS'] !== undefined) {
+        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('NEEDS MORE EVIDENCE');
+      }
+      if (t.col['SIGN-OFF'] !== undefined) {
+        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('');
+      }
+    }
+  });
+}
+
+/* ---------------- coaching create ---------------- */
+
+function ensureCoachingLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.COACHING)) return true;
+    var sh = book.insertSheet(PORTAL.TAB.COACHING);
+    sh.getRange(1, 1).setValue(
+      'Coaching notes filed from Field Training. Trainees acknowledge here.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 5)
+      .setValues([['DATE', 'TRAINEE', 'FROM', 'NOTE', 'ACKNOWLEDGED']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * FTO (their trainee) or Division files a coaching note.
+ * Trainee ack path (ackCoachingV1) already exists.
+ */
+function createCoachingV1(traineeName, note) {
+  requireWritableV1_('file a coaching note');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.FTO && viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only a training officer or Training Division may file coaching.');
+  }
+  var who = String(traineeName || '').trim();
+  var text = String(note || '').trim();
+  if (!who) throw new Error('Pick a trainee.');
+  if (text.length < 8) {
+    throw new Error('Type the note. It goes on their record in your name.');
+  }
+
+  var rec = null;
+  try {
+    traineesV1_().forEach(function (t) {
+      if (!rec && normNameV1_(t.name) === normNameV1_(who) && !t.closed) rec = t;
+    });
+  } catch (e) {}
+  if (!rec) throw new Error('No active trainee named "' + who + '".');
+
+  if (viewer.role === PORTAL.ROLE.FTO) {
+    if (normNameV1_(rec.fto) !== normNameV1_(viewer.name)) {
+      throw new Error(rec.name + ' is not on your line. Only their assigned FTO or Division can file coaching.');
+    }
+  }
+
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.COACHING + '. Nothing was written.');
+  }
+  var t = readTabV1_(PORTAL.TAB.COACHING);
+  if (!t.ok) throw new Error('No coaching log.');
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var from = viewer.name || viewer.email;
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'DATE') return today;
+    if (H === 'TRAINEE') return rec.name;
+    if (H === 'FROM') return from;
+    if (H === 'NOTE') return clean_(text);
+    if (H === 'ACKNOWLEDGED') return '';
+    return '';
+  });
+  t.sheet.appendRow(row);
+  forgetTabsV1_();
+  auditV1_('COACHING FILED', viewer.email, rec.name + ' | ' + text.slice(0, 120));
+  return { ok: true, message: 'Coaching filed for ' + rec.name + '.' };
+}
+
+/* ---------------- assign FTO from Division ---------------- */
+
+/**
+ * One assignment from Field Training. Reuses the same dropdown rebuild and
+ * master write as the editor assignFto() path.
+ */
+function assignFtoV1(traineeName, ftoName) {
+  requireWritableV1_('assign a training officer');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may assign a training officer from Field Training.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var fto = String(ftoName || '').trim();
+  if (!trainee) throw new Error('Pick a trainee.');
+  if (!fto) throw new Error('Pick a training officer.');
+
+  PropertiesService.getScriptProperties()
+    .setProperty(PORTAL_ASSIGN_PROPERTY, trainee + ' -> ' + fto);
+  var p = assignPlanV1_();
+  if (p.problem) throw new Error(p.problem);
+  if (p.noTrainee.length) throw new Error('No trainee named "' + trainee + '" on the master.');
+  if (p.noFto.length) {
+    throw new Error(fto + ' is not on the active roster. Add them with addFto first.');
+  }
+  if (p.twoRows.length) {
+    throw new Error('More than one master row matches "' + trainee + '". Fix the duplicate first.');
+  }
+  if (p.same.length && !p.set.length) {
+    return { ok: true, message: trainee + ' is already assigned to ' + fto + '.' };
+  }
+  if (!p.set.length) throw new Error('Nothing to assign.');
+
+  try { rebuildFtoDropdownV1_(); } catch (eD) {}
+  var c = assignColumnV1_();
+  if (!c) throw new Error('No ASSIGNED FTO column on the master.');
+  var s = p.set[0];
+  c.sheet.getRange(s.row, c.col).setValue(s.fto);
+
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  try {
+    writeAssignManifestV1_([[stamp, PORTAL.TAB.MASTER, s.row, p.header, s.trainee,
+      s.was || '', s.fto, viewer.email, PORTAL.VERSION]]);
+  } catch (eM) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('FTO ASSIGNED', viewer.email, s.trainee + ' -> ' + s.fto);
+  return { ok: true, message: s.trainee + ' is now assigned to ' + s.fto + '.' };
+}
+
+/* ---------------- matrix seed after enroll ---------------- */
+
+/**
+ * Put catalog skills onto 05 SKILLS PROGRESS for a new trainee when the
+ * catalog tab is present. Full rebuildSkillMatrix remains the gold path;
+ * this unblocks clearance tracking without opening the tracker project.
+ */
+function seedSkillMatrixForTraineeV1_(traineeName, level) {
+  var out = { ok: false, added: 0, why: '' };
+  var name = String(traineeName || '').trim();
+  if (!name) { out.why = 'no name'; return out; }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  if (!matrix.ok) { out.why = 'no skills matrix'; return out; }
+  if (matrix.col['TRAINEE'] === undefined || matrix.col['SKILL'] === undefined) {
+    out.why = 'matrix headers incomplete';
+    return out;
+  }
+
+  var catalog = readCatalogSkillsV1_();
+  if (!catalog.length) { out.why = 'no skill catalog (or none applicable)'; return out; }
+
+  var have = {};
+  matrix.rows.forEach(function (r) {
+    if (normNameV1_(r[matrix.col['TRAINEE']]) !== normNameV1_(name)) return;
+    var sid = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    var sk = String(r[matrix.col['SKILL']] || '').trim();
+    if (sid) have['id:' + sid] = true;
+    if (sk) have['sk:' + normNameV1_(sk)] = true;
+  });
+
+  var lvl = String(level || '').toLowerCase();
+  var added = 0;
+  catalog.forEach(function (c) {
+    if (!skillAppliesToLevelV1_(c, lvl)) return;
+    if (c.id && have['id:' + c.id]) return;
+    if (have['sk:' + normNameV1_(c.skill)]) return;
+    var row = matrix.headers.map(function (h) {
+      var H = String(h || '').trim().toUpperCase();
+      if (H === 'TRAINEE') return name;
+      if (H === 'SKILL') return c.skill;
+      if (H === 'SKILL ID') return c.id || '';
+      if (H === 'DOMAIN') return c.domain || '';
+      if (H === 'LEVEL') return level || '';
+      if (H === 'STAGE') return '';
+      if (H === 'READINESS') return 'NOT STARTED';
+      if (H === 'SIGN-OFF') return '';
+      if (H === 'SUCCESSFUL REPS' || H === 'INDEPENDENT REPS' ||
+          H === 'DISTINCT DATES' || H === 'DISTINCT FTOS') return 0;
+      return '';
+    });
+    matrix.sheet.appendRow(row);
+    added++;
+    if (c.id) have['id:' + c.id] = true;
+    have['sk:' + normNameV1_(c.skill)] = true;
+  });
+
+  if (added) forgetTabsV1_();
+  out.ok = true;
+  out.added = added;
+  return out;
+}
+
+function readCatalogSkillsV1_() {
+  try {
+    var book = targetBookV1_();
+    var sh = book.getSheetByName(PORTAL_CATALOG_TAB);
+    if (!sh || sh.getLastRow() < PORTAL.HEADER_ROW + 1) return [];
+    var width = Math.max(sh.getLastColumn(), 17);
+    var headers = sh.getRange(PORTAL.HEADER_ROW, 1, 1, width).getValues()[0];
+    var col = {};
+    headers.forEach(function (h, i) {
+      var k = String(h || '').trim().toUpperCase();
+      if (k && col[k] === undefined) col[k] = i;
+    });
+    if (col['SKILL ID'] === undefined || col['SKILL'] === undefined) return [];
+    var n = sh.getLastRow() - PORTAL.HEADER_ROW;
+    if (n < 1) return [];
+    var rows = sh.getRange(PORTAL.HEADER_ROW + 1, 1, n, width).getValues();
+    var out = [];
+    rows.forEach(function (r) {
+      var id = String(r[col['SKILL ID']] || '').trim();
+      var skill = String(r[col['SKILL']] || '').trim();
+      if (!id || !skill) return;
+      var active = col['ACTIVE'] !== undefined ? yesishV1_(r[col['ACTIVE']]) : true;
+      var status = col['APPROVAL STATUS'] !== undefined
+        ? String(r[col['APPROVAL STATUS']] || '').trim()
+        : (col['STATUS'] !== undefined ? String(r[col['STATUS']] || '').trim() : 'APPROVED');
+      if (!active) return;
+      if (status && !/^APPROVED$/i.test(status) && status !== '') return;
+      out.push({
+        id: id,
+        skill: skill,
+        domain: col['DOMAIN'] !== undefined ? String(r[col['DOMAIN']] || '').trim() : '',
+        emt: col['EMT'] !== undefined ? yesishV1_(r[col['EMT']]) : true,
+        aemt: col['AEMT'] !== undefined ? yesishV1_(r[col['AEMT']]) : true,
+        paramedic: col['PARAMEDIC'] !== undefined ? yesishV1_(r[col['PARAMEDIC']]) : true
+      });
+    });
+    return out;
+  } catch (e) { return []; }
+}
+
+function yesishV1_(v) {
+  var s = String(v == null ? '' : v).trim().toUpperCase();
+  return s === 'Y' || s === 'YES' || s === 'TRUE' || s === '1' || s === 'X';
+}
+
+function skillAppliesToLevelV1_(c, lvl) {
+  if (/paramedic|pmd/.test(lvl)) return !!c.paramedic;
+  if (/advanced|aemt/.test(lvl)) return !!c.aemt;
+  if (/emt/.test(lvl)) return !!c.emt;
+  // Unknown level — seed everything active so the person is not invisible.
+  return true;
+}
 
 
 /* ======================================================================
@@ -7476,7 +7873,19 @@ function retireFto() {
 
   if (written.length) {
     rebuiltNoteV1_(L);
-    refreshDropdownsNoteV1_(L);
+    var sync = null;
+    try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  FTO name lists on ' + sync.forms + ' registered form(s) no longer offer');
+      L.push('  the retired officer(s).');
+      if (sync.notes && sync.notes.length) {
+        sync.notes.forEach(function (n) { L.push('  · ' + n); });
+      }
+      L.push('');
+    } else {
+      refreshDropdownsNoteV1_(L);
+    }
     L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
     L.push('is exactly where it was, under the name that earned it.');
@@ -7562,6 +7971,13 @@ function unretireFto() {
   if (put.length) {
     L.push('');
     L.push('They can sign in again, and they are counted again.');
+    try {
+      var sync = syncRegisteredFormChoicesV1_();
+      if (sync && sync.ok) {
+        L.push('');
+        L.push('Form FTO lists refreshed on ' + sync.forms + ' registered form(s).');
+      }
+    } catch (eSync) {}
   }
   return noteV1_(L.join('\n'));
 }
@@ -8378,8 +8794,21 @@ function applyAddTraineePlanV1_(p) {
       L.push('');
     }
     L.push('SKILL MATRIX');
-    L.push('  Open the tracker once (or run rebuildSkillMatrix) so their skill');
-    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and Field Training already know them.');
+    var seeded = 0;
+    added.forEach(function (a) {
+      try {
+        var m = seedSkillMatrixForTraineeV1_(a.name, a.level);
+        if (m && m.ok) seeded += Number(m.added || 0);
+      } catch (eSeed) {}
+    });
+    if (seeded) {
+      L.push('  Seeded ' + seeded + ' skill row(s) on ' + PORTAL.TAB.SKILLS +
+             ' from the catalog.');
+      L.push('  Run rebuildSkillMatrix in the tracker when you want full evidence math.');
+    } else {
+      L.push('  No catalog rows were seeded (missing 15 SKILL CATALOG, or none apply).');
+      L.push('  Open the tracker and run rebuildSkillMatrix so their skill rows appear.');
+    }
     L.push('');
     L.push('To reverse an untouched blank-slate add: undoAddTrainee()');
   }
@@ -9354,9 +9783,65 @@ var PORTAL_PAGE_HTML = [
   "    ? formCards(t.forms)\n",
   "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
   "he registry could not reach them.</div>';\n",
+  "  if (canWrite() && (BOOT.viewer.role === 'FTO' || BOOT.viewer.role === 'TRAINING_DIVISION",
+  "')){\n",
+  "    h += sec('Coaching note');\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Note for '+esc(firstName(t.name))+'</div>'+\n",
+  "         '<textarea id=\"coach-note\" placeholder=\"What they need to hear. Goes on their rec",
+  "ord in your name.\" '+\n",
+  "         'oninput=\"syncCoachBtn()\"></textarea></div>'+\n",
+  "         '<button class=\"btn\" id=\"coach-go\" disabled onclick=\"submitCoaching('+jsStr(t.nam",
+  "e)+')\">File coaching</button>';\n",
+  "  }\n",
   "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker vault — same forms",
   ", same record. Field Training just opens the right door.</div>';\n",
   "  paint(h);\n",
+  "  syncCoachBtn();\n",
+  "}\n",
+  "function syncCoachBtn(){\n",
+  "  var why = (el('coach-note') && el('coach-note').value || '').trim();\n",
+  "  if (el('coach-go')) el('coach-go').disabled = why.length < 8 || S.busy;\n",
+  "}\n",
+  "function submitCoaching(name){\n",
+  "  if (S.busy) return;\n",
+  "  var note = (el('coach-note') && el('coach-note').value || '').trim();\n",
+  "  if (note.length < 8) { alert('Type the coaching note.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('coach-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Saving…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Coaching filed.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) b.textContent = 'File coaching';\n",
+  "      syncCoachBtn();\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .createCoachingV1(name, note);\n",
+  "}\n",
+  "function submitAssign(traineeName){\n",
+  "  if (S.busy) return;\n",
+  "  var sel = el('asg-fto');\n",
+  "  var fto = sel && sel.value ? String(sel.value).trim() : '';\n",
+  "  if (!fto) { alert('Pick a training officer.'); return; }\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Assigned.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .assignFtoV1(traineeName, fto);\n",
   "}\n",
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
   "\n",
@@ -9615,11 +10100,11 @@ var PORTAL_PAGE_HTML = [
   "  if (!open) return h;\n",
   "\n",
   "  if (staged.length){\n",
-  "    h += '<p class=\"sub\">Already decided here — finish them in the tracker when you are at",
-  " a computer '+\n",
-  "         '(tick RECORD on the row, or SCEMS → Record pending decisions).</p>';\n",
-  "    h += picker('pick-staged', staged.length+' to finish in the tracker\\u2026', staged.map",
-  "(function(x){\n",
+  "    h += '<p class=\"sub\">Open queue rows that already have a decision filled (legacy / hal",
+  "f-finished). '+\n",
+  "         'Record or clear them in the tracker if Field Training will not take them.</p>';\n",
+  "    h += picker('pick-staged', staged.length+' half-finished\\u2026', staged.map(function(x",
+  "){\n",
   "      return { value: x.trainee,\n",
   "               label: x.trainee + ' \\u2014 ' + x.skill + ' \\u00b7 ' + x.decision };\n",
   "    }), 'pickRecord');\n",
@@ -9727,6 +10212,24 @@ var PORTAL_PAGE_HTML = [
   "  h += freshRow(t.freshness);\n",
   "  h += '<div class=\"panel\">'+kv('Training officer', esc(t.fto||'not assigned'))+\n",
   "       kv('Shift', esc(t.shift||'not set'))+'</div>';\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !=",
+  "= false)){\n",
+  "    var officers = BOOT.data.officers || [];\n",
+  "    if (officers.length){\n",
+  "      h += sec('Who trains them');\n",
+  "      h += '<div class=\"panel\"><div class=\"lab\">Assigned FTO</div>'+\n",
+  "           '<select class=\"pick\" id=\"asg-fto\" aria-label=\"Assigned FTO\">'+\n",
+  "           '<option value=\"\">Pick a training officer\\u2026</option>';\n",
+  "      officers.forEach(function(o){\n",
+  "        h += '<option value=\"'+esc(o.name)+'\"'+(normMatch(o.name,t.fto)?' selected':'')+'>",
+  "'+\n",
+  "             esc(o.name)+'</option>';\n",
+  "      });\n",
+  "      h += '</select></div>'+\n",
+  "           '<button class=\"btn\" onclick=\"submitAssign('+jsStr(t.name)+')\">Save assignment<",
+  "/button>';\n",
+  "    }\n",
+  "  }\n",
   "  h += '<button class=\"card act\" onclick=\"openRecord('+jsStr(t.name)+')\">'+\n",
   "       '<span class=\"bd\"><span class=\"h\">Their whole record</span>'+\n",
   "       '<span class=\"m\">Every submission on file, most recent first.</span></span>'+\n",
@@ -10016,8 +10519,9 @@ var PORTAL_PAGE_HTML = [
   " more evidence</button>'+\n",
   "    '<div class=\"next\"><b>Friction belongs here</b>Approve is one clear act with your word",
   "s. Return stays dead until you type why — never invent an FTO\\'s words.</div>'+\n",
-  "    '<div class=\"next\"><b>Where this goes</b>Your decision stages on the queue. The tracke",
-  "r turns it into a permanent sign-off (or sends it back) — one writer, every gate.</div>';\n",
+  "    '<div class=\"next\"><b>Where this goes</b>Straight onto the permanent sign-off log, and",
+  " the queue row closes. Same gates the tracker uses — typed reason, your name, evidence che",
+  "ck.</div>';\n",
   "  paint(h);\n",
   "  syncDecideBtns();\n",
   "}\n",
@@ -10298,7 +10802,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'fa5c3b63';
+var PORTAL_BUILD = '99b5db73';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

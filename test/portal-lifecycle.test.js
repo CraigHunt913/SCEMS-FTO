@@ -122,7 +122,7 @@ global.FormApp = {
 
 const ROOT = fs.existsSync('/workspace/portal/00_Config.gs') ? '/workspace' : '/home/user/SCEMS-FTO';
 eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production',
-  '60_History','70_Backfill','80_Import','85_Merge','90_Staging','92_Lifecycle','93_Acknowledge',
+  '60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge',
   '94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync(ROOT + '/portal/' + f + '.gs', 'utf8')).join('\n'));
 
@@ -303,6 +303,13 @@ section('UI surface');
      'urgency sort does not use due:0 (falsy || fallback demotes overdue)');
   ok(/Bring someone on/.test(page) && /class="more"/.test(page),
      'enroll is a quiet more-link, not a desk hero');
+  ok(/createCoachingV1/.test(page) && /File coaching/.test(page),
+     'Tonight can file a coaching note');
+  ok(/assignFtoV1/.test(page) && /Save assignment/.test(page),
+     'Division person sheet can assign who trains whom');
+  ok(/permanent sign-off log|Recorded\. Permanent/i.test(page) ||
+     /Straight onto the permanent sign-off log/.test(page),
+     'sign-off copy says the decision is permanent');
   ok(/Lifecycle/.test(page), 'lifecycle section is named');
 }
 

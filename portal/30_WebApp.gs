@@ -197,85 +197,8 @@ function headerNameV1_(t, headers) {
   return '';
 }
 
-/** Division STAGES a sign-off decision. A typed reason is required — there is
- *  no default wording, because a pre-filled reason is not a reason.
- *
- *  It stages. It does not record, and that is the whole point.
- *
- *  The tracker's recordDecisionForRowV20_1_ is the single writer to
- *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
- *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
- *  The result was the worst of both: the approval never reached the sign-off
- *  log, so the skill was never actually signed off anywhere permanent — and
- *  the row was now shut against the only function that could have put it
- *  there. It also skipped that function's authority check, its evidence gate
- *  and its duplicate guard, every one of which exists because somebody
- *  decided a career decision needed them.
- *
- *  So this writes the four fields a decision is made of and leaves RECORD
- *  STATUS alone. The tracker records it — tick RECORD on the row, or run
- *  "Record pending decisions" from its menu. One writer, every gate, and the
- *  result is exactly as defensible as a decision typed into the sheet by
- *  hand, because that is now literally what it is. */
-function approveSignoffV1(row, reason, requestId) {
-  return stageSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
-}
-
-/** Division stages a return — same gates as approve, different decision word.
- *  Typed reason required; the button on the page stays dead until it is filled. */
-function returnSignoffV1(row, reason, requestId) {
-  return stageSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
-}
-
-function stageSignoffDecisionV1_(row, reason, requestId, decision) {
-  requireWritableV1_('stage a sign-off decision');
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may decide a sign-off.');
-  var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
-
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
-  if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
-
-  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
-  var missing = [];
-  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
-  if (missing.length) {
-    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
-      'written. Fix the header row in the tracker first.');
-  }
-
-  var live = t.rows[r - t.firstDataRow] || [];
-  var want = String(requestId == null ? '' : requestId).trim();
-  var have = t.col['REQUEST ID'] === undefined ? ''
-           : String(live[t.col['REQUEST ID']] || '').trim();
-  if (want && have && want !== have) {
-    throw new Error('That is not the row you were looking at any more — the queue moved ' +
-      'underneath you. Nothing was written. Reload and try again.');
-  }
-
-  var status = String(live[t.col['RECORD STATUS']] || '').trim();
-  if (status !== 'OPEN') {
-    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
-  }
-  var already = String(live[t.col['DECISION']] || '').trim();
-  if (already) {
-    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
-      'was written. Record it in the tracker, or clear it there, first.');
-  }
-
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
-  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
-  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, decision + ' | row ' + r +
-    (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
-  return 'Staged. The tracker records it.';
-}
+/* Sign-off approve / return live in 91_Record.gs — they write the permanent
+ *  sign-off log and close the queue row. Staging-only is gone on purpose. */
 
 /** The Training Division records that it has seen a finding.
  *

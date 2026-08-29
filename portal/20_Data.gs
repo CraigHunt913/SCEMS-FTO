@@ -122,6 +122,8 @@ function skillsForV1_(norm) {
                  readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
+      skillId: t.col['SKILL ID'] !== undefined
+        ? String(r[t.col['SKILL ID']] || '').trim() : '',
       readiness: readiness,
       signed: signed,
       successful: successful,
@@ -563,14 +565,13 @@ function divisionPayloadV1_() {
       };
     }),
     queueCount: queue.length,
-    // Decisions already made here and waiting on the tracker to make them
-    // permanent. The portal deliberately does not close these rows: the
-    // tracker's own writer is the only thing allowed to put a sign-off in
-    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    // Legacy half-staged rows (OPEN + decision filled) — rare after portal
+    // records permanently. Still listed so Division can finish orphans.
     staged: staged.map(function (q) {
       return { trainee: q.trainee, skill: q.skill, decision: q.decision,
                by: q.decidedBy, since: daysAgoTextV1_(q.since) };
     }),
+    canAssignFto: mayWriteV1_(),
     // A column this screen leans on that is not there. Doctrine: report it,
     // never read the one beside it and hope.
     warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),

@@ -717,8 +717,61 @@ function paintTraineeSheet(){
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  if (canWrite() && (BOOT.viewer.role === 'FTO' || BOOT.viewer.role === 'TRAINING_DIVISION')){
+    h += sec('Coaching note');
+    h += '<div class="panel"><div class="lab">Note for '+esc(firstName(t.name))+'</div>'+
+         '<textarea id="coach-note" placeholder="What they need to hear. Goes on their record in your name." '+
+         'oninput="syncCoachBtn()"></textarea></div>'+
+         '<button class="btn" id="coach-go" disabled onclick="submitCoaching('+jsStr(t.name)+')">File coaching</button>';
+  }
   h += '<div class="next"><b>Where it goes</b>Straight into the tracker vault — same forms, same record. Field Training just opens the right door.</div>';
   paint(h);
+  syncCoachBtn();
+}
+function syncCoachBtn(){
+  var why = (el('coach-note') && el('coach-note').value || '').trim();
+  if (el('coach-go')) el('coach-go').disabled = why.length < 8 || S.busy;
+}
+function submitCoaching(name){
+  if (S.busy) return;
+  var note = (el('coach-note') && el('coach-note').value || '').trim();
+  if (note.length < 8) { alert('Type the coaching note.'); return; }
+  S.busy = true;
+  var b = el('coach-go');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Coaching filed.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) b.textContent = 'File coaching';
+      syncCoachBtn();
+      alert(e.message||e);
+    })
+    .createCoachingV1(name, note);
+}
+function submitAssign(traineeName){
+  if (S.busy) return;
+  var sel = el('asg-fto');
+  var fto = sel && sel.value ? String(sel.value).trim() : '';
+  if (!fto) { alert('Pick a training officer.'); return; }
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Assigned.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      alert(e.message||e);
+    })
+    .assignFtoV1(traineeName, fto);
 }
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
@@ -948,9 +1001,9 @@ function deskDetails(d){
   if (!open) return h;
 
   if (staged.length){
-    h += '<p class="sub">Already decided here — finish them in the tracker when you are at a computer '+
-         '(tick RECORD on the row, or SCEMS → Record pending decisions).</p>';
-    h += picker('pick-staged', staged.length+' to finish in the tracker\u2026', staged.map(function(x){
+    h += '<p class="sub">Open queue rows that already have a decision filled (legacy / half-finished). '+
+         'Record or clear them in the tracker if Field Training will not take them.</p>';
+    h += picker('pick-staged', staged.length+' half-finished\u2026', staged.map(function(x){
       return { value: x.trainee,
                label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
     }), 'pickRecord');
@@ -1043,6 +1096,21 @@ function paintPersonSheet(){
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !== false)){
+    var officers = BOOT.data.officers || [];
+    if (officers.length){
+      h += sec('Who trains them');
+      h += '<div class="panel"><div class="lab">Assigned FTO</div>'+
+           '<select class="pick" id="asg-fto" aria-label="Assigned FTO">'+
+           '<option value="">Pick a training officer\u2026</option>';
+      officers.forEach(function(o){
+        h += '<option value="'+esc(o.name)+'"'+(normMatch(o.name,t.fto)?' selected':'')+'>'+
+             esc(o.name)+'</option>';
+      });
+      h += '</select></div>'+
+           '<button class="btn" onclick="submitAssign('+jsStr(t.name)+')">Save assignment</button>';
+    }
+  }
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
        '<span class="bd"><span class="h">Their whole record</span>'+
        '<span class="m">Every submission on file, most recent first.</span></span>'+
@@ -1299,7 +1367,7 @@ function paintSignoff(){
     '<button class="btn" id="ap" disabled onclick="approve()">Approve sign-off</button>'+
     '<button class="btn ghost-danger" id="ret" disabled onclick="returnSkill()">Return for more evidence</button>'+
     '<div class="next"><b>Friction belongs here</b>Approve is one clear act with your words. Return stays dead until you type why — never invent an FTO\'s words.</div>'+
-    '<div class="next"><b>Where this goes</b>Your decision stages on the queue. The tracker turns it into a permanent sign-off (or sends it back) — one writer, every gate.</div>';
+    '<div class="next"><b>Where this goes</b>Straight onto the permanent sign-off log, and the queue row closes. Same gates the tracker uses — typed reason, your name, evidence check.</div>';
   paint(h);
   syncDecideBtns();
 }
