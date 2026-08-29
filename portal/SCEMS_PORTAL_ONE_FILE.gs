@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.1.0
- * Build 7c760893
+ * Build b3e7d697
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -9597,8 +9597,8 @@ var PORTAL_PAGE_HTML = [
   "    }\n",
   "    h += '<button class=\"card act\"'+spine(t.releaseReady?'due':'')+' onclick=\"openRelease(",
   ")\">'+\n",
-  "         '<span class=\"bd\"><span class=\"h\">Release '+esc(firstName(t.name)||'trainee')+'</",
-  "span>'+\n",
+  "         '<span class=\"bd\"><span class=\"h\">Clear '+esc(firstName(t.name)||'trainee')+' for",
+  " the truck</span>'+\n",
   "         '<span class=\"m\">Successful completion — independent partner. Archives who / when",
   " / why; drops them from trainee form lists.</span></span>'+\n",
   "         '<span class=\"go\">&rsaquo;</span></button>';\n",
@@ -10203,7 +10203,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '7c760893';
+var PORTAL_BUILD = 'b3e7d697';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
