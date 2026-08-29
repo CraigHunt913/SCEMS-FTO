@@ -657,7 +657,8 @@ function paintFto(d){
   var lead = list[0];
   var leadIdx = d.trainees.indexOf(lead);
   if (lead && lead.urgency === 'due'){
-    h += '<button class="card act"'+spine('due')+' onclick="openTrainee('+leadIdx+')" style="margin-bottom:14px">'+
+    h += '<button class="card act" onclick="openTrainee('+leadIdx+')"'+
+         ' style="--accent:var(--stop);margin-bottom:14px">'+
          '<span class="bd"><span class="lab" style="margin:0">File tonight</span>'+
          '<span class="h" style="font-size:1.35rem">'+esc(lead.name)+'</span>'+
          '<span class="m">'+esc(lead.phase||'')+

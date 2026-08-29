@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.1.1
- * Build 13cbd38a
+ * Build 080f42d5
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -9367,18 +9367,12 @@ var PORTAL_PAGE_HTML = [
   "  var missingBy = {};\n",
   "  (d.incomplete||[]).forEach(function(t){ missingBy[t.name] = t.missing; });\n",
   "\n",
-  "  // Every active trainee is either asking something of you or is not. Only\n",
-  "  // the first kind gets a row; the rest get counted and hidden behind a\n",
-  "  // button, because a name with nothing next to it is just noise.\n",
-  "  /* Three lists, not two. Someone you have already looked at and said\n",
-  "     something about is not an alarm any more - and is not gone either. */\n",
   "  var flagged = [], seen = [], quiet = [];\n",
   "  (d.people||[]).forEach(function(t,i){\n",
   "    if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }\n",
   "    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});\n",
   "  });\n",
   "\n",
-  "  // Finish line is a Division decision — sit it with decisions, not after holding.\n",
   "  var ready = (d.releaseReady || []).filter(function(r){\n",
   "    return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; })",
   ";\n",
@@ -9400,9 +9394,6 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  h += warnRow(d.warnings);\n",
   "\n",
-  "  // First viewport = decisions and people. Machinery (retired forms, staged\n",
-  "  // rows) lives at the bottom under Desk details — not as red banners here.\n",
-  "\n",
   "  if (!q.length){\n",
   "    h += '<div class=\"note n-ok\"><b>Nothing waiting</b>When an evaluation needs your call,",
   " it shows here first.</div>';\n",
@@ -9422,7 +9413,7 @@ var PORTAL_PAGE_HTML = [
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
-  "  // Phase 4 + every skill signed — only when the gate says yes.\n",
+  "  // Clearance sits with decisions — not after the holding parking lot.\n",
   "  if (showReady){\n",
   "    h += sec('Ready for the truck', ready.length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 and every skill signed off. Cle",
@@ -10304,7 +10295,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '13cbd38a';
+var PORTAL_BUILD = '080f42d5';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
