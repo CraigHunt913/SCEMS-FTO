@@ -651,7 +651,10 @@ function paintFto(d){
   }
 
   var list = (d.trainees||[]).slice().sort(function(a,b){
-    var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);
+    // due must be 1 not 0 — (0||fallback) would demote overdue to last.
+    var rank = { due:1, soon:2 };
+    var ra = rank[a.urgency] || 9, rb = rank[b.urgency] || 9;
+    return ra - rb;
   });
   // Lead card: only when someone is actually overdue — not a decorative first row.
   var lead = list[0];

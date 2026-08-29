@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.1.1
- * Build 8dd52fd2
+ * Build fa5c3b63
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -9278,7 +9278,10 @@ var PORTAL_PAGE_HTML = [
   "  }\n",
   "\n",
   "  var list = (d.trainees||[]).slice().sort(function(a,b){\n",
-  "    var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);\n",
+  "    // due must be 1 not 0 — (0||fallback) would demote overdue to last.\n",
+  "    var rank = { due:1, soon:2 };\n",
+  "    var ra = rank[a.urgency] || 9, rb = rank[b.urgency] || 9;\n",
+  "    return ra - rb;\n",
   "  });\n",
   "  // Lead card: only when someone is actually overdue — not a decorative first row.\n",
   "  var lead = list[0];\n",
@@ -10295,7 +10298,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '8dd52fd2';
+var PORTAL_BUILD = 'fa5c3b63';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
