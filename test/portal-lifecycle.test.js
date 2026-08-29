@@ -297,8 +297,10 @@ section('UI surface');
   ok(/Ready for the truck/.test(page), 'Waiting on you surfaces truck clearance');
   ok(/clearance|\.gaps|Not ready for the truck yet/i.test(page),
      'person sheet names clearance gaps when Phase 4 is incomplete');
-  ok(/File tonight/.test(page) && /urgency === 'due'|urgency==='due'/.test(page),
+  ok(/File tonight/.test(page) && /rank\[a\.urgency\]|urgency === 'due'|urgency==='due'/.test(page),
      'Tonight leads with File tonight only when overdue');
+  ok(!/due:\s*0[\s,]/.test(page) || /due:\s*1/.test(page),
+     'urgency sort does not use due:0 (falsy || fallback demotes overdue)');
   ok(/Bring someone on/.test(page) && /class="more"/.test(page),
      'enroll is a quiet more-link, not a desk hero');
   ok(/Lifecycle/.test(page), 'lifecycle section is named');
