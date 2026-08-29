@@ -78,7 +78,7 @@ function traineeRowsV1_() {
       started: asDateV1_(r[t.col['START DATE']]),
       phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
       status: status,
-      closed: /closed|released|withdraw|archiv/i.test(status),
+      closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
       setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
                         String(r[t.col['CURRENT PHASE']] || '').trim() &&
                         String(r[t.col['ASSIGNED FTO']] || '').trim() &&
@@ -376,7 +376,7 @@ function traineePayloadV1_(viewer) {
   var day = dayInPhaseV1_(me);
   var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
     dayInPhase: day,
@@ -402,7 +402,7 @@ function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     name: viewer.name,
     trainees: mine.map(function (t) {
       var heat = evalHeatForV1_(t.norm);
@@ -587,7 +587,7 @@ function divisionPayloadV1_() {
     duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
-    product: 'THE LINE'
+    product: PORTAL.PRODUCT
   };
 }
 
@@ -622,7 +622,7 @@ function supervisorPayloadV1_(viewer) {
     return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
   });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     shift: viewer.shift || 'All shifts',
     hotCount: hot,
     trainees: trainees,

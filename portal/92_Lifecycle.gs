@@ -1,27 +1,27 @@
 /**
- * Phase and release — lifecycle on THE LINE.
+ * Phase and clearance — Field Training lifecycle.
  *
- * Training Division keeps pace with CURRENT PHASE and can release someone
- * without digging through the tracker menus. Both actions demand typed
- * reasons and stamp who / when / why into the vault.
+ * Training Division keeps CURRENT PHASE current and can clear a trainee for
+ * independent partner duty when they have finished the program.
  *
  * Advance:
  *   CURRENT PHASE → next · PHASE START DATE → today · optional assignment
  *   history row · PORTAL AUDIT.
  *
- * Release:
- *   SET STATUS → Closed / Released · archive snapshot (17 TRAINEE ARCHIVE
- *   when present, else PORTAL RELEASE LOG) · cancel OPEN skill-queue rows ·
- *   refresh form Trainee lists so FTOs cannot still pick them · PORTAL AUDIT.
+ * Clear for the truck (successful completion — not termination):
+ *   SET STATUS → Cleared / Independent · archive snapshot · cancel OPEN
+ *   skill-queue rows · refresh form Trainee lists · PORTAL AUDIT.
  *
- * Clearance past Phase 4 is not automated here — that is still a governance
- * call. Phase 4 people show as release-ready.
+ * "Released from training" means they completed every phase and the required
+ * skills and may ride as a partner. It is a graduation, not leaving the job.
  */
 
 var PORTAL_PHASES_V1 = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
 var PORTAL_RELEASE_LOG = 'PORTAL RELEASE LOG';
 var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
 var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
+/** Vault status for someone cleared to ride as an independent partner. */
+var PORTAL_CLEARED_STATUS = 'Cleared / Independent';
 
 function phaseIndexV1_(phase) {
   var p = String(phase || '').trim();
@@ -84,7 +84,7 @@ function advanceTraineePhaseV1(traineeName, reason) {
   var next = nextPhaseV1_(rec.phase);
   if (!next) {
     if (phaseIndexV1_(rec.phase) === PORTAL_PHASES_V1.length - 1) {
-      throw new Error(rec.name + ' is already in Phase 4. Release them when the program is complete — phase does not advance past that.');
+      throw new Error(rec.name + ' is already in Phase 4. Clear them for the truck when the program is complete — phase does not advance past that.');
     }
     throw new Error('Current phase "' + (rec.phase || '(blank)') +
       '" is not a known phase. Fix the master row first.');
@@ -121,23 +121,23 @@ function advanceTraineePhaseV1(traineeName, reason) {
 }
 
 /**
- * Release / close a trainee. Typed reason required.
- * Soft-closes on the master (status) so history stays under their name,
- * archives a snapshot, cancels open skill requests, refreshes form lists.
+ * Clear a trainee for independent partner duty (successful program completion).
+ * Typed reason required. Soft-closes on the master, archives the clearance,
+ * cancels open skill requests, refreshes form lists.
  */
 function releaseTraineeV1(traineeName, reason) {
-  var viewer = requireDivisionWritableV1_('release a trainee');
+  var viewer = requireDivisionWritableV1_('clear a trainee for independent duty');
   var why = String(reason || '').trim();
   if (why.length < 8) {
-    throw new Error('Type why you are releasing them. It goes on the permanent record in your name.');
+    throw new Error('Type why they are cleared. It goes on the permanent record in your name.');
   }
   var who = String(traineeName || '').trim();
   var rec = findTraineeOnMasterV1_(who);
   if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
   if (rec.from) {
-    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before releasing.');
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before clearing.');
   }
-  if (rec.closed) throw new Error(rec.name + ' is already closed / released.');
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
   if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
 
   var t = readTabV1_(PORTAL.TAB.MASTER);
@@ -149,10 +149,9 @@ function releaseTraineeV1(traineeName, reason) {
     throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
   }
 
-  // Snapshot first — capture who they were before the status flip.
   writeReleaseArchiveV1_(rec, viewer.email, why);
 
-  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue('Closed / Released');
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLEARED_STATUS);
 
   var cancelled = cancelOpenSkillQueueForV1_(rec.name);
   forgetTabsV1_();
@@ -161,11 +160,11 @@ function releaseTraineeV1(traineeName, reason) {
   var sync = null;
   try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
 
-  auditV1_('TRAINEE RELEASED', viewer.email,
-    rec.name + ' | phase ' + (rec.phase || '?') + ' | cancelled ' + cancelled +
-    ' | ' + why.slice(0, 180));
+  auditV1_('TRAINEE CLEARED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | independent partner | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
 
-  var msg = rec.name + ' is released. Captured on the archive with your reason.';
+  var msg = rec.name + ' is cleared for independent partner duty. Captured with your reason.';
   if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
   if (sync && sync.ok) msg += ' Form Trainee lists updated.';
   return {
@@ -195,7 +194,7 @@ function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
   put('PHASE START', eff);
   put('STATUS', 'ACTIVE');
   put('OPENED', new Date());
-  put('SOURCE', 'advancement by ' + by + ' (THE LINE)');
+  put('SOURCE', 'advancement by ' + by + ' (Field Training)');
   put('NOTES', why);
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
 }
@@ -209,8 +208,8 @@ function writeReleaseArchiveV1_(rec, by, why) {
     'LEVEL': rec.level || '',
     'FTO': rec.fto || '',
     'PHASE AT EXIT': rec.phase || '',
-    'FINAL STATUS': 'Closed / Released',
-    'NOTES': 'Released on THE LINE by ' + by + ': ' + why,
+    'FINAL STATUS': PORTAL_CLEARED_STATUS,
+    'NOTES': 'Cleared for independent partner duty by ' + by + ': ' + why,
     'RELEASED BY': by,
     'EMAIL': rec.email || ''
   };
@@ -235,7 +234,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   if (!sh) {
     sh = book.insertSheet(PORTAL_RELEASE_LOG);
     sh.getRange(1, 1).setValue(
-      'Releases captured from THE LINE. Do not edit or sort.')
+      'Clearances captured from Field Training. Do not edit or sort.')
       .setFontWeight('bold');
     sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
       .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
@@ -245,7 +244,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   }
   sh.appendRow([
     stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
-    'Closed / Released', by, why
+    PORTAL_CLEARED_STATUS, by, why
   ]);
 }
 

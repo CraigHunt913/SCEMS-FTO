@@ -200,7 +200,7 @@ function START() {
         why: 'Those trainees are on nobody\'s list. If that officer is new, set ' +
              PORTAL_ADD_FTO_PROPERTY + ' to their name and address and run addFto. ' +
              'If it is a name that changed, use PORTAL_RENAME and applyRename instead. ' +
-             'To enroll a new trainee from THE LINE, use Bring someone on (or addTrainee).' });
+             'To enroll a new trainee from Field Training, use Bring someone on (or addTrainee).' });
     }
   } catch (e) {}
 

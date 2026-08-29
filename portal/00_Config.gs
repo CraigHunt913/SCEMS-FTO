@@ -13,7 +13,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.5',
+  VERSION: 'portal-2.1.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -22,9 +22,10 @@ var PORTAL = Object.freeze({
   MODE_PRODUCTION: 'PRODUCTION',
   MODE_LIVE: 'LIVE',
 
-  /** Product name on the page. County name stays in the bar. */
-  TITLE: 'THE LINE — Sumter County EMS Field Training',
-  PRODUCT: 'THE LINE',
+  /** Product chrome. County name owns the badge; this is the program. */
+  TITLE: 'Field Training — Sumter County EMS',
+  PRODUCT: 'Field Training',
+  COUNTY: 'Sumter County EMS',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */

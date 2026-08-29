@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.0.5
- * Build 0492020b
+ * SCEMS FIELD TRAINING PORTAL — portal-2.1.0
+ * Build 7c760893
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.0.5',
+  VERSION: 'portal-2.1.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -43,9 +43,10 @@ var PORTAL = Object.freeze({
   MODE_PRODUCTION: 'PRODUCTION',
   MODE_LIVE: 'LIVE',
 
-  /** Product name on the page. County name stays in the bar. */
-  TITLE: 'THE LINE — Sumter County EMS Field Training',
-  PRODUCT: 'THE LINE',
+  /** Product chrome. County name owns the badge; this is the program. */
+  TITLE: 'Field Training — Sumter County EMS',
+  PRODUCT: 'Field Training',
+  COUNTY: 'Sumter County EMS',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */
@@ -389,7 +390,7 @@ function START() {
         why: 'Those trainees are on nobody\'s list. If that officer is new, set ' +
              PORTAL_ADD_FTO_PROPERTY + ' to their name and address and run addFto. ' +
              'If it is a name that changed, use PORTAL_RENAME and applyRename instead. ' +
-             'To enroll a new trainee from THE LINE, use Bring someone on (or addTrainee).' });
+             'To enroll a new trainee from Field Training, use Bring someone on (or addTrainee).' });
     }
   } catch (e) {}
 
@@ -1285,7 +1286,7 @@ function traineeRowsV1_() {
       started: asDateV1_(r[t.col['START DATE']]),
       phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
       status: status,
-      closed: /closed|released|withdraw|archiv/i.test(status),
+      closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
       setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
                         String(r[t.col['CURRENT PHASE']] || '').trim() &&
                         String(r[t.col['ASSIGNED FTO']] || '').trim() &&
@@ -1583,7 +1584,7 @@ function traineePayloadV1_(viewer) {
   var day = dayInPhaseV1_(me);
   var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
     dayInPhase: day,
@@ -1609,7 +1610,7 @@ function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     name: viewer.name,
     trainees: mine.map(function (t) {
       var heat = evalHeatForV1_(t.norm);
@@ -1794,7 +1795,7 @@ function divisionPayloadV1_() {
     duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
-    product: 'THE LINE'
+    product: PORTAL.PRODUCT
   };
 }
 
@@ -1829,7 +1830,7 @@ function supervisorPayloadV1_(viewer) {
     return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
   });
   return {
-    product: 'THE LINE',
+    product: PORTAL.PRODUCT,
     shift: viewer.shift || 'All shifts',
     hotCount: hot,
     trainees: trainees,
@@ -1942,7 +1943,7 @@ function safeBoolV1_(fn) {
  *
  * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
  * or Drive. Touching those during doGet is what produces Google's grey
- * createOAuthDialog iframe that never paints THE LINE.
+ * createOAuthDialog iframe that never paints Field Training.
  *
  * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
@@ -2004,7 +2005,7 @@ function payloadForV1_(viewer) {
  * web app is not stuck on a grey OAuth iframe.
  */
 function authorizePortalNow() {
-  var L = ['THE LINE — authorizePortalNow', ''];
+  var L = ['Field Training — authorizePortalNow', ''];
   try {
     var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
     L.push('Signed in as: ' + (email || '(unnamed)'));
@@ -2324,7 +2325,7 @@ function clean_(v) {
 }
 
 /**
- * Training Division brings a new trainee onto THE LINE from the web app.
+ * Training Division brings a new trainee into Field Training from the web app.
  *
  * Writes one row to 01 TRAINEE MASTER and refreshes Trainee LIST choices on
  * the registered Google Forms so the forms already in service offer them.
@@ -2333,7 +2334,7 @@ function addTraineeV1(payload) {
   requireWritableV1_('add a trainee');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) {
-    throw new Error('Only the Training Division may add a trainee from THE LINE.');
+    throw new Error('Only the Training Division may add a trainee from Field Training.');
   }
   var req = parseAddTraineeRequestV1_(payload || {});
   if (!req || !req.name) throw new Error('Type their full name.');
@@ -2371,7 +2372,7 @@ function addTraineeV1(payload) {
     ok: true,
     name: req.name,
     level: req.level,
-    message: req.name + ' is on THE LINE and on the existing forms.'
+    message: req.name + ' is in Field Training and on the existing forms.'
   };
 }
 
@@ -2406,7 +2407,7 @@ function auditV1_(what, who, detail) {
  * One exception, on purpose: when a trainee or FTO is added here,
  * syncRegisteredFormChoicesV1_ refreshes Trainee / FTO LIST choices on those
  * same registered forms so the dropdowns already in service offer the new
- * name. That is how THE LINE links a new person to the forms you already have
+ * name. That is how Field Training links a new person to the forms you already have
  * — without creating a tenth form.
  *
  * What this file adds is the part that was missing: one authoritative list of
@@ -4915,7 +4916,7 @@ function setUpStaging(forceNew) {
       ['Alex Bramble','STG-02','EMT','A','Dana Whitlock', d('2026-05-04'),'Phase 3','Active','alex.bramble@example.org', d('2026-07-01'),'A'],
       ['Priya Okafor','STG-03','Advanced EMT','B','Marcus Vane', d('2026-04-12'),'Phase 4','Active','priya.okafor@example.org', d('2026-08-01'),'B'],
       ['Sam Ledger','STG-04','EMT','A','', '', '','Active','sam.ledger@example.org','','A'],
-      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Closed / Released','rosa.quill@example.org', d('2026-03-01'),'B']
+      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Cleared / Independent','rosa.quill@example.org', d('2026-03-01'),'B']
     ]);
 
   tab(PORTAL.TAB.ROSTER, ['FTO','EMAIL','LEVEL','ACTIVE'],
@@ -5105,29 +5106,29 @@ function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }
  * ====================================================================== */
 
 /**
- * Phase and release — lifecycle on THE LINE.
+ * Phase and clearance — Field Training lifecycle.
  *
- * Training Division keeps pace with CURRENT PHASE and can release someone
- * without digging through the tracker menus. Both actions demand typed
- * reasons and stamp who / when / why into the vault.
+ * Training Division keeps CURRENT PHASE current and can clear a trainee for
+ * independent partner duty when they have finished the program.
  *
  * Advance:
  *   CURRENT PHASE → next · PHASE START DATE → today · optional assignment
  *   history row · PORTAL AUDIT.
  *
- * Release:
- *   SET STATUS → Closed / Released · archive snapshot (17 TRAINEE ARCHIVE
- *   when present, else PORTAL RELEASE LOG) · cancel OPEN skill-queue rows ·
- *   refresh form Trainee lists so FTOs cannot still pick them · PORTAL AUDIT.
+ * Clear for the truck (successful completion — not termination):
+ *   SET STATUS → Cleared / Independent · archive snapshot · cancel OPEN
+ *   skill-queue rows · refresh form Trainee lists · PORTAL AUDIT.
  *
- * Clearance past Phase 4 is not automated here — that is still a governance
- * call. Phase 4 people show as release-ready.
+ * "Released from training" means they completed every phase and the required
+ * skills and may ride as a partner. It is a graduation, not leaving the job.
  */
 
 var PORTAL_PHASES_V1 = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
 var PORTAL_RELEASE_LOG = 'PORTAL RELEASE LOG';
 var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
 var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
+/** Vault status for someone cleared to ride as an independent partner. */
+var PORTAL_CLEARED_STATUS = 'Cleared / Independent';
 
 function phaseIndexV1_(phase) {
   var p = String(phase || '').trim();
@@ -5190,7 +5191,7 @@ function advanceTraineePhaseV1(traineeName, reason) {
   var next = nextPhaseV1_(rec.phase);
   if (!next) {
     if (phaseIndexV1_(rec.phase) === PORTAL_PHASES_V1.length - 1) {
-      throw new Error(rec.name + ' is already in Phase 4. Release them when the program is complete — phase does not advance past that.');
+      throw new Error(rec.name + ' is already in Phase 4. Clear them for the truck when the program is complete — phase does not advance past that.');
     }
     throw new Error('Current phase "' + (rec.phase || '(blank)') +
       '" is not a known phase. Fix the master row first.');
@@ -5227,23 +5228,23 @@ function advanceTraineePhaseV1(traineeName, reason) {
 }
 
 /**
- * Release / close a trainee. Typed reason required.
- * Soft-closes on the master (status) so history stays under their name,
- * archives a snapshot, cancels open skill requests, refreshes form lists.
+ * Clear a trainee for independent partner duty (successful program completion).
+ * Typed reason required. Soft-closes on the master, archives the clearance,
+ * cancels open skill requests, refreshes form lists.
  */
 function releaseTraineeV1(traineeName, reason) {
-  var viewer = requireDivisionWritableV1_('release a trainee');
+  var viewer = requireDivisionWritableV1_('clear a trainee for independent duty');
   var why = String(reason || '').trim();
   if (why.length < 8) {
-    throw new Error('Type why you are releasing them. It goes on the permanent record in your name.');
+    throw new Error('Type why they are cleared. It goes on the permanent record in your name.');
   }
   var who = String(traineeName || '').trim();
   var rec = findTraineeOnMasterV1_(who);
   if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
   if (rec.from) {
-    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before releasing.');
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before clearing.');
   }
-  if (rec.closed) throw new Error(rec.name + ' is already closed / released.');
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
   if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
 
   var t = readTabV1_(PORTAL.TAB.MASTER);
@@ -5255,10 +5256,9 @@ function releaseTraineeV1(traineeName, reason) {
     throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
   }
 
-  // Snapshot first — capture who they were before the status flip.
   writeReleaseArchiveV1_(rec, viewer.email, why);
 
-  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue('Closed / Released');
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLEARED_STATUS);
 
   var cancelled = cancelOpenSkillQueueForV1_(rec.name);
   forgetTabsV1_();
@@ -5267,11 +5267,11 @@ function releaseTraineeV1(traineeName, reason) {
   var sync = null;
   try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
 
-  auditV1_('TRAINEE RELEASED', viewer.email,
-    rec.name + ' | phase ' + (rec.phase || '?') + ' | cancelled ' + cancelled +
-    ' | ' + why.slice(0, 180));
+  auditV1_('TRAINEE CLEARED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | independent partner | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
 
-  var msg = rec.name + ' is released. Captured on the archive with your reason.';
+  var msg = rec.name + ' is cleared for independent partner duty. Captured with your reason.';
   if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
   if (sync && sync.ok) msg += ' Form Trainee lists updated.';
   return {
@@ -5301,7 +5301,7 @@ function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
   put('PHASE START', eff);
   put('STATUS', 'ACTIVE');
   put('OPENED', new Date());
-  put('SOURCE', 'advancement by ' + by + ' (THE LINE)');
+  put('SOURCE', 'advancement by ' + by + ' (Field Training)');
   put('NOTES', why);
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
 }
@@ -5315,8 +5315,8 @@ function writeReleaseArchiveV1_(rec, by, why) {
     'LEVEL': rec.level || '',
     'FTO': rec.fto || '',
     'PHASE AT EXIT': rec.phase || '',
-    'FINAL STATUS': 'Closed / Released',
-    'NOTES': 'Released on THE LINE by ' + by + ': ' + why,
+    'FINAL STATUS': PORTAL_CLEARED_STATUS,
+    'NOTES': 'Cleared for independent partner duty by ' + by + ': ' + why,
     'RELEASED BY': by,
     'EMAIL': rec.email || ''
   };
@@ -5341,7 +5341,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   if (!sh) {
     sh = book.insertSheet(PORTAL_RELEASE_LOG);
     sh.getRange(1, 1).setValue(
-      'Releases captured from THE LINE. Do not edit or sort.')
+      'Clearances captured from Field Training. Do not edit or sort.')
       .setFontWeight('bold');
     sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
       .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
@@ -5351,7 +5351,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   }
   sh.appendRow([
     stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
-    'Closed / Released', by, why
+    PORTAL_CLEARED_STATUS, by, why
   ]);
 }
 
@@ -7916,7 +7916,7 @@ function UNDO_SOMEBODY_JOINING() { return undoAddFto(); }
  *
  * Until now a new trainee meant typing a name into 01 TRAINEE MASTER by hand
  * and hoping the nine Google Forms picked them up. That is how people end up
- * on THE LINE but missing from the eval / skills dropdowns — and how an FTO
+ * in Field Training but missing from the eval / skills dropdowns — and how an FTO
  * opens a form that silently refuses the name they just typed.
  *
  * What this does:
@@ -7933,7 +7933,7 @@ function UNDO_SOMEBODY_JOINING() { return undoAddFto(); }
  *
  * Two ways in:
  *   Editor: set PORTAL_ADD_TRAINEE, run addTraineeBeforeAndAfter / addTrainee.
- *   THE LINE: Training Division → Bring someone on → addTraineeV1 (web).
+ *   Field Training: Training Division → Bring someone on → addTraineeV1 (web).
  */
 
 var PORTAL_ADD_TRAINEE_PROPERTY = 'PORTAL_ADD_TRAINEE';
@@ -8041,7 +8041,7 @@ function addTraineePlanV1_(explicit) {
 
   if (!plan.requests.length) {
     plan.problem = 'Nothing to add.\n\n' +
-      'On THE LINE: Training Division → Bring someone on.\n\n' +
+      'On Field Training: Training Division → Bring someone on.\n\n' +
       'In the editor, set ' + PORTAL_ADD_TRAINEE_PROPERTY + ' to:\n' +
       '  Casey Holt, casey@example.org, EMT, Phase 1, Dana Whitlock, A\n\n' +
       'Name, email, and level are required. Phase defaults to Phase 1.\n' +
@@ -8161,7 +8161,7 @@ function addTraineeBodyV1_(p, L, done) {
     p.clash.forEach(function (c) {
       L.push('  ' + c.req.email + '   is ' + c.owner.name);
     });
-    L.push('  An address is how THE LINE recognizes a trainee. Not added.');
+    L.push('  An address is how Field Training recognizes a trainee. Not added.');
     L.push('');
   }
   if (p.badFto.length) {
@@ -8212,7 +8212,7 @@ function addTrainee() {
 function applyAddTraineePlanV1_(p) {
   if (p.problem) return noteV1_(p.problem);
 
-  var L = ['TRAINEE ADDED TO THE LINE', '',
+  var L = ['TRAINEE ADDED TO FIELD TRAINING', '',
     'In     : ' + safeTargetNameV1_(),
     'Run by : ' + (whoIsAskingV1_() || whoIsVisitingV1_() || 'unidentified'), ''];
 
@@ -8297,7 +8297,7 @@ function applyAddTraineePlanV1_(p) {
     if (sync && sync.ok) {
       L.push('EXISTING FORMS UPDATED');
       L.push('  Trainee dropdowns on ' + sync.forms + ' registered form(s) now include');
-      L.push('  the new name(s). Prefill and open-form cards on THE LINE use those');
+      L.push('  the new name(s). Prefill and open-form cards in Field Training use those');
       L.push('  same forms — nothing new was created.');
       if (sync.notes && sync.notes.length) {
         sync.notes.forEach(function (n) { L.push('  · ' + n); });
@@ -8312,7 +8312,7 @@ function applyAddTraineePlanV1_(p) {
     }
     L.push('SKILL MATRIX');
     L.push('  Open the tracker once (or run rebuildSkillMatrix) so their skill');
-    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and THE LINE already know them.');
+    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and Field Training already know them.');
     L.push('');
     L.push('To reverse an untouched blank-slate add: undoAddTrainee()');
   }
@@ -8417,29 +8417,28 @@ var PORTAL_PAGE_HTML = [
   "<meta charset=\"utf-8\">\n",
   "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n",
   "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n",
-  "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Barlow+Semi+Condense",
-  "d:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&dis",
-  "play=swap\">\n",
+  "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@4",
+  "00;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=sw",
+  "ap\">\n",
   "<style>\n",
   "/* ------------------------------------------------------------------ *\n",
-  "   THE LINE — Sumter County EMS Field Training\n",
+  "   Field Training — Sumter County EMS\n",
   "\n",
   "   One living chart per trainee. Tonight for FTOs. Waiting on you for\n",
   "   Training. Built for one hand, end of shift, fourteen hours awake.\n",
   " * ------------------------------------------------------------------ */\n",
   ":root{\n",
-  "  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;\n",
-  "  --paper:#fff; --surface:#f4f6f9; --raised:#fff; --line:#e2e7ee; --line-2:#eef1f5;\n",
-  "  --ink:#12233b; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;\n",
-  "  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#b08a2e;\n",
+  "  --navy:#0f1c14; --navy-2:#1a2e22; --navy-3:#08110c;\n",
+  "  --paper:#f7f5f0; --surface:#efece6; --raised:#fffcf7; --line:#d4cfc4; --line-2:#e6e2d8;\n",
+  "  --ink:#142018; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;\n",
+  "  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#c4a035;\n",
   "  --ok:#2f7d4f; --ok-bg:#eaf4ee;\n",
   "  --warn:#8a6a14; --warn-bg:#fdf5e2;\n",
   "  --stop:#a8342b; --stop-bg:#fbeceb;\n",
-  "  --r:13px; --r-sm:9px;\n",
-  "  --lift:0 1px 1px rgba(18,35,59,.04), 0 2px 6px -2px rgba(18,35,59,.10);\n",
-  "  --lift-2:0 2px 4px rgba(18,35,59,.06), 0 14px 32px -18px rgba(18,35,59,.55);\n",
-  "  --page:radial-gradient(1200px 600px at 50% -10%, #eaeff6 0%, #f4f6f9 55%, #eef1f6 100%);",
-  "\n",
+  "  --r:5px; --r-sm:3px;\n",
+  "  --lift:none;\n",
+  "  --lift-2:0 0 0 1px rgba(18,35,59,.12);\n",
+  "  --page:linear-gradient(180deg, #e8ebe8 0%, #f2f1ec 40%, #ebe8e1 100%);\n",
   "}\n",
   "@media (prefers-color-scheme:dark){:root:not([data-theme=\"light\"]){\n",
   "  --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;\n",
@@ -8468,24 +8467,24 @@ var PORTAL_PAGE_HTML = [
   "*{box-sizing:border-box;}\n",
   "html{-webkit-text-size-adjust:100%;}\n",
   "html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);\n",
-  "  font-family:\"Source Sans 3\",system-ui,-apple-system,sans-serif;font-size:16px;line-heigh",
+  "  font-family:\"IBM Plex Sans\",system-ui,-apple-system,sans-serif;font-size:16px;line-heigh",
   "t:1.5;\n",
   "  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}\n",
   "/* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */\n",
   ".app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;\n",
   "  box-shadow:none;}\n",
   "@media(min-width:700px){\n",
-  "  body{background-image:radial-gradient(1400px 700px at 50% -8%, #1b3454 0%, var(--navy-3)",
-  " 55%, #070d14 100%);\n",
+  "  body{background-image:linear-gradient(165deg, #1a2e22 0%, var(--navy-3) 42%, #050a07 100",
+  "%);\n",
   "    background-attachment:fixed;padding:28px 24px 48px;}\n",
-  "  .app{max-width:920px;border-radius:20px;overflow:hidden;min-height:calc(100vh - 76px);\n",
-  "    box-shadow:0 24px 64px -28px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04);}\n",
+  "  .app{max-width:920px;border-radius:2px;overflow:hidden;min-height:calc(100vh - 76px);\n",
+  "    box-shadow:0 0 0 1px rgba(196,160,53,.35), 0 28px 60px -30px rgba(0,0,0,.85);}\n",
   "  .bar{padding:16px 28px;}\n",
-  "  .bar img{width:42px;height:46px;}\n",
-  "  .bar .t{font-size:1.35rem;}\n",
-  "  .bar .s{font-size:.72rem;letter-spacing:.18em;}\n",
+  "  .bar img{width:56px;height:61px;}\n",
+  "  .bar .county{font-size:1.55rem;}\n",
+  "  .bar .program{font-size:.78rem;letter-spacing:.22em;}\n",
   "  .wrap{padding:0 28px 56px;}\n",
-  "  .hero{margin:0 -28px 22px;padding:10px 28px 32px;border-radius:0 0 24px 24px;}\n",
+  "  .hero{margin:0 -28px 22px;padding:14px 28px 28px;border-radius:0;}\n",
   "  .hero h1{font-size:2.65rem;}\n",
   "  .hero .sub{font-size:1.05rem;}\n",
   "  .btn{padding:18px;font-size:1.2rem;min-height:60px;}\n",
@@ -8498,48 +8497,48 @@ var PORTAL_PAGE_HTML = [
   "  .hero h1{font-size:3rem;}\n",
   "}\n",
   "\n",
-  "/* --- the bar --- */\n",
-  ".bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;g",
-  "ap:12px;\n",
-  "  position:sticky;top:0;z-index:20;border-bottom:2px solid var(--gold);}\n",
-  ".bar img{width:34px;height:37px;display:block;flex:none;}\n",
-  ".bar .t{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:1.1rem;li",
-  "ne-height:1.05;}\n",
-  ".bar .s{font-size:.66rem;color:#9db0c8;letter-spacing:.16em;text-transform:uppercase;font-",
-  "weight:600;\n",
-  "  font-family:\"Barlow Semi Condensed\",sans-serif;}\n",
-  ".mode{margin-left:auto;font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.64rem;let",
-  "ter-spacing:.13em;\n",
-  "  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:4px;\n",
-  "  background:rgba(214,173,80,.16);color:var(--gold);border:1px solid rgba(214,173,80,.5);}",
-  "\n",
+  "/* --- the bar — county badge owns the brand; program is the subline --- */\n",
+  ".bar{background:var(--navy);color:#fff;padding:14px 18px;display:flex;align-items:center;g",
+  "ap:14px;\n",
+  "  position:sticky;top:0;z-index:20;border-bottom:3px solid var(--gold);}\n",
+  ".bar img{width:48px;height:52px;display:block;flex:none;filter:drop-shadow(0 1px 0 rgba(0,",
+  "0,0,.35));}\n",
+  ".bar .brand{display:flex;flex-direction:column;gap:1px;min-width:0;}\n",
+  ".bar .county{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.28rem;line-height",
+  ":1.05;\n",
+  "  letter-spacing:.02em;text-transform:uppercase;color:#fff;}\n",
+  ".bar .program{font-family:\"IBM Plex Sans\",sans-serif;font-weight:600;font-size:.72rem;lett",
+  "er-spacing:.2em;\n",
+  "  text-transform:uppercase;color:var(--gold);}\n",
+  ".mode{margin-left:auto;font-family:\"Oswald\",sans-serif;font-size:.68rem;letter-spacing:.14",
+  "em;\n",
+  "  text-transform:uppercase;font-weight:600;padding:4px 0 4px 10px;border-radius:0;\n",
+  "  background:transparent;color:#9db0a8;border:0;border-left:1px solid rgba(255,255,255,.22",
+  ");}\n",
   "\n",
   "/* --- the hero ---\n",
   "   Every screen gets a top. The navy block from the bar carries on down and\n",
   "   rounds off, and the one sentence that says where you are lives in it -\n",
   "   so the screen opens with a statement rather than with body text. */\n",
-  ".hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:6px 18px 24px;\n",
-  "  border-radius:0 0 20px 20px;}\n",
-  ".hero .eyebrow{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.66rem;letter-spac",
-  "ing:.17em;\n",
+  ".hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:10px 18px 22px;\n",
+  "  border-radius:0;border-bottom:3px solid var(--gold);}\n",
+  ".hero .eyebrow{font-family:\"Oswald\",sans-serif;font-size:.66rem;letter-spacing:.17em;\n",
   "  text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:3px;}\n",
-  ".hero h1{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:2.05rem;",
-  "\n",
+  ".hero h1{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:2.05rem;\n",
   "  line-height:1.05;margin:0;color:#fff;letter-spacing:-.005em;}\n",
-  ".hero .sub{color:#a9bcd3;font-size:.93rem;margin:6px 0 0;}\n",
+  ".hero .sub{color:#b7c4b8;font-size:.93rem;margin:6px 0 0;}\n",
   ".hero .chip{border-color:rgba(255,255,255,.45);color:#dbe5f0;}\n",
   ".wrap{padding:0 18px 44px;position:relative;}\n",
   "\n",
   "/* --- sections --- */\n",
-  "h2{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:.76rem;letter-",
-  "spacing:.16em;\n",
+  "h2{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;\n",
   "  text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;display:flex;align-items:",
   "center;gap:8px;}\n",
   "h2:first-child{margin-top:16px;}\n",
   "h2:after{content:\"\";flex:1;height:1px;background:var(--line);}\n",
   "h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);border:1px",
   " solid var(--line);\n",
-  "  color:var(--ink-2);border-radius:20px;padding:1px 8px;order:9;}\n",
+  "  color:var(--ink-2);border-radius:2px;padding:1px 7px;order:9;}\n",
   ".sub{color:var(--ink-3);font-size:.92rem;margin:0 0 14px;}\n",
   "\n",
   "/* --- the card ---\n",
@@ -8559,8 +8558,7 @@ var PORTAL_PAGE_HTML = [
   ".card.act:active{transform:scale(.994);}\n",
   ".bd{flex:1;min-width:0;}\n",
   ".hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}\n",
-  ".h{display:block;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:",
-  "1.16rem;\n",
+  ".h{display:block;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.16rem;\n",
   "  line-height:1.2;letter-spacing:.002em;}\n",
   ".m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:3px;}\n",
   ".flag{display:block;font-size:.86rem;font-weight:600;line-height:1.35;margin-top:5px;\n",
@@ -8569,8 +8567,8 @@ var PORTAL_PAGE_HTML = [
   ".card.act:hover .go{color:var(--ink-2);}\n",
   "\n",
   "/* --- level identity --- */\n",
-  ".chip{display:inline-block;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;",
-  "font-size:.66rem;\n",
+  ".chip{display:inline-block;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.66re",
+  "m;\n",
   "  letter-spacing:.11em;text-transform:uppercase;padding:2px 7px;border-radius:4px;\n",
   "  border:1px solid currentColor;white-space:nowrap;}\n",
   ".c-emt{color:var(--emt);}.c-aemt{color:var(--aemt);}.c-pmd{color:var(--pmd);}\n",
@@ -8582,8 +8580,8 @@ var PORTAL_PAGE_HTML = [
   ".note{border-radius:var(--r-sm);padding:12px 14px;margin:0 0 11px;font-size:.91rem;line-he",
   "ight:1.45;\n",
   "  border-left:3px solid var(--ink-3);background:var(--surface);color:var(--ink-2);}\n",
-  ".note b{display:block;font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;lette",
-  "r-spacing:.15em;\n",
+  ".note b{display:block;font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em",
+  ";\n",
   "  text-transform:uppercase;margin-bottom:4px;color:var(--ink-3);}\n",
   ".n-ok{border-left-color:var(--ok);background:var(--ok-bg);}.n-ok b{color:var(--ok);}\n",
   ".n-warn{border-left-color:var(--warn);background:var(--warn-bg);}.n-warn b{color:var(--war",
@@ -8595,7 +8593,7 @@ var PORTAL_PAGE_HTML = [
   "/* --- panels and rows --- */\n",
   ".panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);\n",
   "  padding:14px 16px;margin-bottom:11px;}\n",
-  ".lab{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
+  ".lab{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
   "  text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:7px;}\n",
   ".kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px so",
   "lid var(--line-2);\n",
@@ -8606,15 +8604,13 @@ var PORTAL_PAGE_HTML = [
   ".prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:10px 0 6p",
   "x;}\n",
   ".prog i{display:block;height:100%;border-radius:5px;background:var(--emt);}\n",
-  ".big{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:2.1rem;font-weight:700;line-",
-  "height:1;}\n",
+  ".big{font-family:\"Oswald\",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}\n",
   ".big small{font-size:1rem;color:var(--ink-3);font-weight:600;}\n",
   "\n",
   "/* --- controls --- */\n",
   ".btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:n",
   "one;\n",
-  "  border-radius:var(--r);padding:16px;font-family:\"Barlow Semi Condensed\",sans-serif;font-",
-  "weight:700;\n",
+  "  border-radius:var(--r);padding:16px;font-family:\"Oswald\",sans-serif;font-weight:700;\n",
   "  font-size:1.1rem;letter-spacing:.01em;cursor:pointer;margin-top:10px;min-height:56px;\n",
   "  box-shadow:var(--lift);transition:background .12s ease, transform .08s ease;}\n",
   ".btn:hover{background:var(--navy-2);}\n",
@@ -8653,8 +8649,7 @@ var PORTAL_PAGE_HTML = [
   "  font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-he",
   "ight:50px;}\n",
   ".more:hover{border-color:var(--ink-4);color:var(--ink);}\n",
-  ".back{background:none;border:none;color:var(--ink-3);font-family:\"Barlow Semi Condensed\",s",
-  "ans-serif;\n",
+  ".back{background:none;border:none;color:var(--ink-3);font-family:\"Oswald\",sans-serif;\n",
   "  font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:poi",
   "nter;\n",
   "  padding:8px 0;margin:4px 0 6px;}\n",
@@ -8664,8 +8659,7 @@ var PORTAL_PAGE_HTML = [
   ".next{border-left:3px solid var(--gold);padding:2px 0 2px 13px;margin:18px 0 6px;font-size",
   ":.89rem;\n",
   "  color:var(--ink-2);line-height:1.5;}\n",
-  ".next b{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing:.15e",
-  "m;\n",
+  ".next b{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
   "  text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}\n",
   "\n",
   "/* --- the record --- */\n",
@@ -8674,14 +8668,12 @@ var PORTAL_PAGE_HTML = [
   "  background:var(--raised);box-shadow:var(--lift);}\n",
   ".rec.cur{border-left:4px solid var(--gold);}\n",
   ".rec.dup{border-left:4px solid var(--stop);}\n",
-  ".rec .when{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.72rem;letter-spacing:",
-  ".13em;\n",
+  ".rec .when{font-family:\"Oswald\",sans-serif;font-size:.72rem;letter-spacing:.13em;\n",
   "  text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;g",
   "ap:10px;}\n",
   ".rec .when b{color:var(--gold);font-weight:700;}\n",
   ".rec .fld{margin-top:10px;}\n",
-  ".rec .fld .l{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing",
-  ":.13em;\n",
+  ".rec .fld .l{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.13em;\n",
   "  text-transform:uppercase;color:var(--ink-3);}\n",
   ".rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere",
   ";}\n",
@@ -8699,15 +8691,14 @@ var PORTAL_PAGE_HTML = [
   "t;}\n",
   "  .card.act:active,.btn:active{transform:none;}}\n",
   "\n",
-  "/* --- THE LINE: phase track, evidence bars, clock, moves, strip --- */\n",
+  "/* --- Field Training: phase track, evidence bars, clock, moves, strip --- */\n",
   ".mono{font-family:\"IBM Plex Mono\",ui-monospace,monospace;font-weight:500;}\n",
   ".phase-track{display:flex;gap:4px;margin:14px 0 0;}\n",
   ".phase-track .p{flex:1;}\n",
   ".phase-track .pip{height:5px;border-radius:3px;background:var(--line);}\n",
   ".phase-track .pip.on{background:var(--gold);}\n",
   ".phase-track .pip.now{background:var(--emt);}\n",
-  ".phase-track .lab{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.6rem;letter-sp",
-  "acing:.08em;\n",
+  ".phase-track .lab{font-family:\"Oswald\",sans-serif;font-size:.6rem;letter-spacing:.08em;\n",
   "  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}\n",
   ".phase-track .lab.on{color:var(--ink);}\n",
   ".stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--l",
@@ -8730,8 +8721,7 @@ var PORTAL_PAGE_HTML = [
   ".move .h{font-weight:600;font-size:.95rem;}\n",
   ".move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}\n",
   ".move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;\n",
-  "  padding:10px 13px;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-si",
-  "ze:.9rem;\n",
+  "  padding:10px 13px;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.9rem;\n",
   "  cursor:pointer;min-height:44px;}\n",
   ".move.due .go-btn{background:var(--stop);color:#fff;}\n",
   ".clock{position:relative;width:52px;height:52px;flex:none;}\n",
@@ -8740,8 +8730,7 @@ var PORTAL_PAGE_HTML = [
   "er;\n",
   "  justify-content:center;line-height:1;}\n",
   ".clock .nums b{font-family:\"IBM Plex Mono\",monospace;font-size:.92rem;font-weight:500;}\n",
-  ".clock .nums span{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.52rem;letter-s",
-  "pacing:.1em;\n",
+  ".clock .nums span{font-family:\"Oswald\",sans-serif;font-size:.52rem;letter-spacing:.1em;\n",
   "  text-transform:uppercase;color:var(--ink-3);margin-top:1px;}\n",
   ".decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-sha",
   "dow:var(--lift-2);\n",
@@ -8756,16 +8745,14 @@ var PORTAL_PAGE_HTML = [
   "  border-radius:10px;padding:12px;box-shadow:var(--lift);}\n",
   ".strip .tile.due{border-color:var(--stop);}\n",
   ".strip .tile.soon{border-color:var(--warn);}\n",
-  ".strip .tile .h{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:1",
-  ".05rem;\n",
+  ".strip .tile .h{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.05rem;\n",
   "  line-height:1.15;margin:0;}\n",
   ".strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}\n",
   ".strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}\n",
   ".btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shado",
   "w:none;margin-top:8px;}\n",
   ".btn.ghost-danger[disabled]{opacity:.35;}\n",
-  ".line-mark{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:.62rem",
-  ";\n",
+  ".line-mark{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.62rem;\n",
   "  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}\n",
   "@keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}\n",
   ".wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}\n",
@@ -8833,16 +8820,20 @@ var PORTAL_PAGE_HTML = [
   "GO+fQHl4BqOwZrlZXUO5DoMW3uHRoiYIVTx7Asa/v4ZyJQY5JxSoc6UVKewqs/wMhlTzHgUyy+aQNSEmH66lXI9Bj/",
   "uGR/54mZljK+9XV1N+AmPOsdHhL7T99t2rMflGDPb7D3NQ8loPexOGukZX+DlRoP0f5fOq4z32+bYAAAAASUVORK5C",
   "YII=\" alt=\"Sumter County EMS\">\n",
-  "    <div><div class=\"s\">Sumter County EMS</div><div class=\"t\">THE LINE</div></div>\n",
+  "    <div class=\"brand\">\n",
+  "      <div class=\"county\">Sumter County EMS</div>\n",
+  "      <div class=\"program\">Field Training</div>\n",
+  "    </div>\n",
   "    <span class=\"mode\" id=\"mode\">…</span>\n",
   "  </div>\n",
-  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\" id=\"boot-msg\">Loading THE LINE…</p></div>\n",
+  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\" id=\"boot-msg\">Loading Field Training…</p></di",
+  "v>\n",
   "  <div class=\"foot\" id=\"foot\"></div>\n",
   "</div>\n",
   "<noscript>\n",
   "  <div style=\"max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-ser",
   "if\">\n",
-  "    <h1>THE LINE needs JavaScript</h1>\n",
+  "    <h1>Field Training needs JavaScript</h1>\n",
   "    <p>Turn JavaScript on for this site, then reload.</p>\n",
   "  </div>\n",
   "</noscript>\n",
@@ -8868,7 +8859,7 @@ var PORTAL_PAGE_HTML = [
   "window.onerror = function (msg, src, line) {\n",
   "  try {\n",
   "    var v = document.getElementById('view');\n",
-  "    if (v) v.innerHTML = '<div class=\"hero\"><h1>THE LINE could not start</h1>' +\n",
+  "    if (v) v.innerHTML = '<div class=\"hero\"><h1>Field Training could not start</h1>' +\n",
   "      '<p class=\"sub\">A script error stopped the page. Redeploy a new version after a full",
   " paste, or check Executions in the Apps Script editor.</p></div>' +\n",
   "      '<div class=\"note n-stop\"><b>Error</b>' + String(msg || 'unknown') +\n",
@@ -9270,7 +9261,7 @@ var PORTAL_PAGE_HTML = [
   "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
   "he registry could not reach them.</div>';\n",
   "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker vault — same forms",
-  ", same record. THE LINE just opens the right door.</div>';\n",
+  ", same record. Field Training just opens the right door.</div>';\n",
   "  paint(h);\n",
   "}\n",
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
@@ -9299,7 +9290,7 @@ var PORTAL_PAGE_HTML = [
   "  var h = hero('Waiting on you',\n",
   "    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')\n",
   "             : 'Queue clear',\n",
-  "    d.activeCount+' on THE LINE'+\n",
+  "    d.activeCount+' in training'+\n",
   "    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves",
   "')+\n",
   "    (seen.length ? ' &middot; '+seen.length+' holding' : ''));\n",
@@ -9342,9 +9333,9 @@ var PORTAL_PAGE_HTML = [
   "    return (d.people||[]).some(function(p){ return p.name === r.name; });\n",
   "  });\n",
   "  if (ready.length && canWrite()){\n",
-  "    h += sec('Ready to release', ready.length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4. Open their record to release —",
-  " captured with your reason.</p>';\n",
+  "    h += sec('Ready to clear', ready.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 complete path. Open their recor",
+  "d to clear them for independent partner duty.</p>';\n",
   "    ready.forEach(function(r){\n",
   "      var idx = -1;\n",
   "      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });\n",
@@ -9352,7 +9343,7 @@ var PORTAL_PAGE_HTML = [
   "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openPerson('+idx+')\">'+\n",
   "           '<span class=\"bd\"><span class=\"hd\"><span class=\"h\">'+esc(r.name)+'</span>'+\n",
   "           lvlChip((d.people[idx].levelKey), r.level)+'</span>'+\n",
-  "           '<span class=\"m\">Phase 4 · tap to release</span></span>'+\n",
+  "           '<span class=\"m\">Phase 4 · tap to clear for the truck</span></span>'+\n",
   "           '<span class=\"go\">&rsaquo;</span></button>';\n",
   "    });\n",
   "  }\n",
@@ -9375,7 +9366,8 @@ var PORTAL_PAGE_HTML = [
   "    h += sec('Bring someone on');\n",
   "    h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAddTrainee()\">'+\n",
   "         '<span class=\"bd\"><span class=\"h\">New trainee</span>'+\n",
-  "         '<span class=\"m\">Put them on THE LINE and on the forms already in service. '+\n",
+  "         '<span class=\"m\">Enroll them in Field Training and on the forms already in servic",
+  "e. '+\n",
   "         'Name, email, level — then they show up for FTOs.</span></span>'+\n",
   "         '<span class=\"go\">&rsaquo;</span></button>';\n",
   "  }\n",
@@ -9556,7 +9548,7 @@ var PORTAL_PAGE_HTML = [
   "  }\n",
   "  h += '<div class=\"panel\" style=\"margin-top:10px\">'+\n",
   "    kv('Mode','<span class=\"chip c-mute\">'+esc(d.mode)+'</span>')+\n",
-  "    kv('On THE LINE', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' closed</",
+  "    kv('In training', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' closed</",
   "span>')+\n",
   "    kv('Form links', d.formLinks ? '<span class=\"chip c-ok\">On</span>'\n",
   "                                 : '<span class=\"chip c-warn\">Off</span>')+\n",
@@ -9600,15 +9592,15 @@ var PORTAL_PAGE_HTML = [
   "e update together.</span></span>'+\n",
   "           '<span class=\"go\">&rsaquo;</span></button>';\n",
   "    } else if (t.releaseReady){\n",
-  "      h += '<div class=\"note n-info\"><b>Phase 4</b>No further phase advance. Release when ",
-  "cleared.</div>';\n",
+  "      h += '<div class=\"note n-info\"><b>Phase 4</b>No further phase advance. Clear them fo",
+  "r independent partner duty when the program is complete.</div>';\n",
   "    }\n",
   "    h += '<button class=\"card act\"'+spine(t.releaseReady?'due':'')+' onclick=\"openRelease(",
   ")\">'+\n",
   "         '<span class=\"bd\"><span class=\"h\">Release '+esc(firstName(t.name)||'trainee')+'</",
   "span>'+\n",
-  "         '<span class=\"m\">Closes them on THE LINE, archives who / when / why, pulls them o",
-  "ff form dropdowns.</span></span>'+\n",
+  "         '<span class=\"m\">Successful completion — independent partner. Archives who / when",
+  " / why; drops them from trainee form lists.</span></span>'+\n",
   "         '<span class=\"go\">&rsaquo;</span></button>';\n",
   "  }\n",
   "\n",
@@ -9706,18 +9698,19 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function paintRelease(){\n",
   "  var t = S.ctx || {};\n",
-  "  var h = hero('Release', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+\n",
+  "  var h = hero('Clear for the truck', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||",
+  "''))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
-  "    '<div class=\"note n-warn\"><b>This closes them on THE LINE</b>Status becomes Closed / R",
-  "eleased. '+\n",
+  "    '<div class=\"note n-ok\"><b>Independent partner</b>They finished training. Status becom",
+  "es Cleared / Independent. '+\n",
   "    'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archiv",
   "ed with who and when.</div>'+\n",
-  "    '<div class=\"panel\"><div class=\"lab\">Why you are releasing them</div>'+\n",
-  "    '<textarea id=\"rel-why\" placeholder=\"Program complete, cleared for independent duty — ",
-  "in your words.\" '+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why they are cleared</div>'+\n",
+  "    '<textarea id=\"rel-why\" placeholder=\"Completed all phases and required skills — cleare",
+  "d to ride as an independent partner.\" '+\n",
   "    'oninput=\"syncLifeBtns(\\'rel\\')\"></textarea></div>'+\n",
-  "    '<button class=\"btn\" id=\"rel-go\" disabled onclick=\"submitRelease()\">Release '+\n",
-  "    esc(firstName(t.name)||'trainee')+'</button>';\n",
+  "    '<button class=\"btn\" id=\"rel-go\" disabled onclick=\"submitRelease()\">Clear for independ",
+  "ent partner duty</button>';\n",
   "  paint(h);\n",
   "  syncLifeBtns('rel');\n",
   "}\n",
@@ -9725,21 +9718,21 @@ var PORTAL_PAGE_HTML = [
   "  if (S.busy) return;\n",
   "  var why = (el('rel-why') && el('rel-why').value || '').trim();\n",
   "  if (why.length < 8) { alert('Type why you are releasing them.'); return; }\n",
-  "  if (!confirm('Release '+((S.ctx&&S.ctx.name)||'this trainee')+'? This cannot be undone f",
-  "rom THE LINE.')) return;\n",
+  "  if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner du",
+  "ty? This cannot be undone from Field Training.')) return;\n",
   "  S.busy = true;\n",
   "  var b = el('rel-go');\n",
-  "  if (b) { b.disabled = true; b.textContent = 'Releasing…'; }\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Clearing…'; }\n",
   "  google.script.run\n",
   "    .withSuccessHandler(function(r){\n",
   "      S.busy = false;\n",
-  "      alert((r && r.message) || 'Released.');\n",
+  "      alert((r && r.message) || 'Cleared for independent partner duty.');\n",
   "      S.screen = 'main';\n",
   "      reload();\n",
   "    })\n",
   "    .withFailureHandler(function(e){\n",
   "      S.busy = false;\n",
-  "      if (b) { b.textContent = 'Release '+(firstName((S.ctx||{}).name)||'trainee'); }\n",
+  "      if (b) { b.textContent = 'Clear for independent partner duty'; }\n",
   "      syncLifeBtns('rel');\n",
   "      alert(e.message||e);\n",
   "    })\n",
@@ -9816,7 +9809,7 @@ var PORTAL_PAGE_HTML = [
   "  var d = BOOT.data || {};\n",
   "  var officers = d.officers || [];\n",
   "  var h = hero('Bring someone on', 'New trainee',\n",
-  "    'They land on THE LINE and on the forms already in service.')+\n",
+  "    'They land in training and on the forms already in service.')+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
   "\n",
   "  h += '<div class=\"panel\">'+\n",
@@ -9825,7 +9818,7 @@ var PORTAL_PAGE_HTML = [
   "    '<div class=\"field\"><div class=\"lab\">Work email</div>'+\n",
   "    '<input id=\"at-email\" type=\"email\" autocomplete=\"email\" placeholder=\"casey.holt@exampl",
   "e.org\" />'+\n",
-  "    '<div class=\"hint\">How they sign into THE LINE.</div></div>'+\n",
+  "    '<div class=\"hint\">How they sign into Field Training.</div></div>'+\n",
   "    '<div class=\"field\"><div class=\"lab\">Level</div>'+\n",
   "    '<select id=\"at-level\">'+\n",
   "    '<option value=\"\">Pick one…</option>'+\n",
@@ -9857,8 +9850,8 @@ var PORTAL_PAGE_HTML = [
   "    '<div class=\"hint\">Letter from the ENTRY PROFILE KEY on the master.</div></div>'+\n",
   "    '</div>';\n",
   "\n",
-  "  h += '<button class=\"btn\" id=\"at-go\" onclick=\"submitAddTrainee()\">Add to THE LINE</butto",
-  "n>'+\n",
+  "  h += '<button class=\"btn\" id=\"at-go\" onclick=\"submitAddTrainee()\">Add to Field Training<",
+  "/button>'+\n",
   "    '<div class=\"next\"><b>What this does</b>Writes one row on the trainee master and refre",
   "shes '+\n",
   "    'Trainee dropdowns on the Google Forms you already use. No new form is created.</div>'",
@@ -9886,13 +9879,13 @@ var PORTAL_PAGE_HTML = [
   "  google.script.run\n",
   "    .withSuccessHandler(function(r){\n",
   "      S.busy = false;\n",
-  "      alert((r && r.message) || (name + ' is on THE LINE.'));\n",
+  "      alert((r && r.message) || (name + ' is in training.'));\n",
   "      S.screen = 'main';\n",
   "      reload();\n",
   "    })\n",
   "    .withFailureHandler(function(e){\n",
   "      S.busy = false;\n",
-  "      if (b) { b.disabled = false; b.textContent = 'Add to THE LINE'; }\n",
+  "      if (b) { b.disabled = false; b.textContent = 'Add to Field Training'; }\n",
   "      alert(e.message || e);\n",
   "    })\n",
   "    .addTraineeV1({ name: name, email: email, level: level, phase: phase,\n",
@@ -10150,7 +10143,7 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "\n",
   "function startLine(){\n",
-  "  paint(hero('THE LINE', 'Opening…',\n",
+  "  paint(hero('Field Training', 'Opening…',\n",
   "    'Loading your desk. If Google asks for permission, allow it — then this page continues",
   ".'));\n",
   "  google.script.run\n",
@@ -10165,7 +10158,7 @@ var PORTAL_PAGE_HTML = [
   "    })\n",
   "    .withFailureHandler(function(e){\n",
   "      var msg = String((e && e.message) || e || 'unknown');\n",
-  "      paint(hero('THE LINE', 'Could not open', '')+\n",
+  "      paint(hero('Field Training', 'Could not open', '')+\n",
   "        '<div class=\"note n-stop\"><b>Blocked</b>'+esc(msg)+'</div>'+\n",
   "        '<div class=\"note n-info\"><b>Do this in order</b>'+\n",
   "        '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+\n",
@@ -10187,7 +10180,7 @@ var PORTAL_PAGE_HTML = [
   "} catch (bootErr) {\n",
   "  try {\n",
   "    document.getElementById('view').innerHTML =\n",
-  "      '<div class=\"hero\"><h1>THE LINE could not start</h1>' +\n",
+  "      '<div class=\"hero\"><h1>Field Training could not start</h1>' +\n",
   "      '<p class=\"sub\">The page loaded but the script crashed while starting. ' +\n",
   "      'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></d",
   "iv>' +\n",
@@ -10210,7 +10203,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '0492020b';
+var PORTAL_BUILD = '7c760893';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

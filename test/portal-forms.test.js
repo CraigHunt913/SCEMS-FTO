@@ -1032,8 +1032,8 @@ ok(/Show 1 decided|deskDetails|Show .*decided/.test(pageSrc) && /deskDetails/.te
 ok(!/note n-stop.*Retired form|Retired form still open/.test(divHtml),
    'retired forms are not a stop banner on Waiting on you');
 ok(/returnSignoffV1|Return for more evidence/.test(pageSrc),
-   'Return is a first-class decision path on THE LINE');
-ok(/THE LINE/.test(pageSrc), 'the product name is on the page');
+   'Return is a first-class decision path in Field Training');
+ok(/Field Training/.test(pageSrc) && !/THE LINE/.test(pageSrc), 'product name is Field Training, not THE LINE');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

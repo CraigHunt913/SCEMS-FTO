@@ -10,7 +10,7 @@
  * One exception, on purpose: when a trainee or FTO is added here,
  * syncRegisteredFormChoicesV1_ refreshes Trainee / FTO LIST choices on those
  * same registered forms so the dropdowns already in service offer the new
- * name. That is how THE LINE links a new person to the forms you already have
+ * name. That is how Field Training links a new person to the forms you already have
  * — without creating a tenth form.
  *
  * What this file adds is the part that was missing: one authoritative list of

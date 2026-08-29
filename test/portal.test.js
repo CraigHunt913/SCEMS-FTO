@@ -309,12 +309,12 @@ catch (e) { threw = /not the row you were looking at/.test(e.message); }
 ok(threw, 'and a stale screen whose row has moved is refused, not written');
 
 world(); as('chief@example.org');
-ok(typeof returnSignoffV1 === 'function', 'returnSignoffV1 exists on THE LINE');
+ok(typeof returnSignoffV1 === 'function', 'returnSignoffV1 exists in Field Training');
 returnSignoffV1(HR + 1, 'Needs two more independent reps on different dates.');
 q = readTabV1_(PORTAL.TAB.QUEUE);
 ok(q.rows[0][q.col['DECISION']] === 'Return for more evidence', 'a return stages the honest decision');
 ok(q.rows[0][q.col['RECORD STATUS']] === 'OPEN', 'and leaves the row OPEN for the tracker');
-ok(PORTAL.PRODUCT === 'THE LINE' || /THE LINE/.test(PORTAL.TITLE), 'product branding is THE LINE');
+ok(PORTAL.PRODUCT === 'Field Training' || /Field Training/.test(PORTAL.TITLE), 'product branding is Field Training');
 
 world(); as('jamie@example.org');
 threw = false;

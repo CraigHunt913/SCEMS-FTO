@@ -1,4 +1,4 @@
-// SCEMS Portal — phase advance and release from THE LINE.
+// SCEMS Portal — phase advance and release from Field Training.
 //
 //   node test/portal-lifecycle.test.js
 
@@ -214,7 +214,7 @@ section('Release captures who when why');
   ok(r.ok, 'release succeeds');
   const priya = traineesV1_().filter(t => t.name === 'Priya Okafor')[0];
   ok(priya && priya.closed, 'marked closed on the master');
-  ok(/Closed \/ Released/i.test(priya.status), 'status is Closed / Released');
+  ok(/Cleared \/ Independent|Closed \/ Released/i.test(priya.status), 'status is Cleared / Independent');
   ok(traineesV1_().filter(t => !t.closed).length === before - 1,
      'active count drops by one');
 
@@ -257,9 +257,9 @@ section('UI surface');
   const page = fs.readFileSync(ROOT + '/portal/Index.html', 'utf8');
   ok(/Advance to/.test(page) && /advanceTraineePhaseV1/.test(page),
      'person sheet can advance');
-  ok(/Release/.test(page) && /releaseTraineeV1/.test(page),
+  ok(/Clear .+ for the truck|independent partner/i.test(page) && /releaseTraineeV1/.test(page),
      'person sheet can release');
-  ok(/Ready to release/.test(page), 'Waiting on you surfaces Phase 4 finish line');
+  ok(/Ready to clear/.test(page), 'Waiting on you surfaces Phase 4 clearance');
   ok(/Lifecycle/.test(page), 'lifecycle section is named');
 }
 

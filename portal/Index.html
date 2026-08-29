@@ -5,26 +5,26 @@
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap">
 <style>
 /* ------------------------------------------------------------------ *
-   THE LINE — Sumter County EMS Field Training
+   Field Training — Sumter County EMS
 
    One living chart per trainee. Tonight for FTOs. Waiting on you for
    Training. Built for one hand, end of shift, fourteen hours awake.
  * ------------------------------------------------------------------ */
 :root{
-  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;
-  --paper:#fff; --surface:#f4f6f9; --raised:#fff; --line:#e2e7ee; --line-2:#eef1f5;
-  --ink:#12233b; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;
-  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#b08a2e;
+  --navy:#0f1c14; --navy-2:#1a2e22; --navy-3:#08110c;
+  --paper:#f7f5f0; --surface:#efece6; --raised:#fffcf7; --line:#d4cfc4; --line-2:#e6e2d8;
+  --ink:#142018; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;
+  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#c4a035;
   --ok:#2f7d4f; --ok-bg:#eaf4ee;
   --warn:#8a6a14; --warn-bg:#fdf5e2;
   --stop:#a8342b; --stop-bg:#fbeceb;
-  --r:13px; --r-sm:9px;
-  --lift:0 1px 1px rgba(18,35,59,.04), 0 2px 6px -2px rgba(18,35,59,.10);
-  --lift-2:0 2px 4px rgba(18,35,59,.06), 0 14px 32px -18px rgba(18,35,59,.55);
-  --page:radial-gradient(1200px 600px at 50% -10%, #eaeff6 0%, #f4f6f9 55%, #eef1f6 100%);
+  --r:5px; --r-sm:3px;
+  --lift:none;
+  --lift-2:0 0 0 1px rgba(18,35,59,.12);
+  --page:linear-gradient(180deg, #e8ebe8 0%, #f2f1ec 40%, #ebe8e1 100%);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;
@@ -51,22 +51,22 @@
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
 html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);
-  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
+  font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
 /* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */
 .app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;
   box-shadow:none;}
 @media(min-width:700px){
-  body{background-image:radial-gradient(1400px 700px at 50% -8%, #1b3454 0%, var(--navy-3) 55%, #070d14 100%);
+  body{background-image:linear-gradient(165deg, #1a2e22 0%, var(--navy-3) 42%, #050a07 100%);
     background-attachment:fixed;padding:28px 24px 48px;}
-  .app{max-width:920px;border-radius:20px;overflow:hidden;min-height:calc(100vh - 76px);
-    box-shadow:0 24px 64px -28px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04);}
+  .app{max-width:920px;border-radius:2px;overflow:hidden;min-height:calc(100vh - 76px);
+    box-shadow:0 0 0 1px rgba(196,160,53,.35), 0 28px 60px -30px rgba(0,0,0,.85);}
   .bar{padding:16px 28px;}
-  .bar img{width:42px;height:46px;}
-  .bar .t{font-size:1.35rem;}
-  .bar .s{font-size:.72rem;letter-spacing:.18em;}
+  .bar img{width:56px;height:61px;}
+  .bar .county{font-size:1.55rem;}
+  .bar .program{font-size:.78rem;letter-spacing:.22em;}
   .wrap{padding:0 28px 56px;}
-  .hero{margin:0 -28px 22px;padding:10px 28px 32px;border-radius:0 0 24px 24px;}
+  .hero{margin:0 -28px 22px;padding:14px 28px 28px;border-radius:0;}
   .hero h1{font-size:2.65rem;}
   .hero .sub{font-size:1.05rem;}
   .btn{padding:18px;font-size:1.2rem;min-height:60px;}
@@ -79,38 +79,40 @@ html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);
   .hero h1{font-size:3rem;}
 }
 
-/* --- the bar --- */
-.bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;gap:12px;
-  position:sticky;top:0;z-index:20;border-bottom:2px solid var(--gold);}
-.bar img{width:34px;height:37px;display:block;flex:none;}
-.bar .t{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.1rem;line-height:1.05;}
-.bar .s{font-size:.66rem;color:#9db0c8;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
-  font-family:"Barlow Semi Condensed",sans-serif;}
-.mode{margin-left:auto;font-family:"Barlow Semi Condensed",sans-serif;font-size:.64rem;letter-spacing:.13em;
-  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:4px;
-  background:rgba(214,173,80,.16);color:var(--gold);border:1px solid rgba(214,173,80,.5);}
+/* --- the bar — county badge owns the brand; program is the subline --- */
+.bar{background:var(--navy);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:14px;
+  position:sticky;top:0;z-index:20;border-bottom:3px solid var(--gold);}
+.bar img{width:48px;height:52px;display:block;flex:none;filter:drop-shadow(0 1px 0 rgba(0,0,0,.35));}
+.bar .brand{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.bar .county{font-family:"Oswald",sans-serif;font-weight:700;font-size:1.28rem;line-height:1.05;
+  letter-spacing:.02em;text-transform:uppercase;color:#fff;}
+.bar .program{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:.72rem;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold);}
+.mode{margin-left:auto;font-family:"Oswald",sans-serif;font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:600;padding:4px 0 4px 10px;border-radius:0;
+  background:transparent;color:#9db0a8;border:0;border-left:1px solid rgba(255,255,255,.22);}
 
 /* --- the hero ---
    Every screen gets a top. The navy block from the bar carries on down and
    rounds off, and the one sentence that says where you are lives in it -
    so the screen opens with a statement rather than with body text. */
-.hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:6px 18px 24px;
-  border-radius:0 0 20px 20px;}
-.hero .eyebrow{font-family:"Barlow Semi Condensed",sans-serif;font-size:.66rem;letter-spacing:.17em;
+.hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:10px 18px 22px;
+  border-radius:0;border-bottom:3px solid var(--gold);}
+.hero .eyebrow{font-family:"Oswald",sans-serif;font-size:.66rem;letter-spacing:.17em;
   text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:3px;}
-.hero h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:2.05rem;
+.hero h1{font-family:"Oswald",sans-serif;font-weight:700;font-size:2.05rem;
   line-height:1.05;margin:0;color:#fff;letter-spacing:-.005em;}
-.hero .sub{color:#a9bcd3;font-size:.93rem;margin:6px 0 0;}
+.hero .sub{color:#b7c4b8;font-size:.93rem;margin:6px 0 0;}
 .hero .chip{border-color:rgba(255,255,255,.45);color:#dbe5f0;}
 .wrap{padding:0 18px 44px;position:relative;}
 
 /* --- sections --- */
-h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;
+h2{font-family:"Oswald",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;
   text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;display:flex;align-items:center;gap:8px;}
 h2:first-child{margin-top:16px;}
 h2:after{content:"";flex:1;height:1px;background:var(--line);}
 h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);border:1px solid var(--line);
-  color:var(--ink-2);border-radius:20px;padding:1px 8px;order:9;}
+  color:var(--ink-2);border-radius:2px;padding:1px 7px;order:9;}
 .sub{color:var(--ink-3);font-size:.92rem;margin:0 0 14px;}
 
 /* --- the card ---
@@ -127,7 +129,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .card.act:active{transform:scale(.994);}
 .bd{flex:1;min-width:0;}
 .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.h{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.16rem;
+.h{display:block;font-family:"Oswald",sans-serif;font-weight:700;font-size:1.16rem;
   line-height:1.2;letter-spacing:.002em;}
 .m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:3px;}
 .flag{display:block;font-size:.86rem;font-weight:600;line-height:1.35;margin-top:5px;
@@ -136,7 +138,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .card.act:hover .go{color:var(--ink-2);}
 
 /* --- level identity --- */
-.chip{display:inline-block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.66rem;
+.chip{display:inline-block;font-family:"Oswald",sans-serif;font-weight:700;font-size:.66rem;
   letter-spacing:.11em;text-transform:uppercase;padding:2px 7px;border-radius:4px;
   border:1px solid currentColor;white-space:nowrap;}
 .c-emt{color:var(--emt);}.c-aemt{color:var(--aemt);}.c-pmd{color:var(--pmd);}
@@ -146,7 +148,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 /* --- notes: a rule, not a box. a box shouts; a rule states. --- */
 .note{border-radius:var(--r-sm);padding:12px 14px;margin:0 0 11px;font-size:.91rem;line-height:1.45;
   border-left:3px solid var(--ink-3);background:var(--surface);color:var(--ink-2);}
-.note b{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.note b{display:block;font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;margin-bottom:4px;color:var(--ink-3);}
 .n-ok{border-left-color:var(--ok);background:var(--ok-bg);}.n-ok b{color:var(--ok);}
 .n-warn{border-left-color:var(--warn);background:var(--warn-bg);}.n-warn b{color:var(--warn);}
@@ -156,7 +158,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 /* --- panels and rows --- */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:14px 16px;margin-bottom:11px;}
-.lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.lab{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:7px;}
 .kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-2);
   font-size:.93rem;align-items:center;}
@@ -165,12 +167,12 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .kv .k{color:var(--ink-3);}.kv .v{font-weight:600;text-align:right;}
 .prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:10px 0 6px;}
 .prog i{display:block;height:100%;border-radius:5px;background:var(--emt);}
-.big{font-family:"Barlow Semi Condensed",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}
+.big{font-family:"Oswald",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}
 .big small{font-size:1rem;color:var(--ink-3);font-weight:600;}
 
 /* --- controls --- */
 .btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:none;
-  border-radius:var(--r);padding:16px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;
+  border-radius:var(--r);padding:16px;font-family:"Oswald",sans-serif;font-weight:700;
   font-size:1.1rem;letter-spacing:.01em;cursor:pointer;margin-top:10px;min-height:56px;
   box-shadow:var(--lift);transition:background .12s ease, transform .08s ease;}
 .btn:hover{background:var(--navy-2);}
@@ -196,7 +198,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .more{background:none;border:1px solid var(--line);border-radius:var(--r);width:100%;padding:13px;
   font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-height:50px;}
 .more:hover{border-color:var(--ink-4);color:var(--ink);}
-.back{background:none;border:none;color:var(--ink-3);font-family:"Barlow Semi Condensed",sans-serif;
+.back{background:none;border:none;color:var(--ink-3);font-family:"Oswald",sans-serif;
   font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:pointer;
   padding:8px 0;margin:4px 0 6px;}
 .back:hover{color:var(--ink);}
@@ -204,7 +206,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 /* --- the next-step rail --- */
 .next{border-left:3px solid var(--gold);padding:2px 0 2px 13px;margin:18px 0 6px;font-size:.89rem;
   color:var(--ink-2);line-height:1.5;}
-.next b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.next b{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}
 
 /* --- the record --- */
@@ -212,11 +214,11 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
   background:var(--raised);box-shadow:var(--lift);}
 .rec.cur{border-left:4px solid var(--gold);}
 .rec.dup{border-left:4px solid var(--stop);}
-.rec .when{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
+.rec .when{font-family:"Oswald",sans-serif;font-size:.72rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;}
 .rec .when b{color:var(--gold);font-weight:700;}
 .rec .fld{margin-top:10px;}
-.rec .fld .l{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.13em;
+.rec .fld .l{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);}
 .rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;}
 .fresh{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px;}
@@ -231,14 +233,14 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}
   .card.act:active,.btn:active{transform:none;}}
 
-/* --- THE LINE: phase track, evidence bars, clock, moves, strip --- */
+/* --- Field Training: phase track, evidence bars, clock, moves, strip --- */
 .mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:500;}
 .phase-track{display:flex;gap:4px;margin:14px 0 0;}
 .phase-track .p{flex:1;}
 .phase-track .pip{height:5px;border-radius:3px;background:var(--line);}
 .phase-track .pip.on{background:var(--gold);}
 .phase-track .pip.now{background:var(--emt);}
-.phase-track .lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.6rem;letter-spacing:.08em;
+.phase-track .lab{font-family:"Oswald",sans-serif;font-size:.6rem;letter-spacing:.08em;
   text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}
 .phase-track .lab.on{color:var(--ink);}
 .stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);}
@@ -259,7 +261,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .move .h{font-weight:600;font-size:.95rem;}
 .move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}
 .move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;
-  padding:10px 13px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.9rem;
+  padding:10px 13px;font-family:"Oswald",sans-serif;font-weight:700;font-size:.9rem;
   cursor:pointer;min-height:44px;}
 .move.due .go-btn{background:var(--stop);color:#fff;}
 .clock{position:relative;width:52px;height:52px;flex:none;}
@@ -267,7 +269,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .clock .nums{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;line-height:1;}
 .clock .nums b{font-family:"IBM Plex Mono",monospace;font-size:.92rem;font-weight:500;}
-.clock .nums span{font-family:"Barlow Semi Condensed",sans-serif;font-size:.52rem;letter-spacing:.1em;
+.clock .nums span{font-family:"Oswald",sans-serif;font-size:.52rem;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink-3);margin-top:1px;}
 .decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-shadow:var(--lift-2);
   overflow:hidden;margin-bottom:16px;}
@@ -279,13 +281,13 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
   border-radius:10px;padding:12px;box-shadow:var(--lift);}
 .strip .tile.due{border-color:var(--stop);}
 .strip .tile.soon{border-color:var(--warn);}
-.strip .tile .h{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.05rem;
+.strip .tile .h{font-family:"Oswald",sans-serif;font-weight:700;font-size:1.05rem;
   line-height:1.15;margin:0;}
 .strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}
 .strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}
 .btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shadow:none;margin-top:8px;}
 .btn.ghost-danger[disabled]{opacity:.35;}
-.line-mark{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.62rem;
+.line-mark{font-family:"Oswald",sans-serif;font-weight:700;font-size:.62rem;
   letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}
 @keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}
@@ -299,15 +301,18 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
          tracker; a 49,000-character line in here made the file that has to be
          pasted into Apps Script fragile enough to break on the way in. -->
     <img src="data:image/png;base64,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" alt="Sumter County EMS">
-    <div><div class="s">Sumter County EMS</div><div class="t">THE LINE</div></div>
+    <div class="brand">
+      <div class="county">Sumter County EMS</div>
+      <div class="program">Field Training</div>
+    </div>
     <span class="mode" id="mode">…</span>
   </div>
-  <div class="wrap" id="view"><p class="sub" id="boot-msg">Loading THE LINE…</p></div>
+  <div class="wrap" id="view"><p class="sub" id="boot-msg">Loading Field Training…</p></div>
   <div class="foot" id="foot"></div>
 </div>
 <noscript>
   <div style="max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-serif">
-    <h1>THE LINE needs JavaScript</h1>
+    <h1>Field Training needs JavaScript</h1>
     <p>Turn JavaScript on for this site, then reload.</p>
   </div>
 </noscript>
@@ -333,7 +338,7 @@ var S = { screen: 'main', ctx: null, busy: false };
 window.onerror = function (msg, src, line) {
   try {
     var v = document.getElementById('view');
-    if (v) v.innerHTML = '<div class="hero"><h1>THE LINE could not start</h1>' +
+    if (v) v.innerHTML = '<div class="hero"><h1>Field Training could not start</h1>' +
       '<p class="sub">A script error stopped the page. Redeploy a new version after a full paste, or check Executions in the Apps Script editor.</p></div>' +
       '<div class="note n-stop"><b>Error</b>' + String(msg || 'unknown') +
       (line ? ' (line ' + line + ')' : '') + '</div>';
@@ -688,7 +693,7 @@ function paintTraineeSheet(){
   h += (t.forms && t.forms.length)
     ? formCards(t.forms)
     : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
-  h += '<div class="next"><b>Where it goes</b>Straight into the tracker vault — same forms, same record. THE LINE just opens the right door.</div>';
+  h += '<div class="next"><b>Where it goes</b>Straight into the tracker vault — same forms, same record. Field Training just opens the right door.</div>';
   paint(h);
 }
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
@@ -717,7 +722,7 @@ function paintDivision(d){
   var h = hero('Waiting on you',
     q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')
              : 'Queue clear',
-    d.activeCount+' on THE LINE'+
+    d.activeCount+' in training'+
     (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves')+
     (seen.length ? ' &middot; '+seen.length+' holding' : ''));
 
@@ -758,8 +763,8 @@ function paintDivision(d){
     return (d.people||[]).some(function(p){ return p.name === r.name; });
   });
   if (ready.length && canWrite()){
-    h += sec('Ready to release', ready.length);
-    h += '<p class="sub" style="margin-bottom:9px">Phase 4. Open their record to release — captured with your reason.</p>';
+    h += sec('Ready to clear', ready.length);
+    h += '<p class="sub" style="margin-bottom:9px">Phase 4 complete path. Open their record to clear them for independent partner duty.</p>';
     ready.forEach(function(r){
       var idx = -1;
       (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });
@@ -767,7 +772,7 @@ function paintDivision(d){
       h += '<button class="card act"'+spine('gold')+' onclick="openPerson('+idx+')">'+
            '<span class="bd"><span class="hd"><span class="h">'+esc(r.name)+'</span>'+
            lvlChip((d.people[idx].levelKey), r.level)+'</span>'+
-           '<span class="m">Phase 4 · tap to release</span></span>'+
+           '<span class="m">Phase 4 · tap to clear for the truck</span></span>'+
            '<span class="go">&rsaquo;</span></button>';
     });
   }
@@ -790,7 +795,7 @@ function paintDivision(d){
     h += sec('Bring someone on');
     h += '<button class="card act"'+spine('gold')+' onclick="openAddTrainee()">'+
          '<span class="bd"><span class="h">New trainee</span>'+
-         '<span class="m">Put them on THE LINE and on the forms already in service. '+
+         '<span class="m">Enroll them in Field Training and on the forms already in service. '+
          'Name, email, level — then they show up for FTOs.</span></span>'+
          '<span class="go">&rsaquo;</span></button>';
   }
@@ -944,7 +949,7 @@ function deskDetails(d){
   }
   h += '<div class="panel" style="margin-top:10px">'+
     kv('Mode','<span class="chip c-mute">'+esc(d.mode)+'</span>')+
-    kv('On THE LINE', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed</span>')+
+    kv('In training', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed</span>')+
     kv('Form links', d.formLinks ? '<span class="chip c-ok">On</span>'
                                  : '<span class="chip c-warn">Off</span>')+
     '</div>';
@@ -983,11 +988,11 @@ function paintPersonSheet(){
            '<span class="m">One click after you type why. Master phase and phase-start date update together.</span></span>'+
            '<span class="go">&rsaquo;</span></button>';
     } else if (t.releaseReady){
-      h += '<div class="note n-info"><b>Phase 4</b>No further phase advance. Release when cleared.</div>';
+      h += '<div class="note n-info"><b>Phase 4</b>No further phase advance. Clear them for independent partner duty when the program is complete.</div>';
     }
     h += '<button class="card act"'+spine(t.releaseReady?'due':'')+' onclick="openRelease()">'+
          '<span class="bd"><span class="h">Release '+esc(firstName(t.name)||'trainee')+'</span>'+
-         '<span class="m">Closes them on THE LINE, archives who / when / why, pulls them off form dropdowns.</span></span>'+
+         '<span class="m">Successful completion — independent partner. Archives who / when / why; drops them from trainee form lists.</span></span>'+
          '<span class="go">&rsaquo;</span></button>';
   }
 
@@ -1076,15 +1081,14 @@ function openRelease(){
 }
 function paintRelease(){
   var t = S.ctx || {};
-  var h = hero('Release', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
+  var h = hero('Clear for the truck', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
     '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
-    '<div class="note n-warn"><b>This closes them on THE LINE</b>Status becomes Closed / Released. '+
+    '<div class="note n-ok"><b>Independent partner</b>They finished training. Status becomes Cleared / Independent. '+
     'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archived with who and when.</div>'+
-    '<div class="panel"><div class="lab">Why you are releasing them</div>'+
-    '<textarea id="rel-why" placeholder="Program complete, cleared for independent duty — in your words." '+
+    '<div class="panel"><div class="lab">Why they are cleared</div>'+
+    '<textarea id="rel-why" placeholder="Completed all phases and required skills — cleared to ride as an independent partner." '+
     'oninput="syncLifeBtns(\'rel\')"></textarea></div>'+
-    '<button class="btn" id="rel-go" disabled onclick="submitRelease()">Release '+
-    esc(firstName(t.name)||'trainee')+'</button>';
+    '<button class="btn" id="rel-go" disabled onclick="submitRelease()">Clear for independent partner duty</button>';
   paint(h);
   syncLifeBtns('rel');
 }
@@ -1092,20 +1096,20 @@ function submitRelease(){
   if (S.busy) return;
   var why = (el('rel-why') && el('rel-why').value || '').trim();
   if (why.length < 8) { alert('Type why you are releasing them.'); return; }
-  if (!confirm('Release '+((S.ctx&&S.ctx.name)||'this trainee')+'? This cannot be undone from THE LINE.')) return;
+  if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner duty? This cannot be undone from Field Training.')) return;
   S.busy = true;
   var b = el('rel-go');
-  if (b) { b.disabled = true; b.textContent = 'Releasing…'; }
+  if (b) { b.disabled = true; b.textContent = 'Clearing…'; }
   google.script.run
     .withSuccessHandler(function(r){
       S.busy = false;
-      alert((r && r.message) || 'Released.');
+      alert((r && r.message) || 'Cleared for independent partner duty.');
       S.screen = 'main';
       reload();
     })
     .withFailureHandler(function(e){
       S.busy = false;
-      if (b) { b.textContent = 'Release '+(firstName((S.ctx||{}).name)||'trainee'); }
+      if (b) { b.textContent = 'Clear for independent partner duty'; }
       syncLifeBtns('rel');
       alert(e.message||e);
     })
@@ -1172,7 +1176,7 @@ function paintAddTrainee(){
   var d = BOOT.data || {};
   var officers = d.officers || [];
   var h = hero('Bring someone on', 'New trainee',
-    'They land on THE LINE and on the forms already in service.')+
+    'They land in training and on the forms already in service.')+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
 
   h += '<div class="panel">'+
@@ -1180,7 +1184,7 @@ function paintAddTrainee(){
     '<input id="at-name" autocomplete="name" placeholder="Casey Holt" /></div>'+
     '<div class="field"><div class="lab">Work email</div>'+
     '<input id="at-email" type="email" autocomplete="email" placeholder="casey.holt@example.org" />'+
-    '<div class="hint">How they sign into THE LINE.</div></div>'+
+    '<div class="hint">How they sign into Field Training.</div></div>'+
     '<div class="field"><div class="lab">Level</div>'+
     '<select id="at-level">'+
     '<option value="">Pick one…</option>'+
@@ -1210,7 +1214,7 @@ function paintAddTrainee(){
     '<div class="hint">Letter from the ENTRY PROFILE KEY on the master.</div></div>'+
     '</div>';
 
-  h += '<button class="btn" id="at-go" onclick="submitAddTrainee()">Add to THE LINE</button>'+
+  h += '<button class="btn" id="at-go" onclick="submitAddTrainee()">Add to Field Training</button>'+
     '<div class="next"><b>What this does</b>Writes one row on the trainee master and refreshes '+
     'Trainee dropdowns on the Google Forms you already use. No new form is created.</div>'+
     '<div class="next"><b>Afterward</b>Open the tracker once if their skill matrix rows need a rebuild. '+
@@ -1235,13 +1239,13 @@ function submitAddTrainee(){
   google.script.run
     .withSuccessHandler(function(r){
       S.busy = false;
-      alert((r && r.message) || (name + ' is on THE LINE.'));
+      alert((r && r.message) || (name + ' is in training.'));
       S.screen = 'main';
       reload();
     })
     .withFailureHandler(function(e){
       S.busy = false;
-      if (b) { b.disabled = false; b.textContent = 'Add to THE LINE'; }
+      if (b) { b.disabled = false; b.textContent = 'Add to Field Training'; }
       alert(e.message || e);
     })
     .addTraineeV1({ name: name, email: email, level: level, phase: phase,
@@ -1467,7 +1471,7 @@ function reload(){
 }
 
 function startLine(){
-  paint(hero('THE LINE', 'Opening…',
+  paint(hero('Field Training', 'Opening…',
     'Loading your desk. If Google asks for permission, allow it — then this page continues.'));
   google.script.run
     .withSuccessHandler(function(r){
@@ -1481,7 +1485,7 @@ function startLine(){
     })
     .withFailureHandler(function(e){
       var msg = String((e && e.message) || e || 'unknown');
-      paint(hero('THE LINE', 'Could not open', '')+
+      paint(hero('Field Training', 'Could not open', '')+
         '<div class="note n-stop"><b>Blocked</b>'+esc(msg)+'</div>'+
         '<div class="note n-info"><b>Do this in order</b>'+
         '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+
@@ -1503,7 +1507,7 @@ try {
 } catch (bootErr) {
   try {
     document.getElementById('view').innerHTML =
-      '<div class="hero"><h1>THE LINE could not start</h1>' +
+      '<div class="hero"><h1>Field Training could not start</h1>' +
       '<p class="sub">The page loaded but the script crashed while starting. ' +
       'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></div>' +
       '<div class="note n-stop"><b>Error</b>' + String((bootErr && bootErr.message) || bootErr) + '</div>';

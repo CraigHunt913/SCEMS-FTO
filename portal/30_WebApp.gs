@@ -3,7 +3,7 @@
  *
  * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
  * or Drive. Touching those during doGet is what produces Google's grey
- * createOAuthDialog iframe that never paints THE LINE.
+ * createOAuthDialog iframe that never paints Field Training.
  *
  * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
@@ -65,7 +65,7 @@ function payloadForV1_(viewer) {
  * web app is not stuck on a grey OAuth iframe.
  */
 function authorizePortalNow() {
-  var L = ['THE LINE — authorizePortalNow', ''];
+  var L = ['Field Training — authorizePortalNow', ''];
   try {
     var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
     L.push('Signed in as: ' + (email || '(unnamed)'));
@@ -385,7 +385,7 @@ function clean_(v) {
 }
 
 /**
- * Training Division brings a new trainee onto THE LINE from the web app.
+ * Training Division brings a new trainee into Field Training from the web app.
  *
  * Writes one row to 01 TRAINEE MASTER and refreshes Trainee LIST choices on
  * the registered Google Forms so the forms already in service offer them.
@@ -394,7 +394,7 @@ function addTraineeV1(payload) {
   requireWritableV1_('add a trainee');
   var viewer = resolveViewerV1_(whoIsVisitingV1_());
   if (viewer.role !== PORTAL.ROLE.DIVISION) {
-    throw new Error('Only the Training Division may add a trainee from THE LINE.');
+    throw new Error('Only the Training Division may add a trainee from Field Training.');
   }
   var req = parseAddTraineeRequestV1_(payload || {});
   if (!req || !req.name) throw new Error('Type their full name.');
@@ -432,7 +432,7 @@ function addTraineeV1(payload) {
     ok: true,
     name: req.name,
     level: req.level,
-    message: req.name + ' is on THE LINE and on the existing forms.'
+    message: req.name + ' is in Field Training and on the existing forms.'
   };
 }
 

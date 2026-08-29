@@ -3,7 +3,7 @@
  *
  * Until now a new trainee meant typing a name into 01 TRAINEE MASTER by hand
  * and hoping the nine Google Forms picked them up. That is how people end up
- * on THE LINE but missing from the eval / skills dropdowns — and how an FTO
+ * in Field Training but missing from the eval / skills dropdowns — and how an FTO
  * opens a form that silently refuses the name they just typed.
  *
  * What this does:
@@ -20,7 +20,7 @@
  *
  * Two ways in:
  *   Editor: set PORTAL_ADD_TRAINEE, run addTraineeBeforeAndAfter / addTrainee.
- *   THE LINE: Training Division → Bring someone on → addTraineeV1 (web).
+ *   Field Training: Training Division → Bring someone on → addTraineeV1 (web).
  */
 
 var PORTAL_ADD_TRAINEE_PROPERTY = 'PORTAL_ADD_TRAINEE';
@@ -128,7 +128,7 @@ function addTraineePlanV1_(explicit) {
 
   if (!plan.requests.length) {
     plan.problem = 'Nothing to add.\n\n' +
-      'On THE LINE: Training Division → Bring someone on.\n\n' +
+      'On Field Training: Training Division → Bring someone on.\n\n' +
       'In the editor, set ' + PORTAL_ADD_TRAINEE_PROPERTY + ' to:\n' +
       '  Casey Holt, casey@example.org, EMT, Phase 1, Dana Whitlock, A\n\n' +
       'Name, email, and level are required. Phase defaults to Phase 1.\n' +
@@ -248,7 +248,7 @@ function addTraineeBodyV1_(p, L, done) {
     p.clash.forEach(function (c) {
       L.push('  ' + c.req.email + '   is ' + c.owner.name);
     });
-    L.push('  An address is how THE LINE recognizes a trainee. Not added.');
+    L.push('  An address is how Field Training recognizes a trainee. Not added.');
     L.push('');
   }
   if (p.badFto.length) {
@@ -299,7 +299,7 @@ function addTrainee() {
 function applyAddTraineePlanV1_(p) {
   if (p.problem) return noteV1_(p.problem);
 
-  var L = ['TRAINEE ADDED TO THE LINE', '',
+  var L = ['TRAINEE ADDED TO FIELD TRAINING', '',
     'In     : ' + safeTargetNameV1_(),
     'Run by : ' + (whoIsAskingV1_() || whoIsVisitingV1_() || 'unidentified'), ''];
 
@@ -384,7 +384,7 @@ function applyAddTraineePlanV1_(p) {
     if (sync && sync.ok) {
       L.push('EXISTING FORMS UPDATED');
       L.push('  Trainee dropdowns on ' + sync.forms + ' registered form(s) now include');
-      L.push('  the new name(s). Prefill and open-form cards on THE LINE use those');
+      L.push('  the new name(s). Prefill and open-form cards in Field Training use those');
       L.push('  same forms — nothing new was created.');
       if (sync.notes && sync.notes.length) {
         sync.notes.forEach(function (n) { L.push('  · ' + n); });
@@ -399,7 +399,7 @@ function applyAddTraineePlanV1_(p) {
     }
     L.push('SKILL MATRIX');
     L.push('  Open the tracker once (or run rebuildSkillMatrix) so their skill');
-    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and THE LINE already know them.');
+    L.push('  rows appear on 05 SKILLS PROGRESS. Forms and Field Training already know them.');
     L.push('');
     L.push('To reverse an untouched blank-slate add: undoAddTrainee()');
   }

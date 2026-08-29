@@ -1,7 +1,7 @@
-// SCEMS Portal — adding a trainee to THE LINE and linking existing forms.
+// SCEMS Portal — adding a trainee to Field Training and linking existing forms.
 //
 // Claim: Training Division can put a new person on 01 TRAINEE MASTER from
-// THE LINE, and the registered Google Forms' Trainee dropdowns pick them up
+// Field Training, and the registered Google Forms' Trainee dropdowns pick them up
 // without creating a new form.
 //
 //   node test/portal-add-trainee.test.js
@@ -357,7 +357,7 @@ section('Web addTraineeV1 is Division-only and writable-mode only');
     name: 'Casey Holt', email: 'casey@example.org', level: 'EMT'
   }));
   ok(/Training Division|Division/i.test(err),
-     'an FTO cannot add a trainee from THE LINE');
+     'an FTO cannot add a trainee from Field Training');
 
   seed();
   PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
@@ -372,12 +372,12 @@ section('Web addTraineeV1 is Division-only and writable-mode only');
     entry: 'A'
   });
   ok(r && r.ok && r.name === 'Casey Holt', 'Division in LIVE can add');
-  ok(/THE LINE|forms/i.test(r.message), 'success message mentions THE LINE / forms');
+  ok(/Field Training|forms/i.test(r.message), 'success message mentions Field Training / forms');
   const names = traineesV1_().map(t => t.name);
   ok(names.indexOf('Casey Holt') >= 0, 'Casey is on the master after web add');
 }
 
-section('THE LINE page has Bring someone on');
+section('Field Training page has Bring someone on');
 {
   const page = fs.readFileSync(ROOT + '/portal/Index.html', 'utf8');
   ok(/Bring someone on/.test(page), 'Division desk offers Bring someone on');
