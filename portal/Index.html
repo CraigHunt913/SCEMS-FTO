@@ -639,15 +639,36 @@ function ack(row){
 /* ---------------- fto — Tonight ---------------- */
 function paintFto(d){
   var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;
-  var h = hero('Tonight', 'Who did you ride with?',
+  // End-of-shift first: one job — file for whoever is overdue.
+  var h = hero('Tonight',
+    hot ? (hot === 1 ? 'One file due' : hot + ' files due') : 'Shift quiet',
     (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+
-    (hot ? ' &middot; <span style="color:var(--gold)">'+hot+' need you</span>' : ''));
-  if (!d.trainees.length) h += '<div class="note n-info"><b>Nobody assigned</b>No trainees list you as their training officer.</div>';
+    (hot ? ' &middot; <span style="color:var(--gold)">start with the one below</span>' : ''));
+  if (!d.trainees.length){
+    h += '<div class="note n-info"><b>Nobody on your line</b>When Training assigns someone to you, they land here after the shift.</div>';
+    paint(h);
+    return;
+  }
 
-  // Hot first — already sorted loosely by urgency in payload; re-sort for display.
   var list = (d.trainees||[]).slice().sort(function(a,b){
     var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);
   });
+  // Lead card: only when someone is actually overdue — not a decorative first row.
+  var lead = list[0];
+  var leadIdx = d.trainees.indexOf(lead);
+  if (lead && lead.urgency === 'due'){
+    h += '<button class="card act"'+spine('due')+' onclick="openTrainee('+leadIdx+')" style="margin-bottom:14px">'+
+         '<span class="bd"><span class="lab" style="margin:0">File tonight</span>'+
+         '<span class="h" style="font-size:1.35rem">'+esc(lead.name)+'</span>'+
+         '<span class="m">'+esc(lead.phase||'')+
+         (lead.daysSinceEval<0?' · never evaluated':' · '+lead.daysSinceEval+'d since last eval')+
+         '</span><span class="m">Opens eval and skills with both names filled.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+    list = list.slice(1);
+    if (list.length) h += sec('Also on your line', list.length);
+  } else if (!hot){
+    h += '<div class="note n-ok"><b>Nothing overdue</b>Tap a name if you rode with them tonight anyway.</div>';
+  }
   list.forEach(function(t){
     var i = d.trainees.indexOf(t);
     var chip = t.urgency==='due'
@@ -663,8 +684,7 @@ function paintFto(d){
       (t.setupComplete?'':'<span class="flag">Setup incomplete — tell Training Division</span>')+
       '</span><span class="go">&rsaquo;</span></button>';
   });
-  if (d.forms && d.forms.length) h += sec('Anything else')+formCards(d.forms);
-  h += '<div class="next"><b>How Tonight works</b>Pick the person. The eval and skills log open with both names filled — for their level. You never hunt a form title.</div>';
+  if (d.forms && d.forms.length) h += sec('Blank forms')+formCards(d.forms);
   paint(h);
 }
 function openTrainee(i){
@@ -708,22 +728,23 @@ function paintDivision(d){
   var missingBy = {};
   (d.incomplete||[]).forEach(function(t){ missingBy[t.name] = t.missing; });
 
-  // Every active trainee is either asking something of you or is not. Only
-  // the first kind gets a row; the rest get counted and hidden behind a
-  // button, because a name with nothing next to it is just noise.
-  /* Three lists, not two. Someone you have already looked at and said
-     something about is not an alarm any more - and is not gone either. */
   var flagged = [], seen = [], quiet = [];
   (d.people||[]).forEach(function(t,i){
     if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }
     if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});
   });
 
+  var ready = (d.releaseReady || []).filter(function(r){
+    return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; });
+  });
+  var showReady = !!(ready.length && canWrite());
+
   var h = hero('Waiting on you',
     q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')
-             : 'Queue clear',
+             : (showReady ? 'Clearance ready' : 'Queue clear'),
     d.activeCount+' in training'+
     (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves')+
+    (showReady ? ' &middot; '+ready.length+' ready for the truck' : '')+
     (seen.length ? ' &middot; '+seen.length+' holding' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
@@ -732,11 +753,8 @@ function paintDivision(d){
 
   h += warnRow(d.warnings);
 
-  // First viewport = decisions and people. Machinery (retired forms, staged
-  // rows) lives at the bottom under Desk details — not as red banners here.
-
   if (!q.length){
-    h += '<div class="note n-ok"><b>Queue clear</b>Nothing needs your decision right now.</div>';
+    h += '<div class="note n-ok"><b>Nothing waiting</b>When an evaluation needs your call, it shows here first.</div>';
   } else {
     var lead = q[0];
     h += decisionLeadHtml(lead);
@@ -753,28 +771,26 @@ function paintDivision(d){
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
-  if (seen.length){
-    h += sec('Seen, and holding', seen.length);
-    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
-  }
-
-  // Phase 4 people waiting on a release call — not an alarm, a finish line.
-  var ready = (d.releaseReady || []).filter(function(r){
-    return (d.people||[]).some(function(p){ return p.name === r.name; });
-  });
-  if (ready.length && canWrite()){
-    h += sec('Ready to clear', ready.length);
-    h += '<p class="sub" style="margin-bottom:9px">Phase 4 complete path. Open their record to clear them for independent partner duty.</p>';
+  // Clearance sits with decisions — not after the holding parking lot.
+  if (showReady){
+    h += sec('Ready for the truck', ready.length);
+    h += '<p class="sub" style="margin-bottom:9px">Phase 4 and every skill signed off. Clear them as an independent partner.</p>';
     ready.forEach(function(r){
-      var idx = -1;
-      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });
+      var idx = -1, person = null;
+      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) { idx = i; person = p; } });
       if (idx < 0) return;
       h += '<button class="card act"'+spine('gold')+' onclick="openPerson('+idx+')">'+
            '<span class="bd"><span class="hd"><span class="h">'+esc(r.name)+'</span>'+
-           lvlChip((d.people[idx].levelKey), r.level)+'</span>'+
-           '<span class="m">Phase 4 · tap to clear for the truck</span></span>'+
+           lvlChip((person&&person.levelKey), r.level)+'</span>'+
+           '<span class="m">'+esc(String(r.signed||0))+' / '+esc(String(r.total||0))+
+           ' skills signed · clear for the truck</span></span>'+
            '<span class="go">&rsaquo;</span></button>';
     });
+  }
+
+  if (seen.length){
+    h += sec('Seen, and holding', seen.length);
+    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
   if ((d.people||[]).length){
@@ -790,14 +806,9 @@ function paintDivision(d){
 
   if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
 
-  // Bring someone on — Division only, when the portal can write.
+  // Enroll last — not competing with decisions or clearance.
   if (d.canAddTrainee) {
-    h += sec('Bring someone on');
-    h += '<button class="card act"'+spine('gold')+' onclick="openAddTrainee()">'+
-         '<span class="bd"><span class="h">New trainee</span>'+
-         '<span class="m">Enroll them in Field Training and on the forms already in service. '+
-         'Name, email, level — then they show up for FTOs.</span></span>'+
-         '<span class="go">&rsaquo;</span></button>';
+    h += '<button class="more" style="margin-top:18px" onclick="openAddTrainee()">Bring someone on — new trainee</button>';
   }
 
   // Same-day duplicates are a human call — keep them visible but quiet, at the end.
@@ -949,7 +960,7 @@ function deskDetails(d){
   }
   h += '<div class="panel" style="margin-top:10px">'+
     kv('Mode','<span class="chip c-mute">'+esc(d.mode)+'</span>')+
-    kv('In training', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed</span>')+
+    kv('In training', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' cleared</span>')+
     kv('Form links', d.formLinks ? '<span class="chip c-ok">On</span>'
                                  : '<span class="chip c-warn">Off</span>')+
     '</div>';
@@ -963,20 +974,16 @@ function openPerson(i){
 }
 function paintPersonSheet(){
   var t = S.ctx || {};
+  var clear = t.clearance || {};
   var h = hero('Trainee record', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
 
-  /* Phase is the spine of the program. Show it big, then the one action that
-     moves it — not buried under forms. */
   h += '<div class="panel">'+
        '<div class="lab">Where they are</div>'+
        phaseTrackHtml(t.phase)+
        (t.dayInPhase!=null
          ? '<div class="m" style="margin-top:8px">Day '+esc(t.dayInPhase)+' in this phase</div>'
-         : '')+
-       (t.releaseReady
-         ? '<div class="note n-ok" style="margin-top:10px"><b>Release-ready</b>Phase 4 — when the program is complete, release them here. Captured with your name and reason.</div>'
          : '')+
        '</div>';
 
@@ -985,15 +992,27 @@ function paintPersonSheet(){
     if (t.canAdvance && t.nextPhase){
       h += '<button class="card act"'+spine('gold')+' onclick="openAdvance()">'+
            '<span class="bd"><span class="h">Advance to '+esc(t.nextPhase)+'</span>'+
-           '<span class="m">One click after you type why. Master phase and phase-start date update together.</span></span>'+
+           '<span class="m">Type why. Phase and phase-start date update together.</span></span>'+
            '<span class="go">&rsaquo;</span></button>';
-    } else if (t.releaseReady){
-      h += '<div class="note n-info"><b>Phase 4</b>No further phase advance. Clear them for independent partner duty when the program is complete.</div>';
     }
-    h += '<button class="card act"'+spine(t.releaseReady?'due':'')+' onclick="openRelease()">'+
-         '<span class="bd"><span class="h">Clear '+esc(firstName(t.name)||'trainee')+' for the truck</span>'+
-         '<span class="m">Successful completion — independent partner. Archives who / when / why; drops them from trainee form lists.</span></span>'+
-         '<span class="go">&rsaquo;</span></button>';
+
+    if (t.releaseReady){
+      h += '<div class="note n-ok"><b>Ready for the truck</b>'+
+           esc(String(clear.signed||0))+' / '+esc(String(clear.total||0))+
+           ' skills signed off. Clear them as an independent partner.</div>';
+      h += '<button class="card act"'+spine('due')+' onclick="openRelease()">'+
+           '<span class="bd"><span class="h">Clear '+esc(firstName(t.name)||'trainee')+' for the truck</span>'+
+           '<span class="m">Successful completion — independent partner on a truck.</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    } else if (t.phase4){
+      h += '<div class="note n-warn"><b>Not ready for the truck yet</b>Phase 4, but skills or sign-offs are still open:</div>';
+      (clear.gaps||[]).slice(0,8).forEach(function(g){
+        h += '<div class="m" style="margin:0 0 6px 2px">· '+esc(g)+'</div>';
+      });
+      h += '<div class="next" style="margin-top:10px"><b>Clearance stays closed</b>Finish those first. Field Training will not clear someone who still has open skills.</div>';
+    } else if (!t.canAdvance){
+      h += '<div class="note n-info"><b>Phase</b>Fix the phase on the master before advancing or clearing.</div>';
+    }
   }
 
   /* The card you tapped said why. Losing the reason on the way in is how a
@@ -1095,7 +1114,7 @@ function paintRelease(){
 function submitRelease(){
   if (S.busy) return;
   var why = (el('rel-why') && el('rel-why').value || '').trim();
-  if (why.length < 8) { alert('Type why you are releasing them.'); return; }
+  if (why.length < 8) { alert('Type why they are cleared for independent partner duty.'); return; }
   if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner duty? This cannot be undone from Field Training.')) return;
   S.busy = true;
   var b = el('rel-go');

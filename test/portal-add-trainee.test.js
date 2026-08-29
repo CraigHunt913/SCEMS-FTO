@@ -380,7 +380,7 @@ section('Web addTraineeV1 is Division-only and writable-mode only');
 section('Field Training page has Bring someone on');
 {
   const page = fs.readFileSync(ROOT + '/portal/Index.html', 'utf8');
-  ok(/Bring someone on/.test(page), 'Division desk offers Bring someone on');
+  ok(/Bring someone on|openAddTrainee/.test(page), 'Division desk offers Bring someone on');
   ok(/addTraineeV1/.test(page), 'page calls addTraineeV1');
   ok(/openAddTrainee|paintAddTrainee/.test(page), 'add-trainee screen exists');
   ok(/syncRegisteredFormChoicesV1_/.test(

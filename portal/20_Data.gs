@@ -197,6 +197,61 @@ function dayInPhaseV1_(t) {
   return Math.max(0, Math.floor((new Date() - d) / 86400000));
 }
 
+/**
+ * Can they clear for the truck? Phase 4 + every matrix skill signed off +
+ * no open skill-validation items. Gaps are human-readable for the desk.
+ */
+function clearanceAssessmentV1_(trainee) {
+  var out = {
+    phase4: false,
+    canClear: false,
+    signed: 0,
+    total: 0,
+    gaps: []
+  };
+  if (!trainee || trainee.closed) {
+    out.gaps.push('Not an active trainee.');
+    return out;
+  }
+  out.phase4 = phaseIndexV1_(trainee.phase) === 3;
+  if (!out.phase4) {
+    out.gaps.push('Still in ' + (trainee.phase || 'an earlier phase') +
+      ' — Phase 4 comes first.');
+    return out;
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(trainee.norm); } catch (e) { skills = []; }
+  out.total = skills.length;
+  out.signed = skills.filter(function (s) { return s.signed; }).length;
+
+  if (!skills.length) {
+    out.gaps.push('No skills on the matrix yet. Log skills and rebuild before clearing.');
+  } else {
+    var openSkills = skills.filter(function (s) { return !s.signed; });
+    openSkills.slice(0, 6).forEach(function (s) {
+      out.gaps.push(s.skill +
+        (s.readiness ? ' — ' + s.readiness : ' — not signed off'));
+    });
+    if (openSkills.length > 6) {
+      out.gaps.push('…and ' + (openSkills.length - 6) + ' more skills still open');
+    }
+  }
+
+  try {
+    var waiting = openQueueV1_().filter(function (q) {
+      return q.norm === trainee.norm && !q.decision;
+    });
+    if (waiting.length) {
+      out.gaps.push(waiting.length + ' skill sign-off' +
+        (waiting.length === 1 ? '' : 's') + ' still waiting on Division');
+    }
+  } catch (e2) {}
+
+  out.canClear = out.gaps.length === 0;
+  return out;
+}
+
 /** Imperative next-move cards — replace "flags" language for humans. */
 function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
   var moves = [];
@@ -532,8 +587,12 @@ function divisionPayloadV1_() {
     // of people no officer's screen will show, with the reason for each.
     stranded: stranded,
     duplicates: dupes,
-    releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
-      .map(function (t) { return { name: t.name, level: t.level }; }),
+    releaseReady: active.filter(function (t) {
+      return clearanceAssessmentV1_(t).canClear;
+    }).map(function (t) {
+      var a = clearanceAssessmentV1_(t);
+      return { name: t.name, level: t.level, signed: a.signed, total: a.total };
+    }),
     // Every active trainee, each carrying enough for the screen to decide
     // whether it needs to say anything about them at all. A list of ten
     // identical rows is not information; it is my internals on somebody's
@@ -553,13 +612,15 @@ function divisionPayloadV1_() {
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
       var next = nextPhaseV1_(t.phase);
-      var phase4 = phaseIndexV1_(t.phase) === 3;
+      var clear = clearanceAssessmentV1_(t);
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
                dayInPhase: dayInPhaseV1_(t),
                nextPhase: next,
                canAdvance: !!next,
-               releaseReady: phase4,
+               releaseReady: clear.canClear,
+               phase4: clear.phase4,
+               clearance: clear,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
                forms: safeFormsV1_(function () {

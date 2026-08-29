@@ -140,6 +140,12 @@ function releaseTraineeV1(traineeName, reason) {
   if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
   if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
 
+  var assess = clearanceAssessmentV1_(rec);
+  if (!assess.canClear) {
+    throw new Error(rec.name + ' is not ready for the truck yet.\n\n' +
+      (assess.gaps.length ? assess.gaps.join('\n') : 'Finish Phase 4 and every skill sign-off first.'));
+  }
+
   var t = readTabV1_(PORTAL.TAB.MASTER);
   if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
 

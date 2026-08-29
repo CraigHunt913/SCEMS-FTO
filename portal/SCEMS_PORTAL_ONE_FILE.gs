@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.1.0
- * Build b3e7d697
+ * SCEMS FIELD TRAINING PORTAL — portal-2.1.1
+ * Build 13cbd38a
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.1.0',
+  VERSION: 'portal-2.1.1',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1405,6 +1405,61 @@ function dayInPhaseV1_(t) {
   return Math.max(0, Math.floor((new Date() - d) / 86400000));
 }
 
+/**
+ * Can they clear for the truck? Phase 4 + every matrix skill signed off +
+ * no open skill-validation items. Gaps are human-readable for the desk.
+ */
+function clearanceAssessmentV1_(trainee) {
+  var out = {
+    phase4: false,
+    canClear: false,
+    signed: 0,
+    total: 0,
+    gaps: []
+  };
+  if (!trainee || trainee.closed) {
+    out.gaps.push('Not an active trainee.');
+    return out;
+  }
+  out.phase4 = phaseIndexV1_(trainee.phase) === 3;
+  if (!out.phase4) {
+    out.gaps.push('Still in ' + (trainee.phase || 'an earlier phase') +
+      ' — Phase 4 comes first.');
+    return out;
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(trainee.norm); } catch (e) { skills = []; }
+  out.total = skills.length;
+  out.signed = skills.filter(function (s) { return s.signed; }).length;
+
+  if (!skills.length) {
+    out.gaps.push('No skills on the matrix yet. Log skills and rebuild before clearing.');
+  } else {
+    var openSkills = skills.filter(function (s) { return !s.signed; });
+    openSkills.slice(0, 6).forEach(function (s) {
+      out.gaps.push(s.skill +
+        (s.readiness ? ' — ' + s.readiness : ' — not signed off'));
+    });
+    if (openSkills.length > 6) {
+      out.gaps.push('…and ' + (openSkills.length - 6) + ' more skills still open');
+    }
+  }
+
+  try {
+    var waiting = openQueueV1_().filter(function (q) {
+      return q.norm === trainee.norm && !q.decision;
+    });
+    if (waiting.length) {
+      out.gaps.push(waiting.length + ' skill sign-off' +
+        (waiting.length === 1 ? '' : 's') + ' still waiting on Division');
+    }
+  } catch (e2) {}
+
+  out.canClear = out.gaps.length === 0;
+  return out;
+}
+
 /** Imperative next-move cards — replace "flags" language for humans. */
 function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
   var moves = [];
@@ -1740,8 +1795,12 @@ function divisionPayloadV1_() {
     // of people no officer's screen will show, with the reason for each.
     stranded: stranded,
     duplicates: dupes,
-    releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
-      .map(function (t) { return { name: t.name, level: t.level }; }),
+    releaseReady: active.filter(function (t) {
+      return clearanceAssessmentV1_(t).canClear;
+    }).map(function (t) {
+      var a = clearanceAssessmentV1_(t);
+      return { name: t.name, level: t.level, signed: a.signed, total: a.total };
+    }),
     // Every active trainee, each carrying enough for the screen to decide
     // whether it needs to say anything about them at all. A list of ten
     // identical rows is not information; it is my internals on somebody's
@@ -1761,13 +1820,15 @@ function divisionPayloadV1_() {
       var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
       var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
       var next = nextPhaseV1_(t.phase);
-      var phase4 = phaseIndexV1_(t.phase) === 3;
+      var clear = clearanceAssessmentV1_(t);
       return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
                fto: t.fto || '', shift: t.shift || '',
                dayInPhase: dayInPhaseV1_(t),
                nextPhase: next,
                canAdvance: !!next,
-               releaseReady: phase4,
+               releaseReady: clear.canClear,
+               phase4: clear.phase4,
+               clearance: clear,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
                forms: safeFormsV1_(function () {
@@ -5246,6 +5307,12 @@ function releaseTraineeV1(traineeName, reason) {
   }
   if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
   if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var assess = clearanceAssessmentV1_(rec);
+  if (!assess.canClear) {
+    throw new Error(rec.name + ' is not ready for the truck yet.\n\n' +
+      (assess.gaps.length ? assess.gaps.join('\n') : 'Finish Phase 4 and every skill sign-off first.'));
+  }
 
   var t = readTabV1_(PORTAL.TAB.MASTER);
   if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
@@ -9197,16 +9264,42 @@ var PORTAL_PAGE_HTML = [
   "/* ---------------- fto — Tonight ---------------- */\n",
   "function paintFto(d){\n",
   "  var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;\n",
-  "  var h = hero('Tonight', 'Who did you ride with?',\n",
+  "  // End-of-shift first: one job — file for whoever is overdue.\n",
+  "  var h = hero('Tonight',\n",
+  "    hot ? (hot === 1 ? 'One file due' : hot + ' files due') : 'Shift quiet',\n",
   "    (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+\n",
-  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">'+hot+' need you</span>' : ''));\n",
-  "  if (!d.trainees.length) h += '<div class=\"note n-info\"><b>Nobody assigned</b>No trainees",
-  " list you as their training officer.</div>';\n",
+  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">start with the one below</span>' : '",
+  "'));\n",
+  "  if (!d.trainees.length){\n",
+  "    h += '<div class=\"note n-info\"><b>Nobody on your line</b>When Training assigns someone",
+  " to you, they land here after the shift.</div>';\n",
+  "    paint(h);\n",
+  "    return;\n",
+  "  }\n",
   "\n",
-  "  // Hot first — already sorted loosely by urgency in payload; re-sort for display.\n",
   "  var list = (d.trainees||[]).slice().sort(function(a,b){\n",
   "    var r={due:0,soon:1,'':2}; return (r[a.urgency]||2)-(r[b.urgency]||2);\n",
   "  });\n",
+  "  // Lead card: only when someone is actually overdue — not a decorative first row.\n",
+  "  var lead = list[0];\n",
+  "  var leadIdx = d.trainees.indexOf(lead);\n",
+  "  if (lead && lead.urgency === 'due'){\n",
+  "    h += '<button class=\"card act\"'+spine('due')+' onclick=\"openTrainee('+leadIdx+')\" styl",
+  "e=\"margin-bottom:14px\">'+\n",
+  "         '<span class=\"bd\"><span class=\"lab\" style=\"margin:0\">File tonight</span>'+\n",
+  "         '<span class=\"h\" style=\"font-size:1.35rem\">'+esc(lead.name)+'</span>'+\n",
+  "         '<span class=\"m\">'+esc(lead.phase||'')+\n",
+  "         (lead.daysSinceEval<0?' · never evaluated':' · '+lead.daysSinceEval+'d since last",
+  " eval')+\n",
+  "         '</span><span class=\"m\">Opens eval and skills with both names filled.</span></spa",
+  "n>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    list = list.slice(1);\n",
+  "    if (list.length) h += sec('Also on your line', list.length);\n",
+  "  } else if (!hot){\n",
+  "    h += '<div class=\"note n-ok\"><b>Nothing overdue</b>Tap a name if you rode with them to",
+  "night anyway.</div>';\n",
+  "  }\n",
   "  list.forEach(function(t){\n",
   "    var i = d.trainees.indexOf(t);\n",
   "    var chip = t.urgency==='due'\n",
@@ -9226,9 +9319,7 @@ var PORTAL_PAGE_HTML = [
   "pan>')+\n",
   "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "  });\n",
-  "  if (d.forms && d.forms.length) h += sec('Anything else')+formCards(d.forms);\n",
-  "  h += '<div class=\"next\"><b>How Tonight works</b>Pick the person. The eval and skills log",
-  " open with both names filled — for their level. You never hunt a form title.</div>';\n",
+  "  if (d.forms && d.forms.length) h += sec('Blank forms')+formCards(d.forms);\n",
   "  paint(h);\n",
   "}\n",
   "function openTrainee(i){\n",
@@ -9287,12 +9378,20 @@ var PORTAL_PAGE_HTML = [
   "    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});\n",
   "  });\n",
   "\n",
+  "  // Finish line is a Division decision — sit it with decisions, not after holding.\n",
+  "  var ready = (d.releaseReady || []).filter(function(r){\n",
+  "    return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; })",
+  ";\n",
+  "  });\n",
+  "  var showReady = !!(ready.length && canWrite());\n",
+  "\n",
   "  var h = hero('Waiting on you',\n",
   "    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')\n",
-  "             : 'Queue clear',\n",
+  "             : (showReady ? 'Clearance ready' : 'Queue clear'),\n",
   "    d.activeCount+' in training'+\n",
   "    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves",
   "')+\n",
+  "    (showReady ? ' &middot; '+ready.length+' ready for the truck' : '')+\n",
   "    (seen.length ? ' &middot; '+seen.length+' holding' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
@@ -9305,8 +9404,8 @@ var PORTAL_PAGE_HTML = [
   "  // rows) lives at the bottom under Desk details — not as red banners here.\n",
   "\n",
   "  if (!q.length){\n",
-  "    h += '<div class=\"note n-ok\"><b>Queue clear</b>Nothing needs your decision right now.<",
-  "/div>';\n",
+  "    h += '<div class=\"note n-ok\"><b>Nothing waiting</b>When an evaluation needs your call,",
+  " it shows here first.</div>';\n",
   "  } else {\n",
   "    var lead = q[0];\n",
   "    h += decisionLeadHtml(lead);\n",
@@ -9323,29 +9422,28 @@ var PORTAL_PAGE_HTML = [
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
-  "  if (seen.length){\n",
-  "    h += sec('Seen, and holding', seen.length);\n",
-  "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
-  "  }\n",
-  "\n",
-  "  // Phase 4 people waiting on a release call — not an alarm, a finish line.\n",
-  "  var ready = (d.releaseReady || []).filter(function(r){\n",
-  "    return (d.people||[]).some(function(p){ return p.name === r.name; });\n",
-  "  });\n",
-  "  if (ready.length && canWrite()){\n",
-  "    h += sec('Ready to clear', ready.length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 complete path. Open their recor",
-  "d to clear them for independent partner duty.</p>';\n",
+  "  // Phase 4 + every skill signed — only when the gate says yes.\n",
+  "  if (showReady){\n",
+  "    h += sec('Ready for the truck', ready.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 and every skill signed off. Cle",
+  "ar them as an independent partner.</p>';\n",
   "    ready.forEach(function(r){\n",
-  "      var idx = -1;\n",
-  "      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) idx = i; });\n",
+  "      var idx = -1, person = null;\n",
+  "      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) { idx = i; person = p; ",
+  "} });\n",
   "      if (idx < 0) return;\n",
   "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openPerson('+idx+')\">'+\n",
   "           '<span class=\"bd\"><span class=\"hd\"><span class=\"h\">'+esc(r.name)+'</span>'+\n",
-  "           lvlChip((d.people[idx].levelKey), r.level)+'</span>'+\n",
-  "           '<span class=\"m\">Phase 4 · tap to clear for the truck</span></span>'+\n",
+  "           lvlChip((person&&person.levelKey), r.level)+'</span>'+\n",
+  "           '<span class=\"m\">'+esc(String(r.signed||0))+' / '+esc(String(r.total||0))+\n",
+  "           ' skills signed · clear for the truck</span></span>'+\n",
   "           '<span class=\"go\">&rsaquo;</span></button>';\n",
   "    });\n",
+  "  }\n",
+  "\n",
+  "  if (seen.length){\n",
+  "    h += sec('Seen, and holding', seen.length);\n",
+  "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
   "  if ((d.people||[]).length){\n",
@@ -9361,15 +9459,10 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
   "\n",
-  "  // Bring someone on — Division only, when the portal can write.\n",
+  "  // Enroll last — not competing with decisions or clearance.\n",
   "  if (d.canAddTrainee) {\n",
-  "    h += sec('Bring someone on');\n",
-  "    h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAddTrainee()\">'+\n",
-  "         '<span class=\"bd\"><span class=\"h\">New trainee</span>'+\n",
-  "         '<span class=\"m\">Enroll them in Field Training and on the forms already in servic",
-  "e. '+\n",
-  "         'Name, email, level — then they show up for FTOs.</span></span>'+\n",
-  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    h += '<button class=\"more\" style=\"margin-top:18px\" onclick=\"openAddTrainee()\">Bring so",
+  "meone on — new trainee</button>';\n",
   "  }\n",
   "\n",
   "  // Same-day duplicates are a human call — keep them visible but quiet, at the end.\n",
@@ -9548,8 +9641,8 @@ var PORTAL_PAGE_HTML = [
   "  }\n",
   "  h += '<div class=\"panel\" style=\"margin-top:10px\">'+\n",
   "    kv('Mode','<span class=\"chip c-mute\">'+esc(d.mode)+'</span>')+\n",
-  "    kv('In training', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' closed</",
-  "span>')+\n",
+  "    kv('In training', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' cleared<",
+  "/span>')+\n",
   "    kv('Form links', d.formLinks ? '<span class=\"chip c-ok\">On</span>'\n",
   "                                 : '<span class=\"chip c-warn\">Off</span>')+\n",
   "    '</div>';\n",
@@ -9563,23 +9656,17 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function paintPersonSheet(){\n",
   "  var t = S.ctx || {};\n",
+  "  var clear = t.clearance || {};\n",
   "  var h = hero('Trainee record', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
   "\n",
-  "  /* Phase is the spine of the program. Show it big, then the one action that\n",
-  "     moves it — not buried under forms. */\n",
   "  h += '<div class=\"panel\">'+\n",
   "       '<div class=\"lab\">Where they are</div>'+\n",
   "       phaseTrackHtml(t.phase)+\n",
   "       (t.dayInPhase!=null\n",
   "         ? '<div class=\"m\" style=\"margin-top:8px\">Day '+esc(t.dayInPhase)+' in this phase<",
   "/div>'\n",
-  "         : '')+\n",
-  "       (t.releaseReady\n",
-  "         ? '<div class=\"note n-ok\" style=\"margin-top:10px\"><b>Release-ready</b>Phase 4 — w",
-  "hen the program is complete, release them here. Captured with your name and reason.</div>'",
-  "\n",
   "         : '')+\n",
   "       '</div>';\n",
   "\n",
@@ -9588,20 +9675,33 @@ var PORTAL_PAGE_HTML = [
   "    if (t.canAdvance && t.nextPhase){\n",
   "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAdvance()\">'+\n",
   "           '<span class=\"bd\"><span class=\"h\">Advance to '+esc(t.nextPhase)+'</span>'+\n",
-  "           '<span class=\"m\">One click after you type why. Master phase and phase-start dat",
-  "e update together.</span></span>'+\n",
+  "           '<span class=\"m\">Type why. Phase and phase-start date update together.</span></",
+  "span>'+\n",
   "           '<span class=\"go\">&rsaquo;</span></button>';\n",
-  "    } else if (t.releaseReady){\n",
-  "      h += '<div class=\"note n-info\"><b>Phase 4</b>No further phase advance. Clear them fo",
-  "r independent partner duty when the program is complete.</div>';\n",
   "    }\n",
-  "    h += '<button class=\"card act\"'+spine(t.releaseReady?'due':'')+' onclick=\"openRelease(",
-  ")\">'+\n",
-  "         '<span class=\"bd\"><span class=\"h\">Clear '+esc(firstName(t.name)||'trainee')+' for",
-  " the truck</span>'+\n",
-  "         '<span class=\"m\">Successful completion — independent partner. Archives who / when",
-  " / why; drops them from trainee form lists.</span></span>'+\n",
-  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "\n",
+  "    if (t.releaseReady){\n",
+  "      h += '<div class=\"note n-ok\"><b>Ready for the truck</b>'+\n",
+  "           esc(String(clear.signed||0))+' / '+esc(String(clear.total||0))+\n",
+  "           ' skills signed off. Clear them as an independent partner.</div>';\n",
+  "      h += '<button class=\"card act\"'+spine('due')+' onclick=\"openRelease()\">'+\n",
+  "           '<span class=\"bd\"><span class=\"h\">Clear '+esc(firstName(t.name)||'trainee')+' f",
+  "or the truck</span>'+\n",
+  "           '<span class=\"m\">Successful completion — independent partner on a truck.</span>",
+  "</span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    } else if (t.phase4){\n",
+  "      h += '<div class=\"note n-warn\"><b>Not ready for the truck yet</b>Phase 4, but skills",
+  " or sign-offs are still open:</div>';\n",
+  "      (clear.gaps||[]).slice(0,8).forEach(function(g){\n",
+  "        h += '<div class=\"m\" style=\"margin:0 0 6px 2px\">· '+esc(g)+'</div>';\n",
+  "      });\n",
+  "      h += '<div class=\"next\" style=\"margin-top:10px\"><b>Clearance stays closed</b>Finish ",
+  "those first. Field Training will not clear someone who still has open skills.</div>';\n",
+  "    } else if (!t.canAdvance){\n",
+  "      h += '<div class=\"note n-info\"><b>Phase</b>Fix the phase on the master before advanc",
+  "ing or clearing.</div>';\n",
+  "    }\n",
   "  }\n",
   "\n",
   "  /* The card you tapped said why. Losing the reason on the way in is how a\n",
@@ -9717,7 +9817,8 @@ var PORTAL_PAGE_HTML = [
   "function submitRelease(){\n",
   "  if (S.busy) return;\n",
   "  var why = (el('rel-why') && el('rel-why').value || '').trim();\n",
-  "  if (why.length < 8) { alert('Type why you are releasing them.'); return; }\n",
+  "  if (why.length < 8) { alert('Type why they are cleared for independent partner duty.'); ",
+  "return; }\n",
   "  if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner du",
   "ty? This cannot be undone from Field Training.')) return;\n",
   "  S.busy = true;\n",
@@ -10203,7 +10304,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'b3e7d697';
+var PORTAL_BUILD = '13cbd38a';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

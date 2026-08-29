@@ -164,6 +164,14 @@ function seed() {
   queueG.push(['','Priya Okafor','SK-2','','Vascular','','','','','','','OPEN','','QR-2']);
   SHEETS[PORTAL.TAB.QUEUE] = new FakeSheet(PORTAL.TAB.QUEUE, queueG);
 
+  const skillsG = pad();
+  skillsG.push(['TRAINEE','SKILL','STAGE','LAST DATE','LAST FTO','LEVEL','READINESS','SIGN-OFF',
+    'DOMAIN','SKILL ID','SUCCESSFUL REPS','INDEPENDENT REPS','DISTINCT DATES','DISTINCT FTOS']);
+  skillsG.push(['Jamie Rivers','IV access','I','','','Paramedic','SIGNED OFF','SIGNED OFF','','SK-1',5,3,3,2]);
+  skillsG.push(['Priya Okafor','Vascular access','I','','','Advanced EMT','SIGNED OFF','SIGNED OFF','','SK-7',8,5,5,3]);
+  skillsG.push(['Priya Okafor','Airway','A','','','Advanced EMT','IN PROGRESS','','','SK-8',1,0,1,1]);
+  SHEETS[PORTAL.TAB.SKILLS] = new FakeSheet(PORTAL.TAB.SKILLS, skillsG);
+
   SHEETS['PORTAL AUDIT'] = new FakeSheet('PORTAL AUDIT', [['WHEN','WHAT','WHO','DETAIL','VERSION']]);
 
   PORTAL_FORMS.filter(f => !f.retired).forEach(f => {
@@ -205,9 +213,36 @@ section('Advance phase');
   ok(/Phase 4|governance|Release/i.test(err4), 'refuses advancing past Phase 4');
 }
 
+section('Clearance gate');
+{
+  seed();
+  const a = clearanceAssessmentV1_(traineesV1_().filter(t => t.name === 'Priya Okafor')[0]);
+  ok(a.phase4, 'Priya is Phase 4');
+  ok(!a.canClear, 'not clearable while a skill is open');
+  ok(a.gaps.some(g => /Airway|not signed|IN PROGRESS/i.test(g)), 'gaps name the open skill');
+
+  ok(/not ready|Airway|skills/i.test(
+    threw(() => releaseTraineeV1('Priya Okafor',
+      'Trying to clear with open skills on purpose here.'))),
+    'server refuses Clear for the truck when skills remain');
+}
+
 section('Release captures who when why');
 {
   seed();
+  // Sign off the open skill so clearance is honest.
+  const sk = SHEETS[PORTAL.TAB.SKILLS];
+  const row = sk.g.find(r => r[0] === 'Priya Okafor' && r[1] === 'Airway');
+  if (row) { row[6] = 'SIGNED OFF'; row[7] = 'SIGNED OFF'; }
+  forgetTabsV1_();
+  // Cancel her open queue row too
+  const qSheet = SHEETS[PORTAL.TAB.QUEUE];
+  qSheet.g.forEach(r => { if (r[1] === 'Priya Okafor') r[11] = 'RECORDED'; });
+  forgetTabsV1_();
+
+  ok(clearanceAssessmentV1_(traineesV1_().filter(t => t.name === 'Priya Okafor')[0]).canClear,
+     'clearable once skills and queue are done');
+
   const before = traineesV1_().filter(t => !t.closed).length;
   const r = releaseTraineeV1('Priya Okafor',
     'Program complete. Cleared for independent Advanced EMT duty.');
@@ -225,10 +260,10 @@ section('Release captures who when why');
      'archive holds name and reason');
   ok(/chief@example\.org/.test(blob), 'archive holds who released');
 
-  const q = readTabV1_(PORTAL.TAB.QUEUE);
-  const priyaQ = q.rows.filter(row => String(row[q.col['TRAINEE']]) === 'Priya Okafor')[0];
-  ok(/CANCELLED/.test(String(priyaQ[q.col['RECORD STATUS']] || '')),
-     'open skill queue row cancelled');
+  const qTab = readTabV1_(PORTAL.TAB.QUEUE);
+  const priyaQ = qTab.rows.filter(row => String(row[qTab.col['TRAINEE']]) === 'Priya Okafor')[0];
+  ok(priyaQ && !/^OPEN$/i.test(String(priyaQ[qTab.col['RECORD STATUS']] || '')),
+     'her skill queue is no longer OPEN');
 
   const evalForm = FORMS[formByKeyV1_('FTO_EVAL').id];
   const choices = evalForm.items.find(i => i.title === 'Trainee').choices;
@@ -257,9 +292,15 @@ section('UI surface');
   const page = fs.readFileSync(ROOT + '/portal/Index.html', 'utf8');
   ok(/Advance to/.test(page) && /advanceTraineePhaseV1/.test(page),
      'person sheet can advance');
-  ok(/Clear .+ for the truck|independent partner/i.test(page) && /releaseTraineeV1/.test(page),
+  ok(/not ready for the truck|Clear .+ for the truck|independent partner/i.test(page) && /releaseTraineeV1/.test(page),
      'person sheet can release');
-  ok(/Ready to clear/.test(page), 'Waiting on you surfaces Phase 4 clearance');
+  ok(/Ready for the truck/.test(page), 'Waiting on you surfaces truck clearance');
+  ok(/clearance|\.gaps|Not ready for the truck yet/i.test(page),
+     'person sheet names clearance gaps when Phase 4 is incomplete');
+  ok(/File tonight/.test(page) && /urgency === 'due'|urgency==='due'/.test(page),
+     'Tonight leads with File tonight only when overdue');
+  ok(/Bring someone on/.test(page) && /class="more"/.test(page),
+     'enroll is a quiet more-link, not a desk hero');
   ok(/Lifecycle/.test(page), 'lifecycle section is named');
 }
 
