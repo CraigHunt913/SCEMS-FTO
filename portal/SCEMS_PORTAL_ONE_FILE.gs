@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.1.1
- * Build 080f42d5
+ * Build 8dd52fd2
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -9284,8 +9284,8 @@ var PORTAL_PAGE_HTML = [
   "  var lead = list[0];\n",
   "  var leadIdx = d.trainees.indexOf(lead);\n",
   "  if (lead && lead.urgency === 'due'){\n",
-  "    h += '<button class=\"card act\"'+spine('due')+' onclick=\"openTrainee('+leadIdx+')\" styl",
-  "e=\"margin-bottom:14px\">'+\n",
+  "    h += '<button class=\"card act\" onclick=\"openTrainee('+leadIdx+')\"'+\n",
+  "         ' style=\"--accent:var(--stop);margin-bottom:14px\">'+\n",
   "         '<span class=\"bd\"><span class=\"lab\" style=\"margin:0\">File tonight</span>'+\n",
   "         '<span class=\"h\" style=\"font-size:1.35rem\">'+esc(lead.name)+'</span>'+\n",
   "         '<span class=\"m\">'+esc(lead.phase||'')+\n",
@@ -10295,7 +10295,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '080f42d5';
+var PORTAL_BUILD = '8dd52fd2';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
