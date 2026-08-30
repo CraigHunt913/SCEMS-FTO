@@ -405,6 +405,16 @@ function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
+  try { return renderInner_(); }
+  catch (e) {
+    try {
+      paint(hero('Field Training', 'Screen failed', '')+
+        '<div class="note n-stop"><b>Error</b>'+esc((e && e.message) || e)+'</div>'+
+        '<button class="btn" onclick="S.screen=\'main\';S.ctx=null;render()">Back</button>');
+    } catch (e2) {}
+  }
+}
+function renderInner_(){
   /* LIVE is the system doing its job and wants no badge at all. Emptying the
      text was not enough: the chip keeps its border, background and padding, so
      what shipped was a small amber lozenge with nothing written in it, sitting

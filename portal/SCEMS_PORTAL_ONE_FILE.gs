@@ -1,6 +1,6 @@
 /**
  * SCEMS FIELD TRAINING PORTAL — portal-2.3.0
- * Build 54ab80d0
+ * Build 32135fd4
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -9737,6 +9737,17 @@ var PORTAL_PAGE_HTML = [
   "function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }\n",
   "\n",
   "function render(){\n",
+  "  try { return renderInner_(); }\n",
+  "  catch (e) {\n",
+  "    try {\n",
+  "      paint(hero('Field Training', 'Screen failed', '')+\n",
+  "        '<div class=\"note n-stop\"><b>Error</b>'+esc((e && e.message) || e)+'</div>'+\n",
+  "        '<button class=\"btn\" onclick=\"S.screen=\\'main\\';S.ctx=null;render()\">Back</button>",
+  "');\n",
+  "    } catch (e2) {}\n",
+  "  }\n",
+  "}\n",
+  "function renderInner_(){\n",
   "  /* LIVE is the system doing its job and wants no badge at all. Emptying the\n",
   "     text was not enough: the chip keeps its border, background and padding, so\n",
   "     what shipped was a small amber lozenge with nothing written in it, sitting\n",
@@ -11242,7 +11253,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '54ab80d0';
+var PORTAL_BUILD = '32135fd4';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
