@@ -120,8 +120,9 @@ function recordSignoffDecisionV1_(row, reason, requestId, decision) {
 }
 
 /**
- * Approve without READY FOR VALIDATION needs an explicit override in the reason.
- * Judgement stays allowed — it must be typed, not defaulted.
+ * Approve without READY FOR VALIDATION needs an explicit override in the reason —
+ * unless the matrix bars (or the evidence log) already meet the bar. Stale
+ * readiness from a stuck tracker rebuild must not trap Division.
  */
 function portalEvidenceGateV1_(decision, trainee, skill, skillId, rationale) {
   if (decision !== 'Approve sign-off') return '';
@@ -138,9 +139,109 @@ function portalEvidenceGateV1_(decision, trainee, skill, skillId, rationale) {
   if (!hit) return '';
   if (hit.signed) return '';
   if (/READY FOR VALIDATION/i.test(hit.readiness || '')) return '';
+  if (skillBarsMetV1_(hit)) return '';
+  var fromLog = evidenceCountsForSkillV1_(trainee, skill, skillId);
+  if (fromLog && skillCountsMeetBarsV1_(fromLog, hit.bars)) return '';
   return 'The matrix does not call this READY FOR VALIDATION (it reads "' +
-    (hit.readiness || 'blank') + '"). Type ' + PORTAL_OVERRIDE_MARKER +
-    ' in your reason if you are overruling it. Nothing was written.';
+    (hit.readiness || 'blank') + '"). Run Sync matrix from evidence first, or type ' +
+    PORTAL_OVERRIDE_MARKER + ' in your reason if you are overruling it. Nothing was written.';
+}
+
+function skillBarsMetV1_(hit) {
+  var bars = (hit && hit.bars) || [];
+  if (!bars.length) return false;
+  for (var i = 0; i < bars.length; i++) {
+    if (Number(bars[i].have || 0) < Number(bars[i].need || 0)) return false;
+  }
+  return true;
+}
+
+function skillCountsMeetBarsV1_(counts, bars) {
+  if (!counts || !bars || !bars.length) return false;
+  var map = {
+    Successful: counts.successful,
+    Independent: counts.independent,
+    Dates: counts.distinctDates,
+    FTOs: counts.distinctFtos
+  };
+  for (var i = 0; i < bars.length; i++) {
+    var have = map[bars[i].label];
+    if (have == null) have = 0;
+    if (Number(have) < Number(bars[i].need || 0)) return false;
+  }
+  return true;
+}
+
+/** Event date on the evidence log — live tabs use SHIFT DATE / TIMESTAMP. */
+function evidenceEventDateV1_(ev, r) {
+  var cols = ['SHIFT DATE', 'EVENT DATE', 'DATE', 'TIMESTAMP'];
+  for (var i = 0; i < cols.length; i++) {
+    if (ev.col[cols[i]] === undefined) continue;
+    var d = asDateV1_(r[ev.col[cols[i]]]);
+    if (d) return d;
+  }
+  return null;
+}
+
+function evidenceAcceptedV1_(r, ev) {
+  if (ev.col['VALIDATION RESULT'] === undefined) return true;
+  var v = String(r[ev.col['VALIDATION RESULT']] || '').trim();
+  if (!v) return true;
+  return v === 'ACCEPTED' || v.indexOf('LEGACY IMPORT') === 0;
+}
+
+/**
+ * Aggregate successful evidence for one trainee + skill from the log.
+ * Mirrors the tracker's matrix counters enough for desk sync / gates.
+ */
+function evidenceCountsForSkillV1_(trainee, skill, skillId) {
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (!ev.ok || ev.col['TRAINEE'] === undefined) return null;
+  var tn = normNameV1_(trainee);
+  var sk = normNameV1_(skill);
+  var sid = String(skillId || '').trim();
+  var successful = [];
+  ev.rows.forEach(function (r) {
+    if (normNameV1_(r[ev.col['TRAINEE']]) !== tn) return;
+    if (!evidenceAcceptedV1_(r, ev)) return;
+    var idHit = sid && ev.col['SKILL ID'] !== undefined &&
+      String(r[ev.col['SKILL ID']] || '').trim() === sid;
+    var nameHit = ev.col['SKILL'] !== undefined &&
+      normNameV1_(r[ev.col['SKILL']]) === sk;
+    if (!idHit && !nameHit) return;
+    var outcome = ev.col['OUTCOME'] !== undefined
+      ? String(r[ev.col['OUTCOME']] || '').trim() : 'Successful';
+    if (outcome && outcome !== 'Successful') return;
+    var stage = ev.col['STAGE'] !== undefined
+      ? String(r[ev.col['STAGE']] || '').trim().toUpperCase() : 'P';
+    if (stage && stage !== 'P' && stage !== 'I') return;
+    successful.push({
+      stage: stage || 'P',
+      when: evidenceEventDateV1_(ev, r),
+      fto: ev.col['FTO'] !== undefined ? String(r[ev.col['FTO']] || '').trim() : ''
+    });
+  });
+  if (!successful.length) return { successful: 0, independent: 0, distinctDates: 0, distinctFtos: 0, lastDate: null, stage: '' };
+  var dates = {}, ftos = {}, indep = 0, stage = '', last = null;
+  successful.forEach(function (e) {
+    if (e.stage === 'I') indep++;
+    if (e.stage === 'I' || e.stage === 'P') {
+      if (!stage || (e.stage === 'I' && stage !== 'I')) stage = e.stage;
+    }
+    if (e.when) {
+      dates[e.when.toDateString()] = true;
+      if (!last || e.when > last) last = e.when;
+    }
+    if (e.fto) ftos[normNameV1_(e.fto)] = true;
+  });
+  return {
+    successful: successful.length,
+    independent: indep,
+    distinctDates: Object.keys(dates).length,
+    distinctFtos: Object.keys(ftos).length,
+    lastDate: last,
+    stage: stage
+  };
 }
 
 function ensureSignoffLogV1_() {
@@ -566,5 +667,116 @@ function refreshValidationQueueV1() {
     message: added
       ? ('Added ' + added + ' OPEN row' + (added === 1 ? '' : 's') + ' from the matrix.')
       : 'Queue already has every READY skill. Nothing added.'
+  };
+}
+
+/**
+ * When the tracker matrix is stale but skills are on the evidence log, recount
+ * each matrix row from the log and flip readiness to READY FOR VALIDATION when
+ * the bars are met. Does not wipe or rebuild the matrix. Optionally refreshes
+ * the OPEN queue afterward.
+ */
+function syncMatrixFromEvidenceV1() {
+  requireWritableV1_('sync the skills matrix from the evidence log');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may sync the matrix from evidence.');
+  }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (!matrix.ok) throw new Error('No skills matrix.');
+  if (!ev.ok) throw new Error('No evidence log.');
+  if (matrix.col['TRAINEE'] === undefined) {
+    throw new Error('The matrix is missing TRAINEE. Nothing was written.');
+  }
+
+  var updated = 0, markedReady = 0;
+  matrix.rows.forEach(function (r, i) {
+    var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
+    if (!trainee) return;
+    var readiness = matrix.col['READINESS'] !== undefined
+      ? String(r[matrix.col['READINESS']] || '').trim() : '';
+    var signoff = matrix.col['SIGN-OFF'] !== undefined
+      ? String(r[matrix.col['SIGN-OFF']] || '').trim() : '';
+    if (signoff === 'SIGNED OFF' || readiness === 'SIGNED OFF') return;
+
+    var skill = matrix.col['SKILL'] !== undefined
+      ? String(r[matrix.col['SKILL']] || '').trim() : '';
+    var skillId = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    if (!skill && !skillId) return;
+
+    var counts = evidenceCountsForSkillV1_(trainee, skill, skillId);
+    if (!counts || !counts.successful) return;
+
+    var row = matrix.firstDataRow + i;
+    var wrote = false;
+    function setCol(name, value) {
+      if (matrix.col[name] === undefined) return;
+      var cur = r[matrix.col[name]];
+      if (String(cur) === String(value)) return;
+      matrix.sheet.getRange(row, matrix.col[name] + 1).setValue(value);
+      r[matrix.col[name]] = value;
+      wrote = true;
+    }
+    setCol('SUCCESSFUL REPS', counts.successful);
+    setCol('INDEPENDENT REPS', counts.independent);
+    setCol('DISTINCT DATES', counts.distinctDates);
+    setCol('DISTINCT FTOS', counts.distinctFtos);
+    if (counts.lastDate) setCol('LAST DATE', counts.lastDate);
+    if (counts.stage) setCol('STAGE', counts.stage);
+
+    var needS = cellNumV1_(r, matrix, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL'], 3) || 3;
+    var needI = cellNumV1_(r, matrix, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT'], 2) || 2;
+    var needD = cellNumV1_(r, matrix, ['NEED DATES', 'REQUIRED DATES'], 2) || 2;
+    var needF = cellNumV1_(r, matrix, ['NEED FTOS', 'REQUIRED FTOS'], 2) || 2;
+    // Live matrix often lacks NEED_* columns — use the same defaults as skillsForV1_.
+    if (matrix.col['NEED SUCCESSFUL'] === undefined &&
+        matrix.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = 3; needI = 2; needD = 2; needF = 2;
+    }
+
+    var met = counts.successful >= needS &&
+      counts.independent >= needI &&
+      counts.distinctDates >= needD &&
+      counts.distinctFtos >= needF;
+    if (met && matrix.col['READINESS'] !== undefined &&
+        readiness !== 'READY FOR VALIDATION' &&
+        readiness !== 'SIGNED OFF - REVIEW REQUIRED' &&
+        readiness !== 'LEGACY SIGN-OFF REVIEW REQUIRED') {
+      setCol('READINESS', 'READY FOR VALIDATION');
+      markedReady++;
+    }
+    if (wrote) updated++;
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var queueMsg = '';
+  var added = 0;
+  try {
+    var q = refreshValidationQueueV1();
+    added = q && q.added ? q.added : 0;
+    queueMsg = q && q.message ? q.message : '';
+  } catch (eQ) {
+    queueMsg = 'Queue refresh skipped: ' + String(eQ.message || eQ);
+  }
+
+  auditV1_('MATRIX SYNC FROM EVIDENCE', viewer.email,
+    updated + ' row(s) updated, ' + markedReady + ' marked READY, queue +' + added);
+
+  return {
+    ok: true,
+    updated: updated,
+    markedReady: markedReady,
+    queueAdded: added,
+    message: updated
+      ? ('Updated ' + updated + ' matrix row' + (updated === 1 ? '' : 's') +
+         ' from the evidence log' +
+         (markedReady ? ('; marked ' + markedReady + ' READY') : '') +
+         '. ' + queueMsg)
+      : ('No matrix rows needed a recount from the evidence log. ' + queueMsg)
   };
 }

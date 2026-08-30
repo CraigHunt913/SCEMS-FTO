@@ -2,7 +2,7 @@
 
 **File:** [`portal/SCEMS_PORTAL_ONE_FILE.gs`](./SCEMS_PORTAL_ONE_FILE.gs)
 
-**Current version:** look for `VERSION: 'portal-2.5.0'` near the top (or run `portalPasteCheck` after paste).
+**Current version:** look for `VERSION: 'portal-2.6.0'` near the top (or run `portalPasteCheck` after paste).
 
 ## GitHub (easiest)
 
@@ -19,6 +19,13 @@ https://raw.githubusercontent.com/CraigHunt913/SCEMS-FTO/cursor/the-line-product
 ## After paste
 
 - Already **LIVE** and authorized → New version only  
-- Run `portalPasteCheck` — must say `portal-2.5.0` and paste complete  
+- Run `portalPasteCheck` — must say `portal-2.6.0` and paste complete  
 
 Do **not** look on `main` / the base branch for this file tip — the portal one-file for this work lives on **`cursor/the-line-product-adde`**.
+
+## If skills are logged but will not clear
+
+On Division Home:
+1. **Sync matrix from evidence** — recounts the matrix from the log, marks READY when bars are met, refreshes the sign-off queue  
+2. **Skills log & forms waiting** → open → **Clear from Waiting on you** (reason required)  
+3. Sign-off queue → **Decide** / Approve  

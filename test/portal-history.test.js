@@ -475,6 +475,37 @@ const notReady = qData.filter(r => /NOT READY/i.test(String(r[5] || '')) ||
 ok(notReady.length === 0, 'NOT READY FOR VALIDATION never becomes an OPEN row');
 
 // ---------------------------------------------------------------- //
+section('Sync matrix from evidence when the tracker left readiness stale');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE','STAGE'],
+  [['Jamie Rivers','Intubation','SK-2','IN PROGRESS','',0,0,0,0,'Airway','','']]);
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  []);
+tab(PORTAL.TAB.EVIDENCE,
+  ['SHIFT DATE','TRAINEE','FTO','SKILL ID','SKILL','STAGE','OUTCOME','VALIDATION RESULT','SOURCE RESPONSE ID'],
+  [[D('2026-08-10'),'Jamie Rivers','Dana Whitlock','SK-2','Intubation','I','Successful','ACCEPTED','R-a'],
+   [D('2026-08-12'),'Jamie Rivers','Dana Whitlock','SK-2','Intubation','I','Successful','ACCEPTED','R-b'],
+   [D('2026-08-14'),'Jamie Rivers','Alex FTO','SK-2','Intubation','P','Successful','ACCEPTED','R-c'],
+   [D('2026-08-16'),'Jamie Rivers','Alex FTO','SK-2','Intubation','I','Successful','ACCEPTED','R-d']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const synced = syncMatrixFromEvidenceV1();
+ok(synced.ok === true && synced.updated >= 1, 'sync updates the matrix from the log: ' + JSON.stringify(synced));
+ok(synced.markedReady >= 1, 'and marks the skill READY when bars are met');
+const mRow = SHEETS[PORTAL.TAB.SKILLS].g[HR];
+ok(String(mRow[3]) === 'READY FOR VALIDATION', 'readiness is READY FOR VALIDATION: ' + mRow[3]);
+ok(Number(mRow[5]) >= 3, 'successful reps recounted: ' + mRow[5]);
+ok(synced.queueAdded >= 1, 'OPEN queue row is added after sync');
+ok(!portalEvidenceGateV1_('Approve sign-off', 'Jamie Rivers', 'Intubation', 'SK-2',
+  'Evidence thresholds met after sync.'),
+  'approve gate allows when bars/evidence met even before a reload of READY');
+
+// ---------------------------------------------------------------- //
 section('Six tabs are read once, not once per person');
 // ---------------------------------------------------------------- //
 world();

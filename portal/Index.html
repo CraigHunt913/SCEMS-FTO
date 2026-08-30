@@ -909,7 +909,9 @@ function paintDivision(d){
   }
 
   if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
-    h += '<button class="more" style="margin-top:14px" onclick="refreshQueue()">'+
+    h += '<button class="more" style="margin-top:14px" onclick="syncMatrixEvidence()">'+
+         'Sync matrix from evidence — logged skills stuck IN PROGRESS</button>';
+    h += '<button class="more" style="margin-top:8px" onclick="refreshQueue()">'+
          'Refresh queue from matrix — READY skills missing from OPEN</button>';
   }
 
@@ -1582,6 +1584,20 @@ function refreshQueue(){
     .refreshValidationQueueV1();
 }
 
+function syncMatrixEvidence(){
+  if (S.busy) return;
+  if (!confirm('Recount the skills matrix from the evidence log, mark skills READY when the bars are met, then refresh the sign-off queue?')) return;
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Done.');
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .syncMatrixFromEvidenceV1();
+}
+
 function openFormWait(i){
   var list = (BOOT.data && BOOT.data.formWaiting && BOOT.data.formWaiting.list) || [];
   var item = list[i];
@@ -1615,10 +1631,12 @@ function paintFormWait(){
     p.trainee || 'Unnamed trainee',
     (p.when || p.stamp || 'no date')+(p.by ? ' · '+esc(p.by) : ''))+back;
   if (p.inLog){
-    h += '<div class="note n-ok"><b>Already in the evidence log</b>Matching trainee and date (or response id) are on file.</div>';
+    h += '<div class="note n-ok"><b>Matched in the evidence log</b>This response id is already on file. You can still clear it from the desk.</div>';
+  } else if (p.dayHint){
+    h += '<div class="note n-warn"><b>Same day has evidence</b>Something for this trainee is on the log that day, but this response id is not linked. Clear from the desk, or Sync matrix from evidence on Home if skills are stuck.</div>';
   } else {
     h += '<div class="note n-warn"><b>Waiting on ingest</b>Still only on the form-response tab. '+
-         'Run <b>catchUpUnprocessed</b> in the tracker project if the form trigger did not fire.</div>';
+         'Clear it here, or run <b>catchUpUnprocessed</b> in the tracker if ingest never fired.</div>';
   }
   h += '<div class="panel"><div class="lab">Tab</div><div style="font-size:.93rem">'+esc(p.tab)+
        ' · row '+esc(String(p.row))+'</div></div>';
@@ -1630,7 +1648,7 @@ function paintFormWait(){
     h += '<button class="btn" style="margin-top:16px" onclick="openRecord('+jsStr(p.trainee)+')">'+
          'Open personnel record</button>';
   }
-  if (canWrite() && !p.inLog && !p.deskCleared){
+  if (canWrite() && !p.deskCleared){
     h += '<div class="panel" style="margin-top:14px"><div class="lab">Clear from this desk (required)</div>'+
          '<textarea id="formReviewWhy" placeholder="Why this can leave Waiting on you. Does not ingest or delete the form response."></textarea></div>'+
          '<button class="btn" onclick="clearFormWait()">Clear from Waiting on you</button>';

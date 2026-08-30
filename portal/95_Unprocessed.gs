@@ -88,7 +88,8 @@ function unprocessedResponses() {
     lines.push('=======================================================');
     if (!t.total) { lines.push('  nothing in it'); lines.push(''); return; }
     (t.responses || []).forEach(function (r) {
-      lines.push('  ' + (r.inLog ? 'in the log ' : 'WAITING    ') +
+      var tag = r.inLog ? 'in the log ' : (r.dayHint ? 'day hint  ' : 'WAITING    ');
+      lines.push('  ' + tag +
         (r.when || 'no date') + '   ' +
         (r.trainee || '(no trainee named)') +
         (r.by ? '   by ' + r.by : '') +
@@ -107,9 +108,11 @@ function unprocessedResponses() {
   lines.push('that turns a response into a row in the evidence log, which is the');
   lines.push('tracker\'s own ingestion job and not something this portal does.');
   lines.push('');
-  lines.push('"WAITING" here means no evidence row shares that trainee and date');
-  lines.push('(or the same source response id, when one is on file).');
-  lines.push('It is a strong hint, not a proof - check before acting on it.');
+  lines.push('"in the log" means the same source response id is on the evidence log.');
+  lines.push('"day hint" means the same trainee has evidence that day — a strong hint,');
+  lines.push('not a proof that this specific response was ingested.');
+  lines.push('"WAITING" means neither. Clear from Field Training Home, or Sync matrix');
+  lines.push('from evidence when skills are logged but the matrix is stuck.');
   return noteV1_(lines.join('\n'));
 }
 
@@ -124,7 +127,7 @@ function waitingFormResponsesV1_() {
   if (ev.ok) {
     ev.rows.forEach(function (r) {
       var who = String(r[ev.col['TRAINEE']] || '').trim();
-      var when = asDateV1_(r[ev.col['EVENT DATE']] || r[ev.col['DATE']]);
+      var when = evidenceEventDateV1_(ev, r);
       if (who && when) knownDate[normNameV1_(who) + '|' + when.toDateString()] = true;
       var sid = '';
       if (ev.col['SOURCE RESPONSE ID'] !== undefined) {
@@ -153,8 +156,11 @@ function waitingFormResponsesV1_() {
       var email = iMail >= 0 ? String(r[iMail] || '').trim() : '';
       var sheetRow = i + 2; // header on row 1
       var responseId = formResponseIdGuessV1_(t, r);
-      var inLog = !!(responseId && knownId[responseId]) ||
-        !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
+      // Response-id match is authoritative. Same-day trainee match is only a
+      // hint — one skill logged that day must not hide every other form.
+      var idInLog = !!(responseId && knownId[responseId]);
+      var dayHint = !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
+      var inLog = idInLog;
       var deskCleared = !!reviewed[t.name + '|' + sheetRow];
       if (!inLog && !deskCleared) {
         waiting++;
@@ -169,6 +175,7 @@ function waitingFormResponsesV1_() {
         when: when ? when.toDateString() : '',
         stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
         inLog: inLog,
+        dayHint: dayHint,
         deskCleared: deskCleared,
         kind: kind,
         responseId: responseId || ''
@@ -345,6 +352,7 @@ function formResponseDetailV1_(tabName, sheetRow) {
   var trainee = iWho >= 0 ? String(r[iWho] || '').trim() : '';
   var responseId = formResponseIdGuessV1_(hit, r);
   var inLog = false;
+  var dayHint = false;
   var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
   if (ev.ok) {
     if (responseId && ev.col['SOURCE RESPONSE ID'] !== undefined) {
@@ -352,10 +360,10 @@ function formResponseDetailV1_(tabName, sheetRow) {
         return String(er[ev.col['SOURCE RESPONSE ID']] || '').trim() === responseId;
       });
     }
-    if (!inLog && trainee && when) {
+    if (trainee && when) {
       var day = when.toDateString();
-      inLog = ev.rows.some(function (er) {
-        var d = asDateV1_(er[ev.col['EVENT DATE']] || er[ev.col['DATE']]);
+      dayHint = ev.rows.some(function (er) {
+        var d = evidenceEventDateV1_(ev, er);
         return normNameV1_(er[ev.col['TRAINEE']]) === normNameV1_(trainee) &&
           d && d.toDateString() === day;
       });
@@ -372,10 +380,12 @@ function formResponseDetailV1_(tabName, sheetRow) {
     when: when ? when.toDateString() : '',
     stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
     inLog: inLog,
+    dayHint: dayHint,
     deskCleared: !!reviewedFormKeysV1_()[name + '|' + rowNum],
     fields: fields.slice(0, 40),
     note: 'Read only. Ingest into ' + PORTAL.TAB.EVIDENCE +
-      ' still runs in the tracker (catchUpUnprocessed / form trigger).'
+      ' still runs in the tracker (catchUpUnprocessed / form trigger). ' +
+      'If skills are on the log but the matrix is stuck, use Sync matrix from evidence on Home.'
   };
 }
 

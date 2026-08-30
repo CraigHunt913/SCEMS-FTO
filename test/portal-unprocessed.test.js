@@ -248,12 +248,12 @@ let before = snap();
 let rep = unprocessedResponses();
 ok(/UNPROCESSED FORM RESPONSES/.test(rep), 'it reports');
 ok(/Form Responses 1/.test(rep) && /3 responses/.test(rep), 'naming each tab and its count');
-ok(/in the log .*Annika Skye/.test(rep),
-   'a response with an evidence row on the same day and trainee is marked as in the log');
+ok(/day hint .*Annika Skye/.test(rep),
+   'a response with an evidence row on the same day (no response id) is a day hint');
 ok(/WAITING    .*Elena Marchetti/.test(rep), 'and one without is marked WAITING');
-ok(/2 with nothing matching them/.test(rep), 'with a total that counts only the waiting ones');
+ok(/3 with nothing matching them/.test(rep), 'day hints still count as waiting until response-id match');
 ok(/These are NOT lost/.test(rep), 'it says outright that the answers are present');
-ok(/strong hint, not a proof/.test(rep),
+ok(/strong hint/.test(rep),
    'and does not overclaim - matching on trainee and date is a hint');
 ok(snap() === before, 'and it wrote nothing');
 
@@ -480,14 +480,14 @@ section('Division can list and open waiting responses from Field Training');
 world();
 as('chief@example.org');
 const wait = waitingFormResponsesV1_();
-ok(wait.waiting === 2, 'Annika’s Aug 12 is in the log; two others wait: ' + wait.waiting);
-ok(wait.waitingList.length === 2, 'waitingList carries those two');
+ok(wait.waiting === 3, 'without response ids, same-day evidence is only a hint — all three wait: ' + wait.waiting);
+ok(wait.waitingList.length === 3, 'waitingList carries those three');
 ok(wait.waitingList.every(r => r.tab && r.row >= 2), 'each has a tab and sheet row');
 
 const detail = formResponseDetailV1(wait.waitingList[0].tab, wait.waitingList[0].row);
 ok(detail.trainee === wait.waitingList[0].trainee, 'detail names the trainee');
 ok(detail.fields.length >= 1, 'and shows the answered fields');
-ok(detail.inLog === false, 'waiting rows are not marked in-log');
+ok(detail.inLog === false, 'waiting rows are not marked in-log without a response id');
 ok(/tracker/i.test(detail.note), 'and says ingest still belongs to the tracker');
 
 as('dana@example.org');
@@ -497,9 +497,22 @@ ok(/Only the Training Division/.test(threw(() =>
 
 world();
 as('chief@example.org');
-const inLog = formResponseDetailV1('Form Responses 1', 2); // Annika Aug 12 row
+const dayHint = formResponseDetailV1('Form Responses 1', 2); // Annika Aug 12 row
+ok(dayHint.trainee === 'Annika Skye' && dayHint.dayHint === true && dayHint.inLog === false,
+   'same-day evidence is a day hint, not an authoritative in-log match');
+
+world();
+as('chief@example.org');
+// Authoritative in-log: put the response id on the form tab and evidence.
+responseTab('Form Responses 1',
+  ['Timestamp','Email Address','FTO name','Trainee','Shift date','Response ID','Q1','Q2'],
+  [[D('2026-08-13'),'oddhandle00064@example.org','Stephen Porth','Annika Skye',D('2026-08-12'),'R-1','Yes','']]);
+tab(PORTAL.TAB.EVIDENCE,
+  ['EVENT DATE','TRAINEE','FTO','SKILL','NOTE','SOURCE RESPONSE ID'],
+  [[D('2026-08-12'),'Annika Skye','Stephen Porth','Intubation','','R-1']]);
+const inLog = formResponseDetailV1('Form Responses 1', 2);
 ok(inLog.trainee === 'Annika Skye' && inLog.inLog === true,
-   'a response that matches evidence is marked in the log');
+   'a response that matches evidence by response id is marked in the log');
 
 world();
 as('chief@example.org');
