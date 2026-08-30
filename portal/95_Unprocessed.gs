@@ -135,6 +135,7 @@ function waitingFormResponsesV1_() {
   }
 
   var outTabs = [], total = 0, waiting = 0, skillsWaiting = 0;
+  var reviewed = reviewedFormKeysV1_();
   tabs.forEach(function (t) {
     var iWho  = responseColV1_(t, [/^trainee/i]);
     var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
@@ -154,7 +155,8 @@ function waitingFormResponsesV1_() {
       var responseId = formResponseIdGuessV1_(t, r);
       var inLog = !!(responseId && knownId[responseId]) ||
         !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
-      if (!inLog) {
+      var deskCleared = !!reviewed[t.name + '|' + sheetRow];
+      if (!inLog && !deskCleared) {
         waiting++;
         if (kind === 'skills') skillsWaiting++;
       }
@@ -167,6 +169,7 @@ function waitingFormResponsesV1_() {
         when: when ? when.toDateString() : '',
         stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
         inLog: inLog,
+        deskCleared: deskCleared,
         kind: kind,
         responseId: responseId || ''
       });
@@ -176,7 +179,7 @@ function waitingFormResponsesV1_() {
       kind: kind,
       total: t.rows.length,
       questions: t.headers.filter(String).length,
-      waiting: responses.filter(function (x) { return !x.inLog; }).length,
+      waiting: responses.filter(function (x) { return !x.inLog && !x.deskCleared; }).length,
       responses: responses
     });
   });
@@ -184,7 +187,7 @@ function waitingFormResponsesV1_() {
   var waitingList = [];
   outTabs.forEach(function (t) {
     t.responses.forEach(function (r) {
-      if (!r.inLog) waitingList.push(r);
+      if (!r.inLog && !r.deskCleared) waitingList.push(r);
     });
   });
   // Newest first when we have a date string we can sort loosely
@@ -199,6 +202,83 @@ function waitingFormResponsesV1_() {
     skillsWaiting: skillsWaiting,
     waitingList: waitingList.slice(0, 40)
   };
+}
+
+/** Keys Division has already reviewed so Waiting on you stops nagging. */
+function reviewedFormKeysV1_() {
+  var out = {};
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) return out;
+  t.rows.forEach(function (r) {
+    var tab = String(r[t.col['TAB']] || '').trim();
+    var row = String(r[t.col['ROW']] || '').trim();
+    if (!tab || !row) return;
+    out[tab + '|' + row] = true;
+  });
+  return out;
+}
+
+function ensureFormReviewsLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName('PORTAL FORM REVIEWS')) return true;
+    var sh = book.insertSheet('PORTAL FORM REVIEWS');
+    sh.getRange(1, 1).setValue(
+      'Form responses Division reviewed from Field Training. Raw tabs stay.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 7).setValues([[
+      'WHEN', 'TAB', 'ROW', 'TRAINEE', 'BY', 'REASON', 'VERSION'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Clear a waiting form response from the Division desk without ingesting it.
+ * The Form Responses tab is untouched. Tracker ingest remains separate.
+ */
+function reviewFormResponseV1(tabName, sheetRow, reason) {
+  requireWritableV1_('review a form response');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may clear a waiting form response from the desk.');
+  }
+  var tab = String(tabName || '').trim();
+  var row = String(sheetRow == null ? '' : sheetRow).trim();
+  var why = String(reason || '').trim();
+  if (!tab || !row || row === '0') throw new Error('Missing response identity.');
+  if (why.length < 8) {
+    throw new Error('Type why you are clearing this from the desk. It goes on the record.');
+  }
+  if (reviewedFormKeysV1_()[tab + '|' + row]) {
+    return { ok: true, message: 'Already cleared from the desk.' };
+  }
+  // Confirm the row still exists
+  formResponseDetailV1_(tab, Number(row));
+
+  if (!ensureFormReviewsLogV1_()) {
+    throw new Error('Could not open or create PORTAL FORM REVIEWS. Nothing was written.');
+  }
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) throw new Error('No form-reviews log.');
+  var detail = formResponseDetailV1_(tab, Number(row));
+  var line = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'WHEN') return new Date();
+    if (H === 'TAB') return tab;
+    if (H === 'ROW') return row;
+    if (H === 'TRAINEE') return detail.trainee || '';
+    if (H === 'BY') return viewer.email;
+    if (H === 'REASON') return clean_(why);
+    if (H === 'VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(line);
+  forgetTabsV1_();
+  auditV1_('FORM RESPONSE REVIEWED', viewer.email, tab + ' | row ' + row + ' | ' + why.slice(0, 100));
+  return { ok: true, message: 'Cleared from Waiting on you. The form-response tab is unchanged.' };
 }
 
 /** Skills-grid response tabs tend to carry many skill/stage columns. */
@@ -227,6 +307,10 @@ function formResponseDetailV1(tabName, sheetRow) {
   if (viewer.role !== PORTAL.ROLE.DIVISION) {
     throw new Error('Only the Training Division may open raw form responses here.');
   }
+  return formResponseDetailV1_(tabName, sheetRow);
+}
+
+function formResponseDetailV1_(tabName, sheetRow) {
   var name = String(tabName || '').trim();
   var rowNum = Number(sheetRow);
   if (!name || !(rowNum >= 2)) throw new Error('Missing response identity. Reload and try again.');
@@ -288,6 +372,7 @@ function formResponseDetailV1(tabName, sheetRow) {
     when: when ? when.toDateString() : '',
     stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
     inLog: inLog,
+    deskCleared: !!reviewedFormKeysV1_()[name + '|' + rowNum],
     fields: fields.slice(0, 40),
     note: 'Read only. Ingest into ' + PORTAL.TAB.EVIDENCE +
       ' still runs in the tracker (catchUpUnprocessed / form trigger).'

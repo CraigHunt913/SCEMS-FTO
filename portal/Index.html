@@ -403,6 +403,11 @@ function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }
 function pickRecord(v){ if (v === '') return; openRecord(v); }
 function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }
 function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }
+function pickClosedReport(v){
+  if (v === '') return;
+  var t = (BOOT.data.closedPeople || [])[Number(v)];
+  if (t) openTraineeReport(t.name);
+}
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
@@ -839,6 +844,7 @@ function paintDivision(d){
 
   if (flagged.length){
     h += sec('Next moves', flagged.length);
+    h += '<p class="sub" style="margin-bottom:9px">Open each one — assign an FTO, fix the record, or hold it with your words so it leaves this list.</p>';
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
 
@@ -882,13 +888,24 @@ function paintDivision(d){
     h += sec('Skills log & forms waiting', fw.waiting);
     h += '<p class="sub" style="margin-bottom:9px">'+
          (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+
-         'In the spreadsheet, not yet in the evidence log. Tracker still ingests — Field Training lets you read them.</p>';
+         'Open → clear from this desk (with a reason) or leave for tracker ingest.</p>';
     h += picker('pick-formwait', fw.waiting+' waiting\u2026', (fw.list||[]).map(function(x,i){
       return { value: String(i),
                label: (x.kind==='skills'?'Skills · ':'') + (x.trainee || 'unnamed') +
                       ' \u2014 ' + (x.when || x.stamp || 'no date') +
                       (x.by ? ' \u00b7 ' + x.by : '') };
     }), 'pickFormWait');
+  }
+
+  var closed = d.closedPeople || [];
+  if (closed.length){
+    h += sec('Released — prior reports', closed.length);
+    h += '<p class="sub" style="margin-bottom:9px">Pull a printable report (Save as PDF from the print dialog).</p>';
+    h += picker('pick-closed', 'Report for a released trainee\u2026', closed.map(function(t,i){
+      return { value: String(i),
+               label: t.name + ' \u2014 ' + (t.status || 'Closed') +
+                      (t.level ? ' \u00b7 ' + t.level : '') };
+    }), 'pickClosedReport');
   }
 
   if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
@@ -1130,6 +1147,9 @@ function paintPersonSheet(){
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
+
+  h += '<button class="btn ghost" style="margin-top:10px" onclick="openTraineeReport('+jsStr(t.name)+')">'+
+       'Print / save PDF report</button>';
 
   if (t.skills && t.skills.length){
     var withDiv = [], building = [], signed = [];
@@ -1610,8 +1630,46 @@ function paintFormWait(){
     h += '<button class="btn" style="margin-top:16px" onclick="openRecord('+jsStr(p.trainee)+')">'+
          'Open personnel record</button>';
   }
+  if (canWrite() && !p.inLog && !p.deskCleared){
+    h += '<div class="panel" style="margin-top:14px"><div class="lab">Clear from this desk (required)</div>'+
+         '<textarea id="formReviewWhy" placeholder="Why this can leave Waiting on you. Does not ingest or delete the form response."></textarea></div>'+
+         '<button class="btn" onclick="clearFormWait()">Clear from Waiting on you</button>';
+  }
   h += '<div class="next"><b>What this is</b>'+esc(p.note||'')+'</div>';
   paint(h);
+}
+
+function clearFormWait(){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var p = c.form || c.formMeta;
+  if (!p) return;
+  var why = (el('formReviewWhy') && el('formReviewWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why you are clearing this from the desk.'); return; }
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Cleared.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .reviewFormResponseV1(p.tab, p.row, why);
+}
+
+function openTraineeReport(name){
+  if (!name) return;
+  google.script.run
+    .withSuccessHandler(function(html){
+      var w = window.open('', '_blank');
+      if (!w){ alert('Allow pop-ups to open the report, then Print → Save as PDF.'); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    })
+    .withFailureHandler(function(e){ alert(e.message || e); })
+    .traineeReportHtmlV1(name);
 }
 
 function openSettle(i){

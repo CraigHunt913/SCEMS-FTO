@@ -26,7 +26,7 @@ const MAX_CHUNK = 90;
 
 const ORDER = ['00_Config', '01_Start', '10_Identity', '20_Data', '30_WebApp', '40_Forms',
                '50_Production', '60_History', '70_Backfill', '80_Import', '85_Merge', '87_Settle',
-               '90_Staging', '91_Record', '92_Lifecycle', '93_Acknowledge', '94_Assign',
+               '88_Report', '90_Staging', '91_Record', '92_Lifecycle', '93_Acknowledge', '94_Assign',
                '95_Unprocessed', '96_Roster', '97_Rename', '98_Retire', '99_AddFto', '99_AddTrainee'];
 
 function rule(title) {

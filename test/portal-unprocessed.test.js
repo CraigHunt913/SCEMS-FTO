@@ -124,7 +124,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','88_Report','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -500,6 +500,24 @@ as('chief@example.org');
 const inLog = formResponseDetailV1('Form Responses 1', 2); // Annika Aug 12 row
 ok(inLog.trainee === 'Annika Skye' && inLog.inLog === true,
    'a response that matches evidence is marked in the log');
+
+world();
+as('chief@example.org');
+PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
+const wait2 = waitingFormResponsesV1_();
+const w0 = wait2.waitingList[0];
+const cleared = reviewFormResponseV1(w0.tab, w0.row,
+  'Already handled in tracker — clear from the desk only.');
+ok(cleared.ok === true, 'Division can clear a waiting response from the desk');
+ok(waitingFormResponsesV1_().waiting === wait2.waiting - 1,
+   'and it leaves the waiting list without deleting the form tab');
+
+world();
+as('chief@example.org');
+const html = traineeReportHtmlV1('Annika Skye');
+ok(/Field Training report/.test(html) && /Annika Skye/.test(html),
+   'Division can pull a printable report');
+ok(/Print \/ Save as PDF/.test(html), 'report offers print-to-PDF');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

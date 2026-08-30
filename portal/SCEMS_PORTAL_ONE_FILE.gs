@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.4.0
- * Build 228c5c70
+ * SCEMS FIELD TRAINING PORTAL — portal-2.5.0
+ * Build ff72997f
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.4.0',
+  VERSION: 'portal-2.5.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1925,6 +1925,11 @@ function divisionPayloadV1_() {
         };
       } catch (eW) { return { waiting: 0, skillsWaiting: 0, total: 0, list: [] }; }
     })(),
+    // Released / closed — prior reports (print / PDF) without the tracker.
+    closedPeople: all.filter(function (t) { return t.closed; }).map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey,
+               status: t.status || 'Closed', fto: t.fto || '', phase: t.phase || '' };
+    }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT
@@ -5087,6 +5092,120 @@ function duplicatePairDetailV1_(traineeName, tabName, dupKey) {
 
 
 /* ======================================================================
+ * 88_Report.gs
+ * ====================================================================== */
+
+/**
+ * Printable / PDF trainee reports from Field Training.
+ *
+ * Division can pull a full training report for anyone on the master —
+ * including Cleared / Independent — and print or save as PDF from the browser.
+ * No tracker menu. Raw rows are not altered.
+ */
+
+/**
+ * Build a print-ready HTML report for one trainee (active or released).
+ * Division only.
+ */
+function traineeReportHtmlV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may pull a training report.');
+  }
+  var name = String(traineeName || '').trim();
+  if (!name) throw new Error('Pick a trainee.');
+
+  var person = null;
+  traineesV1_().forEach(function (t) {
+    if (!person && normNameV1_(t.name) === normNameV1_(name)) person = t;
+  });
+  if (!person) throw new Error('No trainee named "' + name + '" on the master.');
+
+  var rec = recordForV1_(person.name);
+  var skills = [];
+  try { skills = skillsForV1_(person.norm); } catch (e) { skills = []; }
+  var clear = clearanceAssessmentV1_(person);
+
+  var esc = function (s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  };
+
+  var bits = [];
+  bits.push('<!DOCTYPE html><html><head><meta charset="utf-8">');
+  bits.push('<title>Field Training report — ' + esc(person.name) + '</title>');
+  bits.push('<style>');
+  bits.push('body{font:12pt/1.45 Georgia,serif;color:#111;margin:24px;max-width:800px}');
+  bits.push('h1{font:700 22pt/1.2 Georgia,serif;margin:0 0 4px}');
+  bits.push('h2{font:700 13pt/1.2 Georgia,serif;margin:22px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px}');
+  bits.push('.meta{color:#444;margin:0 0 18px}');
+  bits.push('.kv{margin:2px 0}.k{color:#666;display:inline-block;min-width:9em}');
+  bits.push('.sec{margin:10px 0 14px}.when{color:#555;font-size:10pt}');
+  bits.push('.fld{margin:3px 0 3px 12px}.l{color:#666;display:inline-block;min-width:10em}');
+  bits.push('table{border-collapse:collapse;width:100%;font-size:10.5pt}');
+  bits.push('th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}');
+  bits.push('th{background:#f3f3f3}');
+  bits.push('@media print{body{margin:12mm}.noprint{display:none!important}}');
+  bits.push('</style></head><body>');
+  bits.push('<p class="noprint" style="margin:0 0 16px"><button onclick="window.print()">Print / Save as PDF</button> ');
+  bits.push('<span style="color:#666">Use your browser print dialog → Save as PDF.</span></p>');
+  bits.push('<h1>' + esc(person.name) + '</h1>');
+  bits.push('<p class="meta">Field Training — Sumter County EMS<br>');
+  bits.push('Report pulled ' + esc(new Date().toDateString()) + ' by ' + esc(viewer.email) + '<br>');
+  bits.push(esc(PORTAL.VERSION) + '</p>');
+
+  bits.push('<h2>Status</h2>');
+  bits.push('<div class="kv"><span class="k">Level</span> ' + esc(person.level || '—') + '</div>');
+  bits.push('<div class="kv"><span class="k">Phase</span> ' + esc(person.phase || '—') + '</div>');
+  bits.push('<div class="kv"><span class="k">Status</span> ' + esc(person.status || (person.closed ? 'Closed' : 'Active')) + '</div>');
+  bits.push('<div class="kv"><span class="k">Training officer</span> ' + esc(person.fto || '—') + '</div>');
+  bits.push('<div class="kv"><span class="k">Shift</span> ' + esc(person.shift || '—') + '</div>');
+  bits.push('<div class="kv"><span class="k">Start</span> ' +
+    (person.started instanceof Date ? esc(person.started.toDateString()) : '—') + '</div>');
+  if (person.closed) {
+    bits.push('<div class="kv"><span class="k">Outcome</span> Released / cleared — prior record retained</div>');
+  }
+  bits.push('<div class="kv"><span class="k">Skills signed</span> ' +
+    esc(String(clear.signed || 0)) + ' / ' + esc(String(clear.total || 0)) + '</div>');
+
+  if (skills.length) {
+    bits.push('<h2>Skills matrix</h2><table><tr><th>Skill</th><th>Readiness</th>');
+    bits.push('<th>Successful</th><th>Independent</th><th>Dates</th><th>FTOs</th></tr>');
+    skills.forEach(function (s) {
+      bits.push('<tr><td>' + esc(s.skill) + '</td><td>' +
+        esc(s.signed ? 'SIGNED OFF' : (s.readiness || '—')) + '</td><td>' +
+        esc(String(s.successful)) + '</td><td>' + esc(String(s.independent)) + '</td><td>' +
+        esc(String(s.distinctDates)) + '</td><td>' + esc(String(s.distinctFtos)) + '</td></tr>');
+    });
+    bits.push('</table>');
+  }
+
+  (rec.sections || []).forEach(function (part) {
+    bits.push('<h2>' + esc(part.title) + ' (' + esc(String(part.count)) + ')</h2>');
+    part.current.concat(part.earlier).forEach(function (s) {
+      bits.push('<div class="sec"><div class="when">' + esc(s.when) +
+        (s.by ? ' · ' + esc(s.by) : '') +
+        (s.current ? ' · current' : '') +
+        (s.group ? ' · ' + esc(s.group) : '') + '</div>');
+      (s.fields || []).forEach(function (f) {
+        bits.push('<div class="fld"><span class="l">' + esc(f.label) + '</span> ' +
+          esc(f.value) + '</div>');
+      });
+      bits.push('</div>');
+    });
+  });
+
+  bits.push('<p style="margin-top:28px;color:#666;font-size:9pt">Nothing in this report was edited. ');
+  bits.push('It is a read of the vault as of the pull date.</p>');
+  bits.push('</body></html>');
+
+  auditV1_('REPORT PULLED', viewer.email, person.name + (person.closed ? ' | closed' : ''));
+  return bits.join('');
+}
+
+
+/* ======================================================================
  * 90_Staging.gs
  * ====================================================================== */
 
@@ -6925,6 +7044,7 @@ function waitingFormResponsesV1_() {
   }
 
   var outTabs = [], total = 0, waiting = 0, skillsWaiting = 0;
+  var reviewed = reviewedFormKeysV1_();
   tabs.forEach(function (t) {
     var iWho  = responseColV1_(t, [/^trainee/i]);
     var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
@@ -6944,7 +7064,8 @@ function waitingFormResponsesV1_() {
       var responseId = formResponseIdGuessV1_(t, r);
       var inLog = !!(responseId && knownId[responseId]) ||
         !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
-      if (!inLog) {
+      var deskCleared = !!reviewed[t.name + '|' + sheetRow];
+      if (!inLog && !deskCleared) {
         waiting++;
         if (kind === 'skills') skillsWaiting++;
       }
@@ -6957,6 +7078,7 @@ function waitingFormResponsesV1_() {
         when: when ? when.toDateString() : '',
         stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
         inLog: inLog,
+        deskCleared: deskCleared,
         kind: kind,
         responseId: responseId || ''
       });
@@ -6966,7 +7088,7 @@ function waitingFormResponsesV1_() {
       kind: kind,
       total: t.rows.length,
       questions: t.headers.filter(String).length,
-      waiting: responses.filter(function (x) { return !x.inLog; }).length,
+      waiting: responses.filter(function (x) { return !x.inLog && !x.deskCleared; }).length,
       responses: responses
     });
   });
@@ -6974,7 +7096,7 @@ function waitingFormResponsesV1_() {
   var waitingList = [];
   outTabs.forEach(function (t) {
     t.responses.forEach(function (r) {
-      if (!r.inLog) waitingList.push(r);
+      if (!r.inLog && !r.deskCleared) waitingList.push(r);
     });
   });
   // Newest first when we have a date string we can sort loosely
@@ -6989,6 +7111,83 @@ function waitingFormResponsesV1_() {
     skillsWaiting: skillsWaiting,
     waitingList: waitingList.slice(0, 40)
   };
+}
+
+/** Keys Division has already reviewed so Waiting on you stops nagging. */
+function reviewedFormKeysV1_() {
+  var out = {};
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) return out;
+  t.rows.forEach(function (r) {
+    var tab = String(r[t.col['TAB']] || '').trim();
+    var row = String(r[t.col['ROW']] || '').trim();
+    if (!tab || !row) return;
+    out[tab + '|' + row] = true;
+  });
+  return out;
+}
+
+function ensureFormReviewsLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName('PORTAL FORM REVIEWS')) return true;
+    var sh = book.insertSheet('PORTAL FORM REVIEWS');
+    sh.getRange(1, 1).setValue(
+      'Form responses Division reviewed from Field Training. Raw tabs stay.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 7).setValues([[
+      'WHEN', 'TAB', 'ROW', 'TRAINEE', 'BY', 'REASON', 'VERSION'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Clear a waiting form response from the Division desk without ingesting it.
+ * The Form Responses tab is untouched. Tracker ingest remains separate.
+ */
+function reviewFormResponseV1(tabName, sheetRow, reason) {
+  requireWritableV1_('review a form response');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may clear a waiting form response from the desk.');
+  }
+  var tab = String(tabName || '').trim();
+  var row = String(sheetRow == null ? '' : sheetRow).trim();
+  var why = String(reason || '').trim();
+  if (!tab || !row || row === '0') throw new Error('Missing response identity.');
+  if (why.length < 8) {
+    throw new Error('Type why you are clearing this from the desk. It goes on the record.');
+  }
+  if (reviewedFormKeysV1_()[tab + '|' + row]) {
+    return { ok: true, message: 'Already cleared from the desk.' };
+  }
+  // Confirm the row still exists
+  formResponseDetailV1_(tab, Number(row));
+
+  if (!ensureFormReviewsLogV1_()) {
+    throw new Error('Could not open or create PORTAL FORM REVIEWS. Nothing was written.');
+  }
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) throw new Error('No form-reviews log.');
+  var detail = formResponseDetailV1_(tab, Number(row));
+  var line = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'WHEN') return new Date();
+    if (H === 'TAB') return tab;
+    if (H === 'ROW') return row;
+    if (H === 'TRAINEE') return detail.trainee || '';
+    if (H === 'BY') return viewer.email;
+    if (H === 'REASON') return clean_(why);
+    if (H === 'VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(line);
+  forgetTabsV1_();
+  auditV1_('FORM RESPONSE REVIEWED', viewer.email, tab + ' | row ' + row + ' | ' + why.slice(0, 100));
+  return { ok: true, message: 'Cleared from Waiting on you. The form-response tab is unchanged.' };
 }
 
 /** Skills-grid response tabs tend to carry many skill/stage columns. */
@@ -7017,6 +7216,10 @@ function formResponseDetailV1(tabName, sheetRow) {
   if (viewer.role !== PORTAL.ROLE.DIVISION) {
     throw new Error('Only the Training Division may open raw form responses here.');
   }
+  return formResponseDetailV1_(tabName, sheetRow);
+}
+
+function formResponseDetailV1_(tabName, sheetRow) {
   var name = String(tabName || '').trim();
   var rowNum = Number(sheetRow);
   if (!name || !(rowNum >= 2)) throw new Error('Missing response identity. Reload and try again.');
@@ -7078,6 +7281,7 @@ function formResponseDetailV1(tabName, sheetRow) {
     when: when ? when.toDateString() : '',
     stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
     inLog: inLog,
+    deskCleared: !!reviewedFormKeysV1_()[name + '|' + rowNum],
     fields: fields.slice(0, 40),
     note: 'Read only. Ingest into ' + PORTAL.TAB.EVIDENCE +
       ' still runs in the tracker (catchUpUnprocessed / form trigger).'
@@ -9989,6 +10193,11 @@ var PORTAL_PAGE_HTML = [
   "function pickRecord(v){ if (v === '') return; openRecord(v); }\n",
   "function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }\n",
   "function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }\n",
+  "function pickClosedReport(v){\n",
+  "  if (v === '') return;\n",
+  "  var t = (BOOT.data.closedPeople || [])[Number(v)];\n",
+  "  if (t) openTraineeReport(t.name);\n",
+  "}\n",
   "function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }\n",
   "\n",
   "function render(){\n",
@@ -10478,6 +10687,8 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  if (flagged.length){\n",
   "    h += sec('Next moves', flagged.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Open each one — assign an FTO, fix the ",
+  "record, or hold it with your words so it leaves this list.</p>';\n",
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
   "\n",
@@ -10523,8 +10734,7 @@ var PORTAL_PAGE_HTML = [
   "    h += sec('Skills log & forms waiting', fw.waiting);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
   "         (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+\n",
-  "         'In the spreadsheet, not yet in the evidence log. Tracker still ingests — Field T",
-  "raining lets you read them.</p>';\n",
+  "         'Open → clear from this desk (with a reason) or leave for tracker ingest.</p>';\n",
   "    h += picker('pick-formwait', fw.waiting+' waiting\\u2026', (fw.list||[]).map(function(x",
   ",i){\n",
   "      return { value: String(i),\n",
@@ -10532,6 +10742,19 @@ var PORTAL_PAGE_HTML = [
   "                      ' \\u2014 ' + (x.when || x.stamp || 'no date') +\n",
   "                      (x.by ? ' \\u00b7 ' + x.by : '') };\n",
   "    }), 'pickFormWait');\n",
+  "  }\n",
+  "\n",
+  "  var closed = d.closedPeople || [];\n",
+  "  if (closed.length){\n",
+  "    h += sec('Released — prior reports', closed.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Pull a printable report (Save as PDF fr",
+  "om the print dialog).</p>';\n",
+  "    h += picker('pick-closed', 'Report for a released trainee\\u2026', closed.map(function(",
+  "t,i){\n",
+  "      return { value: String(i),\n",
+  "               label: t.name + ' \\u2014 ' + (t.status || 'Closed') +\n",
+  "                      (t.level ? ' \\u00b7 ' + t.level : '') };\n",
+  "    }), 'pickClosedReport');\n",
   "  }\n",
   "\n",
   "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
@@ -10812,6 +11035,10 @@ var PORTAL_PAGE_HTML = [
   "  h += freshRow(t.freshness);\n",
   "  h += '<div class=\"panel\">'+kv('Training officer', esc(t.fto||'not assigned'))+\n",
   "       kv('Shift', esc(t.shift||'not set'))+'</div>';\n",
+  "\n",
+  "  h += '<button class=\"btn ghost\" style=\"margin-top:10px\" onclick=\"openTraineeReport('+jsS",
+  "tr(t.name)+')\">'+\n",
+  "       'Print / save PDF report</button>';\n",
   "\n",
   "  if (t.skills && t.skills.length){\n",
   "    var withDiv = [], building = [], signed = [];\n",
@@ -11358,8 +11585,50 @@ var PORTAL_PAGE_HTML = [
   "e)+')\">'+\n",
   "         'Open personnel record</button>';\n",
   "  }\n",
+  "  if (canWrite() && !p.inLog && !p.deskCleared){\n",
+  "    h += '<div class=\"panel\" style=\"margin-top:14px\"><div class=\"lab\">Clear from this desk",
+  " (required)</div>'+\n",
+  "         '<textarea id=\"formReviewWhy\" placeholder=\"Why this can leave Waiting on you. Doe",
+  "s not ingest or delete the form response.\"></textarea></div>'+\n",
+  "         '<button class=\"btn\" onclick=\"clearFormWait()\">Clear from Waiting on you</button>",
+  "';\n",
+  "  }\n",
   "  h += '<div class=\"next\"><b>What this is</b>'+esc(p.note||'')+'</div>';\n",
   "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function clearFormWait(){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var p = c.form || c.formMeta;\n",
+  "  if (!p) return;\n",
+  "  var why = (el('formReviewWhy') && el('formReviewWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are clearing this from the desk.'); return; }\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Cleared.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })\n",
+  "    .reviewFormResponseV1(p.tab, p.row, why);\n",
+  "}\n",
+  "\n",
+  "function openTraineeReport(name){\n",
+  "  if (!name) return;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(html){\n",
+  "      var w = window.open('', '_blank');\n",
+  "      if (!w){ alert('Allow pop-ups to open the report, then Print → Save as PDF.'); retur",
+  "n; }\n",
+  "      w.document.open();\n",
+  "      w.document.write(html);\n",
+  "      w.document.close();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ alert(e.message || e); })\n",
+  "    .traineeReportHtmlV1(name);\n",
   "}\n",
   "\n",
   "function openSettle(i){\n",
@@ -11642,7 +11911,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '228c5c70';
+var PORTAL_BUILD = 'ff72997f';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

@@ -680,6 +680,11 @@ function divisionPayloadV1_() {
         };
       } catch (eW) { return { waiting: 0, skillsWaiting: 0, total: 0, list: [] }; }
     })(),
+    // Released / closed — prior reports (print / PDF) without the tracker.
+    closedPeople: all.filter(function (t) { return t.closed; }).map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey,
+               status: t.status || 'Closed', fto: t.fto || '', phase: t.phase || '' };
+    }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT
