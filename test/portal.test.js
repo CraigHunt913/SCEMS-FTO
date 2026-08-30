@@ -191,13 +191,13 @@ tab(PORTAL.TAB.MASTER,
   ['TRAINEE','LEVEL','Training officer','Started','CURRENT PHASE','Program status',
    'Email address','Phase started','SHIFT'],
   [['Elizabeth McInville','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 2','Active',
-    'minvilleel@yahoo.com',new Date('2026-01-05'),'A'],
+    'elizabeth@example.com',new Date('2026-01-05'),'A'],
    ['Latavia Cole','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 1','Active',
-    'lataviaccole@gmail.com',new Date('2026-01-05'),'A']]);
+    'latavia@example.com',new Date('2026-01-05'),'A']]);
 PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
-ok(resolveViewerV1_('minvilleel@yahoo.com').role === PORTAL.ROLE.TRAINEE,
+ok(resolveViewerV1_('elizabeth@example.com').role === PORTAL.ROLE.TRAINEE,
    'Email address column signs Elizabeth in as a trainee');
-ok(resolveViewerV1_('lataviaccole@gmail.com').name === 'Latavia Cole',
+ok(resolveViewerV1_('latavia@example.com').name === 'Latavia Cole',
    'and Latavia resolves from the same renamed header');
 ok(traineesV1_().filter(t => !t.closed).every(t => !!t.email),
    'traineeRowsV1_ sees those emails too, not only portalPeopleV1_');
