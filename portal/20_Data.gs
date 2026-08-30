@@ -644,6 +644,7 @@ function divisionPayloadV1_() {
                clearance: clear,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
+               skills: safeFormsV1_(function () { return skillsForV1_(t.norm); }) || [],
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),
@@ -667,6 +668,18 @@ function divisionPayloadV1_() {
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: duplicateSubs,
+    // Raw Form Responses tabs (esp. skills logs) waiting for tracker ingest.
+    formWaiting: (function () {
+      try {
+        var w = waitingFormResponsesV1_();
+        return {
+          waiting: w.waiting,
+          skillsWaiting: w.skillsWaiting,
+          total: w.total,
+          list: (w.waitingList || []).slice(0, 25)
+        };
+      } catch (eW) { return { waiting: 0, skillsWaiting: 0, total: 0, list: [] }; }
+    })(),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT

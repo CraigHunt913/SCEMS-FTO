@@ -402,6 +402,7 @@ function picker(id, placeholder, items, handler, selected){
 function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }
 function pickRecord(v){ if (v === '') return; openRecord(v); }
 function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }
+function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
@@ -445,6 +446,7 @@ function renderInner_(){
   if (S.screen === 'release')  return paintRelease();
   if (S.screen === 'record')   return paintRecord();
   if (S.screen === 'settle')   return paintSettle();
+  if (S.screen === 'formWait') return paintFormWait();
   if (S.screen === 'addTrainee') return paintAddTrainee();
 
   switch (v.role) {
@@ -875,6 +877,20 @@ function paintDivision(d){
 
   if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
 
+  var fw = d.formWaiting || {};
+  if ((fw.waiting || 0) > 0){
+    h += sec('Skills log & forms waiting', fw.waiting);
+    h += '<p class="sub" style="margin-bottom:9px">'+
+         (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+
+         'In the spreadsheet, not yet in the evidence log. Tracker still ingests — Field Training lets you read them.</p>';
+    h += picker('pick-formwait', fw.waiting+' waiting\u2026', (fw.list||[]).map(function(x,i){
+      return { value: String(i),
+               label: (x.kind==='skills'?'Skills · ':'') + (x.trainee || 'unnamed') +
+                      ' \u2014 ' + (x.when || x.stamp || 'no date') +
+                      (x.by ? ' \u00b7 ' + x.by : '') };
+    }), 'pickFormWait');
+  }
+
   if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
     h += '<button class="more" style="margin-top:14px" onclick="refreshQueue()">'+
          'Refresh queue from matrix — READY skills missing from OPEN</button>';
@@ -1114,6 +1130,36 @@ function paintPersonSheet(){
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
+
+  if (t.skills && t.skills.length){
+    var withDiv = [], building = [], signed = [];
+    t.skills.forEach(function(s){
+      if (s.signed) signed.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
+      else building.push(s);
+    });
+    h += sec('Skills on the matrix', t.skills.length);
+    h += '<p class="sub" style="margin-bottom:9px">'+
+         signed.length+' signed · '+withDiv.length+' with Division · '+
+         building.length+' building</p>';
+    function skillRow(s){
+      var tag = s.signed ? 'Signed' :
+        (s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Building'));
+      var tagCls = s.signed ? 'c-ok' : (s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute');
+      return '<div class="card"><div class="hd"><span class="h">'+esc(s.skill)+'</span>'+
+        '<span class="chip '+tagCls+'">'+esc(tag)+'</span></div>'+
+        (s.bars && s.bars.length ? barsHtml(s.bars) : '')+'</div>';
+    }
+    withDiv.forEach(function(s){ h += skillRow(s); });
+    building.slice(0, 8).forEach(function(s){ h += skillRow(s); });
+    if (building.length > 8) h += '<p class="sub">+ '+(building.length-8)+' more building</p>';
+    if (signed.length && !withDiv.length && building.length <= 8){
+      h += '<button class="more" onclick="S.showSignedSkills=!S.showSignedSkills;render()">'+
+           (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';
+      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s); });
+    }
+  }
+
   if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !== false)){
     var officers = BOOT.data.officers || [];
     if (officers.length){
@@ -1514,6 +1560,58 @@ function refreshQueue(){
     })
     .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
     .refreshValidationQueueV1();
+}
+
+function openFormWait(i){
+  var list = (BOOT.data && BOOT.data.formWaiting && BOOT.data.formWaiting.list) || [];
+  var item = list[i];
+  if (!item) return;
+  S.ctx = { formMeta: item, form: null, err: '', from: 'main' };
+  S.screen = 'formWait';
+  var req = (S.formWaitReq = (S.formWaitReq || 0) + 1);
+  render();
+  google.script.run
+    .withSuccessHandler(function(r){
+      if (req !== S.formWaitReq || S.screen !== 'formWait') return;
+      S.ctx.form = r; render();
+    })
+    .withFailureHandler(function(e){
+      if (req !== S.formWaitReq || S.screen !== 'formWait') return;
+      S.ctx.err = e.message || String(e); render();
+    })
+    .formResponseDetailV1(item.tab, item.row);
+}
+
+function paintFormWait(){
+  var c = S.ctx || {};
+  var meta = c.formMeta || {};
+  var back = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.err) return paint(hero('Waiting response', meta.trainee || '', '')+back+
+    '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
+  if (!c.form) return paint(hero('Waiting response', meta.trainee || '', 'Reading the form response&hellip;')+back);
+
+  var p = c.form;
+  var h = hero(p.kind === 'skills' ? 'Skills log response' : 'Form response',
+    p.trainee || 'Unnamed trainee',
+    (p.when || p.stamp || 'no date')+(p.by ? ' · '+esc(p.by) : ''))+back;
+  if (p.inLog){
+    h += '<div class="note n-ok"><b>Already in the evidence log</b>Matching trainee and date (or response id) are on file.</div>';
+  } else {
+    h += '<div class="note n-warn"><b>Waiting on ingest</b>Still only on the form-response tab. '+
+         'Run <b>catchUpUnprocessed</b> in the tracker project if the form trigger did not fire.</div>';
+  }
+  h += '<div class="panel"><div class="lab">Tab</div><div style="font-size:.93rem">'+esc(p.tab)+
+       ' · row '+esc(String(p.row))+'</div></div>';
+  (p.fields||[]).forEach(function(f){
+    h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
+         '<div class="v">'+esc(f.value)+'</div></div>';
+  });
+  if (p.trainee){
+    h += '<button class="btn" style="margin-top:16px" onclick="openRecord('+jsStr(p.trainee)+')">'+
+         'Open personnel record</button>';
+  }
+  h += '<div class="next"><b>What this is</b>'+esc(p.note||'')+'</div>';
+  paint(h);
 }
 
 function openSettle(i){

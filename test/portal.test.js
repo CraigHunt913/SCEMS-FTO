@@ -39,6 +39,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
 
 const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
                getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               getSheets: () => Object.keys(SHEETS).map(n => SHEETS[n]),
                insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
 
 global.SpreadsheetApp = { openById: () => BOOK, create: () => BOOK,

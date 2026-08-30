@@ -474,5 +474,32 @@ ok(/3 form response\(s\) are sitting in response tabs/.test(rep),
 ok(/unprocessedResponses/.test(rep), 'and says what to run about those too');
 ok(snap() === before, 'and the whole check wrote nothing');
 
+// ---------------------------------------------------------------- //
+section('Division can list and open waiting responses from Field Training');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+const wait = waitingFormResponsesV1_();
+ok(wait.waiting === 2, 'Annika’s Aug 12 is in the log; two others wait: ' + wait.waiting);
+ok(wait.waitingList.length === 2, 'waitingList carries those two');
+ok(wait.waitingList.every(r => r.tab && r.row >= 2), 'each has a tab and sheet row');
+
+const detail = formResponseDetailV1(wait.waitingList[0].tab, wait.waitingList[0].row);
+ok(detail.trainee === wait.waitingList[0].trainee, 'detail names the trainee');
+ok(detail.fields.length >= 1, 'and shows the answered fields');
+ok(detail.inLog === false, 'waiting rows are not marked in-log');
+ok(/tracker/i.test(detail.note), 'and says ingest still belongs to the tracker');
+
+as('dana@example.org');
+ok(/Only the Training Division/.test(threw(() =>
+  formResponseDetailV1(wait.waitingList[0].tab, wait.waitingList[0].row))),
+  'an FTO cannot open raw form responses');
+
+world();
+as('chief@example.org');
+const inLog = formResponseDetailV1('Form Responses 1', 2); // Annika Aug 12 row
+ok(inLog.trainee === 'Annika Skye' && inLog.inLog === true,
+   'a response that matches evidence is marked in the log');
+
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

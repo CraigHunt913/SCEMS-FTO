@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.3.1
- * Build e66daae7
+ * SCEMS FIELD TRAINING PORTAL — portal-2.4.0
+ * Build 228c5c70
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.3.1',
+  VERSION: 'portal-2.4.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1889,6 +1889,7 @@ function divisionPayloadV1_() {
                clearance: clear,
                days: days, status: t.status || '', needs: why, ack: ack,
                nextMove: move,
+               skills: safeFormsV1_(function () { return skillsForV1_(t.norm); }) || [],
                forms: safeFormsV1_(function () {
                  return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
                }),
@@ -1912,6 +1913,18 @@ function divisionPayloadV1_() {
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: duplicateSubs,
+    // Raw Form Responses tabs (esp. skills logs) waiting for tracker ingest.
+    formWaiting: (function () {
+      try {
+        var w = waitingFormResponsesV1_();
+        return {
+          waiting: w.waiting,
+          skillsWaiting: w.skillsWaiting,
+          total: w.total,
+          list: (w.waitingList || []).slice(0, 25)
+        };
+      } catch (eW) { return { waiting: 0, skillsWaiting: 0, total: 0, list: [] }; }
+    })(),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT
@@ -6847,58 +6860,36 @@ function responseColV1_(tab, patterns) {
 
 /** What has arrived and never been turned into anything. Read only. */
 function unprocessedResponses() {
-  var tabs = formResponseTabsV1_();
+  var report = waitingFormResponsesV1_();
   var lines = ['UNPROCESSED FORM RESPONSES  (read only, nothing was written)', '',
     'In : ' + safeTargetNameV1_(), ''];
 
-  if (!tabs.length) {
+  if (!report.tabs.length) {
     lines.push('No form-response tabs are in this spreadsheet.');
     lines.push('Every form either writes somewhere else or has no responses yet.');
     return noteV1_(lines.join('\n'));
   }
 
-  // What the evidence log already knows about, so "waiting" means waiting.
-  var known = {};
-  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
-  if (ev.ok) {
-    ev.rows.forEach(function (r) {
-      var who = String(r[ev.col['TRAINEE']] || '').trim();
-      var when = asDateV1_(r[ev.col['EVENT DATE']] || r[ev.col['DATE']]);
-      if (who && when) known[normNameV1_(who) + '|' + when.toDateString()] = true;
-    });
-  }
-
-  var total = 0, waiting = 0;
-  tabs.forEach(function (t) {
-    var iWho  = responseColV1_(t, [/^trainee/i]);
-    var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
-    var iWhen = responseColV1_(t, [/shift date|^date/i]);
-    var iMail = responseColV1_(t, [/^email address/i]);
-
+  report.tabs.forEach(function (t) {
     lines.push('=======================================================');
-    lines.push(t.name);
-    lines.push('  ' + t.rows.length + ' response' + (t.rows.length === 1 ? '' : 's') +
-               ', ' + t.headers.filter(String).length + ' questions');
+    lines.push(t.name + (t.kind === 'skills' ? '  (skills log)' : ''));
+    lines.push('  ' + t.total + ' response' + (t.total === 1 ? '' : 's') +
+               ', ' + t.questions + ' questions');
     lines.push('=======================================================');
-    if (!t.rows.length) { lines.push('  nothing in it'); lines.push(''); return; }
-
-    t.rows.forEach(function (r) {
-      total++;
-      var who = iWho >= 0 ? String(r[iWho] || '').trim() : '';
-      var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
-      var already = who && when && known[normNameV1_(who) + '|' + when.toDateString()];
-      if (!already) waiting++;
-      lines.push('  ' + (already ? 'in the log ' : 'WAITING    ') +
-        (when ? when.toDateString() : 'no date') + '   ' +
-        (who || '(no trainee named)') +
-        (iFto >= 0 && r[iFto] ? '   by ' + String(r[iFto]).trim() : '') +
-        (iMail >= 0 && r[iMail] ? '   ' + String(r[iMail]).trim() : ''));
+    if (!t.total) { lines.push('  nothing in it'); lines.push(''); return; }
+    (t.responses || []).forEach(function (r) {
+      lines.push('  ' + (r.inLog ? 'in the log ' : 'WAITING    ') +
+        (r.when || 'no date') + '   ' +
+        (r.trainee || '(no trainee named)') +
+        (r.by ? '   by ' + r.by : '') +
+        (r.email ? '   ' + r.email : ''));
     });
     lines.push('');
   });
 
   lines.push('=======================================================');
-  lines.push(total + ' response(s) on file, ' + waiting + ' with nothing matching them');
+  lines.push(report.total + ' response(s) on file, ' + report.waiting +
+             ' with nothing matching them');
   lines.push('in ' + PORTAL.TAB.EVIDENCE + '.');
   lines.push('');
   lines.push('These are NOT lost. They are in this spreadsheet, in the tabs above,');
@@ -6906,9 +6897,191 @@ function unprocessedResponses() {
   lines.push('that turns a response into a row in the evidence log, which is the');
   lines.push('tracker\'s own ingestion job and not something this portal does.');
   lines.push('');
-  lines.push('"WAITING" here means no evidence row shares that trainee and date.');
+  lines.push('"WAITING" here means no evidence row shares that trainee and date');
+  lines.push('(or the same source response id, when one is on file).');
   lines.push('It is a strong hint, not a proof - check before acting on it.');
   return noteV1_(lines.join('\n'));
+}
+
+/**
+ * Structured waiting list for Field Training Division.
+ * Read only. Same matching rules as unprocessedResponses().
+ */
+function waitingFormResponsesV1_() {
+  var tabs = formResponseTabsV1_();
+  var knownDate = {}, knownId = {};
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (ev.ok) {
+    ev.rows.forEach(function (r) {
+      var who = String(r[ev.col['TRAINEE']] || '').trim();
+      var when = asDateV1_(r[ev.col['EVENT DATE']] || r[ev.col['DATE']]);
+      if (who && when) knownDate[normNameV1_(who) + '|' + when.toDateString()] = true;
+      var sid = '';
+      if (ev.col['SOURCE RESPONSE ID'] !== undefined) {
+        sid = String(r[ev.col['SOURCE RESPONSE ID']] || '').trim();
+      }
+      if (sid) knownId[sid] = true;
+    });
+  }
+
+  var outTabs = [], total = 0, waiting = 0, skillsWaiting = 0;
+  tabs.forEach(function (t) {
+    var iWho  = responseColV1_(t, [/^trainee/i]);
+    var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
+    var iWhen = responseColV1_(t, [/shift date|^date/i]);
+    var iMail = responseColV1_(t, [/^email address/i]);
+    var iTs   = responseColV1_(t, [/^timestamp/i]);
+    var kind = skillsResponseTabV1_(t) ? 'skills' : 'other';
+    var responses = [];
+    t.rows.forEach(function (r, i) {
+      total++;
+      var who = iWho >= 0 ? String(r[iWho] || '').trim() : '';
+      var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
+      if (!when && iTs >= 0) when = asDateV1_(r[iTs]);
+      var by = iFto >= 0 ? String(r[iFto] || '').trim() : '';
+      var email = iMail >= 0 ? String(r[iMail] || '').trim() : '';
+      var sheetRow = i + 2; // header on row 1
+      var responseId = formResponseIdGuessV1_(t, r);
+      var inLog = !!(responseId && knownId[responseId]) ||
+        !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
+      if (!inLog) {
+        waiting++;
+        if (kind === 'skills') skillsWaiting++;
+      }
+      responses.push({
+        tab: t.name,
+        row: sheetRow,
+        trainee: who,
+        by: by,
+        email: email,
+        when: when ? when.toDateString() : '',
+        stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
+        inLog: inLog,
+        kind: kind,
+        responseId: responseId || ''
+      });
+    });
+    outTabs.push({
+      name: t.name,
+      kind: kind,
+      total: t.rows.length,
+      questions: t.headers.filter(String).length,
+      waiting: responses.filter(function (x) { return !x.inLog; }).length,
+      responses: responses
+    });
+  });
+
+  var waitingList = [];
+  outTabs.forEach(function (t) {
+    t.responses.forEach(function (r) {
+      if (!r.inLog) waitingList.push(r);
+    });
+  });
+  // Newest first when we have a date string we can sort loosely
+  waitingList.sort(function (a, b) {
+    return String(b.when || b.stamp || '').localeCompare(String(a.when || a.stamp || ''));
+  });
+
+  return {
+    tabs: outTabs,
+    total: total,
+    waiting: waiting,
+    skillsWaiting: skillsWaiting,
+    waitingList: waitingList.slice(0, 40)
+  };
+}
+
+/** Skills-grid response tabs tend to carry many skill/stage columns. */
+function skillsResponseTabV1_(tab) {
+  var n = 0;
+  (tab.headers || []).forEach(function (h) {
+    if (/skill|stage|independent|assisted|successful|unsuccessful|rep\b|grid/i.test(h)) n++;
+  });
+  if (n >= 3) return true;
+  if (/skill/i.test(tab.name || '')) return true;
+  return false;
+}
+
+function formResponseIdGuessV1_(tab, row) {
+  var i = responseColV1_(tab, [/response\s*id|source\s*response/i]);
+  if (i < 0) return '';
+  return String(row[i] || '').trim();
+}
+
+/**
+ * One raw form response for Division to read in Field Training.
+ * Read only. Does not ingest.
+ */
+function formResponseDetailV1(tabName, sheetRow) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may open raw form responses here.');
+  }
+  var name = String(tabName || '').trim();
+  var rowNum = Number(sheetRow);
+  if (!name || !(rowNum >= 2)) throw new Error('Missing response identity. Reload and try again.');
+
+  var hit = null;
+  formResponseTabsV1_().forEach(function (t) {
+    if (!hit && t.name === name) hit = t;
+  });
+  if (!hit) throw new Error('No form-response tab named "' + name + '".');
+
+  var idx = rowNum - 2;
+  if (idx < 0 || idx >= hit.rows.length) {
+    throw new Error('That response is gone from the tab. Reload.');
+  }
+  var r = hit.rows[idx];
+  var iWho  = responseColV1_(hit, [/^trainee/i]);
+  var iFto  = responseColV1_(hit, [/^(fto|your name)/i]);
+  var iWhen = responseColV1_(hit, [/shift date|^date/i]);
+  var iMail = responseColV1_(hit, [/^email address/i]);
+  var iTs   = responseColV1_(hit, [/^timestamp/i]);
+  var fields = [];
+  hit.headers.forEach(function (h, ci) {
+    if (!h) return;
+    if (ci === iWho || ci === iFto || ci === iWhen || ci === iMail || ci === iTs) return;
+    var v = r[ci];
+    if (v === '' || v === null || v === undefined) return;
+    fields.push({ label: labelForV1_(h), value: displayValueV1_(v) });
+  });
+
+  var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
+  if (!when && iTs >= 0) when = asDateV1_(r[iTs]);
+  var trainee = iWho >= 0 ? String(r[iWho] || '').trim() : '';
+  var responseId = formResponseIdGuessV1_(hit, r);
+  var inLog = false;
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (ev.ok) {
+    if (responseId && ev.col['SOURCE RESPONSE ID'] !== undefined) {
+      inLog = ev.rows.some(function (er) {
+        return String(er[ev.col['SOURCE RESPONSE ID']] || '').trim() === responseId;
+      });
+    }
+    if (!inLog && trainee && when) {
+      var day = when.toDateString();
+      inLog = ev.rows.some(function (er) {
+        var d = asDateV1_(er[ev.col['EVENT DATE']] || er[ev.col['DATE']]);
+        return normNameV1_(er[ev.col['TRAINEE']]) === normNameV1_(trainee) &&
+          d && d.toDateString() === day;
+      });
+    }
+  }
+
+  return {
+    tab: name,
+    row: rowNum,
+    kind: skillsResponseTabV1_(hit) ? 'skills' : 'other',
+    trainee: trainee,
+    by: iFto >= 0 ? String(r[iFto] || '').trim() : '',
+    email: iMail >= 0 ? String(r[iMail] || '').trim() : '',
+    when: when ? when.toDateString() : '',
+    stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
+    inLog: inLog,
+    fields: fields.slice(0, 40),
+    note: 'Read only. Ingest into ' + PORTAL.TAB.EVIDENCE +
+      ' still runs in the tracker (catchUpUnprocessed / form trigger).'
+  };
 }
 
 var PORTAL_DIRECTORY_PROPERTY = 'PORTAL_DIRECTORY_EMAILS';
@@ -9815,6 +9988,7 @@ var PORTAL_PAGE_HTML = [
   "function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }\n",
   "function pickRecord(v){ if (v === '') return; openRecord(v); }\n",
   "function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }\n",
+  "function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }\n",
   "function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }\n",
   "\n",
   "function render(){\n",
@@ -9862,6 +10036,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'release')  return paintRelease();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
   "  if (S.screen === 'settle')   return paintSettle();\n",
+  "  if (S.screen === 'formWait') return paintFormWait();\n",
   "  if (S.screen === 'addTrainee') return paintAddTrainee();\n",
   "\n",
   "  switch (v.role) {\n",
@@ -10343,6 +10518,22 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
   "\n",
+  "  var fw = d.formWaiting || {};\n",
+  "  if ((fw.waiting || 0) > 0){\n",
+  "    h += sec('Skills log & forms waiting', fw.waiting);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
+  "         (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+\n",
+  "         'In the spreadsheet, not yet in the evidence log. Tracker still ingests — Field T",
+  "raining lets you read them.</p>';\n",
+  "    h += picker('pick-formwait', fw.waiting+' waiting\\u2026', (fw.list||[]).map(function(x",
+  ",i){\n",
+  "      return { value: String(i),\n",
+  "               label: (x.kind==='skills'?'Skills · ':'') + (x.trainee || 'unnamed') +\n",
+  "                      ' \\u2014 ' + (x.when || x.stamp || 'no date') +\n",
+  "                      (x.by ? ' \\u00b7 ' + x.by : '') };\n",
+  "    }), 'pickFormWait');\n",
+  "  }\n",
+  "\n",
   "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
   "    h += '<button class=\"more\" style=\"margin-top:14px\" onclick=\"refreshQueue()\">'+\n",
   "         'Refresh queue from matrix — READY skills missing from OPEN</button>';\n",
@@ -10621,6 +10812,40 @@ var PORTAL_PAGE_HTML = [
   "  h += freshRow(t.freshness);\n",
   "  h += '<div class=\"panel\">'+kv('Training officer', esc(t.fto||'not assigned'))+\n",
   "       kv('Shift', esc(t.shift||'not set'))+'</div>';\n",
+  "\n",
+  "  if (t.skills && t.skills.length){\n",
+  "    var withDiv = [], building = [], signed = [];\n",
+  "    t.skills.forEach(function(s){\n",
+  "      if (s.signed) signed.push(s);\n",
+  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
+  "      else building.push(s);\n",
+  "    });\n",
+  "    h += sec('Skills on the matrix', t.skills.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
+  "         signed.length+' signed · '+withDiv.length+' with Division · '+\n",
+  "         building.length+' building</p>';\n",
+  "    function skillRow(s){\n",
+  "      var tag = s.signed ? 'Signed' :\n",
+  "        (s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Build",
+  "ing'));\n",
+  "      var tagCls = s.signed ? 'c-ok' : (s.readiness === 'READY FOR VALIDATION' ? 'c-warn' ",
+  ": 'c-mute');\n",
+  "      return '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(s.skill)+'</span>'+\n",
+  "        '<span class=\"chip '+tagCls+'\">'+esc(tag)+'</span></div>'+\n",
+  "        (s.bars && s.bars.length ? barsHtml(s.bars) : '')+'</div>';\n",
+  "    }\n",
+  "    withDiv.forEach(function(s){ h += skillRow(s); });\n",
+  "    building.slice(0, 8).forEach(function(s){ h += skillRow(s); });\n",
+  "    if (building.length > 8) h += '<p class=\"sub\">+ '+(building.length-8)+' more building<",
+  "/p>';\n",
+  "    if (signed.length && !withDiv.length && building.length <= 8){\n",
+  "      h += '<button class=\"more\" onclick=\"S.showSignedSkills=!S.showSignedSkills;render()\"",
+  ">'+\n",
+  "           (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';\n",
+  "      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s); });\n",
+  "    }\n",
+  "  }\n",
+  "\n",
   "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !=",
   "= false)){\n",
   "    var officers = BOOT.data.officers || [];\n",
@@ -11078,6 +11303,65 @@ var PORTAL_PAGE_HTML = [
   "    .refreshValidationQueueV1();\n",
   "}\n",
   "\n",
+  "function openFormWait(i){\n",
+  "  var list = (BOOT.data && BOOT.data.formWaiting && BOOT.data.formWaiting.list) || [];\n",
+  "  var item = list[i];\n",
+  "  if (!item) return;\n",
+  "  S.ctx = { formMeta: item, form: null, err: '', from: 'main' };\n",
+  "  S.screen = 'formWait';\n",
+  "  var req = (S.formWaitReq = (S.formWaitReq || 0) + 1);\n",
+  "  render();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      if (req !== S.formWaitReq || S.screen !== 'formWait') return;\n",
+  "      S.ctx.form = r; render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      if (req !== S.formWaitReq || S.screen !== 'formWait') return;\n",
+  "      S.ctx.err = e.message || String(e); render();\n",
+  "    })\n",
+  "    .formResponseDetailV1(item.tab, item.row);\n",
+  "}\n",
+  "\n",
+  "function paintFormWait(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var meta = c.formMeta || {};\n",
+  "  var back = '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</butto",
+  "n>';\n",
+  "  if (c.err) return paint(hero('Waiting response', meta.trainee || '', '')+back+\n",
+  "    '<div class=\"note n-stop\"><b>Cannot open</b>'+esc(c.err)+'</div>');\n",
+  "  if (!c.form) return paint(hero('Waiting response', meta.trainee || '', 'Reading the form",
+  " response&hellip;')+back);\n",
+  "\n",
+  "  var p = c.form;\n",
+  "  var h = hero(p.kind === 'skills' ? 'Skills log response' : 'Form response',\n",
+  "    p.trainee || 'Unnamed trainee',\n",
+  "    (p.when || p.stamp || 'no date')+(p.by ? ' · '+esc(p.by) : ''))+back;\n",
+  "  if (p.inLog){\n",
+  "    h += '<div class=\"note n-ok\"><b>Already in the evidence log</b>Matching trainee and da",
+  "te (or response id) are on file.</div>';\n",
+  "  } else {\n",
+  "    h += '<div class=\"note n-warn\"><b>Waiting on ingest</b>Still only on the form-response",
+  " tab. '+\n",
+  "         'Run <b>catchUpUnprocessed</b> in the tracker project if the form trigger did not",
+  " fire.</div>';\n",
+  "  }\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Tab</div><div style=\"font-size:.93rem\">'+esc(p",
+  ".tab)+\n",
+  "       ' · row '+esc(String(p.row))+'</div></div>';\n",
+  "  (p.fields||[]).forEach(function(f){\n",
+  "    h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
+  "         '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
+  "  });\n",
+  "  if (p.trainee){\n",
+  "    h += '<button class=\"btn\" style=\"margin-top:16px\" onclick=\"openRecord('+jsStr(p.traine",
+  "e)+')\">'+\n",
+  "         'Open personnel record</button>';\n",
+  "  }\n",
+  "  h += '<div class=\"next\"><b>What this is</b>'+esc(p.note||'')+'</div>';\n",
+  "  paint(h);\n",
+  "}\n",
+  "\n",
   "function openSettle(i){\n",
   "  var list = (BOOT.data && BOOT.data.duplicateSubs) || [];\n",
   "  var item = list[i];\n",
@@ -11358,7 +11642,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'e66daae7';
+var PORTAL_BUILD = '228c5c70';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
