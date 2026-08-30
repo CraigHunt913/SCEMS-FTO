@@ -665,6 +665,7 @@ function divisionPayloadV1_() {
       } catch (e) { return []; }
     })(),
     canAddTrainee: mayWriteV1_(),
+    canAddFto: mayWriteV1_(),
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: duplicateSubs,

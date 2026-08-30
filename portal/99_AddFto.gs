@@ -25,6 +25,10 @@
  *   Guess at what somebody is qualified to train. Those columns are left
  *   blank and named, for a person to fill in.
  *
+ * Two ways in:
+ *   Editor: set PORTAL_ADD_FTO, run addFtoBeforeAndAfter / addFto.
+ *   Field Training: Training Division → Add an FTO → addFtoV1 (web).
+ *
  * undoAddFto() removes the rows it added, and only while they are still the
  * blank-slate rows it wrote.
  */
@@ -32,48 +36,68 @@
 var PORTAL_ADD_FTO_PROPERTY = 'PORTAL_ADD_FTO';
 var PORTAL_ADD_FTO_LOG = 'PORTAL ROSTER ADDITIONS';
 
-/** Who to add.
- *
- *  "Chyna Gray, cgray@example.org, C, Advanced EMT" - and the parts after the
- *  name may come in any order, because remembering an order is one more thing
- *  to get wrong. A field with an @ is the address, a lone letter is the shift,
- *  and anything that reads like a certification is the level.
- *
- *  More than one? Put a semicolon between them. */
+/** Parse one FTO add request from a web payload or a free-text property line. */
+function parseAddFtoRequestV1_(piece) {
+  if (piece && typeof piece === 'object' && !Array.isArray(piece)) {
+    var lvl = String(piece.level || '').trim();
+    if (lvl && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(lvl)) {
+      /* keep as typed */
+    } else if (lvl) {
+      if (/param/i.test(lvl)) lvl = 'Paramedic';
+      else if (/advanced|aemt/i.test(lvl)) lvl = 'Advanced EMT';
+      else if (/^emt/i.test(lvl)) lvl = 'EMT';
+    }
+    var sh = String(piece.shift || '').trim().toUpperCase();
+    if (sh && !/^[A-D]$/.test(sh)) sh = '';
+    return {
+      name: String(piece.name || '').replace(/\s+/g, ' ').trim(),
+      email: String(piece.email || '').trim().toLowerCase(),
+      shift: sh,
+      level: lvl
+    };
+  }
+
+  var parts = String(piece || '').split(/[,|\t]+/)
+    .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  var req = { name: '', email: '', shift: '', level: '' };
+  parts.forEach(function (v) {
+    if (!req.email && v.indexOf('@') > 0 &&
+        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
+      req.email = v.toLowerCase(); return;
+    }
+    if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
+    if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
+      req.level = v; return;
+    }
+    if (!req.name) { req.name = v; return; }
+  });
+  return req.name ? req : null;
+}
+
+/** Who to add from the script property (editor path). */
 function addFtoRequestsV1_() {
   var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL_ADD_FTO_PROPERTY) || '');
   var out = [];
   raw.split(/[;\n\r]+/).forEach(function (piece) {
-    var parts = String(piece).split(/[,|\t]+/)
-      .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
-      .filter(Boolean);
-    if (!parts.length) return;
-
-    var req = { name: '', email: '', shift: '', level: '' };
-    parts.forEach(function (v) {
-      if (!req.email && v.indexOf('@') > 0 &&
-          /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
-        req.email = v.toLowerCase(); return;
-      }
-      if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
-      if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
-        req.level = v; return;
-      }
-      if (!req.name) { req.name = v; return; }
-    });
-    if (!req.name) return;
-    out.push(req);
+    var req = parseAddFtoRequestV1_(piece);
+    if (req) out.push(req);
   });
   return out;
 }
 
-/** What would be added, and what would not. Reads; writes nothing. */
-function addFtoPlanV1_() {
+/**
+ * What would be added, and what would not. Reads; writes nothing.
+ * Pass an optional requests array (web); otherwise reads PORTAL_ADD_FTO.
+ */
+function addFtoPlanV1_(requests) {
   var plan = { add: [], already: [], retired: [], clash: [], problem: '',
                nameCol: '', emailCol: '', activeCol: '', blankCols: [] };
 
-  plan.requests = addFtoRequestsV1_();
+  plan.requests = (requests && requests.length) ? requests : addFtoRequestsV1_();
   if (!plan.requests.length) {
     plan.problem = 'Nothing is in ' + PORTAL_ADD_FTO_PROPERTY + '.\n\n' +
       'The name, then whatever else you have, in any order:\n' +
@@ -215,6 +239,18 @@ function addFto() {
     return noteV1_(L.join('\n'));
   }
 
+  return applyAddFtoPlanV1_(p, L);
+}
+
+/**
+ * Shared writer for editor addFto() and web addFtoV1().
+ * Appends roster rows, logs the run, refreshes form FTO dropdowns.
+ */
+function applyAddFtoPlanV1_(p, L) {
+  L = L || ['SOMEBODY JOINED THE ROSTER', '',
+    'In     : ' + safeTargetNameV1_(),
+    'Run by : ' + (whoIsAskingV1_() || 'unidentified'), ''];
+
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
   if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
   var t = readTabV1_(PORTAL.TAB.ROSTER);
@@ -298,6 +334,46 @@ function addFto() {
     L.push('To reverse it: undoAddFto()');
   }
   return noteV1_(L.join('\n'));
+}
+
+/**
+ * Training Division adds an FTO from Field Training.
+ * Writes one row to 22 FTO ROSTER and refreshes FTO LIST choices on forms.
+ */
+function addFtoV1(payload) {
+  requireWritableV1_('add an FTO');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add an FTO from Field Training.');
+  }
+  var req = parseAddFtoRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) {
+    throw new Error('Type their work email — that is how they sign in.');
+  }
+
+  var plan = addFtoPlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the active roster.');
+  }
+  if (plan.retired.length) {
+    throw new Error(plan.retired[0].name +
+      ' is already on the roster but marked gone. Run unretireFto in the editor instead of adding a second row.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (!plan.add.length) throw new Error('Nothing to add.');
+
+  applyAddFtoPlanV1_(plan);
+  auditV1_('FTO ADDED', viewer.email, req.name + ' | ' + (req.level || '') + ' | ' + req.email);
+  return {
+    ok: true,
+    name: req.name,
+    message: req.name + ' is on the FTO roster and on the existing forms.'
+  };
 }
 
 function writeAddFtoManifestV1_(rows) {

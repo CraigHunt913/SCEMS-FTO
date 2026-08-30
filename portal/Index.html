@@ -198,6 +198,28 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .more{background:none;border:1px solid var(--line);border-radius:var(--r);width:100%;padding:13px;
   font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-height:50px;}
 .more:hover{border-color:var(--ink-4);color:var(--ink);}
+/* Division desk tabs — one job per pane, less scroll */
+.tabs{display:flex;gap:2px;margin:0 -4px 16px;padding:0 0 0;border-bottom:1px solid var(--line);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tabs button{flex:1 0 auto;min-width:4.6rem;background:none;border:0;border-bottom:2px solid transparent;
+  margin-bottom:-1px;padding:11px 10px 10px;font-family:"Oswald",sans-serif;font-size:.72rem;
+  letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--ink-3);cursor:pointer;
+  transition:color .18s ease,border-color .18s ease;}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--gold);}
+.tabs button .ct{display:inline-block;min-width:1.1em;margin-left:4px;font-family:"IBM Plex Mono",monospace;
+  font-size:.68rem;letter-spacing:0;color:var(--gold);vertical-align:baseline;}
+.pane{animation:paneIn .22s ease;}
+@keyframes paneIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.menu-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.menu-list button.menu-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  width:100%;text-align:left;background:var(--raised);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;font:inherit;color:var(--ink);cursor:pointer;min-height:56px;}
+.menu-list button.menu-row:hover{border-color:var(--ink-4);}
+.menu-list button.menu-row .h{font-family:"Oswald",sans-serif;font-size:1.05rem;font-weight:600;
+  letter-spacing:.02em;display:block;}
+.menu-list button.menu-row .m{font-size:.84rem;color:var(--ink-3);margin-top:2px;display:block;}
+.menu-list button.menu-row .go{color:var(--ink-3);font-size:1.2rem;flex:none;}
 .back{background:none;border:none;color:var(--ink-3);font-family:"Oswald",sans-serif;
   font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:pointer;
   padding:8px 0;margin:4px 0 6px;}
@@ -333,7 +355,7 @@ try {
 // invalid JavaScript, and evaluate() then throws a SyntaxError reported
 // against the line in Code.gs that called it - nowhere near here.
 var BOOT = <?!= boot ?>;
-var S = { screen: 'main', ctx: null, busy: false };
+var S = { screen: 'main', ctx: null, busy: false, divTab: 'waiting' };
 
 window.onerror = function (msg, src, line) {
   try {
@@ -454,6 +476,7 @@ function renderInner_(){
   if (S.screen === 'settle')   return paintSettle();
   if (S.screen === 'formWait') return paintFormWait();
   if (S.screen === 'addTrainee') return paintAddTrainee();
+  if (S.screen === 'addFto') return paintAddFto();
 
   switch (v.role) {
     case 'TRAINEE':            return paintTrainee(d);
@@ -796,10 +819,8 @@ function submitAssign(traineeName){
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
 /* ---------------- division ---------------- */
-/* This screen answers one question before it does anything else: what needs a
-   decision from me. Everything after that is a count with a disclosure behind
-   it. Ten identical rows of names is not information, and a spreadsheet row
-   number is my diagnostics on somebody else's phone - neither belongs here. */
+/* Waiting on you answers one question first. Tabs hold the rest so the
+   phone is not one endless scroll of every roster and tool at once. */
 function paintDivision(d){
   var q = d.queue || [];
   var missingBy = {};
@@ -815,14 +836,20 @@ function paintDivision(d){
     return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; });
   });
   var showReady = !!(ready.length && canWrite());
+  var fw = d.formWaiting || {};
+  var closed = d.closedPeople || [];
+  var house = housekeeping(d);
+  var inboxN = (fw.waiting || 0) + (house ? 1 : 0);
+
+  var tab = S.divTab || 'waiting';
+  if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';
 
   var h = hero('Waiting on you',
     q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')
              : (showReady ? 'Clearance ready' : 'Queue clear'),
     d.activeCount+' in training'+
     (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves')+
-    (showReady ? ' &middot; '+ready.length+' ready for the truck' : '')+
-    (seen.length ? ' &middot; '+seen.length+' holding' : ''));
+    (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
@@ -830,8 +857,42 @@ function paintDivision(d){
 
   h += warnRow(d.warnings);
 
+  h += '<div class="tabs" role="tablist">'+
+    tabBtn('waiting','Decide', q.length)+
+    tabBtn('moves','Moves', flagged.length + seen.length)+
+    tabBtn('people','People', (d.people||[]).length)+
+    tabBtn('inbox','Inbox', inboxN)+
+    tabBtn('menu','Menu')+
+    '</div>';
+
+  h += '<div class="pane">';
+  if (tab === 'waiting') h += paintDivWaiting_(d, q, ready, showReady);
+  else if (tab === 'moves') h += paintDivMoves_(flagged, seen, missingBy);
+  else if (tab === 'people') h += paintDivPeople_(d, quiet);
+  else if (tab === 'inbox') h += paintDivInbox_(d, fw, house);
+  else h += paintDivMenu_(d, closed);
+  h += '</div>';
+
+  paint(h);
+}
+
+function tabBtn(id, label, n){
+  var on = (S.divTab || 'waiting') === id ? ' on' : '';
+  return '<button type="button" role="tab" class="'+on+'" onclick="setDivTab('+jsStr(id)+')">'+
+    esc(label)+(n ? '<span class="ct">'+esc(String(n))+'</span>' : '')+'</button>';
+}
+
+function setDivTab(id){
+  S.divTab = id || 'waiting';
+  S.screen = 'main';
+  render();
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+
+function paintDivWaiting_(d, q, ready, showReady){
+  var h = '';
   if (!q.length){
-    h += '<div class="note n-ok"><b>Nothing waiting</b>When an evaluation needs your call, it shows here first.</div>';
+    h += '<div class="note n-ok"><b>Nothing waiting</b>When a skill needs your call, it shows here first.</div>';
   } else {
     var lead = q[0];
     h += decisionLeadHtml(lead);
@@ -842,14 +903,6 @@ function paintDivision(d){
     if (d.queueCount > q.length)
       h += '<p class="sub">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';
   }
-
-  if (flagged.length){
-    h += sec('Next moves', flagged.length);
-    h += '<p class="sub" style="margin-bottom:9px">Open each one — assign an FTO, fix the record, or hold it with your words so it leaves this list.</p>';
-    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
-  }
-
-  // Clearance sits with decisions — not after the holding parking lot.
   if (showReady){
     h += sec('Ready for the truck', ready.length);
     h += '<p class="sub" style="margin-bottom:9px">Phase 4 and every skill signed off. Clear them as an independent partner.</p>';
@@ -865,26 +918,40 @@ function paintDivision(d){
            '<span class="go">&rsaquo;</span></button>';
     });
   }
+  return h;
+}
 
+function paintDivMoves_(flagged, seen, missingBy){
+  var h = '';
+  if (!flagged.length && !seen.length){
+    return '<div class="note n-ok"><b>No open moves</b>Nobody needs a look right now.</div>';
+  }
+  if (flagged.length){
+    h += sec('Next moves', flagged.length);
+    h += '<p class="sub" style="margin-bottom:9px">Open each one — assign an FTO, fix the record, or hold it with your words.</p>';
+    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
+  }
   if (seen.length){
     h += sec('Seen, and holding', seen.length);
     seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
+  return h;
+}
 
-  if ((d.people||[]).length){
-    h += sec('Anyone else', (d.people||[]).length);
-    h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
-         ' have nothing outstanding. Pick a name to open their record.</p>';
-    h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
-      return { value: String(i),
-               label: t.name + ' \u2014 ' + (t.phase || 'no phase set') +
-                      (t.needs ? ' \u00b7 needs a look' : '') };
-    }), 'pickPerson');
-  }
+function paintDivPeople_(d, quiet){
+  var h = sec('Anyone in training', (d.people||[]).length);
+  h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+(d.people||[]).length+
+       ' have nothing outstanding. Pick a name to open their record.</p>';
+  h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
+    return { value: String(i),
+             label: t.name + ' \u2014 ' + (t.phase || 'no phase set') +
+                    (t.needs ? ' \u00b7 needs a look' : '') };
+  }), 'pickPerson');
+  return h;
+}
 
-  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
-
-  var fw = d.formWaiting || {};
+function paintDivInbox_(d, fw, house){
+  var h = '';
   if ((fw.waiting || 0) > 0){
     h += sec('Skills log & forms waiting', fw.waiting);
     h += '<p class="sub" style="margin-bottom:9px">'+
@@ -896,9 +963,36 @@ function paintDivision(d){
                       ' \u2014 ' + (x.when || x.stamp || 'no date') +
                       (x.by ? ' \u00b7 ' + x.by : '') };
     }), 'pickFormWait');
+  } else {
+    h += '<div class="note n-ok"><b>Inbox clear</b>No form responses waiting on the desk.</div>';
   }
+  if (house) h += sec('Settle')+house;
+  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
+  return h;
+}
 
-  var closed = d.closedPeople || [];
+function paintDivMenu_(d, closed){
+  var h = '<p class="sub" style="margin-bottom:12px">Roster, reports, and desk tools — off the main Decide screen.</p>';
+  h += '<div class="menu-list">';
+  if (d.canAddTrainee){
+    h += '<button type="button" class="menu-row" onclick="openAddTrainee()">'+
+         '<span><span class="h">Bring someone on</span><span class="m">New trainee on the master and forms</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  if (d.canAddFto !== false && canWrite()){
+    h += '<button type="button" class="menu-row" onclick="openAddFto()">'+
+         '<span><span class="h">Add an FTO</span><span class="m">Writes the tracker roster and form dropdowns</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+    h += '<button type="button" class="menu-row" onclick="syncMatrixEvidence()">'+
+         '<span><span class="h">Sync matrix from evidence</span><span class="m">Logged skills stuck IN PROGRESS</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+    h += '<button type="button" class="menu-row" onclick="refreshQueue()">'+
+         '<span><span class="h">Refresh sign-off queue</span><span class="m">READY skills missing from OPEN</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  h += '</div>';
   if (closed.length){
     h += sec('Released — prior reports', closed.length);
     h += '<p class="sub" style="margin-bottom:9px">Pull a printable report (Save as PDF from the print dialog).</p>';
@@ -908,25 +1002,8 @@ function paintDivision(d){
                       (t.level ? ' \u00b7 ' + t.level : '') };
     }), 'pickClosedReport');
   }
-
-  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
-    h += '<button class="more" style="margin-top:14px" onclick="syncMatrixEvidence()">'+
-         'Sync matrix from evidence — logged skills stuck IN PROGRESS</button>';
-    h += '<button class="more" style="margin-top:8px" onclick="refreshQueue()">'+
-         'Refresh queue from matrix — READY skills missing from OPEN</button>';
-  }
-
-  // Enroll last — not competing with decisions or clearance.
-  if (d.canAddTrainee) {
-    h += '<button class="more" style="margin-top:18px" onclick="openAddTrainee()">Bring someone on — new trainee</button>';
-  }
-
-  // Same-day duplicates are a human call — keep them visible but quiet, at the end.
-  var house = housekeeping(d);
-  if (house) h += sec('Settle')+house;
-
   h += deskDetails(d);
-  paint(h);
+  return h;
 }
 
 /* Approving / returning writes a decision into the queue. Against a tracker
@@ -1437,7 +1514,7 @@ function paintAddTrainee(){
   var officers = d.officers || [];
   var h = hero('Bring someone on', 'New trainee',
     'They land in training and on the forms already in service.')+
-    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+    '<button class="back" onclick="S.divTab=\'menu\';S.screen=\'main\';render()">&larr; Back</button>';
 
   h += '<div class="panel">'+
     '<div class="field"><div class="lab">Full name</div>'+
@@ -1510,6 +1587,69 @@ function submitAddTrainee(){
     })
     .addTraineeV1({ name: name, email: email, level: level, phase: phase,
                     fto: fto, entry: entry });
+}
+
+function openAddFto(){
+  S.divTab = 'menu';
+  S.screen = 'addFto'; render();
+}
+function paintAddFto(){
+  var h = hero('Add an FTO', 'New training officer',
+    'They land on the tracker roster and on the FTO dropdowns already in service.')+
+    '<button class="back" onclick="S.divTab=\'menu\';S.screen=\'main\';render()">&larr; Back</button>';
+  h += '<div class="panel">'+
+    '<div class="field"><div class="lab">Full name</div>'+
+    '<input id="af-name" autocomplete="name" placeholder="Chyna Gray" /></div>'+
+    '<div class="field"><div class="lab">Work email</div>'+
+    '<input id="af-email" type="email" autocomplete="email" placeholder="chyna.gray@example.org" />'+
+    '<div class="hint">How they sign into Field Training.</div></div>'+
+    '<div class="field"><div class="lab">Shift</div>'+
+    '<select id="af-shift">'+
+    '<option value="">Set later…</option>'+
+    '<option value="A">A</option><option value="B">B</option>'+
+    '<option value="C">C</option><option value="D">D</option>'+
+    '</select></div>'+
+    '<div class="field"><div class="lab">Cert level</div>'+
+    '<select id="af-level">'+
+    '<option value="">Set later…</option>'+
+    '<option value="EMT">EMT</option>'+
+    '<option value="Advanced EMT">Advanced EMT</option>'+
+    '<option value="Paramedic">Paramedic</option>'+
+    '</select>'+
+    '<div class="hint">What they are signed off to train stays blank for a person to fill in on the roster.</div></div>'+
+    '</div>'+
+    '<button class="btn" id="af-go" onclick="submitAddFto()">Add to roster</button>'+
+    '<div class="next"><b>What this does</b>Appends one row on '+
+    '22 FTO ROSTER and refreshes FTO name lists on the Google Forms you already use.</div>'+
+    '<div class="next"><b>Then</b>Assign them to a trainee from that trainee\'s person sheet.</div>';
+  paint(h);
+}
+function submitAddFto(){
+  if (S.busy) return;
+  var name = (el('af-name') && el('af-name').value || '').trim();
+  var email = (el('af-email') && el('af-email').value || '').trim();
+  var shift = (el('af-shift') && el('af-shift').value || '').trim();
+  var level = (el('af-level') && el('af-level').value || '').trim();
+  if (!name) { alert('Type their full name.'); return; }
+  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }
+
+  S.busy = true;
+  var b = el('af-go');
+  if (b) { b.disabled = true; b.textContent = 'Adding…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || (name + ' is on the roster.'));
+      S.divTab = 'menu';
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.disabled = false; b.textContent = 'Add to roster'; }
+      alert(e.message || e);
+    })
+    .addFtoV1({ name: name, email: email, shift: shift, level: level });
 }
 
 function paintSignoff(){

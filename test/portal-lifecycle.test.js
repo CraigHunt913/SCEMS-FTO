@@ -301,8 +301,8 @@ section('UI surface');
      'Tonight leads with File tonight only when overdue');
   ok(!/due:\s*0[\s,]/.test(page) || /due:\s*1/.test(page),
      'urgency sort does not use due:0 (falsy || fallback demotes overdue)');
-  ok(/Bring someone on/.test(page) && /class="more"/.test(page),
-     'enroll is a quiet more-link, not a desk hero');
+  ok(/Bring someone on/.test(page) && /openAddTrainee|menu-row/.test(page),
+     'enroll is on Menu, not competing with Decide');
   ok(/createCoachingV1/.test(page) && /File coaching/.test(page),
      'Tonight can file a coaching note');
   ok(/assignFtoV1/.test(page) && /Save assignment/.test(page),

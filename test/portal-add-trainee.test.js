@@ -383,9 +383,34 @@ section('Field Training page has Bring someone on');
   ok(/Bring someone on|openAddTrainee/.test(page), 'Division desk offers Bring someone on');
   ok(/addTraineeV1/.test(page), 'page calls addTraineeV1');
   ok(/openAddTrainee|paintAddTrainee/.test(page), 'add-trainee screen exists');
+  ok(/Add an FTO|openAddFto/.test(page) && /addFtoV1/.test(page),
+     'Division Menu offers Add an FTO via addFtoV1');
+  ok(/setDivTab|divTab|class="tabs"/.test(page), 'Division home uses tabs instead of one long scroll');
   ok(/syncRegisteredFormChoicesV1_/.test(
     fs.readFileSync(ROOT + '/portal/40_Forms.gs', 'utf8')),
     'form choice sync lives with the form registry');
+}
+
+section('Division can add an FTO from Field Training');
+{
+  seed();
+  ACTIVE = 'chief@example.org';
+  EFFECTIVE = 'chief@example.org';
+  PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_LIVE;
+  const r = addFtoV1({
+    name: 'Chyna Gray',
+    email: 'chyna.gray@example.org',
+    shift: 'C',
+    level: 'Advanced EMT'
+  });
+  ok(r && r.ok && r.name === 'Chyna Gray', 'Division in LIVE can add an FTO');
+  ok(rosterPeopleV1_().some(p => p.name === 'Chyna Gray' && p.active),
+     'Chyna is on the active roster after web add');
+  ACTIVE = 'dana.whitlock@example.org';
+  EFFECTIVE = 'dana.whitlock@example.org';
+  ok(/Only the Training Division/.test(threw(() =>
+    addFtoV1({ name: 'Nope', email: 'nope@example.org' }))),
+    'an FTO cannot add another FTO from the web');
 }
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');

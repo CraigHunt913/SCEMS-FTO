@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.7.0
- * Build f2f83b01
+ * SCEMS FIELD TRAINING PORTAL — portal-2.8.0
+ * Build 70e29b14
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.7.0',
+  VERSION: 'portal-2.8.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1910,6 +1910,7 @@ function divisionPayloadV1_() {
       } catch (e) { return []; }
     })(),
     canAddTrainee: mayWriteV1_(),
+    canAddFto: mayWriteV1_(),
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
     duplicateSubs: duplicateSubs,
@@ -9133,6 +9134,10 @@ function UNDO_SOMEBODY_LEFT() { return unretireFto(); }
  *   Guess at what somebody is qualified to train. Those columns are left
  *   blank and named, for a person to fill in.
  *
+ * Two ways in:
+ *   Editor: set PORTAL_ADD_FTO, run addFtoBeforeAndAfter / addFto.
+ *   Field Training: Training Division → Add an FTO → addFtoV1 (web).
+ *
  * undoAddFto() removes the rows it added, and only while they are still the
  * blank-slate rows it wrote.
  */
@@ -9140,48 +9145,68 @@ function UNDO_SOMEBODY_LEFT() { return unretireFto(); }
 var PORTAL_ADD_FTO_PROPERTY = 'PORTAL_ADD_FTO';
 var PORTAL_ADD_FTO_LOG = 'PORTAL ROSTER ADDITIONS';
 
-/** Who to add.
- *
- *  "Chyna Gray, cgray@example.org, C, Advanced EMT" - and the parts after the
- *  name may come in any order, because remembering an order is one more thing
- *  to get wrong. A field with an @ is the address, a lone letter is the shift,
- *  and anything that reads like a certification is the level.
- *
- *  More than one? Put a semicolon between them. */
+/** Parse one FTO add request from a web payload or a free-text property line. */
+function parseAddFtoRequestV1_(piece) {
+  if (piece && typeof piece === 'object' && !Array.isArray(piece)) {
+    var lvl = String(piece.level || '').trim();
+    if (lvl && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(lvl)) {
+      /* keep as typed */
+    } else if (lvl) {
+      if (/param/i.test(lvl)) lvl = 'Paramedic';
+      else if (/advanced|aemt/i.test(lvl)) lvl = 'Advanced EMT';
+      else if (/^emt/i.test(lvl)) lvl = 'EMT';
+    }
+    var sh = String(piece.shift || '').trim().toUpperCase();
+    if (sh && !/^[A-D]$/.test(sh)) sh = '';
+    return {
+      name: String(piece.name || '').replace(/\s+/g, ' ').trim(),
+      email: String(piece.email || '').trim().toLowerCase(),
+      shift: sh,
+      level: lvl
+    };
+  }
+
+  var parts = String(piece || '').split(/[,|\t]+/)
+    .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  var req = { name: '', email: '', shift: '', level: '' };
+  parts.forEach(function (v) {
+    if (!req.email && v.indexOf('@') > 0 &&
+        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
+      req.email = v.toLowerCase(); return;
+    }
+    if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
+    if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
+      req.level = v; return;
+    }
+    if (!req.name) { req.name = v; return; }
+  });
+  return req.name ? req : null;
+}
+
+/** Who to add from the script property (editor path). */
 function addFtoRequestsV1_() {
   var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL_ADD_FTO_PROPERTY) || '');
   var out = [];
   raw.split(/[;\n\r]+/).forEach(function (piece) {
-    var parts = String(piece).split(/[,|\t]+/)
-      .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
-      .filter(Boolean);
-    if (!parts.length) return;
-
-    var req = { name: '', email: '', shift: '', level: '' };
-    parts.forEach(function (v) {
-      if (!req.email && v.indexOf('@') > 0 &&
-          /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
-        req.email = v.toLowerCase(); return;
-      }
-      if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
-      if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
-        req.level = v; return;
-      }
-      if (!req.name) { req.name = v; return; }
-    });
-    if (!req.name) return;
-    out.push(req);
+    var req = parseAddFtoRequestV1_(piece);
+    if (req) out.push(req);
   });
   return out;
 }
 
-/** What would be added, and what would not. Reads; writes nothing. */
-function addFtoPlanV1_() {
+/**
+ * What would be added, and what would not. Reads; writes nothing.
+ * Pass an optional requests array (web); otherwise reads PORTAL_ADD_FTO.
+ */
+function addFtoPlanV1_(requests) {
   var plan = { add: [], already: [], retired: [], clash: [], problem: '',
                nameCol: '', emailCol: '', activeCol: '', blankCols: [] };
 
-  plan.requests = addFtoRequestsV1_();
+  plan.requests = (requests && requests.length) ? requests : addFtoRequestsV1_();
   if (!plan.requests.length) {
     plan.problem = 'Nothing is in ' + PORTAL_ADD_FTO_PROPERTY + '.\n\n' +
       'The name, then whatever else you have, in any order:\n' +
@@ -9323,6 +9348,18 @@ function addFto() {
     return noteV1_(L.join('\n'));
   }
 
+  return applyAddFtoPlanV1_(p, L);
+}
+
+/**
+ * Shared writer for editor addFto() and web addFtoV1().
+ * Appends roster rows, logs the run, refreshes form FTO dropdowns.
+ */
+function applyAddFtoPlanV1_(p, L) {
+  L = L || ['SOMEBODY JOINED THE ROSTER', '',
+    'In     : ' + safeTargetNameV1_(),
+    'Run by : ' + (whoIsAskingV1_() || 'unidentified'), ''];
+
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
   if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
   var t = readTabV1_(PORTAL.TAB.ROSTER);
@@ -9406,6 +9443,46 @@ function addFto() {
     L.push('To reverse it: undoAddFto()');
   }
   return noteV1_(L.join('\n'));
+}
+
+/**
+ * Training Division adds an FTO from Field Training.
+ * Writes one row to 22 FTO ROSTER and refreshes FTO LIST choices on forms.
+ */
+function addFtoV1(payload) {
+  requireWritableV1_('add an FTO');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add an FTO from Field Training.');
+  }
+  var req = parseAddFtoRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) {
+    throw new Error('Type their work email — that is how they sign in.');
+  }
+
+  var plan = addFtoPlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the active roster.');
+  }
+  if (plan.retired.length) {
+    throw new Error(plan.retired[0].name +
+      ' is already on the roster but marked gone. Run unretireFto in the editor instead of adding a second row.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (!plan.add.length) throw new Error('Nothing to add.');
+
+  applyAddFtoPlanV1_(plan);
+  auditV1_('FTO ADDED', viewer.email, req.name + ' | ' + (req.level || '') + ' | ' + req.email);
+  return {
+    ok: true,
+    name: req.name,
+    message: req.name + ' is on the FTO roster and on the existing forms.'
+  };
 }
 
 function writeAddFtoManifestV1_(rows) {
@@ -10260,6 +10337,38 @@ var PORTAL_PAGE_HTML = [
   "  font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-he",
   "ight:50px;}\n",
   ".more:hover{border-color:var(--ink-4);color:var(--ink);}\n",
+  "/* Division desk tabs — one job per pane, less scroll */\n",
+  ".tabs{display:flex;gap:2px;margin:0 -4px 16px;padding:0 0 0;border-bottom:1px solid var(--",
+  "line);\n",
+  "  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}\n",
+  ".tabs::-webkit-scrollbar{display:none;}\n",
+  ".tabs button{flex:1 0 auto;min-width:4.6rem;background:none;border:0;border-bottom:2px sol",
+  "id transparent;\n",
+  "  margin-bottom:-1px;padding:11px 10px 10px;font-family:\"Oswald\",sans-serif;font-size:.72r",
+  "em;\n",
+  "  letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--ink-3);cursor:",
+  "pointer;\n",
+  "  transition:color .18s ease,border-color .18s ease;}\n",
+  ".tabs button.on{color:var(--ink);border-bottom-color:var(--gold);}\n",
+  ".tabs button .ct{display:inline-block;min-width:1.1em;margin-left:4px;font-family:\"IBM Ple",
+  "x Mono\",monospace;\n",
+  "  font-size:.68rem;letter-spacing:0;color:var(--gold);vertical-align:baseline;}\n",
+  ".pane{animation:paneIn .22s ease;}\n",
+  "@keyframes paneIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}",
+  "\n",
+  ".menu-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;}\n",
+  ".menu-list button.menu-row{display:flex;align-items:center;justify-content:space-between;g",
+  "ap:12px;\n",
+  "  width:100%;text-align:left;background:var(--raised);border:1px solid var(--line);border-",
+  "radius:var(--r);\n",
+  "  padding:14px 16px;font:inherit;color:var(--ink);cursor:pointer;min-height:56px;}\n",
+  ".menu-list button.menu-row:hover{border-color:var(--ink-4);}\n",
+  ".menu-list button.menu-row .h{font-family:\"Oswald\",sans-serif;font-size:1.05rem;font-weigh",
+  "t:600;\n",
+  "  letter-spacing:.02em;display:block;}\n",
+  ".menu-list button.menu-row .m{font-size:.84rem;color:var(--ink-3);margin-top:2px;display:b",
+  "lock;}\n",
+  ".menu-list button.menu-row .go{color:var(--ink-3);font-size:1.2rem;flex:none;}\n",
   ".back{background:none;border:none;color:var(--ink-3);font-family:\"Oswald\",sans-serif;\n",
   "  font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:poi",
   "nter;\n",
@@ -10465,7 +10574,7 @@ var PORTAL_PAGE_HTML = [
   "// invalid JavaScript, and evaluate() then throws a SyntaxError reported\n",
   "// against the line in Code.gs that called it - nowhere near here.\n",
   "var BOOT = <?!= boot ?>;\n",
-  "var S = { screen: 'main', ctx: null, busy: false };\n",
+  "var S = { screen: 'main', ctx: null, busy: false, divTab: 'waiting' };\n",
   "\n",
   "window.onerror = function (msg, src, line) {\n",
   "  try {\n",
@@ -10594,6 +10703,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'settle')   return paintSettle();\n",
   "  if (S.screen === 'formWait') return paintFormWait();\n",
   "  if (S.screen === 'addTrainee') return paintAddTrainee();\n",
+  "  if (S.screen === 'addFto') return paintAddFto();\n",
   "\n",
   "  switch (v.role) {\n",
   "    case 'TRAINEE':            return paintTrainee(d);\n",
@@ -10982,10 +11092,8 @@ var PORTAL_PAGE_HTML = [
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
   "\n",
   "/* ---------------- division ---------------- */\n",
-  "/* This screen answers one question before it does anything else: what needs a\n",
-  "   decision from me. Everything after that is a count with a disclosure behind\n",
-  "   it. Ten identical rows of names is not information, and a spreadsheet row\n",
-  "   number is my diagnostics on somebody else's phone - neither belongs here. */\n",
+  "/* Waiting on you answers one question first. Tabs hold the rest so the\n",
+  "   phone is not one endless scroll of every roster and tool at once. */\n",
   "function paintDivision(d){\n",
   "  var q = d.queue || [];\n",
   "  var missingBy = {};\n",
@@ -11002,6 +11110,13 @@ var PORTAL_PAGE_HTML = [
   ";\n",
   "  });\n",
   "  var showReady = !!(ready.length && canWrite());\n",
+  "  var fw = d.formWaiting || {};\n",
+  "  var closed = d.closedPeople || [];\n",
+  "  var house = housekeeping(d);\n",
+  "  var inboxN = (fw.waiting || 0) + (house ? 1 : 0);\n",
+  "\n",
+  "  var tab = S.divTab || 'waiting';\n",
+  "  if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';\n",
   "\n",
   "  var h = hero('Waiting on you',\n",
   "    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')\n",
@@ -11009,8 +11124,7 @@ var PORTAL_PAGE_HTML = [
   "    d.activeCount+' in training'+\n",
   "    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves",
   "')+\n",
-  "    (showReady ? ' &middot; '+ready.length+' ready for the truck' : '')+\n",
-  "    (seen.length ? ' &middot; '+seen.length+' holding' : ''));\n",
+  "    (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
   "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
@@ -11018,9 +11132,44 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  h += warnRow(d.warnings);\n",
   "\n",
+  "  h += '<div class=\"tabs\" role=\"tablist\">'+\n",
+  "    tabBtn('waiting','Decide', q.length)+\n",
+  "    tabBtn('moves','Moves', flagged.length + seen.length)+\n",
+  "    tabBtn('people','People', (d.people||[]).length)+\n",
+  "    tabBtn('inbox','Inbox', inboxN)+\n",
+  "    tabBtn('menu','Menu')+\n",
+  "    '</div>';\n",
+  "\n",
+  "  h += '<div class=\"pane\">';\n",
+  "  if (tab === 'waiting') h += paintDivWaiting_(d, q, ready, showReady);\n",
+  "  else if (tab === 'moves') h += paintDivMoves_(flagged, seen, missingBy);\n",
+  "  else if (tab === 'people') h += paintDivPeople_(d, quiet);\n",
+  "  else if (tab === 'inbox') h += paintDivInbox_(d, fw, house);\n",
+  "  else h += paintDivMenu_(d, closed);\n",
+  "  h += '</div>';\n",
+  "\n",
+  "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function tabBtn(id, label, n){\n",
+  "  var on = (S.divTab || 'waiting') === id ? ' on' : '';\n",
+  "  return '<button type=\"button\" role=\"tab\" class=\"'+on+'\" onclick=\"setDivTab('+jsStr(id)+'",
+  ")\">'+\n",
+  "    esc(label)+(n ? '<span class=\"ct\">'+esc(String(n))+'</span>' : '')+'</button>';\n",
+  "}\n",
+  "\n",
+  "function setDivTab(id){\n",
+  "  S.divTab = id || 'waiting';\n",
+  "  S.screen = 'main';\n",
+  "  render();\n",
+  "  try { window.scrollTo(0, 0); } catch (e) {}\n",
+  "}\n",
+  "\n",
+  "function paintDivWaiting_(d, q, ready, showReady){\n",
+  "  var h = '';\n",
   "  if (!q.length){\n",
-  "    h += '<div class=\"note n-ok\"><b>Nothing waiting</b>When an evaluation needs your call,",
-  " it shows here first.</div>';\n",
+  "    h += '<div class=\"note n-ok\"><b>Nothing waiting</b>When a skill needs your call, it sh",
+  "ows here first.</div>';\n",
   "  } else {\n",
   "    var lead = q[0];\n",
   "    h += decisionLeadHtml(lead);\n",
@@ -11031,15 +11180,6 @@ var PORTAL_PAGE_HTML = [
   "    if (d.queueCount > q.length)\n",
   "      h += '<p class=\"sub\">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';\n",
   "  }\n",
-  "\n",
-  "  if (flagged.length){\n",
-  "    h += sec('Next moves', flagged.length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Open each one — assign an FTO, fix the ",
-  "record, or hold it with your words so it leaves this list.</p>';\n",
-  "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
-  "  }\n",
-  "\n",
-  "  // Clearance sits with decisions — not after the holding parking lot.\n",
   "  if (showReady){\n",
   "    h += sec('Ready for the truck', ready.length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 and every skill signed off. Cle",
@@ -11057,26 +11197,43 @@ var PORTAL_PAGE_HTML = [
   "           '<span class=\"go\">&rsaquo;</span></button>';\n",
   "    });\n",
   "  }\n",
+  "  return h;\n",
+  "}\n",
   "\n",
+  "function paintDivMoves_(flagged, seen, missingBy){\n",
+  "  var h = '';\n",
+  "  if (!flagged.length && !seen.length){\n",
+  "    return '<div class=\"note n-ok\"><b>No open moves</b>Nobody needs a look right now.</div",
+  ">';\n",
+  "  }\n",
+  "  if (flagged.length){\n",
+  "    h += sec('Next moves', flagged.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Open each one — assign an FTO, fix the ",
+  "record, or hold it with your words.</p>';\n",
+  "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
+  "  }\n",
   "  if (seen.length){\n",
   "    h += sec('Seen, and holding', seen.length);\n",
   "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
+  "  return h;\n",
+  "}\n",
   "\n",
-  "  if ((d.people||[]).length){\n",
-  "    h += sec('Anyone else', (d.people||[]).length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+d.people.length+\n",
-  "         ' have nothing outstanding. Pick a name to open their record.</p>';\n",
-  "    h += picker('pick-person', 'Open a trainee\\u2026', (d.people||[]).map(function(t,i){\n",
-  "      return { value: String(i),\n",
-  "               label: t.name + ' \\u2014 ' + (t.phase || 'no phase set') +\n",
-  "                      (t.needs ? ' \\u00b7 needs a look' : '') };\n",
-  "    }), 'pickPerson');\n",
-  "  }\n",
+  "function paintDivPeople_(d, quiet){\n",
+  "  var h = sec('Anyone in training', (d.people||[]).length);\n",
+  "  h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+(d.people||[]).leng",
+  "th+\n",
+  "       ' have nothing outstanding. Pick a name to open their record.</p>';\n",
+  "  h += picker('pick-person', 'Open a trainee\\u2026', (d.people||[]).map(function(t,i){\n",
+  "    return { value: String(i),\n",
+  "             label: t.name + ' \\u2014 ' + (t.phase || 'no phase set') +\n",
+  "                    (t.needs ? ' \\u00b7 needs a look' : '') };\n",
+  "  }), 'pickPerson');\n",
+  "  return h;\n",
+  "}\n",
   "\n",
-  "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
-  "\n",
-  "  var fw = d.formWaiting || {};\n",
+  "function paintDivInbox_(d, fw, house){\n",
+  "  var h = '';\n",
   "  if ((fw.waiting || 0) > 0){\n",
   "    h += sec('Skills log & forms waiting', fw.waiting);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
@@ -11089,9 +11246,42 @@ var PORTAL_PAGE_HTML = [
   "                      ' \\u2014 ' + (x.when || x.stamp || 'no date') +\n",
   "                      (x.by ? ' \\u00b7 ' + x.by : '') };\n",
   "    }), 'pickFormWait');\n",
+  "  } else {\n",
+  "    h += '<div class=\"note n-ok\"><b>Inbox clear</b>No form responses waiting on the desk.<",
+  "/div>';\n",
   "  }\n",
+  "  if (house) h += sec('Settle')+house;\n",
+  "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
+  "  return h;\n",
+  "}\n",
   "\n",
-  "  var closed = d.closedPeople || [];\n",
+  "function paintDivMenu_(d, closed){\n",
+  "  var h = '<p class=\"sub\" style=\"margin-bottom:12px\">Roster, reports, and desk tools — off",
+  " the main Decide screen.</p>';\n",
+  "  h += '<div class=\"menu-list\">';\n",
+  "  if (d.canAddTrainee){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"openAddTrainee()\">'+\n",
+  "         '<span><span class=\"h\">Bring someone on</span><span class=\"m\">New trainee on the ",
+  "master and forms</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  if (d.canAddFto !== false && canWrite()){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"openAddFto()\">'+\n",
+  "         '<span><span class=\"h\">Add an FTO</span><span class=\"m\">Writes the tracker roster",
+  " and form dropdowns</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"syncMatrixEvidence()\">'+\n",
+  "         '<span><span class=\"h\">Sync matrix from evidence</span><span class=\"m\">Logged ski",
+  "lls stuck IN PROGRESS</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"refreshQueue()\">'+\n",
+  "         '<span><span class=\"h\">Refresh sign-off queue</span><span class=\"m\">READY skills ",
+  "missing from OPEN</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  h += '</div>';\n",
   "  if (closed.length){\n",
   "    h += sec('Released — prior reports', closed.length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Pull a printable report (Save as PDF fr",
@@ -11103,26 +11293,8 @@ var PORTAL_PAGE_HTML = [
   "                      (t.level ? ' \\u00b7 ' + t.level : '') };\n",
   "    }), 'pickClosedReport');\n",
   "  }\n",
-  "\n",
-  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
-  "    h += '<button class=\"more\" style=\"margin-top:14px\" onclick=\"syncMatrixEvidence()\">'+\n",
-  "         'Sync matrix from evidence — logged skills stuck IN PROGRESS</button>';\n",
-  "    h += '<button class=\"more\" style=\"margin-top:8px\" onclick=\"refreshQueue()\">'+\n",
-  "         'Refresh queue from matrix — READY skills missing from OPEN</button>';\n",
-  "  }\n",
-  "\n",
-  "  // Enroll last — not competing with decisions or clearance.\n",
-  "  if (d.canAddTrainee) {\n",
-  "    h += '<button class=\"more\" style=\"margin-top:18px\" onclick=\"openAddTrainee()\">Bring so",
-  "meone on — new trainee</button>';\n",
-  "  }\n",
-  "\n",
-  "  // Same-day duplicates are a human call — keep them visible but quiet, at the end.\n",
-  "  var house = housekeeping(d);\n",
-  "  if (house) h += sec('Settle')+house;\n",
-  "\n",
   "  h += deskDetails(d);\n",
-  "  paint(h);\n",
+  "  return h;\n",
   "}\n",
   "\n",
   "/* Approving / returning writes a decision into the queue. Against a tracker\n",
@@ -11707,7 +11879,8 @@ var PORTAL_PAGE_HTML = [
   "  var officers = d.officers || [];\n",
   "  var h = hero('Bring someone on', 'New trainee',\n",
   "    'They land in training and on the forms already in service.')+\n",
-  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "    '<button class=\"back\" onclick=\"S.divTab=\\'menu\\';S.screen=\\'main\\';render()\">&larr; Ba",
+  "ck</button>';\n",
   "\n",
   "  h += '<div class=\"panel\">'+\n",
   "    '<div class=\"field\"><div class=\"lab\">Full name</div>'+\n",
@@ -11787,6 +11960,74 @@ var PORTAL_PAGE_HTML = [
   "    })\n",
   "    .addTraineeV1({ name: name, email: email, level: level, phase: phase,\n",
   "                    fto: fto, entry: entry });\n",
+  "}\n",
+  "\n",
+  "function openAddFto(){\n",
+  "  S.divTab = 'menu';\n",
+  "  S.screen = 'addFto'; render();\n",
+  "}\n",
+  "function paintAddFto(){\n",
+  "  var h = hero('Add an FTO', 'New training officer',\n",
+  "    'They land on the tracker roster and on the FTO dropdowns already in service.')+\n",
+  "    '<button class=\"back\" onclick=\"S.divTab=\\'menu\\';S.screen=\\'main\\';render()\">&larr; Ba",
+  "ck</button>';\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Full name</div>'+\n",
+  "    '<input id=\"af-name\" autocomplete=\"name\" placeholder=\"Chyna Gray\" /></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Work email</div>'+\n",
+  "    '<input id=\"af-email\" type=\"email\" autocomplete=\"email\" placeholder=\"chyna.gray@exampl",
+  "e.org\" />'+\n",
+  "    '<div class=\"hint\">How they sign into Field Training.</div></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Shift</div>'+\n",
+  "    '<select id=\"af-shift\">'+\n",
+  "    '<option value=\"\">Set later…</option>'+\n",
+  "    '<option value=\"A\">A</option><option value=\"B\">B</option>'+\n",
+  "    '<option value=\"C\">C</option><option value=\"D\">D</option>'+\n",
+  "    '</select></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Cert level</div>'+\n",
+  "    '<select id=\"af-level\">'+\n",
+  "    '<option value=\"\">Set later…</option>'+\n",
+  "    '<option value=\"EMT\">EMT</option>'+\n",
+  "    '<option value=\"Advanced EMT\">Advanced EMT</option>'+\n",
+  "    '<option value=\"Paramedic\">Paramedic</option>'+\n",
+  "    '</select>'+\n",
+  "    '<div class=\"hint\">What they are signed off to train stays blank for a person to fill ",
+  "in on the roster.</div></div>'+\n",
+  "    '</div>'+\n",
+  "    '<button class=\"btn\" id=\"af-go\" onclick=\"submitAddFto()\">Add to roster</button>'+\n",
+  "    '<div class=\"next\"><b>What this does</b>Appends one row on '+\n",
+  "    '22 FTO ROSTER and refreshes FTO name lists on the Google Forms you already use.</div>",
+  "'+\n",
+  "    '<div class=\"next\"><b>Then</b>Assign them to a trainee from that trainee\\'s person she",
+  "et.</div>';\n",
+  "  paint(h);\n",
+  "}\n",
+  "function submitAddFto(){\n",
+  "  if (S.busy) return;\n",
+  "  var name = (el('af-name') && el('af-name').value || '').trim();\n",
+  "  var email = (el('af-email') && el('af-email').value || '').trim();\n",
+  "  var shift = (el('af-shift') && el('af-shift').value || '').trim();\n",
+  "  var level = (el('af-level') && el('af-level').value || '').trim();\n",
+  "  if (!name) { alert('Type their full name.'); return; }\n",
+  "  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }\n",
+  "\n",
+  "  S.busy = true;\n",
+  "  var b = el('af-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Adding…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || (name + ' is on the roster.'));\n",
+  "      S.divTab = 'menu';\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.disabled = false; b.textContent = 'Add to roster'; }\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .addFtoV1({ name: name, email: email, shift: shift, level: level });\n",
   "}\n",
   "\n",
   "function paintSignoff(){\n",
@@ -12374,7 +12615,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'f2f83b01';
+var PORTAL_BUILD = '70e29b14';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

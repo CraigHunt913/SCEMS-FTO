@@ -837,16 +837,29 @@ function cards(html) { return html.replace(/<select[\s\S]*?<\/select>/g, ''); }
 
 if (api3) {
   let html = nodes['view'].innerHTML;
-  const rows = cards(html);
+  let rows = cards(html);
 
   ok(/Queue clear/.test(html),
      'with no sign-offs pending it says so at the top, in one line');
+  ok(/class="tabs"|setDivTab/.test(html),
+     'Division home uses tabs so the rest is not one long scroll');
+  ok(/Decide|Moves|People|Inbox|Menu/.test(html), 'tab labels are on the desk');
+
+  // Moves tab — flagged trainees only
+  api3.S.divTab = 'moves'; api3.render();
+  html = nodes['view'].innerHTML;
+  rows = cards(html);
   ok(/Latavia Cole/.test(rows), 'the one trainee who needs something gets a row');
   ok(/no training officer is named/i.test(rows), 'with the reason on it');
   ok(!/Quiet Person 1/.test(rows),
      'and the nine with nothing outstanding get no rows at all');
-  ok(/9 of 10 have nothing outstanding/.test(html), 'they are one sentence');
+  ok(/openPerson\(9\)/.test(rows),
+     'the row that IS shown indexes into people, not into the filtered list');
 
+  // People tab — picker for everyone
+  api3.S.divTab = 'people'; api3.render();
+  html = nodes['view'].innerHTML;
+  ok(/9 of 10 have nothing outstanding/.test(html), 'they are one sentence');
   ok(/<select class="pick" id="pick-person"/.test(html),
      'and one dropdown reaches any of them');
   const personBox = (html.match(/<select class="pick" id="pick-person"[\s\S]*?<\/select>/) || [''])[0];
@@ -857,10 +870,11 @@ if (api3) {
      'each option says who, where they are, and whether they need a look');
   ok(/onchange="pickPerson\(this.value\);this.selectedIndex=0"/.test(html),
      'picking one is a destination, so the box snaps back to its placeholder');
-  ok(/openPerson\(9\)/.test(rows),
-     'the row that IS shown indexes into people, not into the filtered list');
 
-  // the row numbers. this is the thing that shipped.
+  // Inbox tab — Settle is quiet, not a stack of cards
+  api3.S.divTab = 'inbox'; api3.render();
+  html = nodes['view'].innerHTML;
+  rows = cards(html);
   ok(!/\b2[0-9][0-9]\b/.test(html), 'no spreadsheet row number appears anywhere on the screen');
   ok(!/19 SKILL EVIDENCE LOG/.test(html), 'nor the name of a raw tab');
   ok(!/Elizabeth McInville/.test(rows), 'the same-day submissions are not a stack of cards');
@@ -897,13 +911,10 @@ ok(!!api4, 'it renders with a decision waiting');
 if (api4) {
   const html = nodes['view'].innerHTML;
   ok(/One decision|1 decisions/.test(html), 'the headline is the decision, not the roster');
-  ok(html.indexOf('IV access') < html.indexOf('Latavia Cole'),
-     'and the decision comes before anybody else on the page');
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
   ok(/QR-77/.test(html),
      'carrying the request id, so a queue that re-sorted cannot be approved blind');
-  ok(/Show 1 decided|1 decided/.test(html),
-     'a decision already made is noted quietly, not as a banner in the hero');
+  ok(/IV access/.test(html), 'and the decision comes before anybody else on the page');
   ok(!/waiting on the tracker/i.test(html),
      'and does not shout "waiting on the tracker" on the main desk');
   ok(!/Retired form still open/i.test(html),
@@ -913,15 +924,20 @@ if (api4) {
   ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
      "and an apostrophe in a name survives instead of being stripped out");
 
-  // Open desk details: staged + retired live here, below the decision.
-  api4.S.showDesk = true; api4.render();
+  // Desk details + staged live on Menu — open that tab, then expand details.
+  api4.S.divTab = 'menu'; api4.S.showDesk = true; api4.render();
   const openHtml = nodes['view'].innerHTML;
+  ok(/Show 1 decided|1 decided|half-finished|legacy|Record or clear them in the tracker/i.test(openHtml),
+     'a decision already made is noted quietly, not as a banner in the hero');
   ok(/half-finished|legacy|Record or clear them in the tracker/i.test(openHtml),
      'desk details explain half-finished queue rows if any remain');
   ok(/Skills quick log|Retired|retired/i.test(openHtml),
      'retired form notes appear only after you ask for desk details');
-  ok(openHtml.indexOf('IV access') < openHtml.indexOf('finish'),
-     'the live decision still sits above folded desk details');
+  // Switch back — live Decide still owns the decision
+  api4.S.divTab = 'waiting'; api4.render();
+  const decideHtml = nodes['view'].innerHTML;
+  ok(decideHtml.indexOf('IV access') >= 0 && /Decide/.test(decideHtml),
+     'the live decision still sits on the Decide tab above folded desk details');
 }
 
 // ---------------------------------------------------------------- //
