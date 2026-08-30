@@ -61,28 +61,33 @@ function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
-    var name = String(r[t.col['TRAINEE']] || '').trim();
+    var name = String(pickV1_(t, r, ['TRAINEE', 'TRAINEE NAME', 'NAME']) || '').trim();
     if (!name) return null;
-    var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
+    var status = String(pickV1_(t, r, ['SET STATUS', 'PROGRAM STATUS']) || '').trim();
+    var fto = String(pickV1_(t, r, ['ASSIGNED FTO', 'TRAINING OFFICER', 'FTO']) || '').trim();
+    var email = String(pickV1_(t, r, [
+      'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+    ]) || '').trim().toLowerCase();
+    var started = asDateV1_(pickV1_(t, r, ['START DATE', 'STARTED']));
+    var phaseStart = asDateV1_(pickV1_(t, r, ['PHASE START DATE', 'PHASE STARTED']));
+    var level = String(pickV1_(t, r, ['LEVEL', 'CERT LEVEL', 'CERTIFICATION']) || '').trim();
+    var phase = String(pickV1_(t, r, ['CURRENT PHASE', 'PHASE']) || '').trim();
     return {
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
-      level: String(r[t.col['LEVEL']] || '').trim(),
-      levelKey: levelKeyV1_(r[t.col['LEVEL']]),
-      phase: String(r[t.col['CURRENT PHASE']] || r[t.col['PHASE']] || '').trim(),
-      fto: String(r[t.col['ASSIGNED FTO']] || r[t.col['TRAINING OFFICER']] || '').trim(),
-      shift: String(r[t.col['SHIFT']] || '').trim(),
-      email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
-      started: asDateV1_(r[t.col['START DATE']]),
-      phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
+      level: level,
+      levelKey: levelKeyV1_(level),
+      phase: phase,
+      fto: fto,
+      shift: String(pickV1_(t, r, ['SHIFT']) || '').trim(),
+      email: email,
+      started: started,
+      phaseStart: phaseStart,
       status: status,
       closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
-      setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
-                        String(r[t.col['CURRENT PHASE']] || '').trim() &&
-                        String(r[t.col['ASSIGNED FTO']] || '').trim() &&
-                        asDateV1_(r[t.col['START DATE']]))
+      setupComplete: !!(level && phase && fto && started)
     };
   }).filter(Boolean);
 }

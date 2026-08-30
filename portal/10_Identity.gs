@@ -135,12 +135,42 @@ function rowHasAnythingV1_(row) {
 
 function pickV1_(t, row, headers) {
   for (var i = 0; i < headers.length; i++) {
-    var ci = t.col[headers[i]];
+    var ci = t.col[String(headers[i] || '').toUpperCase()];
+    if (ci === undefined) ci = t.col[headers[i]];
     if (ci !== undefined && row[ci] !== undefined && row[ci] !== null && row[ci] !== '') {
       return row[ci];
     }
   }
   return '';
+}
+
+/**
+ * Tracker presentation renames canonical headers to plain English on the live
+ * master (TRAINEE EMAIL → "Email address", etc.). Portal code still speaks
+ * canonical names — map the pretty labels back so reads and writes hit the
+ * same cells.
+ */
+var HEADER_ALIASES_BY_TAB_V1 = {};
+HEADER_ALIASES_BY_TAB_V1['01 TRAINEE MASTER'] = {
+  'EMAIL ADDRESS': 'TRAINEE EMAIL',
+  'PROGRAM STATUS': 'SET STATUS',
+  'TRAINING OFFICER': 'ASSIGNED FTO',
+  'STARTED': 'START DATE',
+  'PHASE STARTED': 'PHASE START DATE',
+  'HOW THEY CAME IN': 'ENTRY PROFILE',
+  'CLEARED DATE': 'CLEARANCE DATE',
+  'NOT-RESPONDING-TO-TRAINING DATE': 'NRT DATE'
+};
+
+function applyHeaderAliasesV1_(tabName, col) {
+  var plan = HEADER_ALIASES_BY_TAB_V1[tabName];
+  if (!plan || !col) return col;
+  Object.keys(plan).forEach(function (pretty) {
+    if (col[pretty] === undefined) return;
+    var canon = plan[pretty];
+    if (col[canon] === undefined) col[canon] = col[pretty];
+  });
+  return col;
 }
 
 /* ---------------------------------------------------------------- *
@@ -315,7 +345,9 @@ function portalPeopleV1_() {
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
-      var em = String(pickV1_(m, r, ['TRAINEE EMAIL', 'EMAIL', 'PERSONAL EMAIL'])).trim().toLowerCase();
+      var em = String(pickV1_(m, r, [
+        'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+      ])).trim().toLowerCase();
       var nm = String(pickV1_(m, r, ['TRAINEE', 'TRAINEE NAME', 'NAME'])).trim();
       if (em && nm) { out.trainees[em] = nm; out.names[em] = nm; }
     });
@@ -451,7 +483,12 @@ function readTabUncachedV1_(tabName) {
   var headers = sh.getRange(hr, 1, 1, lastCol).getValues()[0]
     .map(function (h) { return String(h == null ? '' : h).trim(); });
   var col = {};
-  headers.forEach(function (h, i) { if (h) col[h.toUpperCase()] = i; });
+  headers.forEach(function (h, i) {
+    if (!h) return;
+    col[h.toUpperCase()] = i;
+    col[h.toUpperCase().replace(/\s+/g, ' ')] = i;
+  });
+  applyHeaderAliasesV1_(tabName, col);
   var lastRow = sh.getLastRow();
   var rows = lastRow > hr ? sh.getRange(hr + 1, 1, lastRow - hr, lastCol).getValues() : [];
   return { ok: true, sheet: sh, headers: headers, col: col, rows: rows, firstDataRow: hr + 1 };

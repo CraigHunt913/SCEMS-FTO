@@ -181,6 +181,30 @@ ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.NONE,
    + 'reason the live roster needs its EMAIL column filled');
 
 // ---------------------------------------------------------------- //
+section('Live master header renames still carry the email');
+// ---------------------------------------------------------------- //
+// Tracker presentation renames TRAINEE EMAIL → "Email address" (and SET STATUS
+// → "Program status", etc.). Without aliases the portal reported every trainee
+// as having no email even when the cells were full.
+world();
+tab(PORTAL.TAB.MASTER,
+  ['TRAINEE','LEVEL','Training officer','Started','CURRENT PHASE','Program status',
+   'Email address','Phase started','SHIFT'],
+  [['Elizabeth McInville','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 2','Active',
+    'minvilleel@yahoo.com',new Date('2026-01-05'),'A'],
+   ['Latavia Cole','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 1','Active',
+    'lataviaccole@gmail.com',new Date('2026-01-05'),'A']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('minvilleel@yahoo.com').role === PORTAL.ROLE.TRAINEE,
+   'Email address column signs Elizabeth in as a trainee');
+ok(resolveViewerV1_('lataviaccole@gmail.com').name === 'Latavia Cole',
+   'and Latavia resolves from the same renamed header');
+ok(traineesV1_().filter(t => !t.closed).every(t => !!t.email),
+   'traineeRowsV1_ sees those emails too, not only portalPeopleV1_');
+ok(traineesV1_().filter(t => t.name === 'Elizabeth McInville')[0].fto === 'Dana Whitlock',
+   'Training officer rename still fills ASSIGNED FTO');
+
+// ---------------------------------------------------------------- //
 section('Roles resolve from the data, not from what the browser claims');
 // ---------------------------------------------------------------- //
 world();

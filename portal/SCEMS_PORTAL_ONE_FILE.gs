@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.2.0
- * Build 99b5db73
+ * SCEMS FIELD TRAINING PORTAL — portal-2.2.1
+ * Build b1a855f3
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.2.0',
+  VERSION: 'portal-2.2.1',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -879,12 +879,42 @@ function rowHasAnythingV1_(row) {
 
 function pickV1_(t, row, headers) {
   for (var i = 0; i < headers.length; i++) {
-    var ci = t.col[headers[i]];
+    var ci = t.col[String(headers[i] || '').toUpperCase()];
+    if (ci === undefined) ci = t.col[headers[i]];
     if (ci !== undefined && row[ci] !== undefined && row[ci] !== null && row[ci] !== '') {
       return row[ci];
     }
   }
   return '';
+}
+
+/**
+ * Tracker presentation renames canonical headers to plain English on the live
+ * master (TRAINEE EMAIL → "Email address", etc.). Portal code still speaks
+ * canonical names — map the pretty labels back so reads and writes hit the
+ * same cells.
+ */
+var HEADER_ALIASES_BY_TAB_V1 = {};
+HEADER_ALIASES_BY_TAB_V1['01 TRAINEE MASTER'] = {
+  'EMAIL ADDRESS': 'TRAINEE EMAIL',
+  'PROGRAM STATUS': 'SET STATUS',
+  'TRAINING OFFICER': 'ASSIGNED FTO',
+  'STARTED': 'START DATE',
+  'PHASE STARTED': 'PHASE START DATE',
+  'HOW THEY CAME IN': 'ENTRY PROFILE',
+  'CLEARED DATE': 'CLEARANCE DATE',
+  'NOT-RESPONDING-TO-TRAINING DATE': 'NRT DATE'
+};
+
+function applyHeaderAliasesV1_(tabName, col) {
+  var plan = HEADER_ALIASES_BY_TAB_V1[tabName];
+  if (!plan || !col) return col;
+  Object.keys(plan).forEach(function (pretty) {
+    if (col[pretty] === undefined) return;
+    var canon = plan[pretty];
+    if (col[canon] === undefined) col[canon] = col[pretty];
+  });
+  return col;
 }
 
 /* ---------------------------------------------------------------- *
@@ -1059,7 +1089,9 @@ function portalPeopleV1_() {
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
-      var em = String(pickV1_(m, r, ['TRAINEE EMAIL', 'EMAIL', 'PERSONAL EMAIL'])).trim().toLowerCase();
+      var em = String(pickV1_(m, r, [
+        'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+      ])).trim().toLowerCase();
       var nm = String(pickV1_(m, r, ['TRAINEE', 'TRAINEE NAME', 'NAME'])).trim();
       if (em && nm) { out.trainees[em] = nm; out.names[em] = nm; }
     });
@@ -1195,7 +1227,12 @@ function readTabUncachedV1_(tabName) {
   var headers = sh.getRange(hr, 1, 1, lastCol).getValues()[0]
     .map(function (h) { return String(h == null ? '' : h).trim(); });
   var col = {};
-  headers.forEach(function (h, i) { if (h) col[h.toUpperCase()] = i; });
+  headers.forEach(function (h, i) {
+    if (!h) return;
+    col[h.toUpperCase()] = i;
+    col[h.toUpperCase().replace(/\s+/g, ' ')] = i;
+  });
+  applyHeaderAliasesV1_(tabName, col);
   var lastRow = sh.getLastRow();
   var rows = lastRow > hr ? sh.getRange(hr + 1, 1, lastRow - hr, lastCol).getValues() : [];
   return { ok: true, sheet: sh, headers: headers, col: col, rows: rows, firstDataRow: hr + 1 };
@@ -1269,28 +1306,33 @@ function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
-    var name = String(r[t.col['TRAINEE']] || '').trim();
+    var name = String(pickV1_(t, r, ['TRAINEE', 'TRAINEE NAME', 'NAME']) || '').trim();
     if (!name) return null;
-    var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
+    var status = String(pickV1_(t, r, ['SET STATUS', 'PROGRAM STATUS']) || '').trim();
+    var fto = String(pickV1_(t, r, ['ASSIGNED FTO', 'TRAINING OFFICER', 'FTO']) || '').trim();
+    var email = String(pickV1_(t, r, [
+      'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+    ]) || '').trim().toLowerCase();
+    var started = asDateV1_(pickV1_(t, r, ['START DATE', 'STARTED']));
+    var phaseStart = asDateV1_(pickV1_(t, r, ['PHASE START DATE', 'PHASE STARTED']));
+    var level = String(pickV1_(t, r, ['LEVEL', 'CERT LEVEL', 'CERTIFICATION']) || '').trim();
+    var phase = String(pickV1_(t, r, ['CURRENT PHASE', 'PHASE']) || '').trim();
     return {
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
-      level: String(r[t.col['LEVEL']] || '').trim(),
-      levelKey: levelKeyV1_(r[t.col['LEVEL']]),
-      phase: String(r[t.col['CURRENT PHASE']] || r[t.col['PHASE']] || '').trim(),
-      fto: String(r[t.col['ASSIGNED FTO']] || r[t.col['TRAINING OFFICER']] || '').trim(),
-      shift: String(r[t.col['SHIFT']] || '').trim(),
-      email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
-      started: asDateV1_(r[t.col['START DATE']]),
-      phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
+      level: level,
+      levelKey: levelKeyV1_(level),
+      phase: phase,
+      fto: fto,
+      shift: String(pickV1_(t, r, ['SHIFT']) || '').trim(),
+      email: email,
+      started: started,
+      phaseStart: phaseStart,
       status: status,
       closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
-      setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
-                        String(r[t.col['CURRENT PHASE']] || '').trim() &&
-                        String(r[t.col['ASSIGNED FTO']] || '').trim() &&
-                        asDateV1_(r[t.col['START DATE']]))
+      setupComplete: !!(level && phase && fto && started)
     };
   }).filter(Boolean);
 }
@@ -10802,7 +10844,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '99b5db73';
+var PORTAL_BUILD = 'b1a855f3';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
