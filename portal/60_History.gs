@@ -312,6 +312,7 @@ function recordScopeV1_(viewer, name) {
  *
  *  Read only in every mode. */
 function duplicateSubmissionsV1_() {
+  var settled = settledDuplicateKeysV1_();
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
@@ -323,9 +324,10 @@ function duplicateSubmissionsV1_() {
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
+        if (settled[settlementIdV1_(t.name, src.tab, k)]) return;
         var pair = byDay[k];
         out.push({
-          trainee: t.name, source: src.title, tab: src.tab,
+          trainee: t.name, source: src.title, tab: src.tab, dupKey: k,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
           why: String(k).indexOf('ID:') === 0
             ? 'the SAME form response, written twice'

@@ -125,7 +125,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -599,7 +599,7 @@ ok(otherPortalFiles.indexOf('deleteRow') < 0,
 ok(!/requireImportAuthorityV1_\s*\(\)\s*\{/.test(otherPortalFiles),
    'the gate is defined in exactly one file');
 const allPortal = ['00_Config','10_Identity','20_Data','30_WebApp','40_Forms',
-  '50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+  '50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(!new RegExp('setProperty\\(\\s*' + PORTAL_BACKFILL_CONFIRM).test(allPortal) &&
    allPortal.indexOf("setProperty('" + PORTAL_BACKFILL_CONFIRM + "'") < 0,

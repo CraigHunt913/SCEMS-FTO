@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.2.1
- * Build b1a855f3
+ * SCEMS FIELD TRAINING PORTAL — portal-2.3.0
+ * Build 54ab80d0
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.2.1',
+  VERSION: 'portal-2.3.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1778,9 +1778,14 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var open = openQueueV1_();
-  var queue = open.filter(function (q) { return !q.decision; });
-  var staged = open.filter(function (q) { return !!q.decision; });
+  var open = openQueueV1_().filter(function (q) { return !q.decision; });
+  // Oldest OPEN first — the desk works the backlog, not sheet order.
+  open.sort(function (a, b) {
+    var ha = (a.hours < 0 ? 0 : a.hours);
+    var hb = (b.hours < 0 ? 0 : b.hours);
+    return hb - ha;
+  });
+  var staged = openQueueV1_().filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -1801,7 +1806,7 @@ function divisionPayloadV1_() {
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
-    queue: queue.slice(0, 25).map(function (q) {
+    queue: open.slice(0, 25).map(function (q) {
       var hours = q.hours;
       var clock = 72;
       if (hours < 0) hours = 0;
@@ -1814,7 +1819,7 @@ function divisionPayloadV1_() {
         requestId: q.requestId, row: q.row, from: q.from
       };
     }),
-    queueCount: queue.length,
+    queueCount: open.length,
     // Legacy half-staged rows (OPEN + decision filled) — rare after portal
     // records permanently. Still listed so Division can finish orphans.
     staged: staged.map(function (q) {
@@ -3696,6 +3701,7 @@ function recordScopeV1_(viewer, name) {
  *
  *  Read only in every mode. */
 function duplicateSubmissionsV1_() {
+  var settled = settledDuplicateKeysV1_();
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
@@ -3707,9 +3713,10 @@ function duplicateSubmissionsV1_() {
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
+        if (settled[settlementIdV1_(t.name, src.tab, k)]) return;
         var pair = byDay[k];
         out.push({
-          trainee: t.name, source: src.title, tab: src.tab,
+          trainee: t.name, source: src.title, tab: src.tab, dupKey: k,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
           why: String(k).indexOf('ID:') === 0
             ? 'the SAME form response, written twice'
@@ -4836,6 +4843,176 @@ function runMergeForReal() {
 
 
 /* ======================================================================
+ * 87_Settle.gs
+ * ====================================================================== */
+
+/**
+ * Settle same-day submission pairs from Field Training — without the tracker.
+ *
+ * Doctrine: both raw rows stay on file forever. A settlement is a named
+ * judgment (both stand / this one stands / not a conflict) so Settle stops
+ * nagging and the personnel record has who decided, when, and why.
+ */
+
+var PORTAL_SETTLEMENTS_TAB = 'PORTAL SETTLEMENTS';
+
+function ensureSettlementsLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL_SETTLEMENTS_TAB)) return true;
+    var sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
+    sh.getRange(1, 1).setValue(
+      'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 10).setValues([[
+      'WHEN', 'TRAINEE', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
+      'SOURCE', 'BY', 'REASON', 'VERSION'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+function settlementIdV1_(trainee, tab, dupKey) {
+  return normNameV1_(trainee) + '|' + String(tab || '') + '|' + String(dupKey || '');
+}
+
+/** Settled keys for filtering Settle. */
+function settledDuplicateKeysV1_() {
+  var out = {};
+  var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+  if (!t.ok) return out;
+  t.rows.forEach(function (r) {
+    var trainee = String(r[t.col['TRAINEE']] || '').trim();
+    var tab = String(r[t.col['TAB']] || '').trim();
+    var key = String(r[t.col['DUP KEY']] || '').trim();
+    if (!trainee || !key) return;
+    out[settlementIdV1_(trainee, tab, key)] = true;
+  });
+  return out;
+}
+
+/**
+ * Division settles a flagged pair. Does not delete or edit source rows.
+ * @param {string} decision BOTH_STAND | KEEP_ROW | NOT_A_CONFLICT
+ * @param {number=} keepRow required when KEEP_ROW
+ */
+function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepRow, sourceTitle) {
+  requireWritableV1_('settle a duplicate submission');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may settle duplicate submissions.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var tab = String(tabName || '').trim();
+  var key = String(dupKey || '').trim();
+  var dec = String(decision || '').trim().toUpperCase();
+  var why = String(reason || '').trim();
+  if (!trainee || !tab || !key) throw new Error('Missing settlement identity. Reload and try again.');
+  if (['BOTH_STAND', 'KEEP_ROW', 'NOT_A_CONFLICT'].indexOf(dec) < 0) {
+    throw new Error('Pick how this pair stands: both, one row, or not a conflict.');
+  }
+  if (why.length < 8) {
+    throw new Error('Type why. It goes on the permanent record in your name.');
+  }
+  var keep = '';
+  if (dec === 'KEEP_ROW') {
+    keep = String(keepRow == null ? '' : keepRow).trim();
+    if (!keep || keep === '0' || keep === '-1') {
+      throw new Error('Pick which row stands.');
+    }
+  }
+
+  var id = settlementIdV1_(trainee, tab, key);
+  if (settledDuplicateKeysV1_()[id]) {
+    return { ok: true, message: 'Already settled. Reload if it still shows on Settle.' };
+  }
+
+  if (!ensureSettlementsLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL_SETTLEMENTS_TAB + '. Nothing was written.');
+  }
+  var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+  if (!t.ok) throw new Error('No settlements log.');
+
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'WHEN') return new Date();
+    if (H === 'TRAINEE') return trainee;
+    if (H === 'TAB') return tab;
+    if (H === 'DUP KEY') return key;
+    if (H === 'DECISION') return dec;
+    if (H === 'KEEP ROW') return keep;
+    if (H === 'SOURCE') return String(sourceTitle || '').trim();
+    if (H === 'BY') return viewer.email;
+    if (H === 'REASON') return clean_(why);
+    if (H === 'VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(row);
+  forgetTabsV1_();
+  auditV1_('DUPLICATE SETTLED', viewer.email,
+    dec + ' | ' + trainee + ' | ' + tab + ' | ' + why.slice(0, 100));
+
+  var msg = 'Settled. Both submissions stay on file.';
+  if (dec === 'BOTH_STAND') msg = 'Both stand. Recorded — Settle will stop raising this pair.';
+  else if (dec === 'KEEP_ROW') msg = 'Row ' + keep + ' stands. Both rows stay on file.';
+  else if (dec === 'NOT_A_CONFLICT') msg = 'Marked not a conflict. Settle will stop raising this pair.';
+  return { ok: true, message: msg };
+}
+
+/** One pair with both sides shaped for the settle screen (server → UI). */
+function duplicatePairDetailV1(traineeName, tabName, dupKey) {
+  return duplicatePairDetailV1_(traineeName, tabName, dupKey);
+}
+
+/** One pair with both sides shaped for the settle screen. */
+function duplicatePairDetailV1_(traineeName, tabName, dupKey) {
+  var trainee = String(traineeName || '').trim();
+  var tab = String(tabName || '').trim();
+  var key = String(dupKey || '').trim();
+  var person = null;
+  traineesV1_().forEach(function (t) {
+    if (!person && normNameV1_(t.name) === normNameV1_(trainee)) person = t;
+  });
+  if (!person) throw new Error('No trainee named "' + trainee + '".');
+
+  var src = null;
+  PORTAL_SOURCES.forEach(function (s) {
+    if (!src && s.tab === tab) src = s;
+  });
+  if (!src) throw new Error('Unknown source tab ' + tab);
+
+  var list = markCurrentV1_(submissionsFromV1_(src, person.norm), !!src.groupBy, !!src.oncePerDay);
+  var sides = list.filter(function (s) { return s.dupKey === key; });
+  if (sides.length < 2) {
+    throw new Error('That pair is no longer flagged. Reload Settle.');
+  }
+
+  return {
+    trainee: person.name,
+    tab: tab,
+    source: src.title,
+    dupKey: key,
+    why: String(key).indexOf('ID:') === 0
+      ? 'the SAME form response, written twice'
+      : (String(key).indexOf('DAY:') === 0
+          ? 'two of these for one day, and there should be one'
+          : 'identical in every field, same author, same day'),
+    sides: sides.map(function (s) {
+      return {
+        row: s.row,
+        when: whenTextV1_(s.when),
+        by: s.by || '',
+        group: s.group || '',
+        fields: (s.fields || []).slice(0, 12)
+      };
+    })
+  };
+}
+
+
+/* ======================================================================
  * 90_Staging.gs
  * ====================================================================== */
 
@@ -5598,6 +5775,98 @@ function skillAppliesToLevelV1_(c, lvl) {
   if (/emt/.test(lvl)) return !!c.emt;
   // Unknown level — seed everything active so the person is not invisible.
   return true;
+}
+
+/**
+ * Push matrix READY skills onto the OPEN validation queue when they are missing.
+ * Append-only. Does not cancel, sort, or sweep — that stays a human / tracker job
+ * until Field Training owns the full rebuild. Division can run this from the desk
+ * so READY skills show up without opening the tracker.
+ */
+function refreshValidationQueueV1() {
+  requireWritableV1_('refresh the validation queue');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may refresh the validation queue.');
+  }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!matrix.ok) throw new Error('No skills matrix.');
+  if (!queue.ok) throw new Error('No validation queue.');
+
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+  if (matrix.col['TRAINEE'] === undefined || matrix.col['READINESS'] === undefined) {
+    throw new Error('The matrix is missing TRAINEE or READINESS. Nothing was written.');
+  }
+
+  var open = {};
+  queue.rows.forEach(function (r) {
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var tn = normNameV1_(r[queue.col['TRAINEE']]);
+    var sid = queue.col['SKILL ID'] !== undefined
+      ? String(r[queue.col['SKILL ID']] || '').trim() : '';
+    var sk = normNameV1_(r[queue.col['SKILL']]);
+    open[tn + '||' + (sid || sk)] = true;
+  });
+
+  var QUALIFY = /READY FOR VALIDATION|SIGNED OFF - REVIEW REQUIRED|LEGACY SIGN-OFF REVIEW REQUIRED/i;
+  var added = 0;
+  matrix.rows.forEach(function (r) {
+    var readiness = String(r[matrix.col['READINESS']] || '').trim();
+    if (!QUALIFY.test(readiness)) return;
+    var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
+    if (!trainee) return;
+    var skill = matrix.col['SKILL'] !== undefined
+      ? String(r[matrix.col['SKILL']] || '').trim() : '';
+    var skillId = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    if (!skill && !skillId) return;
+    var key = normNameV1_(trainee) + '||' + (skillId || normNameV1_(skill));
+    if (open[key]) return;
+
+    var lastDate = matrix.col['LAST DATE'] !== undefined
+      ? asDateV1_(r[matrix.col['LAST DATE']]) : null;
+    var domain = matrix.col['DOMAIN'] !== undefined
+      ? String(r[matrix.col['DOMAIN']] || '').trim() : '';
+    var succ = matrix.col['SUCCESSFUL REPS'] !== undefined ? Number(r[matrix.col['SUCCESSFUL REPS']]) || 0 : 0;
+    var indep = matrix.col['INDEPENDENT REPS'] !== undefined ? Number(r[matrix.col['INDEPENDENT REPS']]) || 0 : 0;
+    var dates = matrix.col['DISTINCT DATES'] !== undefined ? Number(r[matrix.col['DISTINCT DATES']]) || 0 : 0;
+    var ftos = matrix.col['DISTINCT FTOS'] !== undefined ? Number(r[matrix.col['DISTINCT FTOS']]) || 0 : 0;
+    var evidence = succ + ' / ' + indep + ' / ' + dates + ' / ' + ftos;
+    var requestId = 'QR-P-' + String(new Date().getTime()) + '-' + added;
+
+    var row = queue.headers.map(function (h) {
+      var H = String(h || '').trim().toUpperCase();
+      if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return lastDate || new Date();
+      if (H === 'TRAINEE') return trainee;
+      if (H === 'SKILL ID') return skillId;
+      if (H === 'DOMAIN') return domain;
+      if (H === 'SKILL') return skill;
+      if (H === 'EVIDENCE SUMMARY') return evidence;
+      if (H === 'RECORD STATUS') return 'OPEN';
+      if (H === 'REQUEST ID') return requestId;
+      return '';
+    });
+    queue.sheet.appendRow(row);
+    open[key] = true;
+    added++;
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('VALIDATION QUEUE REFRESH', viewer.email, added + ' row(s) added');
+  return {
+    ok: true,
+    added: added,
+    message: added
+      ? ('Added ' + added + ' OPEN row' + (added === 1 ? '' : 's') + ' from the matrix.')
+      : 'Queue already has every READY skill. Nothing added.'
+  };
 }
 
 
@@ -9464,6 +9733,7 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }\n",
   "function pickRecord(v){ if (v === '') return; openRecord(v); }\n",
+  "function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }\n",
   "function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }\n",
   "\n",
   "function render(){\n",
@@ -9499,6 +9769,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'advance')  return paintAdvance();\n",
   "  if (S.screen === 'release')  return paintRelease();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
+  "  if (S.screen === 'settle')   return paintSettle();\n",
   "  if (S.screen === 'addTrainee') return paintAddTrainee();\n",
   "\n",
   "  switch (v.role) {\n",
@@ -9980,6 +10251,11 @@ var PORTAL_PAGE_HTML = [
   "\n",
   "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
   "\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "    h += '<button class=\"more\" style=\"margin-top:14px\" onclick=\"refreshQueue()\">'+\n",
+  "         'Refresh queue from matrix — READY skills missing from OPEN</button>';\n",
+  "  }\n",
+  "\n",
   "  // Enroll last — not competing with decisions or clearance.\n",
   "  if (d.canAddTrainee) {\n",
   "    h += '<button class=\"more\" style=\"margin-top:18px\" onclick=\"openAddTrainee()\">Bring so",
@@ -10033,13 +10309,13 @@ var PORTAL_PAGE_HTML = [
   "n>'+\n",
   "         '<div class=\"next\" style=\"margin-top:10px\"><b>You see the record before you write",
   " it</b>'+\n",
-  "         'Approve or return — both require your words. The tracker makes it permanent.</di",
-  "v></div>';\n",
+  "         'Approve or return — both require your words. Field Training writes the permanent",
+  " log.</div></div>';\n",
   "  } else {\n",
   "    h += '<div style=\"padding:0 16px 16px\"><div class=\"flag\" style=\"--accent:var(--warn)\">",
   "'+\n",
   "         (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'\n",
-  "                 : 'Read only — decide in the tracker.')+'</div></div>';\n",
+  "                 : 'Read only — switch to LIVE to decide here.')+'</div></div>';\n",
   "  }\n",
   "  return h + '</div>';\n",
   "}\n",
@@ -10063,10 +10339,9 @@ var PORTAL_PAGE_HTML = [
   "    '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+\n",
   "    '<div class=\"m\" style=\"margin-top:7px\">'+esc(q.evidence)+'</div>'+\n",
   "    '<div class=\"flag\" style=\"--accent:var(--warn)\">'+\n",
-  "    (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there",
-  ".'\n",
-  "            : 'Record the decision in the tracker. This portal is read only.')+'</div></di",
-  "v>';\n",
+  "    (q.from ? 'This row is in '+esc(q.from)+', not this book. Record the decision there.'\n",
+  "            : 'Read only — switch to LIVE to decide from Field Training.')+'</div></div>';",
+  "\n",
   "}\n",
   "\n",
   "/* One row per person, and the row says what it wants. The index is the one\n",
@@ -10107,14 +10382,14 @@ var PORTAL_PAGE_HTML = [
   "  var h = '';\n",
   "  if (subs.length){\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+subs.length+' same-day '+\n",
-  "         (subs.length===1?'submission':'submissions')+' to settle — both kept; pick one to",
-  " read them.</p>';\n",
-  "    h += picker('pick-sameday', subs.length+' to settle\\u2026', subs.map(function(x){\n",
-  "      return { value: x.trainee,\n",
+  "         (subs.length===1?'submission pair':'submission pairs')+\n",
+  "         ' to settle — both stay on file; open a pair and say how it stands.</p>';\n",
+  "    h += picker('pick-sameday', subs.length+' to settle\\u2026', subs.map(function(x,i){\n",
+  "      return { value: String(i),\n",
   "               label: x.trainee + ' \\u2014 ' + x.source + (x.group ? ' \\u00b7 ' + x.group ",
   ": '') +\n",
   "                      ' \\u00b7 ' + x.when + ' (' + x.count + ')' };\n",
-  "    }), 'pickRecord');\n",
+  "    }), 'pickSettle');\n",
   "  }\n",
   "  if (dupes.length){\n",
   "    h += '<div class=\"note n-warn\"><b>Possible duplicate '+(dupes.length===1?'name':'names",
@@ -10144,7 +10419,7 @@ var PORTAL_PAGE_HTML = [
   "  if (staged.length){\n",
   "    h += '<p class=\"sub\">Open queue rows that already have a decision filled (legacy / hal",
   "f-finished). '+\n",
-  "         'Record or clear them in the tracker if Field Training will not take them.</p>';\n",
+  "         'Finish or clear them from Field Training when you can write.</p>';\n",
   "    h += picker('pick-staged', staged.length+' half-finished\\u2026', staged.map(function(x",
   "){\n",
   "      return { value: x.trainee,\n",
@@ -10698,6 +10973,129 @@ var PORTAL_PAGE_HTML = [
   "  return h + '</div>';\n",
   "}\n",
   "\n",
+  "function refreshQueue(){\n",
+  "  if (S.busy) return;\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Done.');\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })\n",
+  "    .refreshValidationQueueV1();\n",
+  "}\n",
+  "\n",
+  "function openSettle(i){\n",
+  "  var list = (BOOT.data && BOOT.data.duplicateSubs) || [];\n",
+  "  var item = list[i];\n",
+  "  if (!item) return;\n",
+  "  S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };\n",
+  "  S.screen = 'settle'; render();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){ S.ctx.settle = r; render(); })\n",
+  "    .withFailureHandler(function(e){ S.ctx.err = e.message || String(e); render(); })\n",
+  "    .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);\n",
+  "}\n",
+  "\n",
+  "function paintSettle(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var meta = c.settleMeta || {};\n",
+  "  var back = '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</butto",
+  "n>';\n",
+  "  if (c.err) return paint(hero('Settle', meta.trainee || '', '')+back+\n",
+  "    '<div class=\"note n-stop\"><b>Cannot open</b>'+esc(c.err)+'</div>');\n",
+  "  if (!c.settle) return paint(hero('Settle', meta.trainee || '', 'Reading both sides&helli",
+  "p;')+back);\n",
+  "\n",
+  "  var p = c.settle;\n",
+  "  var h = hero('Settle', p.trainee,\n",
+  "    esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group)",
+  " : ''))+back;\n",
+  "  h += '<div class=\"note n-info\"><b>Both stay on file</b>'+esc(p.why)+\n",
+  "       '. Your call is who stands for the record — nothing is deleted.</div>';\n",
+  "\n",
+  "  (p.sides || []).forEach(function(s){\n",
+  "    var picked = String(c.keepRow) === String(s.row);\n",
+  "    h += '<div class=\"rec'+(picked?' cur':'')+'\" style=\"margin-top:10px\">'+\n",
+  "         '<div class=\"when\"><span>Row '+esc(String(s.row))+' · '+esc(s.when)+\n",
+  "         (s.by ? ' · '+esc(s.by) : '')+'</span>'+\n",
+  "         (picked ? '<b>Stands</b>' : '')+'</div>';\n",
+  "    if (s.group) h += '<div class=\"h\" style=\"margin-top:5px\">'+esc(s.group)+'</div>';\n",
+  "    (s.fields||[]).forEach(function(f){\n",
+  "      h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
+  "           '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
+  "    });\n",
+  "    if (canWrite()){\n",
+  "      h += '<button class=\"btn '+(picked?'':'ghost')+'\" style=\"margin-top:10px\" '+\n",
+  "           'onclick=\"S.ctx.keepRow='+jsStr(String(s.row))+';render()\">'+\n",
+  "           (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button",
+  ">';\n",
+  "    }\n",
+  "    h += '</div>';\n",
+  "  });\n",
+  "\n",
+  "  if (!canWrite()){\n",
+  "    h += '<div class=\"flag\" style=\"--accent:var(--warn);margin-top:14px\">Read only — switc",
+  "h to LIVE to settle from Field Training.</div>';\n",
+  "    return paint(h);\n",
+  "  }\n",
+  "\n",
+  "  h += '<div class=\"panel\" style=\"margin-top:14px\"><div class=\"lab\">Your reason (required)",
+  "</div>'+\n",
+  "       '<textarea id=\"settleWhy\" placeholder=\"Why both stand, why this row, or why this is",
+  " not a conflict.\" '+\n",
+  "       'oninput=\"syncSettleBtns()\">'+esc(c.whyText||'')+'</textarea></div>';\n",
+  "  h += '<button class=\"btn\" id=\"sbBoth\" disabled onclick=\"doSettle(\\'BOTH_STAND\\')\">Both s",
+  "tand</button>';\n",
+  "  h += '<button class=\"btn\" id=\"sbKeep\" disabled onclick=\"doSettle(\\'KEEP_ROW\\')\">This one",
+  " stands</button>';\n",
+  "  h += '<button class=\"btn ghost\" id=\"sbNot\" disabled onclick=\"doSettle(\\'NOT_A_CONFLICT\\'",
+  ")\">Not a conflict</button>';\n",
+  "  h += '<div class=\"next\"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS.",
+  " '+\n",
+  "       'Raw rows stay. Settle stops raising this pair.</div>';\n",
+  "  paint(h);\n",
+  "  syncSettleBtns();\n",
+  "}\n",
+  "\n",
+  "function syncSettleBtns(){\n",
+  "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
+  "  if (S.ctx) S.ctx.whyText = why;\n",
+  "  var ok = why.length >= 8 && !S.busy;\n",
+  "  if (el('sbBoth')) el('sbBoth').disabled = !ok;\n",
+  "  if (el('sbNot')) el('sbNot').disabled = !ok;\n",
+  "  if (el('sbKeep')) el('sbKeep').disabled = !ok || !S.ctx.keepRow;\n",
+  "}\n",
+  "\n",
+  "function doSettle(decision){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var p = c.settle || c.settleMeta;\n",
+  "  if (!p) return;\n",
+  "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); ",
+  "return; }\n",
+  "  if (decision === 'KEEP_ROW' && !c.keepRow) {\n",
+  "    alert('Pick which row stands first.'); return;\n",
+  "  }\n",
+  "  S.busy = true; syncSettleBtns();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Settled.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false; syncSettleBtns();\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .settleDuplicateV1(p.trainee, p.tab, p.dupKey, decision, why,\n",
+  "                       c.keepRow || '', p.source || (c.settleMeta && c.settleMeta.source) ",
+  "|| '');\n",
+  "}\n",
+  "\n",
   "function openRecord(name){\n",
   "  S.ctx = { name: name, rec: null, from: S.screen, show: {} };\n",
   "  S.screen = 'record'; render();\n",
@@ -10844,7 +11242,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'b1a855f3';
+var PORTAL_BUILD = '54ab80d0';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

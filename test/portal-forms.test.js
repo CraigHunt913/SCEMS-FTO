@@ -123,7 +123,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -816,7 +816,8 @@ const divBoot = { version: PORTAL.VERSION, mode: 'LIVE',
           duplicateSubs: [
             { trainee: 'Elizabeth McInville', source: 'Skill logged',
               group: 'ePCR documentation', when: 'Mon Aug 17 2026', count: 9,
-              tab: '19 SKILL EVIDENCE LOG', rows: [264, 263, 262, 260, 261] }
+              tab: '19 SKILL EVIDENCE LOG', dupKey: 'DAY:ePCR documentation|2026-08-17',
+              rows: [264, 263, 262, 260, 261] }
           ] },
   error: '' };
 
@@ -824,7 +825,7 @@ let api3 = null;
 try {
   api3 = new Function('document', 'window', 'alert', 'google',
     body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot)) +
-    '\nreturn { S: S, render: render, pickPerson: pickPerson, pickRecord: pickRecord };')
+    '\nreturn { S: S, render: render, pickPerson: pickPerson, pickSettle: pickSettle };')
     (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
 } catch (e) { api3 = null; }
 ok(!!api3, 'the Division screen renders');
@@ -847,7 +848,8 @@ if (api3) {
 
   ok(/<select class="pick" id="pick-person"/.test(html),
      'and one dropdown reaches any of them');
-  ok((html.match(/<option value="\d+"/g) || []).length === 10,
+  const personBox = (html.match(/<select class="pick" id="pick-person"[\s\S]*?<\/select>/) || [''])[0];
+  ok((personBox.match(/<option value="\d+"/g) || []).length === 10,
      'which carries every active trainee, the flagged one included');
   ok(/<option value="9">Latavia Cole \u2014 Phase 1 \u00b7 needs a look<\/option>/.test(html) ||
      /<option value="9">Latavia Cole — Phase 1 · needs a look<\/option>/.test(html),
@@ -866,8 +868,8 @@ if (api3) {
      /Elizabeth McInville — Skill logged/.test(html),
      'whose options name the person and the kind');
   ok(/\(9\)<\/option>/.test(html), 'and how many landed that day');
-  ok(/onchange="pickRecord\(this.value\)/.test(html),
-     'picking one opens that record, where both are readable side by side');
+  ok(/onchange="pickSettle\(this.value\)/.test(html),
+     'picking one opens Settle, where both sides are readable and a judgment is recorded');
 }
 
 // ---------------------------------------------------------------- //

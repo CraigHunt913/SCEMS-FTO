@@ -533,9 +533,14 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var open = openQueueV1_();
-  var queue = open.filter(function (q) { return !q.decision; });
-  var staged = open.filter(function (q) { return !!q.decision; });
+  var open = openQueueV1_().filter(function (q) { return !q.decision; });
+  // Oldest OPEN first — the desk works the backlog, not sheet order.
+  open.sort(function (a, b) {
+    var ha = (a.hours < 0 ? 0 : a.hours);
+    var hb = (b.hours < 0 ? 0 : b.hours);
+    return hb - ha;
+  });
+  var staged = openQueueV1_().filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -556,7 +561,7 @@ function divisionPayloadV1_() {
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
-    queue: queue.slice(0, 25).map(function (q) {
+    queue: open.slice(0, 25).map(function (q) {
       var hours = q.hours;
       var clock = 72;
       if (hours < 0) hours = 0;
@@ -569,7 +574,7 @@ function divisionPayloadV1_() {
         requestId: q.requestId, row: q.row, from: q.from
       };
     }),
-    queueCount: queue.length,
+    queueCount: open.length,
     // Legacy half-staged rows (OPEN + decision filled) — rare after portal
     // records permanently. Still listed so Division can finish orphans.
     staged: staged.map(function (q) {

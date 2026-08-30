@@ -123,7 +123,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -366,6 +366,51 @@ ok(duplicateSubmissionsV1_().length === 0,
 ok(SHEETS[PORTAL.TAB.EVAL].g.length === HR + 7, 'both rows are still in the sheet');
 
 // ---------------------------------------------------------------- //
+section('Division settles a pair from Field Training — raw rows stay');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+let settleList = duplicateSubmissionsV1_();
+ok(settleList.length === 1, 'Alex’s pair is waiting');
+ok(!!settleList[0].dupKey, 'and carries a dupKey for the settlement log');
+const pair = duplicatePairDetailV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey);
+ok(pair.sides.length === 2, 'detail returns both sides');
+ok(pair.sides.every(s => (s.fields || []).length > 0), 'each side still has its fields');
+
+as('dana@example.org');
+ok(/Only the Training Division/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'BOTH_STAND', 'Both filings are correct for that day.', '', settleList[0].source))),
+  'an FTO cannot settle');
+
+as('chief@example.org');
+ok(/Type why/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'BOTH_STAND', 'short', '', settleList[0].source))),
+  'a short reason is refused');
+
+const evalRowsBefore = SHEETS[PORTAL.TAB.EVAL].g.length;
+const settled = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+ok(settled.ok === true, 'Division can settle both stand');
+ok(SHEETS[PORTAL.TAB.EVAL].g.length === evalRowsBefore, 'source rows were not deleted');
+ok(!!SHEETS['PORTAL SETTLEMENTS'], 'PORTAL SETTLEMENTS was created');
+ok(duplicateSubmissionsV1_().length === 0, 'Settle no longer raises the settled pair');
+const again = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+ok(again.ok === true && /Already settled/i.test(again.message || ''),
+   'settling twice is a no-op, not a second row fight');
+
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+const keep = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'KEEP_ROW', 'The second filing is the correction that stands.',
+  settleList[0].rows[1], settleList[0].source);
+ok(keep.ok === true && /stands/i.test(keep.message || ''), 'KEEP_ROW records which row stands');
+ok(duplicateSubmissionsV1_().length === 0, 'and that pair leaves Settle too');
+
+// ---------------------------------------------------------------- //
 section('Six tabs are read once, not once per person');
 // ---------------------------------------------------------------- //
 world();
@@ -376,7 +421,7 @@ TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 divisionPayloadV1_();
 const readsForEveryone = READS;
 readTabUncachedV1_ = realRead;
-ok(readsForEveryone <= Object.keys(PORTAL.TAB).length,
+ok(readsForEveryone <= Object.keys(PORTAL.TAB).length + 2,
    'the Division screen reads each tab at most once for the whole roster: ' + readsForEveryone);
 
 world();

@@ -462,3 +462,95 @@ function skillAppliesToLevelV1_(c, lvl) {
   // Unknown level — seed everything active so the person is not invisible.
   return true;
 }
+
+/**
+ * Push matrix READY skills onto the OPEN validation queue when they are missing.
+ * Append-only. Does not cancel, sort, or sweep — that stays a human / tracker job
+ * until Field Training owns the full rebuild. Division can run this from the desk
+ * so READY skills show up without opening the tracker.
+ */
+function refreshValidationQueueV1() {
+  requireWritableV1_('refresh the validation queue');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may refresh the validation queue.');
+  }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!matrix.ok) throw new Error('No skills matrix.');
+  if (!queue.ok) throw new Error('No validation queue.');
+
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+  if (matrix.col['TRAINEE'] === undefined || matrix.col['READINESS'] === undefined) {
+    throw new Error('The matrix is missing TRAINEE or READINESS. Nothing was written.');
+  }
+
+  var open = {};
+  queue.rows.forEach(function (r) {
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var tn = normNameV1_(r[queue.col['TRAINEE']]);
+    var sid = queue.col['SKILL ID'] !== undefined
+      ? String(r[queue.col['SKILL ID']] || '').trim() : '';
+    var sk = normNameV1_(r[queue.col['SKILL']]);
+    open[tn + '||' + (sid || sk)] = true;
+  });
+
+  var QUALIFY = /READY FOR VALIDATION|SIGNED OFF - REVIEW REQUIRED|LEGACY SIGN-OFF REVIEW REQUIRED/i;
+  var added = 0;
+  matrix.rows.forEach(function (r) {
+    var readiness = String(r[matrix.col['READINESS']] || '').trim();
+    if (!QUALIFY.test(readiness)) return;
+    var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
+    if (!trainee) return;
+    var skill = matrix.col['SKILL'] !== undefined
+      ? String(r[matrix.col['SKILL']] || '').trim() : '';
+    var skillId = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    if (!skill && !skillId) return;
+    var key = normNameV1_(trainee) + '||' + (skillId || normNameV1_(skill));
+    if (open[key]) return;
+
+    var lastDate = matrix.col['LAST DATE'] !== undefined
+      ? asDateV1_(r[matrix.col['LAST DATE']]) : null;
+    var domain = matrix.col['DOMAIN'] !== undefined
+      ? String(r[matrix.col['DOMAIN']] || '').trim() : '';
+    var succ = matrix.col['SUCCESSFUL REPS'] !== undefined ? Number(r[matrix.col['SUCCESSFUL REPS']]) || 0 : 0;
+    var indep = matrix.col['INDEPENDENT REPS'] !== undefined ? Number(r[matrix.col['INDEPENDENT REPS']]) || 0 : 0;
+    var dates = matrix.col['DISTINCT DATES'] !== undefined ? Number(r[matrix.col['DISTINCT DATES']]) || 0 : 0;
+    var ftos = matrix.col['DISTINCT FTOS'] !== undefined ? Number(r[matrix.col['DISTINCT FTOS']]) || 0 : 0;
+    var evidence = succ + ' / ' + indep + ' / ' + dates + ' / ' + ftos;
+    var requestId = 'QR-P-' + String(new Date().getTime()) + '-' + added;
+
+    var row = queue.headers.map(function (h) {
+      var H = String(h || '').trim().toUpperCase();
+      if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return lastDate || new Date();
+      if (H === 'TRAINEE') return trainee;
+      if (H === 'SKILL ID') return skillId;
+      if (H === 'DOMAIN') return domain;
+      if (H === 'SKILL') return skill;
+      if (H === 'EVIDENCE SUMMARY') return evidence;
+      if (H === 'RECORD STATUS') return 'OPEN';
+      if (H === 'REQUEST ID') return requestId;
+      return '';
+    });
+    queue.sheet.appendRow(row);
+    open[key] = true;
+    added++;
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('VALIDATION QUEUE REFRESH', viewer.email, added + ' row(s) added');
+  return {
+    ok: true,
+    added: added,
+    message: added
+      ? ('Added ' + added + ' OPEN row' + (added === 1 ? '' : 's') + ' from the matrix.')
+      : 'Queue already has every READY skill. Nothing added.'
+  };
+}

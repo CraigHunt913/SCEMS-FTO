@@ -401,6 +401,7 @@ function picker(id, placeholder, items, handler, selected){
 }
 function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }
 function pickRecord(v){ if (v === '') return; openRecord(v); }
+function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
@@ -433,6 +434,7 @@ function render(){
   if (S.screen === 'advance')  return paintAdvance();
   if (S.screen === 'release')  return paintRelease();
   if (S.screen === 'record')   return paintRecord();
+  if (S.screen === 'settle')   return paintSettle();
   if (S.screen === 'addTrainee') return paintAddTrainee();
 
   switch (v.role) {
@@ -863,6 +865,11 @@ function paintDivision(d){
 
   if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
 
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+    h += '<button class="more" style="margin-top:14px" onclick="refreshQueue()">'+
+         'Refresh queue from matrix — READY skills missing from OPEN</button>';
+  }
+
   // Enroll last — not competing with decisions or clearance.
   if (d.canAddTrainee) {
     h += '<button class="more" style="margin-top:18px" onclick="openAddTrainee()">Bring someone on — new trainee</button>';
@@ -908,11 +915,11 @@ function decisionLeadHtml(q){
          '<button class="btn" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
          jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">Decide</button>'+
          '<div class="next" style="margin-top:10px"><b>You see the record before you write it</b>'+
-         'Approve or return — both require your words. The tracker makes it permanent.</div></div>';
+         'Approve or return — both require your words. Field Training writes the permanent log.</div></div>';
   } else {
     h += '<div style="padding:0 16px 16px"><div class="flag" style="--accent:var(--warn)">'+
          (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'
-                 : 'Read only — decide in the tracker.')+'</div></div>';
+                 : 'Read only — switch to LIVE to decide here.')+'</div></div>';
   }
   return h + '</div>';
 }
@@ -933,8 +940,8 @@ function signoffCard(q){
     '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
     '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
     '<div class="flag" style="--accent:var(--warn)">'+
-    (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
-            : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
+    (q.from ? 'This row is in '+esc(q.from)+', not this book. Record the decision there.'
+            : 'Read only — switch to LIVE to decide from Field Training.')+'</div></div>';
 }
 
 /* One row per person, and the row says what it wants. The index is the one
@@ -970,12 +977,13 @@ function housekeeping(d){
   var h = '';
   if (subs.length){
     h += '<p class="sub" style="margin-bottom:9px">'+subs.length+' same-day '+
-         (subs.length===1?'submission':'submissions')+' to settle — both kept; pick one to read them.</p>';
-    h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x){
-      return { value: x.trainee,
+         (subs.length===1?'submission pair':'submission pairs')+
+         ' to settle — both stay on file; open a pair and say how it stands.</p>';
+    h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x,i){
+      return { value: String(i),
                label: x.trainee + ' \u2014 ' + x.source + (x.group ? ' \u00b7 ' + x.group : '') +
                       ' \u00b7 ' + x.when + ' (' + x.count + ')' };
-    }), 'pickRecord');
+    }), 'pickSettle');
   }
   if (dupes.length){
     h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'name':'names')+
@@ -1002,7 +1010,7 @@ function deskDetails(d){
 
   if (staged.length){
     h += '<p class="sub">Open queue rows that already have a decision filled (legacy / half-finished). '+
-         'Record or clear them in the tracker if Field Training will not take them.</p>';
+         'Finish or clear them from Field Training when you can write.</p>';
     h += picker('pick-staged', staged.length+' half-finished\u2026', staged.map(function(x){
       return { value: x.trainee,
                label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
@@ -1483,6 +1491,116 @@ function freshRow(list){
          (f.count>1 ? ' <span style="color:var(--ink-3)">('+f.count+')</span>' : '')+'</span>';
   });
   return h + '</div>';
+}
+
+function refreshQueue(){
+  if (S.busy) return;
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Done.');
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .refreshValidationQueueV1();
+}
+
+function openSettle(i){
+  var list = (BOOT.data && BOOT.data.duplicateSubs) || [];
+  var item = list[i];
+  if (!item) return;
+  S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };
+  S.screen = 'settle'; render();
+  google.script.run
+    .withSuccessHandler(function(r){ S.ctx.settle = r; render(); })
+    .withFailureHandler(function(e){ S.ctx.err = e.message || String(e); render(); })
+    .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);
+}
+
+function paintSettle(){
+  var c = S.ctx || {};
+  var meta = c.settleMeta || {};
+  var back = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.err) return paint(hero('Settle', meta.trainee || '', '')+back+
+    '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
+  if (!c.settle) return paint(hero('Settle', meta.trainee || '', 'Reading both sides&hellip;')+back);
+
+  var p = c.settle;
+  var h = hero('Settle', p.trainee,
+    esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group) : ''))+back;
+  h += '<div class="note n-info"><b>Both stay on file</b>'+esc(p.why)+
+       '. Your call is who stands for the record — nothing is deleted.</div>';
+
+  (p.sides || []).forEach(function(s){
+    var picked = String(c.keepRow) === String(s.row);
+    h += '<div class="rec'+(picked?' cur':'')+'" style="margin-top:10px">'+
+         '<div class="when"><span>Row '+esc(String(s.row))+' · '+esc(s.when)+
+         (s.by ? ' · '+esc(s.by) : '')+'</span>'+
+         (picked ? '<b>Stands</b>' : '')+'</div>';
+    if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
+    (s.fields||[]).forEach(function(f){
+      h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
+           '<div class="v">'+esc(f.value)+'</div></div>';
+    });
+    if (canWrite()){
+      h += '<button class="btn '+(picked?'':'ghost')+'" style="margin-top:10px" '+
+           'onclick="S.ctx.keepRow='+jsStr(String(s.row))+';render()">'+
+           (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button>';
+    }
+    h += '</div>';
+  });
+
+  if (!canWrite()){
+    h += '<div class="flag" style="--accent:var(--warn);margin-top:14px">Read only — switch to LIVE to settle from Field Training.</div>';
+    return paint(h);
+  }
+
+  h += '<div class="panel" style="margin-top:14px"><div class="lab">Your reason (required)</div>'+
+       '<textarea id="settleWhy" placeholder="Why both stand, why this row, or why this is not a conflict." '+
+       'oninput="syncSettleBtns()">'+esc(c.whyText||'')+'</textarea></div>';
+  h += '<button class="btn" id="sbBoth" disabled onclick="doSettle(\'BOTH_STAND\')">Both stand</button>';
+  h += '<button class="btn" id="sbKeep" disabled onclick="doSettle(\'KEEP_ROW\')">This one stands</button>';
+  h += '<button class="btn ghost" id="sbNot" disabled onclick="doSettle(\'NOT_A_CONFLICT\')">Not a conflict</button>';
+  h += '<div class="next"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS. '+
+       'Raw rows stay. Settle stops raising this pair.</div>';
+  paint(h);
+  syncSettleBtns();
+}
+
+function syncSettleBtns(){
+  var why = (el('settleWhy') && el('settleWhy').value || '').trim();
+  if (S.ctx) S.ctx.whyText = why;
+  var ok = why.length >= 8 && !S.busy;
+  if (el('sbBoth')) el('sbBoth').disabled = !ok;
+  if (el('sbNot')) el('sbNot').disabled = !ok;
+  if (el('sbKeep')) el('sbKeep').disabled = !ok || !S.ctx.keepRow;
+}
+
+function doSettle(decision){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var p = c.settle || c.settleMeta;
+  if (!p) return;
+  var why = (el('settleWhy') && el('settleWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); return; }
+  if (decision === 'KEEP_ROW' && !c.keepRow) {
+    alert('Pick which row stands first.'); return;
+  }
+  S.busy = true; syncSettleBtns();
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Settled.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false; syncSettleBtns();
+      alert(e.message || e);
+    })
+    .settleDuplicateV1(p.trainee, p.tab, p.dupKey, decision, why,
+                       c.keepRow || '', p.source || (c.settleMeta && c.settleMeta.source) || '');
 }
 
 function openRecord(name){
