@@ -505,6 +505,36 @@ ok(!portalEvidenceGateV1_('Approve sign-off', 'Jamie Rivers', 'Intubation', 'SK-
   'Evidence thresholds met after sync.'),
   'approve gate allows when bars/evidence met even before a reload of READY');
 
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE','STAGE','SIGNED BY','SIGNED DATE'],
+  [['Jamie Rivers','Intubation','SK-2','READY FOR VALIDATION','',4,3,4,2,'Airway',D('2026-08-16'),'I','','']]);
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  []);
+tab(PORTAL.TAB.SIGNOFF,
+  ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION','DECIDED BY','DECISION DATE',
+   'EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+  []);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const accepted = acceptSkillV1('Jamie Rivers', 'SK-2', 'Intubation',
+  'Directly observed and verified across four successful events.');
+ok(/Accepted on the tracker/i.test(accepted), 'acceptSkillV1 confirms tracker write-back: ' + accepted);
+const qAfter = SHEETS[PORTAL.TAB.QUEUE].g.slice(HR);
+ok(qAfter.length === 1 && String(qAfter[0][11]) === 'RECORDED',
+  'queue row is created and closed as RECORDED');
+ok(String(qAfter[0][6]) === 'Approve sign-off', 'decision is Approve sign-off');
+const soAfter = SHEETS[PORTAL.TAB.SIGNOFF].g.slice(HR);
+ok(soAfter.length === 1 && /Jamie Rivers/.test(String(soAfter[0][2])),
+  'permanent sign-off log has the accept');
+const mAfter = SHEETS[PORTAL.TAB.SKILLS].g[HR];
+ok(String(mAfter[3]) === 'SIGNED OFF' && String(mAfter[4]) === 'SIGNED OFF',
+  'matrix readiness and sign-off are SIGNED OFF');
+ok(String(mAfter[12]) === 'chief@example.org', 'matrix SIGNED BY is the Division account');
+
 // ---------------------------------------------------------------- //
 section('Six tabs are read once, not once per person');
 // ---------------------------------------------------------------- //

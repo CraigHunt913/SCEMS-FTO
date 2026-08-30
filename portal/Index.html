@@ -444,6 +444,7 @@ function renderInner_(){
   if (S.screen === 'reflect')  return paintReflect();
   if (S.screen === 'receipt')  return paintReceipt();
   if (S.screen === 'signoff')  return paintSignoff();
+  if (S.screen === 'acceptSkill') return paintAcceptSkill();
   if (S.screen === 'ack')      return paintAck();
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
@@ -1154,31 +1155,50 @@ function paintPersonSheet(){
        'Print / save PDF report</button>';
 
   if (t.skills && t.skills.length){
-    var withDiv = [], building = [], signed = [];
+    var withDiv = [], building = [], signed = [], acceptNow = [];
+    function barsMetClient(s){
+      var bars = s.bars || [];
+      if (!bars.length) return false;
+      for (var bi = 0; bi < bars.length; bi++){
+        if (Number(bars[bi].have || 0) < Number(bars[bi].need || 0)) return false;
+      }
+      return true;
+    }
     t.skills.forEach(function(s){
       if (s.signed) signed.push(s);
-      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
-      else building.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s)) {
+        withDiv.push(s);
+        acceptNow.push(s);
+      } else building.push(s);
     });
     h += sec('Skills on the matrix', t.skills.length);
     h += '<p class="sub" style="margin-bottom:9px">'+
-         signed.length+' signed · '+withDiv.length+' with Division · '+
+         signed.length+' signed · '+withDiv.length+' ready to accept · '+
          building.length+' building</p>';
-    function skillRow(s){
+    function skillRow(s, canAccept){
       var tag = s.signed ? 'Signed' :
-        (s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Building'));
-      var tagCls = s.signed ? 'c-ok' : (s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute');
-      return '<div class="card"><div class="hd"><span class="h">'+esc(s.skill)+'</span>'+
+        (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s) ? 'Ready to accept' : (s.readiness || 'Building'));
+      var tagCls = s.signed ? 'c-ok' : (canAccept ? 'c-warn' : 'c-mute');
+      var row = '<div class="card"><div class="hd"><span class="h">'+esc(s.skill)+'</span>'+
         '<span class="chip '+tagCls+'">'+esc(tag)+'</span></div>'+
-        (s.bars && s.bars.length ? barsHtml(s.bars) : '')+'</div>';
+        (s.bars && s.bars.length ? barsHtml(s.bars) : '');
+      if (canAccept && canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+        row += '<button class="btn" style="margin-top:10px" onclick="openAcceptSkill('+
+          jsStr(t.name)+','+jsStr(s.skillId||'')+','+jsStr(s.skill)+')">Accept on tracker</button>';
+      }
+      row += '</div>';
+      return row;
     }
-    withDiv.forEach(function(s){ h += skillRow(s); });
-    building.slice(0, 8).forEach(function(s){ h += skillRow(s); });
+    withDiv.forEach(function(s){ h += skillRow(s, true); });
+    building.slice(0, 8).forEach(function(s){ h += skillRow(s, false); });
     if (building.length > 8) h += '<p class="sub">+ '+(building.length-8)+' more building</p>';
     if (signed.length && !withDiv.length && building.length <= 8){
       h += '<button class="more" onclick="S.showSignedSkills=!S.showSignedSkills;render()">'+
            (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';
-      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s); });
+      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s, false); });
+    }
+    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && acceptNow.length){
+      h += '<div class="next"><b>Accept writes the tracker</b>Queue closes, permanent sign-off log gets a row, and the skills matrix shows SIGNED OFF.</div>';
     }
   }
 
@@ -1345,6 +1365,69 @@ function openSignoff(row,trainee,skill,evidence,requestId){
   S.screen = 'signoff'; render();
 }
 
+function openAcceptSkill(trainee, skillId, skill){
+  var personBackup = (S.screen === 'person') ? S.ctx : null;
+  S.ctx = {
+    acceptTrainee: trainee,
+    acceptSkillId: skillId || '',
+    acceptSkill: skill || '',
+    fromPerson: !!personBackup,
+    personBackup: personBackup
+  };
+  S.screen = 'acceptSkill'; render();
+}
+
+function paintAcceptSkill(){
+  var c = S.ctx || {};
+  var back = c.fromPerson
+    ? '<button class="back" onclick="backFromAcceptSkill()">&larr; Back</button>'
+    : '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  var h = hero('Accept skill', c.acceptSkill || 'Skill',
+    esc(c.acceptTrainee || ''))+back;
+  h += '<div class="note n-info"><b>Writes the live tracker</b>Creates or closes the validation-queue row, appends the permanent sign-off log, and marks the skills matrix SIGNED OFF.</div>';
+  h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
+    '<textarea id="acceptWhy" placeholder="This goes on the permanent record in your name." '+
+    'oninput="syncAcceptBtn()"></textarea></div>'+
+    '<button class="btn" id="acceptGo" disabled onclick="submitAcceptSkill()">Accept on tracker</button>'+
+    '<div class="next"><b>Same as Decide on Home</b>One typed reason. No silent accept.</div>';
+  paint(h);
+  syncAcceptBtn();
+}
+
+function backFromAcceptSkill(){
+  var c = S.ctx || {};
+  if (c.personBackup){ S.ctx = c.personBackup; S.screen = 'person'; render(); return; }
+  S.screen = 'main'; render();
+}
+
+function syncAcceptBtn(){
+  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();
+  if (el('acceptGo')) el('acceptGo').disabled = why.length < 8 || S.busy;
+}
+
+function submitAcceptSkill(){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why you are accepting this.'); return; }
+  S.busy = true;
+  var b = el('acceptGo');
+  if (b){ b.disabled = true; b.textContent = 'Saving on tracker…'; }
+  google.script.run
+    .withSuccessHandler(function(msg){
+      S.busy = false;
+      alert(msg || 'Accepted on the tracker.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b){ b.textContent = 'Accept on tracker'; syncAcceptBtn(); }
+      alert(e.message || e);
+    })
+    .acceptSkillV1(c.acceptTrainee, c.acceptSkillId || '', c.acceptSkill || '', why);
+}
+
 /* ---------------- bring someone on ---------------- */
 function openAddTrainee(){
   S.screen = 'addTrainee'; render();
@@ -1453,7 +1536,7 @@ function paintSignoff(){
     '<button class="btn" id="ap" disabled onclick="approve()">Approve sign-off</button>'+
     '<button class="btn ghost-danger" id="ret" disabled onclick="returnSkill()">Return for more evidence</button>'+
     '<div class="next"><b>Friction belongs here</b>Approve is one clear act with your words. Return stays dead until you type why — never invent an FTO\'s words.</div>'+
-    '<div class="next"><b>Where this goes</b>Straight onto the permanent sign-off log, and the queue row closes. Same gates the tracker uses — typed reason, your name, evidence check.</div>';
+    '<div class="next"><b>Where this goes</b>Live tracker: permanent sign-off log, validation queue closed, skills matrix set to SIGNED OFF (including Signed by / Signed date when those columns exist).</div>';
   paint(h);
   syncDecideBtns();
 }
@@ -1469,7 +1552,11 @@ function approve(){
   if (why.length < 8) { alert('Type why you are approving this.'); return; }
   S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';
   if (el('ret')) el('ret').disabled = true;
-  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
+  google.script.run.withSuccessHandler(function(msg){
+      S.busy=false;
+      if (msg) alert(msg);
+      S.screen='main'; reload();
+    })
     .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncDecideBtns();
       alert(e.message||e); })
     .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
@@ -1480,7 +1567,11 @@ function returnSkill(){
   if (why.length < 8) { alert('Type why you are returning this.'); return; }
   S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';
   if (el('ap')) el('ap').disabled = true;
-  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
+  google.script.run.withSuccessHandler(function(msg){
+      S.busy=false;
+      if (msg) alert(msg);
+      S.screen='main'; reload();
+    })
     .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence'; syncDecideBtns();
       alert(e.message||e); })
     .returnSignoffV1(S.ctx.row, why, S.ctx.requestId||'');

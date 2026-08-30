@@ -107,7 +107,9 @@ function recordSignoffDecisionV1_(row, reason, requestId, decision) {
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
   t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue(recordStatus);
 
-  try { touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision); } catch (eM) {}
+  try {
+    touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, viewer.email, today, why);
+  } catch (eM) {}
 
   forgetTabsV1_();
   PEOPLE_CACHE_V1 = null;
@@ -115,8 +117,122 @@ function recordSignoffDecisionV1_(row, reason, requestId, decision) {
     ' | row ' + r + (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
 
   return decision === 'Return for more evidence'
-    ? 'Returned. Permanent record is on the sign-off log.'
-    : 'Recorded. Permanent sign-off is on the log.';
+    ? 'Returned on the tracker: queue ' + recordStatus + ', sign-off log, matrix updated.'
+    : 'Accepted on the tracker: queue closed, permanent sign-off log, matrix SIGNED OFF.';
+}
+
+/**
+ * Accept a skill from Field Training even when no OPEN queue card is on Home yet.
+ * Ensures an OPEN queue row on the live tracker, then records Approve sign-off
+ * (sign-off log + queue RECORDED + matrix SIGNED OFF).
+ */
+function acceptSkillV1(traineeName, skillId, skillName, reason) {
+  requireWritableV1_('accept a skill sign-off');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may accept a skill sign-off.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var skill = String(skillName || '').trim();
+  var sid = String(skillId || '').trim();
+  var why = String(reason || '').trim();
+  if (!trainee) throw new Error('Missing trainee.');
+  if (!skill && !sid) throw new Error('Missing skill.');
+  if (why.length < 8) {
+    throw new Error('Type why you are accepting this. It goes on the permanent record in your name.');
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(normNameV1_(trainee)); } catch (eS) { skills = []; }
+  var hit = null;
+  skills.forEach(function (s) {
+    if (hit) return;
+    if (sid && s.skillId && String(s.skillId) === sid) hit = s;
+    else if (skill && normNameV1_(s.skill) === normNameV1_(skill)) hit = s;
+  });
+  if (hit && hit.signed) {
+    throw new Error('That skill is already SIGNED OFF on the matrix. Nothing was written.');
+  }
+  if (!skill && hit) skill = hit.skill;
+  if (!sid && hit) sid = hit.skillId || '';
+
+  var gate = portalEvidenceGateV1_('Approve sign-off', trainee, skill, sid, why);
+  if (gate) throw new Error(gate);
+
+  var ensured = ensureOpenQueueRowForSkillV1_(trainee, skill, sid, hit);
+  return recordSignoffDecisionV1_(ensured.row, why, ensured.requestId, 'Approve sign-off');
+}
+
+/** Find or append an OPEN validation-queue row for this trainee + skill. */
+function ensureOpenQueueRowForSkillV1_(trainee, skill, skillId, skillHit) {
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!queue.ok) throw new Error('No validation queue on the tracker.');
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+
+  var tn = normNameV1_(trainee);
+  var sk = normNameV1_(skill);
+  var sid = String(skillId || '').trim();
+  var found = null;
+  queue.rows.forEach(function (r, i) {
+    if (found) return;
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    if (normNameV1_(r[queue.col['TRAINEE']]) !== tn) return;
+    var idHit = sid && queue.col['SKILL ID'] !== undefined &&
+      String(r[queue.col['SKILL ID']] || '').trim() === sid;
+    var nameHit = sk && normNameV1_(r[queue.col['SKILL']]) === sk;
+    if (!idHit && !nameHit) return;
+    found = {
+      row: queue.firstDataRow + i,
+      requestId: queue.col['REQUEST ID'] !== undefined
+        ? String(r[queue.col['REQUEST ID']] || '').trim() : ''
+    };
+  });
+  if (found) return found;
+
+  var succ = skillHit ? Number(skillHit.successful || 0) : 0;
+  var indep = skillHit ? Number(skillHit.independent || 0) : 0;
+  var dates = skillHit ? Number(skillHit.distinctDates || 0) : 0;
+  var ftos = skillHit ? Number(skillHit.distinctFtos || 0) : 0;
+  var evidence = succ + ' successful, ' + indep + ' independent, ' +
+    dates + ' dates, ' + ftos + ' FTOs';
+  var requestId = 'QR-P-' + String(new Date().getTime());
+  var domain = '';
+  try {
+    var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+    if (matrix.ok && matrix.col['DOMAIN'] !== undefined) {
+      matrix.rows.forEach(function (r) {
+        if (domain) return;
+        if (normNameV1_(r[matrix.col['TRAINEE']]) !== tn) return;
+        var idHit = sid && matrix.col['SKILL ID'] !== undefined &&
+          String(r[matrix.col['SKILL ID']] || '').trim() === sid;
+        var nameHit = sk && normNameV1_(r[matrix.col['SKILL']]) === sk;
+        if (idHit || nameHit) domain = String(r[matrix.col['DOMAIN']] || '').trim();
+      });
+    }
+  } catch (eD) {}
+
+  var line = queue.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return new Date();
+    if (H === 'TRAINEE') return trainee;
+    if (H === 'SKILL ID') return sid;
+    if (H === 'DOMAIN') return domain;
+    if (H === 'SKILL') return skill;
+    if (H === 'EVIDENCE SUMMARY') return evidence;
+    if (H === 'RECORD STATUS') return 'OPEN';
+    if (H === 'REQUEST ID') return requestId;
+    return '';
+  });
+  queue.sheet.appendRow(line);
+  forgetTabsV1_();
+  var again = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!again.ok) throw new Error('Queue append failed.');
+  var rowNum = again.firstDataRow + again.rows.length - 1;
+  return { row: rowNum, requestId: requestId };
 }
 
 /**
@@ -290,13 +406,19 @@ function appendSignoffLogV1_(f) {
   t.sheet.appendRow(row);
 }
 
-/** Best-effort matrix touch so clearance gates see the new sign-off without a full rebuild. */
-function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision) {
+/**
+ * Write the live tracker matrix so Home / clearance / truck gates see the
+ * decision without waiting on a full tracker rebuild.
+ */
+function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, decidedBy, decisionDate, rationale) {
   var t = readTabV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return;
   if (t.col['SIGN-OFF'] === undefined && t.col['READINESS'] === undefined) return;
   var norm = normNameV1_(trainee);
   var skillNorm = normNameV1_(skill);
+  var by = String(decidedBy || '').trim();
+  var when = decisionDate instanceof Date ? decisionDate : new Date();
+  var note = String(rationale || '').trim().slice(0, 240);
   t.rows.forEach(function (r, i) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
     var idHit = skillId && t.col['SKILL ID'] !== undefined &&
@@ -304,20 +426,22 @@ function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision) {
     var nameHit = normNameV1_(r[t.col['SKILL']]) === skillNorm;
     if (!idHit && !nameHit) return;
     var row = t.firstDataRow + i;
+    function setCol(name, value) {
+      if (t.col[name] === undefined) return;
+      t.sheet.getRange(row, t.col[name] + 1).setValue(value);
+    }
     if (decision === 'Approve sign-off') {
-      if (t.col['SIGN-OFF'] !== undefined) {
-        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('SIGNED OFF');
-      }
-      if (t.col['READINESS'] !== undefined) {
-        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('SIGNED OFF');
-      }
+      setCol('SIGN-OFF', 'SIGNED OFF');
+      setCol('READINESS', 'SIGNED OFF');
+      setCol('SIGNED BY', by);
+      setCol('SIGNED DATE', when);
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
     } else if (decision === 'Return for more evidence') {
-      if (t.col['READINESS'] !== undefined) {
-        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('NEEDS MORE EVIDENCE');
-      }
-      if (t.col['SIGN-OFF'] !== undefined) {
-        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('');
-      }
+      setCol('READINESS', 'NEEDS MORE EVIDENCE');
+      setCol('SIGN-OFF', '');
+      setCol('SIGNED BY', '');
+      setCol('SIGNED DATE', '');
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
     }
   });
 }

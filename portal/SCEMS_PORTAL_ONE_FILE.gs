@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.6.0
- * Build e2694a4a
+ * SCEMS FIELD TRAINING PORTAL — portal-2.7.0
+ * Build f2f83b01
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.6.0',
+  VERSION: 'portal-2.7.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -5614,7 +5614,9 @@ function recordSignoffDecisionV1_(row, reason, requestId, decision) {
   t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
   t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue(recordStatus);
 
-  try { touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision); } catch (eM) {}
+  try {
+    touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, viewer.email, today, why);
+  } catch (eM) {}
 
   forgetTabsV1_();
   PEOPLE_CACHE_V1 = null;
@@ -5622,8 +5624,122 @@ function recordSignoffDecisionV1_(row, reason, requestId, decision) {
     ' | row ' + r + (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
 
   return decision === 'Return for more evidence'
-    ? 'Returned. Permanent record is on the sign-off log.'
-    : 'Recorded. Permanent sign-off is on the log.';
+    ? 'Returned on the tracker: queue ' + recordStatus + ', sign-off log, matrix updated.'
+    : 'Accepted on the tracker: queue closed, permanent sign-off log, matrix SIGNED OFF.';
+}
+
+/**
+ * Accept a skill from Field Training even when no OPEN queue card is on Home yet.
+ * Ensures an OPEN queue row on the live tracker, then records Approve sign-off
+ * (sign-off log + queue RECORDED + matrix SIGNED OFF).
+ */
+function acceptSkillV1(traineeName, skillId, skillName, reason) {
+  requireWritableV1_('accept a skill sign-off');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may accept a skill sign-off.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var skill = String(skillName || '').trim();
+  var sid = String(skillId || '').trim();
+  var why = String(reason || '').trim();
+  if (!trainee) throw new Error('Missing trainee.');
+  if (!skill && !sid) throw new Error('Missing skill.');
+  if (why.length < 8) {
+    throw new Error('Type why you are accepting this. It goes on the permanent record in your name.');
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(normNameV1_(trainee)); } catch (eS) { skills = []; }
+  var hit = null;
+  skills.forEach(function (s) {
+    if (hit) return;
+    if (sid && s.skillId && String(s.skillId) === sid) hit = s;
+    else if (skill && normNameV1_(s.skill) === normNameV1_(skill)) hit = s;
+  });
+  if (hit && hit.signed) {
+    throw new Error('That skill is already SIGNED OFF on the matrix. Nothing was written.');
+  }
+  if (!skill && hit) skill = hit.skill;
+  if (!sid && hit) sid = hit.skillId || '';
+
+  var gate = portalEvidenceGateV1_('Approve sign-off', trainee, skill, sid, why);
+  if (gate) throw new Error(gate);
+
+  var ensured = ensureOpenQueueRowForSkillV1_(trainee, skill, sid, hit);
+  return recordSignoffDecisionV1_(ensured.row, why, ensured.requestId, 'Approve sign-off');
+}
+
+/** Find or append an OPEN validation-queue row for this trainee + skill. */
+function ensureOpenQueueRowForSkillV1_(trainee, skill, skillId, skillHit) {
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!queue.ok) throw new Error('No validation queue on the tracker.');
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+
+  var tn = normNameV1_(trainee);
+  var sk = normNameV1_(skill);
+  var sid = String(skillId || '').trim();
+  var found = null;
+  queue.rows.forEach(function (r, i) {
+    if (found) return;
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    if (normNameV1_(r[queue.col['TRAINEE']]) !== tn) return;
+    var idHit = sid && queue.col['SKILL ID'] !== undefined &&
+      String(r[queue.col['SKILL ID']] || '').trim() === sid;
+    var nameHit = sk && normNameV1_(r[queue.col['SKILL']]) === sk;
+    if (!idHit && !nameHit) return;
+    found = {
+      row: queue.firstDataRow + i,
+      requestId: queue.col['REQUEST ID'] !== undefined
+        ? String(r[queue.col['REQUEST ID']] || '').trim() : ''
+    };
+  });
+  if (found) return found;
+
+  var succ = skillHit ? Number(skillHit.successful || 0) : 0;
+  var indep = skillHit ? Number(skillHit.independent || 0) : 0;
+  var dates = skillHit ? Number(skillHit.distinctDates || 0) : 0;
+  var ftos = skillHit ? Number(skillHit.distinctFtos || 0) : 0;
+  var evidence = succ + ' successful, ' + indep + ' independent, ' +
+    dates + ' dates, ' + ftos + ' FTOs';
+  var requestId = 'QR-P-' + String(new Date().getTime());
+  var domain = '';
+  try {
+    var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+    if (matrix.ok && matrix.col['DOMAIN'] !== undefined) {
+      matrix.rows.forEach(function (r) {
+        if (domain) return;
+        if (normNameV1_(r[matrix.col['TRAINEE']]) !== tn) return;
+        var idHit = sid && matrix.col['SKILL ID'] !== undefined &&
+          String(r[matrix.col['SKILL ID']] || '').trim() === sid;
+        var nameHit = sk && normNameV1_(r[matrix.col['SKILL']]) === sk;
+        if (idHit || nameHit) domain = String(r[matrix.col['DOMAIN']] || '').trim();
+      });
+    }
+  } catch (eD) {}
+
+  var line = queue.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return new Date();
+    if (H === 'TRAINEE') return trainee;
+    if (H === 'SKILL ID') return sid;
+    if (H === 'DOMAIN') return domain;
+    if (H === 'SKILL') return skill;
+    if (H === 'EVIDENCE SUMMARY') return evidence;
+    if (H === 'RECORD STATUS') return 'OPEN';
+    if (H === 'REQUEST ID') return requestId;
+    return '';
+  });
+  queue.sheet.appendRow(line);
+  forgetTabsV1_();
+  var again = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!again.ok) throw new Error('Queue append failed.');
+  var rowNum = again.firstDataRow + again.rows.length - 1;
+  return { row: rowNum, requestId: requestId };
 }
 
 /**
@@ -5797,13 +5913,19 @@ function appendSignoffLogV1_(f) {
   t.sheet.appendRow(row);
 }
 
-/** Best-effort matrix touch so clearance gates see the new sign-off without a full rebuild. */
-function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision) {
+/**
+ * Write the live tracker matrix so Home / clearance / truck gates see the
+ * decision without waiting on a full tracker rebuild.
+ */
+function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, decidedBy, decisionDate, rationale) {
   var t = readTabV1_(PORTAL.TAB.SKILLS);
   if (!t.ok) return;
   if (t.col['SIGN-OFF'] === undefined && t.col['READINESS'] === undefined) return;
   var norm = normNameV1_(trainee);
   var skillNorm = normNameV1_(skill);
+  var by = String(decidedBy || '').trim();
+  var when = decisionDate instanceof Date ? decisionDate : new Date();
+  var note = String(rationale || '').trim().slice(0, 240);
   t.rows.forEach(function (r, i) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
     var idHit = skillId && t.col['SKILL ID'] !== undefined &&
@@ -5811,20 +5933,22 @@ function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision) {
     var nameHit = normNameV1_(r[t.col['SKILL']]) === skillNorm;
     if (!idHit && !nameHit) return;
     var row = t.firstDataRow + i;
+    function setCol(name, value) {
+      if (t.col[name] === undefined) return;
+      t.sheet.getRange(row, t.col[name] + 1).setValue(value);
+    }
     if (decision === 'Approve sign-off') {
-      if (t.col['SIGN-OFF'] !== undefined) {
-        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('SIGNED OFF');
-      }
-      if (t.col['READINESS'] !== undefined) {
-        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('SIGNED OFF');
-      }
+      setCol('SIGN-OFF', 'SIGNED OFF');
+      setCol('READINESS', 'SIGNED OFF');
+      setCol('SIGNED BY', by);
+      setCol('SIGNED DATE', when);
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
     } else if (decision === 'Return for more evidence') {
-      if (t.col['READINESS'] !== undefined) {
-        t.sheet.getRange(row, t.col['READINESS'] + 1).setValue('NEEDS MORE EVIDENCE');
-      }
-      if (t.col['SIGN-OFF'] !== undefined) {
-        t.sheet.getRange(row, t.col['SIGN-OFF'] + 1).setValue('');
-      }
+      setCol('READINESS', 'NEEDS MORE EVIDENCE');
+      setCol('SIGN-OFF', '');
+      setCol('SIGNED BY', '');
+      setCol('SIGNED DATE', '');
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
     }
   });
 }
@@ -10460,6 +10584,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'reflect')  return paintReflect();\n",
   "  if (S.screen === 'receipt')  return paintReceipt();\n",
   "  if (S.screen === 'signoff')  return paintSignoff();\n",
+  "  if (S.screen === 'acceptSkill') return paintAcceptSkill();\n",
   "  if (S.screen === 'ack')      return paintAck();\n",
   "  if (S.screen === 'trainee')  return paintTraineeSheet();\n",
   "  if (S.screen === 'person')   return paintPersonSheet();\n",
@@ -11265,35 +11390,56 @@ var PORTAL_PAGE_HTML = [
   "       'Print / save PDF report</button>';\n",
   "\n",
   "  if (t.skills && t.skills.length){\n",
-  "    var withDiv = [], building = [], signed = [];\n",
+  "    var withDiv = [], building = [], signed = [], acceptNow = [];\n",
+  "    function barsMetClient(s){\n",
+  "      var bars = s.bars || [];\n",
+  "      if (!bars.length) return false;\n",
+  "      for (var bi = 0; bi < bars.length; bi++){\n",
+  "        if (Number(bars[bi].have || 0) < Number(bars[bi].need || 0)) return false;\n",
+  "      }\n",
+  "      return true;\n",
+  "    }\n",
   "    t.skills.forEach(function(s){\n",
   "      if (s.signed) signed.push(s);\n",
-  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
-  "      else building.push(s);\n",
+  "      else if (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s)) {\n",
+  "        withDiv.push(s);\n",
+  "        acceptNow.push(s);\n",
+  "      } else building.push(s);\n",
   "    });\n",
   "    h += sec('Skills on the matrix', t.skills.length);\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
-  "         signed.length+' signed · '+withDiv.length+' with Division · '+\n",
+  "         signed.length+' signed · '+withDiv.length+' ready to accept · '+\n",
   "         building.length+' building</p>';\n",
-  "    function skillRow(s){\n",
+  "    function skillRow(s, canAccept){\n",
   "      var tag = s.signed ? 'Signed' :\n",
-  "        (s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Build",
-  "ing'));\n",
-  "      var tagCls = s.signed ? 'c-ok' : (s.readiness === 'READY FOR VALIDATION' ? 'c-warn' ",
-  ": 'c-mute');\n",
-  "      return '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(s.skill)+'</span>'+\n",
+  "        (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s) ? 'Ready to accept' : ",
+  "(s.readiness || 'Building'));\n",
+  "      var tagCls = s.signed ? 'c-ok' : (canAccept ? 'c-warn' : 'c-mute');\n",
+  "      var row = '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(s.skill)+'</span>",
+  "'+\n",
   "        '<span class=\"chip '+tagCls+'\">'+esc(tag)+'</span></div>'+\n",
-  "        (s.bars && s.bars.length ? barsHtml(s.bars) : '')+'</div>';\n",
+  "        (s.bars && s.bars.length ? barsHtml(s.bars) : '');\n",
+  "      if (canAccept && canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "        row += '<button class=\"btn\" style=\"margin-top:10px\" onclick=\"openAcceptSkill('+\n",
+  "          jsStr(t.name)+','+jsStr(s.skillId||'')+','+jsStr(s.skill)+')\">Accept on tracker<",
+  "/button>';\n",
+  "      }\n",
+  "      row += '</div>';\n",
+  "      return row;\n",
   "    }\n",
-  "    withDiv.forEach(function(s){ h += skillRow(s); });\n",
-  "    building.slice(0, 8).forEach(function(s){ h += skillRow(s); });\n",
+  "    withDiv.forEach(function(s){ h += skillRow(s, true); });\n",
+  "    building.slice(0, 8).forEach(function(s){ h += skillRow(s, false); });\n",
   "    if (building.length > 8) h += '<p class=\"sub\">+ '+(building.length-8)+' more building<",
   "/p>';\n",
   "    if (signed.length && !withDiv.length && building.length <= 8){\n",
   "      h += '<button class=\"more\" onclick=\"S.showSignedSkills=!S.showSignedSkills;render()\"",
   ">'+\n",
   "           (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';\n",
-  "      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s); });\n",
+  "      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s, false); });\n",
+  "    }\n",
+  "    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && acceptNow.length){\n",
+  "      h += '<div class=\"next\"><b>Accept writes the tracker</b>Queue closes, permanent sign",
+  "-off log gets a row, and the skills matrix shows SIGNED OFF.</div>';\n",
   "    }\n",
   "  }\n",
   "\n",
@@ -11484,6 +11630,74 @@ var PORTAL_PAGE_HTML = [
   "  S.screen = 'signoff'; render();\n",
   "}\n",
   "\n",
+  "function openAcceptSkill(trainee, skillId, skill){\n",
+  "  var personBackup = (S.screen === 'person') ? S.ctx : null;\n",
+  "  S.ctx = {\n",
+  "    acceptTrainee: trainee,\n",
+  "    acceptSkillId: skillId || '',\n",
+  "    acceptSkill: skill || '',\n",
+  "    fromPerson: !!personBackup,\n",
+  "    personBackup: personBackup\n",
+  "  };\n",
+  "  S.screen = 'acceptSkill'; render();\n",
+  "}\n",
+  "\n",
+  "function paintAcceptSkill(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var back = c.fromPerson\n",
+  "    ? '<button class=\"back\" onclick=\"backFromAcceptSkill()\">&larr; Back</button>'\n",
+  "    : '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "  var h = hero('Accept skill', c.acceptSkill || 'Skill',\n",
+  "    esc(c.acceptTrainee || ''))+back;\n",
+  "  h += '<div class=\"note n-info\"><b>Writes the live tracker</b>Creates or closes the valid",
+  "ation-queue row, appends the permanent sign-off log, and marks the skills matrix SIGNED OF",
+  "F.</div>';\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
+  "    '<textarea id=\"acceptWhy\" placeholder=\"This goes on the permanent record in your name.",
+  "\" '+\n",
+  "    'oninput=\"syncAcceptBtn()\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"acceptGo\" disabled onclick=\"submitAcceptSkill()\">Accept on tr",
+  "acker</button>'+\n",
+  "    '<div class=\"next\"><b>Same as Decide on Home</b>One typed reason. No silent accept.</d",
+  "iv>';\n",
+  "  paint(h);\n",
+  "  syncAcceptBtn();\n",
+  "}\n",
+  "\n",
+  "function backFromAcceptSkill(){\n",
+  "  var c = S.ctx || {};\n",
+  "  if (c.personBackup){ S.ctx = c.personBackup; S.screen = 'person'; render(); return; }\n",
+  "  S.screen = 'main'; render();\n",
+  "}\n",
+  "\n",
+  "function syncAcceptBtn(){\n",
+  "  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();\n",
+  "  if (el('acceptGo')) el('acceptGo').disabled = why.length < 8 || S.busy;\n",
+  "}\n",
+  "\n",
+  "function submitAcceptSkill(){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are accepting this.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('acceptGo');\n",
+  "  if (b){ b.disabled = true; b.textContent = 'Saving on tracker…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(msg){\n",
+  "      S.busy = false;\n",
+  "      alert(msg || 'Accepted on the tracker.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b){ b.textContent = 'Accept on tracker'; syncAcceptBtn(); }\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .acceptSkillV1(c.acceptTrainee, c.acceptSkillId || '', c.acceptSkill || '', why);\n",
+  "}\n",
+  "\n",
   "/* ---------------- bring someone on ---------------- */\n",
   "function openAddTrainee(){\n",
   "  S.screen = 'addTrainee'; render();\n",
@@ -11604,9 +11818,9 @@ var PORTAL_PAGE_HTML = [
   " more evidence</button>'+\n",
   "    '<div class=\"next\"><b>Friction belongs here</b>Approve is one clear act with your word",
   "s. Return stays dead until you type why — never invent an FTO\\'s words.</div>'+\n",
-  "    '<div class=\"next\"><b>Where this goes</b>Straight onto the permanent sign-off log, and",
-  " the queue row closes. Same gates the tracker uses — typed reason, your name, evidence che",
-  "ck.</div>';\n",
+  "    '<div class=\"next\"><b>Where this goes</b>Live tracker: permanent sign-off log, validat",
+  "ion queue closed, skills matrix set to SIGNED OFF (including Signed by / Signed date when ",
+  "those columns exist).</div>';\n",
   "  paint(h);\n",
   "  syncDecideBtns();\n",
   "}\n",
@@ -11622,8 +11836,11 @@ var PORTAL_PAGE_HTML = [
   "  if (why.length < 8) { alert('Type why you are approving this.'); return; }\n",
   "  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';\n",
   "  if (el('ret')) el('ret').disabled = true;\n",
-  "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
-  "; })\n",
+  "  google.script.run.withSuccessHandler(function(msg){\n",
+  "      S.busy=false;\n",
+  "      if (msg) alert(msg);\n",
+  "      S.screen='main'; reload();\n",
+  "    })\n",
   "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncD",
   "ecideBtns();\n",
   "      alert(e.message||e); })\n",
@@ -11635,8 +11852,11 @@ var PORTAL_PAGE_HTML = [
   "  if (why.length < 8) { alert('Type why you are returning this.'); return; }\n",
   "  S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';\n",
   "  if (el('ap')) el('ap').disabled = true;\n",
-  "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
-  "; })\n",
+  "  google.script.run.withSuccessHandler(function(msg){\n",
+  "      S.busy=false;\n",
+  "      if (msg) alert(msg);\n",
+  "      S.screen='main'; reload();\n",
+  "    })\n",
   "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence",
   "'; syncDecideBtns();\n",
   "      alert(e.message||e); })\n",
@@ -12154,7 +12374,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'e2694a4a';
+var PORTAL_BUILD = 'f2f83b01';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
