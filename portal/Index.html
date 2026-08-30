@@ -1521,10 +1521,18 @@ function openSettle(i){
   var item = list[i];
   if (!item) return;
   S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };
-  S.screen = 'settle'; render();
+  S.screen = 'settle';
+  var req = (S.settleReq = (S.settleReq || 0) + 1);
+  render();
   google.script.run
-    .withSuccessHandler(function(r){ S.ctx.settle = r; render(); })
-    .withFailureHandler(function(e){ S.ctx.err = e.message || String(e); render(); })
+    .withSuccessHandler(function(r){
+      if (req !== S.settleReq || S.screen !== 'settle') return;
+      S.ctx.settle = r; render();
+    })
+    .withFailureHandler(function(e){
+      if (req !== S.settleReq || S.screen !== 'settle') return;
+      S.ctx.err = e.message || String(e); render();
+    })
     .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);
 }
 
@@ -1537,23 +1545,27 @@ function paintSettle(){
   if (!c.settle) return paint(hero('Settle', meta.trainee || '', 'Reading both sides&hellip;')+back);
 
   var p = c.settle;
+  var hasLocal = (p.sides || []).some(function(s){ return Number(s.row) > 0; });
   var h = hero('Settle', p.trainee,
     esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group) : ''))+back;
   h += '<div class="note n-info"><b>Both stay on file</b>'+esc(p.why)+
        '. Your call is who stands for the record — nothing is deleted.</div>';
 
   (p.sides || []).forEach(function(s){
-    var picked = String(c.keepRow) === String(s.row);
+    var local = Number(s.row) > 0;
+    var picked = local && String(c.keepRow) === String(s.row);
     h += '<div class="rec'+(picked?' cur':'')+'" style="margin-top:10px">'+
-         '<div class="when"><span>Row '+esc(String(s.row))+' · '+esc(s.when)+
-         (s.by ? ' · '+esc(s.by) : '')+'</span>'+
+         '<div class="when"><span>'+(local ? 'Row '+esc(String(s.row)) : 'Other book')+
+         ' · '+esc(s.when)+
+         (s.by ? ' · '+esc(s.by) : '')+
+         (s.book ? ' · in '+esc(s.book) : '')+'</span>'+
          (picked ? '<b>Stands</b>' : '')+'</div>';
     if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
     (s.fields||[]).forEach(function(f){
       h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
            '<div class="v">'+esc(f.value)+'</div></div>';
     });
-    if (canWrite()){
+    if (canWrite() && local){
       h += '<button class="btn '+(picked?'':'ghost')+'" style="margin-top:10px" '+
            'onclick="S.ctx.keepRow='+jsStr(String(s.row))+';render()">'+
            (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button>';
@@ -1566,11 +1578,18 @@ function paintSettle(){
     return paint(h);
   }
 
+  if (!hasLocal){
+    h += '<div class="note n-warn" style="margin-top:14px"><b>No row on this book</b>'+
+         'Both sides live elsewhere. You can still mark Both stand or Not a conflict.</div>';
+  }
+
   h += '<div class="panel" style="margin-top:14px"><div class="lab">Your reason (required)</div>'+
        '<textarea id="settleWhy" placeholder="Why both stand, why this row, or why this is not a conflict." '+
        'oninput="syncSettleBtns()">'+esc(c.whyText||'')+'</textarea></div>';
   h += '<button class="btn" id="sbBoth" disabled onclick="doSettle(\'BOTH_STAND\')">Both stand</button>';
-  h += '<button class="btn" id="sbKeep" disabled onclick="doSettle(\'KEEP_ROW\')">This one stands</button>';
+  if (hasLocal){
+    h += '<button class="btn" id="sbKeep" disabled onclick="doSettle(\'KEEP_ROW\')">This one stands</button>';
+  }
   h += '<button class="btn ghost" id="sbNot" disabled onclick="doSettle(\'NOT_A_CONFLICT\')">Not a conflict</button>';
   h += '<div class="next"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS. '+
        'Raw rows stay. Settle stops raising this pair.</div>';
@@ -1582,9 +1601,10 @@ function syncSettleBtns(){
   var why = (el('settleWhy') && el('settleWhy').value || '').trim();
   if (S.ctx) S.ctx.whyText = why;
   var ok = why.length >= 8 && !S.busy;
+  var keepOk = ok && S.ctx && Number(S.ctx.keepRow) > 0;
   if (el('sbBoth')) el('sbBoth').disabled = !ok;
   if (el('sbNot')) el('sbNot').disabled = !ok;
-  if (el('sbKeep')) el('sbKeep').disabled = !ok || !S.ctx.keepRow;
+  if (el('sbKeep')) el('sbKeep').disabled = !keepOk;
 }
 
 function doSettle(decision){
@@ -1594,7 +1614,7 @@ function doSettle(decision){
   if (!p) return;
   var why = (el('settleWhy') && el('settleWhy').value || '').trim();
   if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); return; }
-  if (decision === 'KEEP_ROW' && !c.keepRow) {
+  if (decision === 'KEEP_ROW' && !(Number(c.keepRow) > 0)) {
     alert('Pick which row stands first.'); return;
   }
   S.busy = true; syncSettleBtns();
@@ -1674,6 +1694,8 @@ function recCard(s, isCurrent){
   if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
   if (s.possibleDuplicate) h += '<div class="m" style="color:var(--stop);margin-top:5px">'+
     'Possible duplicate - another submission of this kind on the same day.</div>';
+  else if (s.settledDuplicate) h += '<div class="m" style="color:var(--ink-3);margin-top:5px">'+
+    'Settled — Division already recorded how this pair stands.</div>';
   (s.fields||[]).forEach(function(f){
     h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
          '<div class="v">'+esc(f.value)+'</div></div>';

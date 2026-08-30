@@ -816,7 +816,7 @@ const divBoot = { version: PORTAL.VERSION, mode: 'LIVE',
           duplicateSubs: [
             { trainee: 'Elizabeth McInville', source: 'Skill logged',
               group: 'ePCR documentation', when: 'Mon Aug 17 2026', count: 9,
-              tab: '19 SKILL EVIDENCE LOG', dupKey: 'DAY:ePCR documentation|2026-08-17',
+              tab: '19 SKILL EVIDENCE LOG', dupKey: 'ID:RESP-ePCR-17',
               rows: [264, 263, 262, 260, 261] }
           ] },
   error: '' };

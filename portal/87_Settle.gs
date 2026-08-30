@@ -8,20 +8,36 @@
 
 var PORTAL_SETTLEMENTS_TAB = 'PORTAL SETTLEMENTS';
 
+var PORTAL_SETTLEMENT_HEADERS_V1 = [
+  'WHEN', 'TRAINEE', 'TRAINEE NORM', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
+  'SOURCE', 'BY', 'REASON', 'VERSION'
+];
+
 function ensureSettlementsLogV1_() {
   try {
     var book = targetBookV1_();
-    if (book.getSheetByName(PORTAL_SETTLEMENTS_TAB)) return true;
-    var sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
-    sh.getRange(1, 1).setValue(
-      'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
-      .setFontWeight('bold');
-    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 10).setValues([[
-      'WHEN', 'TRAINEE', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
-      'SOURCE', 'BY', 'REASON', 'VERSION'
-    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
-    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    var sh = book.getSheetByName(PORTAL_SETTLEMENTS_TAB);
+    if (!sh) {
+      sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
+      sh.getRange(1, 1).setValue(
+        'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
+        .setFontWeight('bold');
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      sh.setFrozenRows(PORTAL.HEADER_ROW);
+      forgetTabsV1_();
+      return true;
+    }
+    // Existing sheet with a blank or wrong header row cannot hold a judgment.
     forgetTabsV1_();
+    var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+    if (!t.ok || t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      forgetTabsV1_();
+    }
     return true;
   } catch (e) { return false; }
 }
@@ -30,7 +46,7 @@ function settlementIdV1_(trainee, tab, dupKey) {
   return normNameV1_(trainee) + '|' + String(tab || '') + '|' + String(dupKey || '');
 }
 
-/** Settled keys for filtering Settle. */
+/** Settled keys for filtering Settle and quieting the personnel record. */
 function settledDuplicateKeysV1_() {
   var out = {};
   var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
@@ -39,8 +55,12 @@ function settledDuplicateKeysV1_() {
     var trainee = String(r[t.col['TRAINEE']] || '').trim();
     var tab = String(r[t.col['TAB']] || '').trim();
     var key = String(r[t.col['DUP KEY']] || '').trim();
-    if (!trainee || !key) return;
-    out[settlementIdV1_(trainee, tab, key)] = true;
+    if (!key) return;
+    var norm = t.col['TRAINEE NORM'] !== undefined
+      ? String(r[t.col['TRAINEE NORM']] || '').trim() : '';
+    if (!norm) norm = trainee;
+    if (!norm) return;
+    out[settlementIdV1_(norm, tab, key)] = true;
   });
   return out;
 }
@@ -68,17 +88,26 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
   if (why.length < 8) {
     throw new Error('Type why. It goes on the permanent record in your name.');
   }
-  var keep = '';
-  if (dec === 'KEEP_ROW') {
-    keep = String(keepRow == null ? '' : keepRow).trim();
-    if (!keep || keep === '0' || keep === '-1') {
-      throw new Error('Pick which row stands.');
-    }
-  }
 
   var id = settlementIdV1_(trainee, tab, key);
   if (settledDuplicateKeysV1_()[id]) {
     return { ok: true, message: 'Already settled. Reload if it still shows on Settle.' };
+  }
+
+  // Re-verify the live pair so a stale or invented key cannot hide future collisions.
+  var pair = duplicatePairDetailV1_(trainee, tab, key);
+  trainee = pair.trainee;
+
+  var keep = '';
+  if (dec === 'KEEP_ROW') {
+    keep = String(keepRow == null ? '' : keepRow).trim();
+    var local = {};
+    (pair.sides || []).forEach(function (s) {
+      if (Number(s.row) > 0) local[String(s.row)] = true;
+    });
+    if (!keep || !local[keep]) {
+      throw new Error('Pick which row on this book stands.');
+    }
   }
 
   if (!ensureSettlementsLogV1_()) {
@@ -86,16 +115,20 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
   }
   var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
   if (!t.ok) throw new Error('No settlements log.');
+  if (t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+    throw new Error(PORTAL_SETTLEMENTS_TAB + ' is missing its header row. Nothing was written.');
+  }
 
   var row = t.headers.map(function (h) {
     var H = String(h || '').trim().toUpperCase();
     if (H === 'WHEN') return new Date();
     if (H === 'TRAINEE') return trainee;
+    if (H === 'TRAINEE NORM') return normNameV1_(trainee);
     if (H === 'TAB') return tab;
     if (H === 'DUP KEY') return key;
     if (H === 'DECISION') return dec;
     if (H === 'KEEP ROW') return keep;
-    if (H === 'SOURCE') return String(sourceTitle || '').trim();
+    if (H === 'SOURCE') return String(sourceTitle || pair.source || '').trim();
     if (H === 'BY') return viewer.email;
     if (H === 'REASON') return clean_(why);
     if (H === 'VERSION') return PORTAL.VERSION;
@@ -115,6 +148,10 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
 
 /** One pair with both sides shaped for the settle screen (server → UI). */
 function duplicatePairDetailV1(traineeName, tabName, dupKey) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may open a Settle pair.');
+  }
   return duplicatePairDetailV1_(traineeName, tabName, dupKey);
 }
 
@@ -157,6 +194,7 @@ function duplicatePairDetailV1_(traineeName, tabName, dupKey) {
         when: whenTextV1_(s.when),
         by: s.by || '',
         group: s.group || '',
+        book: s.book || '',
         fields: (s.fields || []).slice(0, 12)
       };
     })

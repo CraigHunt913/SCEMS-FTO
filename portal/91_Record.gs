@@ -490,6 +490,8 @@ function refreshValidationQueueV1() {
     throw new Error('The matrix is missing TRAINEE or READINESS. Nothing was written.');
   }
 
+  // Index OPEN by skill id AND skill name so a nameless id row and an id-less
+  // name row of the same skill do not both get another OPEN.
   var open = {};
   queue.rows.forEach(function (r) {
     if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
@@ -497,14 +499,20 @@ function refreshValidationQueueV1() {
     var sid = queue.col['SKILL ID'] !== undefined
       ? String(r[queue.col['SKILL ID']] || '').trim() : '';
     var sk = normNameV1_(r[queue.col['SKILL']]);
-    open[tn + '||' + (sid || sk)] = true;
+    if (sid) open[tn + '||' + sid] = true;
+    if (sk) open[tn + '||' + sk] = true;
   });
 
-  var QUALIFY = /READY FOR VALIDATION|SIGNED OFF - REVIEW REQUIRED|LEGACY SIGN-OFF REVIEW REQUIRED/i;
+  // Exact readiness only — /READY FOR VALIDATION/ would also match NOT READY.
+  var QUALIFY = {
+    'READY FOR VALIDATION': true,
+    'SIGNED OFF - REVIEW REQUIRED': true,
+    'LEGACY SIGN-OFF REVIEW REQUIRED': true
+  };
   var added = 0;
   matrix.rows.forEach(function (r) {
     var readiness = String(r[matrix.col['READINESS']] || '').trim();
-    if (!QUALIFY.test(readiness)) return;
+    if (!QUALIFY[readiness]) return;
     var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
     if (!trainee) return;
     var skill = matrix.col['SKILL'] !== undefined
@@ -512,8 +520,10 @@ function refreshValidationQueueV1() {
     var skillId = matrix.col['SKILL ID'] !== undefined
       ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
     if (!skill && !skillId) return;
-    var key = normNameV1_(trainee) + '||' + (skillId || normNameV1_(skill));
-    if (open[key]) return;
+    var tn = normNameV1_(trainee);
+    var idKey = skillId ? tn + '||' + skillId : '';
+    var nameKey = skill ? tn + '||' + normNameV1_(skill) : '';
+    if ((idKey && open[idKey]) || (nameKey && open[nameKey])) return;
 
     var lastDate = matrix.col['LAST DATE'] !== undefined
       ? asDateV1_(r[matrix.col['LAST DATE']]) : null;
@@ -523,7 +533,10 @@ function refreshValidationQueueV1() {
     var indep = matrix.col['INDEPENDENT REPS'] !== undefined ? Number(r[matrix.col['INDEPENDENT REPS']]) || 0 : 0;
     var dates = matrix.col['DISTINCT DATES'] !== undefined ? Number(r[matrix.col['DISTINCT DATES']]) || 0 : 0;
     var ftos = matrix.col['DISTINCT FTOS'] !== undefined ? Number(r[matrix.col['DISTINCT FTOS']]) || 0 : 0;
-    var evidence = succ + ' / ' + indep + ' / ' + dates + ' / ' + ftos;
+    // Staging-style text — never "4 / 2 / 2 / 2", which parseEvidenceBarsV1_
+    // misreads as have/need pairs.
+    var evidence = succ + ' successful, ' + indep + ' independent, ' +
+      dates + ' dates, ' + ftos + ' FTOs';
     var requestId = 'QR-P-' + String(new Date().getTime()) + '-' + added;
 
     var row = queue.headers.map(function (h) {
@@ -539,7 +552,8 @@ function refreshValidationQueueV1() {
       return '';
     });
     queue.sheet.appendRow(row);
-    open[key] = true;
+    if (idKey) open[idKey] = true;
+    if (nameKey) open[nameKey] = true;
     added++;
   });
 

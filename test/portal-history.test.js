@@ -410,6 +410,69 @@ const keep = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleL
 ok(keep.ok === true && /stands/i.test(keep.message || ''), 'KEEP_ROW records which row stands');
 ok(duplicateSubmissionsV1_().length === 0, 'and that pair leaves Settle too');
 
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+ok(/Pick which row on this book/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'KEEP_ROW', 'Trying to keep a row that is not in the pair.', 99999, settleList[0].source))),
+  'KEEP_ROW refuses a row that is not in the live pair');
+
+as('dana@example.org');
+ok(/Only the Training Division/.test(threw(() =>
+  duplicatePairDetailV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey))),
+  'an FTO cannot open Settle pair detail');
+
+as('chief@example.org');
+const notConflict = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'NOT_A_CONFLICT', 'Two filings, two different shifts that share a calendar day label.',
+  '', settleList[0].source);
+ok(notConflict.ok === true, 'NOT_A_CONFLICT is a first-class settlement');
+ok(duplicateSubmissionsV1_().length === 0, 'and it clears Settle');
+
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+const afterRec = recordForV1_('Alex Bramble');
+ok(afterRec.duplicates === 0, 'settled pairs stop shouting on the personnel record');
+const stillMarked = afterRec.sections.flatMap(s => s.current.concat(s.earlier))
+  .filter(x => x.possibleDuplicate);
+ok(stillMarked.length === 0, 'no submission still carries possibleDuplicate after settle');
+
+// ---------------------------------------------------------------- //
+section('Queue refresh: exact READY only, no slash-bars, no double OPEN');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE'],
+  [['Jamie Rivers','Intubation','SK-2','READY FOR VALIDATION','',4,2,2,2,'Airway',D('2026-08-17')],
+   ['Jamie Rivers','IV access','SK-1','NOT READY FOR VALIDATION','',1,0,1,1,'Vascular',D('2026-08-10')],
+   ['Alex Bramble','Tourniquet','SK-6','READY FOR VALIDATION','',3,3,2,2,'Trauma',D('2026-08-16')]]);
+// Existing OPEN has skill name but no id — must block a matrix row that has SK-2.
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  [[D('2026-08-17'),'Jamie Rivers','','A','Intubation','already open','','','','','','OPEN',D('2026-08-17'),'QR-1']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const refreshed = refreshValidationQueueV1();
+ok(refreshed.added === 1, 'adds Alex’s READY skill, not Jamie’s already-open Intubation: ' + refreshed.added);
+const qData = SHEETS[PORTAL.TAB.QUEUE].g.slice(HR);
+ok(qData.length === 2, 'queue has original + one new: ' + qData.length);
+const added = qData.filter(r => String(r[1]) === 'Alex Bramble')[0];
+ok(!!added, 'Alex’s row was appended');
+ok(!/\d+\s*\/\s*\d+\s*\/\s*\d+/.test(String(added[5] || '')),
+   'evidence is not a bare slash list that breaks bars: ' + added[5]);
+ok(/successful/i.test(String(added[5] || '')), 'evidence reads as human counts');
+ok(parseEvidenceBarsV1_(added[5]) === null,
+   'parseEvidenceBars does not invent have/need from the refresh text');
+const notReady = qData.filter(r => /NOT READY/i.test(String(r[5] || '')) ||
+  String(r[4] || '') === 'IV access');
+ok(notReady.length === 0, 'NOT READY FOR VALIDATION never becomes an OPEN row');
+
 // ---------------------------------------------------------------- //
 section('Six tabs are read once, not once per person');
 // ---------------------------------------------------------------- //
@@ -432,7 +495,7 @@ recordForV1_('Jamie Rivers');
 recordForV1_('Alex Bramble');
 recordForV1_('Priya Okafor');
 readTabUncachedV1_ = realRead;
-ok(READS <= 6, 'three full records cost six reads in total, not eighteen: ' + READS);
+ok(READS <= 7, 'three full records share one pass over the sources (+ settlements): ' + READS);
 
 // the cache must never serve a value that has just been overwritten
 world();

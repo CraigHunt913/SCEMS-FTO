@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.3.0
- * Build 32135fd4
+ * SCEMS FIELD TRAINING PORTAL — portal-2.3.1
+ * Build e66daae7
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.3.0',
+  VERSION: 'portal-2.3.1',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -1803,6 +1803,16 @@ function divisionPayloadV1_() {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
   });
 
+  var settleWarn = '';
+  var duplicateSubs = [];
+  try {
+    duplicateSubs = duplicateSubmissionsV1_() || [];
+  } catch (eDup) {
+    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
+      '. The rest of Waiting on you is still live.';
+    duplicateSubs = [];
+  }
+
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
@@ -1829,7 +1839,7 @@ function divisionPayloadV1_() {
     canAssignFto: mayWriteV1_(),
     // A column this screen leans on that is not there. Doctrine: report it,
     // never read the one beside it and hope.
-    warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
+    warnings: [evalHeaderProblemV1_(), settleWarn].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
       if (!t.level) missing.push('level');
@@ -1851,7 +1861,7 @@ function divisionPayloadV1_() {
     }),
     // Every active trainee, each carrying enough for the screen to decide
     // whether it needs to say anything about them at all. A list of ten
-    // identical rows is not information; it is my internals on somebody's
+    // identical rows of names is not information; it is my internals on somebody's
     // phone. The screen shows the exceptions and counts the rest.
     people: active.map(function (t) {
       var last = lastEvalForV1_(t.norm);
@@ -1901,7 +1911,7 @@ function divisionPayloadV1_() {
     canAddTrainee: mayWriteV1_(),
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
-    duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
+    duplicateSubs: duplicateSubs,
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT
@@ -3559,7 +3569,10 @@ function dupKeyV1_(s, oncePerDay) {
   // one shift is a correction and worth raising whatever they say. Skill
   // evidence is the opposite: three reps across one shift is three events.
   if (oncePerDay) {
-    return 'DAY:' + (s.group || '') + '|' + dayKeyV1_(s.when);
+    var day = dayKeyV1_(s.when);
+    // Undated once-a-day rows must not all collapse onto DAY:| and flag each other.
+    if (!day) return 'DAY:UNDATED:' + String(s.row);
+    return 'DAY:' + (s.group || '') + '|' + day;
   }
   var id = '';
   (s.fields || []).forEach(function (f) {
@@ -3602,12 +3615,21 @@ function whenTextV1_(d) {
 function recordForV1_(name, only) {
   var norm = normNameV1_(name);
   var sections = [], timeline = [], total = 0, duplicates = 0;
+  var settled = settledDuplicateKeysV1_();
 
   PORTAL_SOURCES.forEach(function (src) {
     if (only && only.indexOf(src.key) < 0) return;
     var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy, !!src.oncePerDay);
     if (!list.length) return;
     total += list.length;
+
+    list.forEach(function (s) {
+      if (!s.possibleDuplicate) return;
+      if (settled[settlementIdV1_(name, src.tab, s.dupKey)]) {
+        s.possibleDuplicate = false;
+        s.settledDuplicate = true;
+      }
+    });
 
     var current = list.filter(function (s) { return s.current; });
     var earlier = list.filter(function (s) { return !s.current; });
@@ -3651,6 +3673,7 @@ function shapeV1_(s) {
     at: s.when instanceof Date && !isNaN(s.when.getTime()) ? s.when.getTime() : 0,
     by: s.by, group: s.group,
     current: !!s.current, possibleDuplicate: !!s.possibleDuplicate,
+    settledDuplicate: !!s.settledDuplicate,
     fields: s.fields
   };
 }
@@ -4856,20 +4879,36 @@ function runMergeForReal() {
 
 var PORTAL_SETTLEMENTS_TAB = 'PORTAL SETTLEMENTS';
 
+var PORTAL_SETTLEMENT_HEADERS_V1 = [
+  'WHEN', 'TRAINEE', 'TRAINEE NORM', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
+  'SOURCE', 'BY', 'REASON', 'VERSION'
+];
+
 function ensureSettlementsLogV1_() {
   try {
     var book = targetBookV1_();
-    if (book.getSheetByName(PORTAL_SETTLEMENTS_TAB)) return true;
-    var sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
-    sh.getRange(1, 1).setValue(
-      'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
-      .setFontWeight('bold');
-    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 10).setValues([[
-      'WHEN', 'TRAINEE', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
-      'SOURCE', 'BY', 'REASON', 'VERSION'
-    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
-    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    var sh = book.getSheetByName(PORTAL_SETTLEMENTS_TAB);
+    if (!sh) {
+      sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
+      sh.getRange(1, 1).setValue(
+        'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
+        .setFontWeight('bold');
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      sh.setFrozenRows(PORTAL.HEADER_ROW);
+      forgetTabsV1_();
+      return true;
+    }
+    // Existing sheet with a blank or wrong header row cannot hold a judgment.
     forgetTabsV1_();
+    var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+    if (!t.ok || t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      forgetTabsV1_();
+    }
     return true;
   } catch (e) { return false; }
 }
@@ -4878,7 +4917,7 @@ function settlementIdV1_(trainee, tab, dupKey) {
   return normNameV1_(trainee) + '|' + String(tab || '') + '|' + String(dupKey || '');
 }
 
-/** Settled keys for filtering Settle. */
+/** Settled keys for filtering Settle and quieting the personnel record. */
 function settledDuplicateKeysV1_() {
   var out = {};
   var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
@@ -4887,8 +4926,12 @@ function settledDuplicateKeysV1_() {
     var trainee = String(r[t.col['TRAINEE']] || '').trim();
     var tab = String(r[t.col['TAB']] || '').trim();
     var key = String(r[t.col['DUP KEY']] || '').trim();
-    if (!trainee || !key) return;
-    out[settlementIdV1_(trainee, tab, key)] = true;
+    if (!key) return;
+    var norm = t.col['TRAINEE NORM'] !== undefined
+      ? String(r[t.col['TRAINEE NORM']] || '').trim() : '';
+    if (!norm) norm = trainee;
+    if (!norm) return;
+    out[settlementIdV1_(norm, tab, key)] = true;
   });
   return out;
 }
@@ -4916,17 +4959,26 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
   if (why.length < 8) {
     throw new Error('Type why. It goes on the permanent record in your name.');
   }
-  var keep = '';
-  if (dec === 'KEEP_ROW') {
-    keep = String(keepRow == null ? '' : keepRow).trim();
-    if (!keep || keep === '0' || keep === '-1') {
-      throw new Error('Pick which row stands.');
-    }
-  }
 
   var id = settlementIdV1_(trainee, tab, key);
   if (settledDuplicateKeysV1_()[id]) {
     return { ok: true, message: 'Already settled. Reload if it still shows on Settle.' };
+  }
+
+  // Re-verify the live pair so a stale or invented key cannot hide future collisions.
+  var pair = duplicatePairDetailV1_(trainee, tab, key);
+  trainee = pair.trainee;
+
+  var keep = '';
+  if (dec === 'KEEP_ROW') {
+    keep = String(keepRow == null ? '' : keepRow).trim();
+    var local = {};
+    (pair.sides || []).forEach(function (s) {
+      if (Number(s.row) > 0) local[String(s.row)] = true;
+    });
+    if (!keep || !local[keep]) {
+      throw new Error('Pick which row on this book stands.');
+    }
   }
 
   if (!ensureSettlementsLogV1_()) {
@@ -4934,16 +4986,20 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
   }
   var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
   if (!t.ok) throw new Error('No settlements log.');
+  if (t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+    throw new Error(PORTAL_SETTLEMENTS_TAB + ' is missing its header row. Nothing was written.');
+  }
 
   var row = t.headers.map(function (h) {
     var H = String(h || '').trim().toUpperCase();
     if (H === 'WHEN') return new Date();
     if (H === 'TRAINEE') return trainee;
+    if (H === 'TRAINEE NORM') return normNameV1_(trainee);
     if (H === 'TAB') return tab;
     if (H === 'DUP KEY') return key;
     if (H === 'DECISION') return dec;
     if (H === 'KEEP ROW') return keep;
-    if (H === 'SOURCE') return String(sourceTitle || '').trim();
+    if (H === 'SOURCE') return String(sourceTitle || pair.source || '').trim();
     if (H === 'BY') return viewer.email;
     if (H === 'REASON') return clean_(why);
     if (H === 'VERSION') return PORTAL.VERSION;
@@ -4963,6 +5019,10 @@ function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepR
 
 /** One pair with both sides shaped for the settle screen (server → UI). */
 function duplicatePairDetailV1(traineeName, tabName, dupKey) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may open a Settle pair.');
+  }
   return duplicatePairDetailV1_(traineeName, tabName, dupKey);
 }
 
@@ -5005,6 +5065,7 @@ function duplicatePairDetailV1_(traineeName, tabName, dupKey) {
         when: whenTextV1_(s.when),
         by: s.by || '',
         group: s.group || '',
+        book: s.book || '',
         fields: (s.fields || []).slice(0, 12)
       };
     })
@@ -5804,6 +5865,8 @@ function refreshValidationQueueV1() {
     throw new Error('The matrix is missing TRAINEE or READINESS. Nothing was written.');
   }
 
+  // Index OPEN by skill id AND skill name so a nameless id row and an id-less
+  // name row of the same skill do not both get another OPEN.
   var open = {};
   queue.rows.forEach(function (r) {
     if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
@@ -5811,14 +5874,20 @@ function refreshValidationQueueV1() {
     var sid = queue.col['SKILL ID'] !== undefined
       ? String(r[queue.col['SKILL ID']] || '').trim() : '';
     var sk = normNameV1_(r[queue.col['SKILL']]);
-    open[tn + '||' + (sid || sk)] = true;
+    if (sid) open[tn + '||' + sid] = true;
+    if (sk) open[tn + '||' + sk] = true;
   });
 
-  var QUALIFY = /READY FOR VALIDATION|SIGNED OFF - REVIEW REQUIRED|LEGACY SIGN-OFF REVIEW REQUIRED/i;
+  // Exact readiness only — /READY FOR VALIDATION/ would also match NOT READY.
+  var QUALIFY = {
+    'READY FOR VALIDATION': true,
+    'SIGNED OFF - REVIEW REQUIRED': true,
+    'LEGACY SIGN-OFF REVIEW REQUIRED': true
+  };
   var added = 0;
   matrix.rows.forEach(function (r) {
     var readiness = String(r[matrix.col['READINESS']] || '').trim();
-    if (!QUALIFY.test(readiness)) return;
+    if (!QUALIFY[readiness]) return;
     var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
     if (!trainee) return;
     var skill = matrix.col['SKILL'] !== undefined
@@ -5826,8 +5895,10 @@ function refreshValidationQueueV1() {
     var skillId = matrix.col['SKILL ID'] !== undefined
       ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
     if (!skill && !skillId) return;
-    var key = normNameV1_(trainee) + '||' + (skillId || normNameV1_(skill));
-    if (open[key]) return;
+    var tn = normNameV1_(trainee);
+    var idKey = skillId ? tn + '||' + skillId : '';
+    var nameKey = skill ? tn + '||' + normNameV1_(skill) : '';
+    if ((idKey && open[idKey]) || (nameKey && open[nameKey])) return;
 
     var lastDate = matrix.col['LAST DATE'] !== undefined
       ? asDateV1_(r[matrix.col['LAST DATE']]) : null;
@@ -5837,7 +5908,10 @@ function refreshValidationQueueV1() {
     var indep = matrix.col['INDEPENDENT REPS'] !== undefined ? Number(r[matrix.col['INDEPENDENT REPS']]) || 0 : 0;
     var dates = matrix.col['DISTINCT DATES'] !== undefined ? Number(r[matrix.col['DISTINCT DATES']]) || 0 : 0;
     var ftos = matrix.col['DISTINCT FTOS'] !== undefined ? Number(r[matrix.col['DISTINCT FTOS']]) || 0 : 0;
-    var evidence = succ + ' / ' + indep + ' / ' + dates + ' / ' + ftos;
+    // Staging-style text — never "4 / 2 / 2 / 2", which parseEvidenceBarsV1_
+    // misreads as have/need pairs.
+    var evidence = succ + ' successful, ' + indep + ' independent, ' +
+      dates + ' dates, ' + ftos + ' FTOs';
     var requestId = 'QR-P-' + String(new Date().getTime()) + '-' + added;
 
     var row = queue.headers.map(function (h) {
@@ -5853,7 +5927,8 @@ function refreshValidationQueueV1() {
       return '';
     });
     queue.sheet.appendRow(row);
-    open[key] = true;
+    if (idKey) open[idKey] = true;
+    if (nameKey) open[nameKey] = true;
     added++;
   });
 
@@ -7574,8 +7649,14 @@ function renamePairsV1_() {
 /** Tabs a rename may change. Not the logs, and not a form-response tab. */
 function renameableTabsV1_() {
   var skip = [PORTAL.TAB.AUDIT, PORTAL_BACKFILL_LOG, PORTAL_ROSTER_LOG, PORTAL_RENAME_LOG];
-  return Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
+  var tabs = Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
     .filter(function (n) { return skip.indexOf(n) < 0; });
+  // Settlements are judgments keyed by trainee name — they must follow a rename
+  // or Settle raises settled pairs again under the new spelling.
+  if (typeof PORTAL_SETTLEMENTS_TAB === 'string' && tabs.indexOf(PORTAL_SETTLEMENTS_TAB) < 0) {
+    tabs.push(PORTAL_SETTLEMENTS_TAB);
+  }
+  return tabs;
 }
 
 /** Every cell that would change, and every mention that would not. Reads. */
@@ -11002,10 +11083,18 @@ var PORTAL_PAGE_HTML = [
   "  var item = list[i];\n",
   "  if (!item) return;\n",
   "  S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };\n",
-  "  S.screen = 'settle'; render();\n",
+  "  S.screen = 'settle';\n",
+  "  var req = (S.settleReq = (S.settleReq || 0) + 1);\n",
+  "  render();\n",
   "  google.script.run\n",
-  "    .withSuccessHandler(function(r){ S.ctx.settle = r; render(); })\n",
-  "    .withFailureHandler(function(e){ S.ctx.err = e.message || String(e); render(); })\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      if (req !== S.settleReq || S.screen !== 'settle') return;\n",
+  "      S.ctx.settle = r; render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      if (req !== S.settleReq || S.screen !== 'settle') return;\n",
+  "      S.ctx.err = e.message || String(e); render();\n",
+  "    })\n",
   "    .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);\n",
   "}\n",
   "\n",
@@ -11020,6 +11109,7 @@ var PORTAL_PAGE_HTML = [
   "p;')+back);\n",
   "\n",
   "  var p = c.settle;\n",
+  "  var hasLocal = (p.sides || []).some(function(s){ return Number(s.row) > 0; });\n",
   "  var h = hero('Settle', p.trainee,\n",
   "    esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group)",
   " : ''))+back;\n",
@@ -11027,17 +11117,20 @@ var PORTAL_PAGE_HTML = [
   "       '. Your call is who stands for the record — nothing is deleted.</div>';\n",
   "\n",
   "  (p.sides || []).forEach(function(s){\n",
-  "    var picked = String(c.keepRow) === String(s.row);\n",
+  "    var local = Number(s.row) > 0;\n",
+  "    var picked = local && String(c.keepRow) === String(s.row);\n",
   "    h += '<div class=\"rec'+(picked?' cur':'')+'\" style=\"margin-top:10px\">'+\n",
-  "         '<div class=\"when\"><span>Row '+esc(String(s.row))+' · '+esc(s.when)+\n",
-  "         (s.by ? ' · '+esc(s.by) : '')+'</span>'+\n",
+  "         '<div class=\"when\"><span>'+(local ? 'Row '+esc(String(s.row)) : 'Other book')+\n",
+  "         ' · '+esc(s.when)+\n",
+  "         (s.by ? ' · '+esc(s.by) : '')+\n",
+  "         (s.book ? ' · in '+esc(s.book) : '')+'</span>'+\n",
   "         (picked ? '<b>Stands</b>' : '')+'</div>';\n",
   "    if (s.group) h += '<div class=\"h\" style=\"margin-top:5px\">'+esc(s.group)+'</div>';\n",
   "    (s.fields||[]).forEach(function(f){\n",
   "      h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
   "           '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
   "    });\n",
-  "    if (canWrite()){\n",
+  "    if (canWrite() && local){\n",
   "      h += '<button class=\"btn '+(picked?'':'ghost')+'\" style=\"margin-top:10px\" '+\n",
   "           'onclick=\"S.ctx.keepRow='+jsStr(String(s.row))+';render()\">'+\n",
   "           (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button",
@@ -11052,6 +11145,12 @@ var PORTAL_PAGE_HTML = [
   "    return paint(h);\n",
   "  }\n",
   "\n",
+  "  if (!hasLocal){\n",
+  "    h += '<div class=\"note n-warn\" style=\"margin-top:14px\"><b>No row on this book</b>'+\n",
+  "         'Both sides live elsewhere. You can still mark Both stand or Not a conflict.</div",
+  ">';\n",
+  "  }\n",
+  "\n",
   "  h += '<div class=\"panel\" style=\"margin-top:14px\"><div class=\"lab\">Your reason (required)",
   "</div>'+\n",
   "       '<textarea id=\"settleWhy\" placeholder=\"Why both stand, why this row, or why this is",
@@ -11059,8 +11158,10 @@ var PORTAL_PAGE_HTML = [
   "       'oninput=\"syncSettleBtns()\">'+esc(c.whyText||'')+'</textarea></div>';\n",
   "  h += '<button class=\"btn\" id=\"sbBoth\" disabled onclick=\"doSettle(\\'BOTH_STAND\\')\">Both s",
   "tand</button>';\n",
-  "  h += '<button class=\"btn\" id=\"sbKeep\" disabled onclick=\"doSettle(\\'KEEP_ROW\\')\">This one",
-  " stands</button>';\n",
+  "  if (hasLocal){\n",
+  "    h += '<button class=\"btn\" id=\"sbKeep\" disabled onclick=\"doSettle(\\'KEEP_ROW\\')\">This o",
+  "ne stands</button>';\n",
+  "  }\n",
   "  h += '<button class=\"btn ghost\" id=\"sbNot\" disabled onclick=\"doSettle(\\'NOT_A_CONFLICT\\'",
   ")\">Not a conflict</button>';\n",
   "  h += '<div class=\"next\"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS.",
@@ -11074,9 +11175,10 @@ var PORTAL_PAGE_HTML = [
   "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
   "  if (S.ctx) S.ctx.whyText = why;\n",
   "  var ok = why.length >= 8 && !S.busy;\n",
+  "  var keepOk = ok && S.ctx && Number(S.ctx.keepRow) > 0;\n",
   "  if (el('sbBoth')) el('sbBoth').disabled = !ok;\n",
   "  if (el('sbNot')) el('sbNot').disabled = !ok;\n",
-  "  if (el('sbKeep')) el('sbKeep').disabled = !ok || !S.ctx.keepRow;\n",
+  "  if (el('sbKeep')) el('sbKeep').disabled = !keepOk;\n",
   "}\n",
   "\n",
   "function doSettle(decision){\n",
@@ -11087,7 +11189,7 @@ var PORTAL_PAGE_HTML = [
   "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
   "  if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); ",
   "return; }\n",
-  "  if (decision === 'KEEP_ROW' && !c.keepRow) {\n",
+  "  if (decision === 'KEEP_ROW' && !(Number(c.keepRow) > 0)) {\n",
   "    alert('Pick which row stands first.'); return;\n",
   "  }\n",
   "  S.busy = true; syncSettleBtns();\n",
@@ -11177,6 +11279,9 @@ var PORTAL_PAGE_HTML = [
   "  if (s.possibleDuplicate) h += '<div class=\"m\" style=\"color:var(--stop);margin-top:5px\">'",
   "+\n",
   "    'Possible duplicate - another submission of this kind on the same day.</div>';\n",
+  "  else if (s.settledDuplicate) h += '<div class=\"m\" style=\"color:var(--ink-3);margin-top:5",
+  "px\">'+\n",
+  "    'Settled — Division already recorded how this pair stands.</div>';\n",
   "  (s.fields||[]).forEach(function(f){\n",
   "    h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
   "         '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
@@ -11253,7 +11358,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '32135fd4';
+var PORTAL_BUILD = 'e66daae7';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

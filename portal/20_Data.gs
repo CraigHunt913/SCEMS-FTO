@@ -558,6 +558,16 @@ function divisionPayloadV1_() {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
   });
 
+  var settleWarn = '';
+  var duplicateSubs = [];
+  try {
+    duplicateSubs = duplicateSubmissionsV1_() || [];
+  } catch (eDup) {
+    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
+      '. The rest of Waiting on you is still live.';
+    duplicateSubs = [];
+  }
+
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
@@ -584,7 +594,7 @@ function divisionPayloadV1_() {
     canAssignFto: mayWriteV1_(),
     // A column this screen leans on that is not there. Doctrine: report it,
     // never read the one beside it and hope.
-    warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
+    warnings: [evalHeaderProblemV1_(), settleWarn].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
       if (!t.level) missing.push('level');
@@ -606,7 +616,7 @@ function divisionPayloadV1_() {
     }),
     // Every active trainee, each carrying enough for the screen to decide
     // whether it needs to say anything about them at all. A list of ten
-    // identical rows is not information; it is my internals on somebody's
+    // identical rows of names is not information; it is my internals on somebody's
     // phone. The screen shows the exceptions and counts the rest.
     people: active.map(function (t) {
       var last = lastEvalForV1_(t.norm);
@@ -656,7 +666,7 @@ function divisionPayloadV1_() {
     canAddTrainee: mayWriteV1_(),
     // Where two submissions of the same kind landed on the same day. Both are
     // kept; this is the list of calls to make, not a list of rows to remove.
-    duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
+    duplicateSubs: duplicateSubs,
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT

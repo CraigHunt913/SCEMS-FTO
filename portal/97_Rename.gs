@@ -49,8 +49,14 @@ function renamePairsV1_() {
 /** Tabs a rename may change. Not the logs, and not a form-response tab. */
 function renameableTabsV1_() {
   var skip = [PORTAL.TAB.AUDIT, PORTAL_BACKFILL_LOG, PORTAL_ROSTER_LOG, PORTAL_RENAME_LOG];
-  return Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
+  var tabs = Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
     .filter(function (n) { return skip.indexOf(n) < 0; });
+  // Settlements are judgments keyed by trainee name — they must follow a rename
+  // or Settle raises settled pairs again under the new spelling.
+  if (typeof PORTAL_SETTLEMENTS_TAB === 'string' && tabs.indexOf(PORTAL_SETTLEMENTS_TAB) < 0) {
+    tabs.push(PORTAL_SETTLEMENTS_TAB);
+  }
+  return tabs;
 }
 
 /** Every cell that would change, and every mention that would not. Reads. */
