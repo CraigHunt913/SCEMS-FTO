@@ -5,22 +5,36 @@
  * spreadsheet id, an address, or a mode.
  *
  * SAFETY: TARGET_SPREADSHEET_ID is deliberately empty. The portal refuses to
- * run until it is set, and setUpStaging() sets it to a NEW spreadsheet it
- * creates itself. Pointing this at the live tracker is a single, deliberate,
- * logged act — never a default and never an accident.
+ * run until it is set, and setUpStaging() points it at a sandbox — reusing
+ * the remembered one when it still exists, creating a new book only when
+ * none exists or you pass setUpStaging("NEW"). Pointing this at the live
+ * tracker is a single, deliberate, logged act — never a default and never
+ * an accident.
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-1.3.0',
+  VERSION: 'portal-2.11.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
+  /** Short link people should open (Sites page or county vanity). */
+  PROPERTY_PUBLIC_URL: 'PORTAL_PUBLIC_URL',
 
   /** STAGING writes freely. PRODUCTION refuses every write. */
   MODE_STAGING: 'STAGING',
   MODE_PRODUCTION: 'PRODUCTION',
   MODE_LIVE: 'LIVE',
 
-  TITLE: 'Sumter County EMS Field Training',
+  /** Product chrome. County name owns the badge; this is the program. */
+  TITLE: 'Field Training — Sumter County EMS',
+  PRODUCT: 'Field Training',
+  COUNTY: 'Sumter County EMS',
+
+  /**
+   * Suggested short address: Google Sites Hub that embeds the web app.
+   * Operators set PORTAL_PUBLIC_URL to this (or a county redirect) so nobody
+   * has to paste the long /macros/s/… deployment URL.
+   */
+  DEFAULT_HUB_URL: 'https://sites.google.com/view/scemsfieldtraininghub/home',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */

@@ -297,7 +297,19 @@ function retireFto() {
 
   if (written.length) {
     rebuiltNoteV1_(L);
-    refreshDropdownsNoteV1_(L);
+    var sync = null;
+    try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  FTO name lists on ' + sync.forms + ' registered form(s) no longer offer');
+      L.push('  the retired officer(s).');
+      if (sync.notes && sync.notes.length) {
+        sync.notes.forEach(function (n) { L.push('  · ' + n); });
+      }
+      L.push('');
+    } else {
+      refreshDropdownsNoteV1_(L);
+    }
     L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
     L.push('is exactly where it was, under the name that earned it.');
@@ -383,6 +395,13 @@ function unretireFto() {
   if (put.length) {
     L.push('');
     L.push('They can sign in again, and they are counted again.');
+    try {
+      var sync = syncRegisteredFormChoicesV1_();
+      if (sync && sync.ok) {
+        L.push('');
+        L.push('Form FTO lists refreshed on ' + sync.forms + ' registered form(s).');
+      }
+    } catch (eSync) {}
   }
   return noteV1_(L.join('\n'));
 }

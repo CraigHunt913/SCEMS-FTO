@@ -28,6 +28,7 @@ const FILES = [
   ['75_presentation','How the sheets look and read. Three versions of this concern used to sit in three separate blocks.'],
   ['80_migration',   'One-time migrations between versions of this system.'],
   ['85_freshstart',  'Copying the tracker and cleaning the copy, without losing anything.'],
+  ['87_estate',      'One live workbook, nine live forms: backup clones, orphan tabs, estate health.'],
   ['90_recovery',    'Run-once tools for when something went wrong: phantoms, lost responses, backfills.'],
   ['95_runners',     'Triggers, the menu, and the functions a human runs by name.'],
   ['99_config',      'Constants. Nothing here does anything.']
@@ -46,9 +47,12 @@ const KEEP = {
 const BY_NAME = {};
 const put = (file, names) => names.forEach(n => { BY_NAME[n] = file; });
 
-put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'POLISH_SHEETS',
-  'SIMPLIFY_EVERYTHING', 'FIX_MY_SHEETS', 'goLiveChecklistV20_2', 'deploymentStatusV20_2',
-  'deploymentPreflight', 'traineeList', 'getList', 'engineRows', 'MANAGED_TRIGGER_HANDLERS']);
+put('95_runners', ['START_HERE', 'FINISH_TRACKER', 'MAKE_IT_PROFESSIONAL', 'MAKE_IT_SIMPLE',
+  'ELITE_ESTATE', 'ELITE_ESTATE_FINISH', 'archiveFormCopiesPrompt', 'applyEngineRepairPrompt',
+  'POLISH_SHEETS', 'SIMPLIFY_EVERYTHING', 'FIX_MY_SHEETS', 'goLiveChecklistV20_2',
+  'deploymentStatusV20_2', 'deploymentPreflight', 'traineeList', 'getList', 'engineRows',
+  'MANAGED_TRIGGER_HANDLERS', 'repairAllTriggersNow', 'installTriggers', 'rebuildFormIdsNow',
+  'stepA_linkLegacy', 'stepB_recordStranded', 'stepC_migrationTopUp']);
 
 put('60_reporting', ['traineeStatusCards', 'supervisorDigest', 'systemHeartbeat', 'monthlySnapshot',
   'ftoScoreboardV20_1', 'redoAuditTabV20_1', 'traineeListSafeV20_1_', 'collectActionItemsV19_',
@@ -92,7 +96,8 @@ put('75_presentation', ['BRAND_V20_5', 'sheetPurposeV20_5_', 'badgeBlobV20_5_', 
   'unwrapAuditFormulasV20_1']);
 
 put('70_admin_health', ['repairCancelledQueueRowsV20_2', 'reviewSectionV20_1_', 'reviewCoreV20_1',
-  'reviewDeepV20_1', 'fullSystemReviewV20_1', 'hasStrayV19_', 'applyOperationalTabsV20_1']);
+  'reviewDeepV20_1', 'fullSystemReviewV20_1', 'hasStrayV19_', 'applyOperationalTabsV20_1',
+  'rebuildSkillMatrix']);
 
 put('90_recovery', ['phantomRowsV20_1_', 'previewPhantomRepairV20_1', 'fixPhantomsNowV20_1',
   'stepD_fixPhantoms', 'stepE_replayLostResponses', 'recoverLostSubmissionsV20_2',
@@ -116,6 +121,17 @@ put('20_forms', ['goLiveV19', 'backToTestModeV19']);
 
 put('85_freshstart', ['knownTabsV20_6_', 'sheetIsLiveFormDestinationV20_6_',
   'freshStartReport', 'freshStartClean', 'freshStartV20_6_']);
+
+put('87_estate', [
+  'CANONICAL_LIVE_SPREADSHEET_ID', 'ORPHAN_TWIN_SPREADSHEET_ID',
+  'FORM_COPY_ARCHIVE_FOLDER_V20_6', 'STAGING_ARCHIVE_FOLDER_V20_6',
+  'isFormCopyTitleV20_6_', 'liveTitleUnderCopyV20_6_', 'isSCEMSFormCopyTitleV20_6_',
+  'formIdFromUrlV20_6_', 'ensureNamedFolderV20_6_', 'ensureDatedArchiveFolderV20_6_',
+  'liveFormIdSetV20_6_', 'formCopyInventoryV20_6_', 'formEstateReport',
+  'archiveFormCopies', 'archiveFormCopiesV20_6_', 'neutralizeBackupFormClonesV20_6_',
+  'orphanResponseTabsV20_6_', 'engineDamageSummaryV20_6_',
+  'decisionQueueHeaderGapV20_6_', 'estateHealthItemsV20_6_'
+]);
 
 /** Where one declaration goes. '' means nobody has said, and the build stops. */
 function fileFor(unit) {

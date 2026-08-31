@@ -61,30 +61,46 @@ function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
-    var name = String(r[t.col['TRAINEE']] || '').trim();
+    var name = String(pickV1_(t, r, ['TRAINEE', 'TRAINEE NAME', 'NAME']) || '').trim();
     if (!name) return null;
-    var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
+    var status = String(pickV1_(t, r, ['SET STATUS', 'PROGRAM STATUS']) || '').trim();
+    var fto = String(pickV1_(t, r, ['ASSIGNED FTO', 'TRAINING OFFICER', 'FTO']) || '').trim();
+    var email = String(pickV1_(t, r, [
+      'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+    ]) || '').trim().toLowerCase();
+    var started = asDateV1_(pickV1_(t, r, ['START DATE', 'STARTED']));
+    var phaseStart = asDateV1_(pickV1_(t, r, ['PHASE START DATE', 'PHASE STARTED']));
+    var level = String(pickV1_(t, r, ['LEVEL', 'CERT LEVEL', 'CERTIFICATION']) || '').trim();
+    var phase = String(pickV1_(t, r, ['CURRENT PHASE', 'PHASE']) || '').trim();
     return {
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
-      level: String(r[t.col['LEVEL']] || '').trim(),
-      levelKey: levelKeyV1_(r[t.col['LEVEL']]),
-      phase: String(r[t.col['CURRENT PHASE']] || r[t.col['PHASE']] || '').trim(),
-      fto: String(r[t.col['ASSIGNED FTO']] || r[t.col['TRAINING OFFICER']] || '').trim(),
-      shift: String(r[t.col['SHIFT']] || '').trim(),
-      email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
-      started: asDateV1_(r[t.col['START DATE']]),
-      phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
+      level: level,
+      levelKey: levelKeyV1_(level),
+      phase: phase,
+      fto: fto,
+      shift: String(pickV1_(t, r, ['SHIFT']) || '').trim(),
+      email: email,
+      started: started,
+      phaseStart: phaseStart,
       status: status,
-      closed: /closed|released|withdraw|archiv/i.test(status),
-      setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
-                        String(r[t.col['CURRENT PHASE']] || '').trim() &&
-                        String(r[t.col['ASSIGNED FTO']] || '').trim() &&
-                        asDateV1_(r[t.col['START DATE']]))
+      closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
+      setupComplete: !!(level && phase && fto && started)
     };
   }).filter(Boolean);
+}
+
+/** Catalog threshold helpers — four convictions that make a skill ready. */
+function cellNumV1_(r, t, names, fallback) {
+  for (var i = 0; i < names.length; i++) {
+    if (t.col[names[i]] !== undefined) {
+      var n = Number(r[t.col[names[i]]]);
+      return isNaN(n) ? (fallback || 0) : n;
+    }
+  }
+  return fallback || 0;
 }
 
 function skillsForV1_(norm) {
@@ -93,16 +109,228 @@ function skillsForV1_(norm) {
   var out = [];
   t.rows.forEach(function (r) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var successful = cellNumV1_(r, t, ['SUCCESSFUL REPS', 'SUCCESSFUL'], 0);
+    var independent = cellNumV1_(r, t, ['INDEPENDENT REPS', 'INDEPENDENT'], 0);
+    var dates = cellNumV1_(r, t, ['DISTINCT DATES', 'DATES', 'DISTINCT DATE COUNT'], 0);
+    var ftos = cellNumV1_(r, t, ['DISTINCT FTOS', 'DISTINCT FTO', 'FTOS', 'FTO COUNT'], 0);
+    var needS = cellNumV1_(r, t, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL', 'SUCCESSFUL NEED'], 3) || 3;
+    var needI = cellNumV1_(r, t, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT', 'INDEPENDENT NEED'], 2) || 2;
+    var needD = cellNumV1_(r, t, ['NEED DATES', 'REQUIRED DATES', 'DATES NEED'], 2) || 2;
+    var needF = cellNumV1_(r, t, ['NEED FTOS', 'REQUIRED FTOS', 'FTOS NEED'], 2) || 2;
+    // If threshold columns are absent, keep classic defaults so bars still teach.
+    if (t.col['NEED SUCCESSFUL'] === undefined && t.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = Math.max(needS, 3); needI = Math.max(needI, 2);
+      needD = Math.max(needD, 2); needF = Math.max(needF, 2);
+    }
+    var readiness = String(r[t.col['READINESS']] || '').trim();
+    var signed = String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
+                 readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
-      readiness: String(r[t.col['READINESS']] || '').trim(),
-      signed: String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
-              String(r[t.col['READINESS']] || '').trim() === 'SIGNED OFF',
-      successful: Number(r[t.col['SUCCESSFUL REPS']]) || 0,
-      independent: Number(r[t.col['INDEPENDENT REPS']]) || 0
+      skillId: t.col['SKILL ID'] !== undefined
+        ? String(r[t.col['SKILL ID']] || '').trim() : '',
+      readiness: readiness,
+      signed: signed,
+      successful: successful,
+      independent: independent,
+      distinctDates: dates,
+      distinctFtos: ftos,
+      bars: [
+        { label: 'Successful', have: successful, need: needS },
+        { label: 'Independent', have: independent, need: needI },
+        { label: 'Dates', have: dates, need: needD },
+        { label: 'FTOs', have: ftos, need: needF }
+      ]
     });
   });
   return out;
+}
+
+/** Hours since a Date, or -1. */
+function hoursSinceV1_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return -1;
+  return Math.floor((new Date() - d) / 3600000);
+}
+
+/** Parse "3/2 · 2/2 · …" style evidence summaries into four counts when columns lack them. */
+function parseEvidenceBarsV1_(text) {
+  var s = String(text || '');
+  var m = s.match(/(\d+)\s*\/\s*(\d+)/g);
+  if (!m || m.length < 2) return null;
+  var bars = [];
+  var labels = ['Successful', 'Independent', 'Dates', 'FTOs'];
+  for (var i = 0; i < Math.min(m.length, 4); i++) {
+    var p = m[i].match(/(\d+)\s*\/\s*(\d+)/);
+    bars.push({ label: labels[i], have: Number(p[1]), need: Number(p[2]) });
+  }
+  while (bars.length < 4) bars.push({ label: labels[bars.length], have: 0, need: 1 });
+  return bars;
+}
+
+/** Eval heat for a trainee: count, days since last, optional domain average. */
+function evalHeatForV1_(norm) {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  var out = { count: 0, days: -1, avg: null, lastEval: 'never' };
+  if (!t.ok) return out;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return out;
+  var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation',
+                 'Scene Leadership', 'Professionalism'];
+  var latest = null, sum = 0, nScores = 0;
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[iWho]) !== norm) return;
+    out.count++;
+    var d = asDateV1_(r[iWhen]);
+    if (d && (!latest || d > latest)) latest = d;
+    domains.forEach(function (h) {
+      if (t.col[h] === undefined) return;
+      var v = Number(r[t.col[h]]);
+      if (v >= 1 && v <= 5) { sum += v; nScores++; }
+    });
+  });
+  if (latest) {
+    out.days = Math.floor((new Date() - latest) / 86400000);
+    out.lastEval = daysAgoTextV1_(latest);
+  }
+  if (nScores) out.avg = Math.round((sum / nScores) * 100) / 100;
+  return out;
+}
+
+/** Day count in current phase (or since start). */
+function dayInPhaseV1_(t) {
+  var d = t.phaseStart || t.started;
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((new Date() - d) / 86400000));
+}
+
+/**
+ * Can they clear for the truck? Phase 4 + every matrix skill signed off +
+ * no open skill-validation items. Gaps are human-readable for the desk.
+ */
+function clearanceAssessmentV1_(trainee) {
+  var out = {
+    phase4: false,
+    canClear: false,
+    signed: 0,
+    total: 0,
+    gaps: []
+  };
+  if (!trainee || trainee.closed) {
+    out.gaps.push('Not an active trainee.');
+    return out;
+  }
+  out.phase4 = phaseIndexV1_(trainee.phase) === 3;
+  if (!out.phase4) {
+    out.gaps.push('Still in ' + (trainee.phase || 'an earlier phase') +
+      ' — Phase 4 comes first.');
+    return out;
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(trainee.norm); } catch (e) { skills = []; }
+  out.total = skills.length;
+  out.signed = skills.filter(function (s) { return s.signed; }).length;
+
+  if (!skills.length) {
+    out.gaps.push('No skills on the matrix yet. Log skills and rebuild before clearing.');
+  } else {
+    var openSkills = skills.filter(function (s) { return !s.signed; });
+    openSkills.slice(0, 6).forEach(function (s) {
+      out.gaps.push(s.skill +
+        (s.readiness ? ' — ' + s.readiness : ' — not signed off'));
+    });
+    if (openSkills.length > 6) {
+      out.gaps.push('…and ' + (openSkills.length - 6) + ' more skills still open');
+    }
+  }
+
+  try {
+    var waiting = openQueueV1_().filter(function (q) {
+      return q.norm === trainee.norm && !q.decision;
+    });
+    if (waiting.length) {
+      out.gaps.push(waiting.length + ' skill sign-off' +
+        (waiting.length === 1 ? '' : 's') + ' still waiting on Division');
+    }
+  } catch (e2) {}
+
+  out.canClear = out.gaps.length === 0;
+  return out;
+}
+
+/** Imperative next-move cards — replace "flags" language for humans. */
+function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
+  var moves = [];
+  (coaching || []).forEach(function (c) {
+    if (c.acknowledged) return;
+    moves.push({
+      kind: 'coaching', urgency: 'soon', title: 'Acknowledge coaching from ' + (c.from || 'your FTO'),
+      blurb: String(c.text || '').slice(0, 120), action: 'ack', row: c.row
+    });
+  });
+  var reflectAgo = '';
+  (freshness || []).forEach(function (f) {
+    if (/reflect/i.test(f.title || '')) reflectAgo = f.ago;
+  });
+  if (reflectAgo === 'never' || /days ago/.test(reflectAgo)) {
+    var n = parseInt(reflectAgo, 10);
+    if (reflectAgo === 'never' || (n && n >= 7)) {
+      moves.push({
+        kind: 'reflect', urgency: 'soon',
+        title: 'File your reflection',
+        blurb: reflectAgo === 'never' ? 'None on file yet. Two minutes.' :
+               'Last one was ' + reflectAgo + '.',
+        action: 'reflect'
+      });
+    }
+  }
+  if (heat.days < 0) {
+    moves.push({
+      kind: 'eval', urgency: 'due',
+      title: 'No evaluation on file yet',
+      blurb: 'Your FTO files one after a shift together.',
+      action: 'wait'
+    });
+  } else if (heat.days > 14) {
+    moves.push({
+      kind: 'eval', urgency: 'soon',
+      title: heat.days + ' days since an evaluation',
+      blurb: 'Ask your FTO to schedule one.',
+      action: 'wait'
+    });
+  }
+  (waiting || []).forEach(function (q) {
+    moves.push({
+      kind: 'queue', urgency: 'ok',
+      title: q.skill + ' is with Training Division',
+      blurb: 'Ready ' + (q.since || '') + '. Nothing for you to do.',
+      action: 'wait'
+    });
+  });
+  return moves.slice(0, 6);
+}
+
+function nextMoveFromFindingV1_(why, name) {
+  var w = String(why || '');
+  if (!w) return null;
+  var title = w, blurb = 'Open their chart and decide the next honest move.', urgency = 'soon';
+  if (/never evaluated/i.test(w)) {
+    title = 'Get an evaluation on the board'; blurb = name + ' has never been evaluated.'; urgency = 'due';
+  } else if (/days since/i.test(w)) {
+    title = 'Schedule an evaluation'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  } else if (/no training officer|no one on the roster|has left|sentence, not a name/i.test(w)) {
+    title = 'Fix the training officer assignment'; blurb = capFindingV1_(w) + '.'; urgency = 'due';
+  } else if (/not responding|remediation|concern/i.test(w)) {
+    title = 'Address status: ' + w; blurb = 'This stays visible until the status changes.'; urgency = 'due';
+  } else if (/missing|incomplete/i.test(w)) {
+    title = 'Finish the trainee record'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  }
+  return { kind: 'finding', urgency: urgency, title: title, blurb: blurb, finding: w };
+}
+function capFindingV1_(s) {
+  s = String(s || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function openQueueV1_() {
@@ -111,6 +339,11 @@ function openQueueV1_() {
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var since = asDateV1_(r[t.col['READY DATE']]);
+    var evidence = String(r[t.col['EVIDENCE SUMMARY']] || '').trim();
+    var bars = parseEvidenceBarsV1_(evidence);
+    var recommend = String(r[t.col['FTO RECOMMENDATION']] || r[t.col['RECOMMENDATION']] ||
+                           r[t.col['FTO NOTES']] || '').trim();
     out.push({
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
@@ -118,13 +351,12 @@ function openQueueV1_() {
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
-      evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
-      since: asDateV1_(r[t.col['READY DATE']]),
+      evidence: evidence,
+      bars: bars,
+      recommend: recommend,
+      since: since,
+      hours: hoursSinceV1_(since),
       requestId: String(r[t.col['REQUEST ID']] || '').trim(),
-      // A row can be OPEN and already carry a decision: that is one the portal
-      // (or somebody in the sheet) has staged, waiting for the tracker to
-      // record it. It is not still waiting on the Chief, and counting it as
-      // though it were is how a queue never appears to go down.
       decision: String(r[t.col['DECISION']] || '').trim(),
       decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
@@ -201,45 +433,61 @@ function traineePayloadV1_(viewer) {
   var signed = skills.filter(function (s) { return s.signed; }).length;
   var waiting = openQueueV1_().filter(function (q) { return q.norm === me.norm; });
   var coaching = coachingForV1_(me.norm);
+  var heat = evalHeatForV1_(me.norm);
+  var freshness = safeFormsV1_(function () { return freshnessForV1_(me.name); });
+  var day = dayInPhaseV1_(me);
+  var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
+    product: PORTAL.PRODUCT,
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
-    lastEval: daysAgoTextV1_(lastEvalForV1_(me.norm)),
+    dayInPhase: day,
+    lastEval: heat.lastEval,
+    evalCount: heat.count,
+    evalAvg: heat.avg,
     signed: signed, applicable: skills.length,
     percent: skills.length ? Math.round(signed / skills.length * 100) : 0,
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
-    coaching: coaching.filter(function (c) { return !c.acknowledged; })
-      .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+    coaching: unacked.map(function (c) { return { row: c.row, from: c.from, text: c.text,
                                    book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
+    nextMoves: nextMovesForTraineeV1_(me, heat, waiting, coaching, freshness),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
     }),
-    // How current each kind of submission is. The record itself is fetched on
-    // demand, so a person with two years of history does not pay for it on
-    // every page load.
-    freshness: safeFormsV1_(function () { return freshnessForV1_(me.name); })
+    freshness: freshness
   };
 }
 
 function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
+  // Forms + freshness open FormApp / every source tab — load on openTrainee via personDetailV1.
   return {
+    product: PORTAL.PRODUCT,
     name: viewer.name,
-    // Each trainee carries the forms for THAT trainee, with the FTO's name,
-    // the trainee's name, and the skills log for their level already chosen.
-    // The FTO picks a person, not a form and not a level.
     trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
-               setupComplete: t.setupComplete,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
-                   { fto: viewer.name, trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+      var heat = evalHeatForV1_(t.norm);
+      var waiting = openQueueV1_().filter(function (q) { return q.norm === t.norm && !q.decision; });
+      var urgency = '';
+      if (!t.setupComplete) urgency = 'soon';
+      else if (heat.days < 0 || heat.days > 7) urgency = 'due';
+      else if (heat.days > 4) urgency = 'soon';
+      return {
+        name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+        dayInPhase: dayInPhaseV1_(t),
+        lastEval: heat.lastEval,
+        evalCount: heat.count,
+        evalAvg: heat.avg,
+        daysSinceEval: heat.days,
+        waitingCount: waiting.length,
+        urgency: urgency,
+        setupComplete: t.setupComplete,
+        forms: null,
+        freshness: null,
+        detailLoaded: false
+      };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
@@ -284,9 +532,15 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var open = openQueueV1_();
-  var queue = open.filter(function (q) { return !q.decision; });
-  var staged = open.filter(function (q) { return !!q.decision; });
+  var queueAll = openQueueV1_();
+  var open = queueAll.filter(function (q) { return !q.decision; });
+  // Oldest OPEN first — the desk works the backlog, not sheet order.
+  open.sort(function (a, b) {
+    var ha = (a.hours < 0 ? 0 : a.hours);
+    var hb = (b.hours < 0 ? 0 : b.hours);
+    return hb - ha;
+  });
+  var staged = queueAll.filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -304,25 +558,65 @@ function divisionPayloadV1_() {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
   });
 
+  // Home load stays sheet-only. FormApp, form-response scans, freshness, and
+  // per-trainee skills used to run here for every active person — that is why
+  // Division felt frozen on open. Inbox + person sheet load those on demand.
+  var releaseReady = [];
+  var people = active.map(function (t) {
+    var last = lastEvalForV1_(t.norm);
+    var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
+    var why = '';
+    if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
+    else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
+    else if (days < 0) why = 'never evaluated';
+    else if (days > 14) why = days + ' days since an evaluation';
+    else if (!t.setupComplete) why = 'record incomplete';
+    var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
+    var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
+    var next = nextPhaseV1_(t.phase);
+    var phase4 = phaseIndexV1_(t.phase) === 3;
+    // Clearance only when Phase 4 — skips skills matrix for everyone earlier.
+    var clear = phase4 ? clearanceAssessmentV1_(t)
+                       : { phase4: false, canClear: false, signed: 0, total: 0, gaps: [] };
+    if (clear.canClear) {
+      releaseReady.push({ name: t.name, level: t.level, signed: clear.signed, total: clear.total });
+    }
+    return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+             fto: t.fto || '', shift: t.shift || '',
+             dayInPhase: dayInPhaseV1_(t),
+             nextPhase: next,
+             canAdvance: !!next,
+             releaseReady: !!clear.canClear,
+             phase4: phase4,
+             clearance: clear,
+             days: days, status: t.status || '', needs: why, ack: ack,
+             nextMove: move,
+             // Filled by personDetailV1 when the record opens.
+             skills: null, forms: null, freshness: null, detailLoaded: false };
+  });
+
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
-    queue: queue.slice(0, 25).map(function (q) {
-      return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId,
-               row: q.row, from: q.from };
+    queue: open.slice(0, 25).map(function (q) {
+      var hours = q.hours;
+      var clock = 72;
+      if (hours < 0) hours = 0;
+      var left = Math.max(0, clock - hours);
+      return {
+        trainee: q.trainee, skill: q.skill, evidence: q.evidence,
+        bars: q.bars, recommend: q.recommend || '',
+        since: daysAgoTextV1_(q.since), hours: hours, hoursLeft: left,
+        clockPct: Math.max(0, Math.min(100, Math.round((left / clock) * 100))),
+        requestId: q.requestId, row: q.row, from: q.from
+      };
     }),
-    queueCount: queue.length,
-    // Decisions already made here and waiting on the tracker to make them
-    // permanent. The portal deliberately does not close these rows: the
-    // tracker's own writer is the only thing allowed to put a sign-off in
-    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    queueCount: open.length,
     staged: staged.map(function (q) {
       return { trainee: q.trainee, skill: q.skill, decision: q.decision,
                by: q.decidedBy, since: daysAgoTextV1_(q.since) };
     }),
-    // A column this screen leans on that is not there. Doctrine: report it,
-    // never read the one beside it and hope.
+    canAssignFto: mayWriteV1_(),
     warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
@@ -333,46 +627,113 @@ function divisionPayloadV1_() {
       if (f) missing.push(f);
       return { name: t.name, missing: missing.join(', ') };
     }),
-    // Whatever the tracker says, nobody active is invisible. This is the list
-    // of people no officer's screen will show, with the reason for each.
     stranded: stranded,
     duplicates: dupes,
-    releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
-      .map(function (t) { return { name: t.name, level: t.level }; }),
-    // Every active trainee, each carrying enough for the screen to decide
-    // whether it needs to say anything about them at all. A list of ten
-    // identical rows is not information; it is my internals on somebody's
-    // phone. The screen shows the exceptions and counts the rest.
-    people: active.map(function (t) {
-      var last = lastEvalForV1_(t.norm);
-      var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
-      var why = '';
-      if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
-      else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
-      else if (days < 0) why = 'never evaluated';
-      else if (days > 14) why = days + ' days since an evaluation';
-      else if (!t.setupComplete) why = 'record incomplete';
-      // Seen, by a named person, in their own words, for a stated time. The
-      // finding is not cleared and never can be - it moves out of the alarm
-      // list until the hold runs out, and comes straight back after.
-      var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               fto: t.fto || '', shift: t.shift || '',
-               days: days, status: t.status || '', needs: why, ack: ack,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+    releaseReady: releaseReady,
+    people: people,
+    // Inbox extras — filled by divisionInboxV1 after first paint.
+    forms: [],
+    retiredForms: [],
+    duplicateSubs: [],
+    formWaiting: { waiting: 0, skillsWaiting: 0, total: 0, list: [], pending: true },
+    inboxLoaded: false,
+    officers: (function () {
+      try {
+        return rosterActivePeopleV1_().map(function (p) {
+          return { name: p.name, email: p.email || '' };
+        }).sort(function (a, b) {
+          return String(a.name).localeCompare(String(b.name));
+        });
+      } catch (e) { return []; }
+    })(),
+    canAddTrainee: mayWriteV1_(),
+    canAddFto: mayWriteV1_(),
+    closedPeople: all.filter(function (t) { return t.closed; }).map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey,
+               status: t.status || 'Closed', fto: t.fto || '', phase: t.phase || '' };
     }),
+    formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
+    mode: modeV1_(),
+    product: PORTAL.PRODUCT,
+    portalUrl: portalPublicUrlV1_()
+  };
+}
+
+/**
+ * Heavy Inbox pieces — form waiting, Settle duplicates, file-something links.
+ * Called after Division home paints so the desk is usable first.
+ */
+function divisionInboxV1() {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok || viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error(viewer.why || 'Only the Training Division may open the inbox.');
+  }
+  var settleWarn = '';
+  var duplicateSubs = [];
+  try {
+    duplicateSubs = duplicateSubmissionsV1_() || [];
+  } catch (eDup) {
+    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
+      '. The rest of the desk is still live.';
+    duplicateSubs = [];
+  }
+  var formWaiting = { waiting: 0, skillsWaiting: 0, total: 0, list: [] };
+  try {
+    var w = waitingFormResponsesV1_();
+    formWaiting = {
+      waiting: w.waiting,
+      skillsWaiting: w.skillsWaiting,
+      total: w.total,
+      list: (w.waitingList || []).slice(0, 25)
+    };
+  } catch (eW) {}
+  return {
+    inboxLoaded: true,
+    settleWarn: settleWarn,
+    duplicateSubs: duplicateSubs,
+    formWaiting: formWaiting,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
-    }),
-    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
-    // Where two submissions of the same kind landed on the same day. Both are
-    // kept; this is the list of calls to make, not a list of rows to remove.
-    duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
-    formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
-    mode: modeV1_()
+    }) || [],
+    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }) || []
+  };
+}
+
+/**
+ * Skills / forms / freshness for one trainee — loaded when Division opens
+ * their record, not when the desk first paints.
+ */
+function personDetailV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
+  if (viewer.role !== PORTAL.ROLE.DIVISION && viewer.role !== PORTAL.ROLE.FTO) {
+    throw new Error('Only Division or an FTO may open that detail.');
+  }
+  var who = String(traineeName || '').trim();
+  var want = normNameV1_(who);
+  var rec = null;
+  traineesV1_().forEach(function (t) { if (t.norm === want) rec = t; });
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (viewer.role === PORTAL.ROLE.FTO &&
+      normNameV1_(rec.fto) !== normNameV1_(viewer.name)) {
+    throw new Error('That trainee is not assigned to you.');
+  }
+  var clear = clearanceAssessmentV1_(rec);
+  return {
+    name: rec.name,
+    skills: safeFormsV1_(function () { return skillsForV1_(rec.norm); }) || [],
+    forms: safeFormsV1_(function () {
+      if (viewer.role === PORTAL.ROLE.FTO) {
+        return traineeFormsForV1_(PORTAL.ROLE.FTO, rec,
+          { fto: viewer.name, trainee: rec.name });
+      }
+      return traineeFormsForV1_(PORTAL.ROLE.DIVISION, rec, { trainee: rec.name });
+    }) || [],
+    freshness: safeFormsV1_(function () { return freshnessForV1_(rec.name); }) || [],
+    clearance: clear,
+    releaseReady: !!clear.canClear,
+    phase4: !!clear.phase4,
+    detailLoaded: true
   };
 }
 
@@ -380,13 +741,37 @@ function supervisorPayloadV1_(viewer) {
   var shift = normNameV1_(viewer.shift);
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && (!shift || normNameV1_(t.shift) === shift); });
+  var hot = 0;
+  var trainees = mine.map(function (t) {
+    var heat = evalHeatForV1_(t.norm);
+    var why = '';
+    var urgency = '';
+    if (heat.days < 0) { why = 'never evaluated'; urgency = 'due'; hot++; }
+    else if (heat.days > 14) { why = heat.days + 'd silent'; urgency = 'due'; hot++; }
+    else if (heat.days > 7) { why = heat.days + 'd since eval'; urgency = 'soon'; hot++; }
+    var ftoWhy = ftoProblemV1_(t);
+    if (ftoWhy) { why = ftoWhy; urgency = 'due'; hot++; }
+    return {
+      name: t.name, level: t.level, levelKey: t.levelKey,
+      phase: t.phase, fto: t.fto,
+      lastEval: heat.lastEval,
+      daysSinceEval: heat.days,
+      evalCount: heat.count,
+      why: why,
+      urgency: urgency,
+      nextMove: why ? nextMoveFromFindingV1_(why, t.name) : null
+    };
+  });
+  // Hot first — the strip should put tonight's problems at the start.
+  trainees.sort(function (a, b) {
+    var rank = { due: 0, soon: 1, '': 2 };
+    return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
+  });
   return {
+    product: PORTAL.PRODUCT,
     shift: viewer.shift || 'All shifts',
-    trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey,
-               phase: t.phase, fto: t.fto,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
-    }),
+    hotCount: hot,
+    trainees: trainees,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.SUPERVISOR, { fto: viewer.name });
     })

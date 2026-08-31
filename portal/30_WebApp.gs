@@ -1,35 +1,28 @@
 /**
  * The web app entry point.
  *
- * doGet resolves the viewer on the server, builds only that role's payload,
- * and injects it into the page. The browser receives no data belonging to
- * anyone else, so there is nothing for a client-side mistake to expose.
+ * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
+ * or Drive. Touching those during doGet is what produces Google's grey
+ * createOAuthDialog iframe that never paints Field Training.
+ *
+ * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
 
 function doGet(e) {
-  var viewer, payload, err = '';
-  try {
-    viewer = resolveViewerV1_(whoIsVisitingV1_());
-    payload = viewer.ok ? payloadForV1_(viewer) : {};
-  } catch (ex) {
-    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
-    payload = {};
-    err = String(ex.message || ex);
-  }
-
   var boot = {
-    // The build, not just the version. A deployment serves the code as it was
-    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
-    // deploy again - and until now nothing on the page said which one it was.
-    // "Is the fix live?" is a question the page should answer by itself.
     version: PORTAL.VERSION +
       (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
-    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-              ok: viewer.ok, why: viewer.why },
-    data: payload,
-    error: err
+    deferred: true,
+    viewer: { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: '' },
+    data: {},
+    error: ''
   };
+  // Naming the visitor does not open Spreadsheets. Safe during doGet.
+  try {
+    var email = whoIsVisitingV1_();
+    if (email) boot.viewer.email = email;
+  } catch (ex) {}
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
@@ -37,11 +30,6 @@ function doGet(e) {
   var page = t.evaluate();
   page.setTitle(PORTAL.TITLE);
   page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-
-  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY. Asking for one yields
-  // undefined, and Apps Script rejects it as a null mode.
   page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
   return page;
 }
@@ -69,6 +57,50 @@ function payloadForV1_(viewer) {
     case PORTAL.ROLE.MEDICAL:    return medicalPayloadV1_();
     default:                     return {};
   }
+}
+
+/**
+ * Run ONCE from the Apps Script editor (Run ▶ authorizePortalNow).
+ * Forces Google's permission screens for Sheets / Drive / Forms so the
+ * web app is not stuck on a grey OAuth iframe.
+ */
+function authorizePortalNow() {
+  var L = ['Field Training — authorizePortalNow', ''];
+  try {
+    var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    L.push('Signed in as: ' + (email || '(unnamed)'));
+  } catch (e) { L.push('Session: ' + e); }
+
+  try {
+    var id = targetIdV1_();
+    var name = SpreadsheetApp.openById(id).getName();
+    L.push('Spreadsheet OK: ' + name);
+  } catch (e) {
+    L.push('Spreadsheet: ' + e + ' — run setUpStaging() or pointAtProductionReadOnly() first if needed.');
+  }
+
+  try {
+    DriveApp.getRootFolder().getName();
+    L.push('Drive OK');
+  } catch (e) { L.push('Drive: ' + e); }
+
+  try {
+    var probed = false;
+    if (typeof PORTAL_FORMS !== 'undefined' && PORTAL_FORMS && PORTAL_FORMS.length && PORTAL_FORMS[0].id) {
+      FormApp.openById(PORTAL_FORMS[0].id).getTitle();
+      probed = true;
+    }
+    L.push(probed ? 'Forms OK' : 'Forms: no id to probe (OK — Sheets/Drive still authorized)');
+  } catch (e) { L.push('Forms: ' + e); }
+
+  L.push('');
+  L.push('Next: Deploy → Manage deployments → Edit → Version: New version → Deploy.');
+  L.push('Settings must be: Execute as ME, Who has access: ANYONE WITH A GOOGLE ACCOUNT.');
+  L.push('Then open the /exec link again (Incognito if you use multiple Google accounts).');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
+  return msg;
 }
 
 /* ---------------- actions ---------------- */
@@ -165,83 +197,8 @@ function headerNameV1_(t, headers) {
   return '';
 }
 
-/** Division STAGES a sign-off decision. A typed reason is required — there is
- *  no default wording, because a pre-filled reason is not a reason.
- *
- *  It stages. It does not record, and that is the whole point.
- *
- *  The tracker's recordDecisionForRowV20_1_ is the single writer to
- *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
- *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
- *  The result was the worst of both: the approval never reached the sign-off
- *  log, so the skill was never actually signed off anywhere permanent — and
- *  the row was now shut against the only function that could have put it
- *  there. It also skipped that function's authority check, its evidence gate
- *  and its duplicate guard, every one of which exists because somebody
- *  decided a career decision needed them.
- *
- *  So this writes the four fields a decision is made of and leaves RECORD
- *  STATUS alone. The tracker records it — tick RECORD on the row, or run
- *  "Record pending decisions" from its menu. One writer, every gate, and the
- *  result is exactly as defensible as a decision typed into the sheet by
- *  hand, because that is now literally what it is. */
-function approveSignoffV1(row, reason, requestId) {
-  requireWritableV1_('stage a sign-off decision');
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
-  var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
-
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
-  if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
-
-  // Every column checked before any of them is written. A throw halfway
-  // through leaves a decision with no reason attached to it, which is worse
-  // than no decision at all.
-  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
-  var missing = [];
-  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
-  if (missing.length) {
-    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
-      'written. Fix the header row in the tracker first.');
-  }
-
-  var live = t.rows[r - t.firstDataRow] || [];
-
-  // The screen was built some time ago, and the queue re-sorts itself every
-  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
-  // the one on screen is how you sign off the wrong person's skill.
-  var want = String(requestId == null ? '' : requestId).trim();
-  var have = t.col['REQUEST ID'] === undefined ? ''
-           : String(live[t.col['REQUEST ID']] || '').trim();
-  if (want && have && want !== have) {
-    throw new Error('That is not the row you were looking at any more — the queue moved ' +
-      'underneath you. Nothing was written. Reload and try again.');
-  }
-
-  var status = String(live[t.col['RECORD STATUS']] || '').trim();
-  if (status !== 'OPEN') {
-    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
-  }
-  var already = String(live[t.col['DECISION']] || '').trim();
-  if (already) {
-    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
-      'was written. Record it in the tracker, or clear it there, first.');
-  }
-
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
-  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
-  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  // RECORD STATUS is deliberately not touched. See the note above.
-  forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
-    ' | ' + why.slice(0, 120));
-  return 'Staged. The tracker records it.';
-}
+/* Sign-off approve / return live in 91_Record.gs — they write the permanent
+ *  sign-off log and close the queue row. Staging-only is gone on purpose. */
 
 /** The Training Division records that it has seen a finding.
  *
@@ -323,19 +280,84 @@ function recordV1(traineeName) {
   return rec;
 }
 
-/** Refreshes the current role's payload without a page reload. */
+/** Refreshes the current role's payload without a page reload.
+ *  Also the first real load after doGet's deferred shell. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-                     ok: viewer.ok, why: viewer.why },
-           data: viewer.ok ? payloadForV1_(viewer) : {},
-           mode: safeModeV1_() };
+  var viewer, payload = {}, err = '';
+  try {
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
+    payload = viewer.ok ? payloadForV1_(viewer) : {};
+  } catch (ex) {
+    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false,
+               why: String(ex.message || ex) };
+    err = String(ex.message || ex);
+  }
+  return {
+    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
+              ok: viewer.ok, why: viewer.why },
+    data: payload,
+    mode: safeModeV1_(),
+    portalUrl: portalPublicUrlV1_(),
+    error: err
+  };
 }
 
 /** Blocks a leading = + - @ so submitted text cannot become a formula. */
 function clean_(v) {
   var s = String(v == null ? '' : v);
   return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
+/**
+ * Training Division brings a new trainee into Field Training from the web app.
+ *
+ * Writes one row to 01 TRAINEE MASTER and refreshes Trainee LIST choices on
+ * the registered Google Forms so the forms already in service offer them.
+ */
+function addTraineeV1(payload) {
+  requireWritableV1_('add a trainee');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add a trainee from Field Training.');
+  }
+  var req = parseAddTraineeRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) throw new Error('Type their work email — that is how they sign in.');
+  if (!req.level) {
+    throw new Error('Pick a level: EMT, Advanced EMT, or Paramedic.');
+  }
+
+  var plan = addTraineePlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the trainee master.');
+  }
+  if (plan.closed.length) {
+    throw new Error(plan.closed[0].name +
+      ' is closed/released on the master. Re-opening them is a person decision in the tracker.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (plan.badFto.length) {
+    throw new Error((plan.badFto[0].fto || 'That officer') +
+      ' is not on the active FTO roster. Add them with addFto first, or leave FTO blank.');
+  }
+  if (plan.incomplete.length || !plan.add.length) {
+    throw new Error('Name, email, and level are required.');
+  }
+
+  var note = applyAddTraineePlanV1_(plan);
+  var msg = typeof note === 'string' ? note : String(note || '');
+  auditV1_('TRAINEE ADDED', viewer.email, req.name + ' | ' + req.level + ' | ' + req.email);
+  // Short message for the phone; full note is in Executions / Logger.
+  return {
+    ok: true,
+    name: req.name,
+    level: req.level,
+    message: req.name + ' is in Field Training and on the existing forms.'
+  };
 }
 
 /** The portal's own log. It is a WRITE, so it obeys the same rule everything

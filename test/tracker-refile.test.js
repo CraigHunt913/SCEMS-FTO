@@ -55,7 +55,7 @@ const unfiled = units.filter(u => u.kind === 'decl' && !fileFor(u));
 ok(unfiled.length === 0,
    'nothing falls through to a default bucket: ' +
    (unfiled.length ? unfiled.map(u => u.name).join(', ') : 'none unfiled'));
-ok(FILES.length === 16, 'sixteen files, each with a stated purpose');
+ok(FILES.length === 17, 'seventeen files, each with a stated purpose');
 FILES.forEach(([name]) => {
   if (!fs.existsSync(path.join(SRC, name + '.gs'))) ok(false, name + '.gs exists');
 });

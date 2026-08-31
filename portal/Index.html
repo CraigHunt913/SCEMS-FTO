@@ -5,31 +5,26 @@
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap">
 <style>
 /* ------------------------------------------------------------------ *
-   Sumter County EMS — Field Training
+   Field Training — Sumter County EMS
 
-   Built for one hand, at the end of a shift, on a phone, by somebody who
-   has been awake for fourteen hours. Every rule below follows from that.
-
-   The colour of a card's spine is the only thing that has to be read from
-   across a room: red means it wants you now, amber means soon, and no spine
-   at all means it is fine and you can stop looking at it. Everything else
-   is there to be read once you have decided to read it.
+   One living chart per trainee. Tonight for FTOs. Waiting on you for
+   Training. Built for one hand, end of shift, fourteen hours awake.
  * ------------------------------------------------------------------ */
 :root{
-  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;
-  --paper:#fff; --surface:#f4f6f9; --raised:#fff; --line:#e2e7ee; --line-2:#eef1f5;
-  --ink:#12233b; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;
-  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#b08a2e;
+  --navy:#0f1c14; --navy-2:#1a2e22; --navy-3:#08110c;
+  --paper:#f7f5f0; --surface:#efece6; --raised:#fffcf7; --line:#d4cfc4; --line-2:#e6e2d8;
+  --ink:#142018; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;
+  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#c4a035;
   --ok:#2f7d4f; --ok-bg:#eaf4ee;
   --warn:#8a6a14; --warn-bg:#fdf5e2;
   --stop:#a8342b; --stop-bg:#fbeceb;
-  --r:13px; --r-sm:9px;
-  --lift:0 1px 1px rgba(18,35,59,.04), 0 2px 6px -2px rgba(18,35,59,.10);
-  --lift-2:0 2px 4px rgba(18,35,59,.06), 0 14px 32px -18px rgba(18,35,59,.55);
-  --page:radial-gradient(1200px 600px at 50% -10%, #eaeff6 0%, #f4f6f9 55%, #eef1f6 100%);
+  --r:5px; --r-sm:3px;
+  --lift:none;
+  --lift-2:0 0 0 1px rgba(18,35,59,.12);
+  --page:linear-gradient(180deg, #e8ebe8 0%, #f2f1ec 40%, #ebe8e1 100%);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;
@@ -55,45 +50,69 @@
 }
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
-html,body{margin:0;min-height:100%;background:var(--surface);background-image:var(--page);
-  background-attachment:fixed;color:var(--ink);
-  font-family:"Source Sans 3",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
+html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.5;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
-.app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var(--lift-2);}
-@media(min-width:560px){.app{margin:28px auto 40px;border-radius:18px;overflow:hidden;min-height:0;}}
+/* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */
+.app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;
+  box-shadow:none;}
+@media(min-width:700px){
+  body{background-image:linear-gradient(165deg, #1a2e22 0%, var(--navy-3) 42%, #050a07 100%);
+    background-attachment:fixed;padding:28px 24px 48px;}
+  .app{max-width:920px;border-radius:2px;overflow:hidden;min-height:calc(100vh - 76px);
+    box-shadow:0 0 0 1px rgba(196,160,53,.35), 0 28px 60px -30px rgba(0,0,0,.85);}
+  .bar{padding:16px 28px;}
+  .bar img{width:56px;height:61px;}
+  .bar .county{font-size:1.55rem;}
+  .bar .program{font-size:.78rem;letter-spacing:.22em;}
+  .wrap{padding:0 28px 56px;}
+  .hero{margin:0 -28px 22px;padding:14px 28px 28px;border-radius:0;}
+  .hero h1{font-size:2.65rem;}
+  .hero .sub{font-size:1.05rem;}
+  .btn{padding:18px;font-size:1.2rem;min-height:60px;}
+  .decision .h{font-size:1.7rem!important;}
+  .clock{width:64px;height:64px;}
+  .clock svg{width:64px;height:64px;}
+}
+@media(min-width:1100px){
+  .app{max-width:1080px;}
+  .hero h1{font-size:3rem;}
+}
 
-/* --- the bar --- */
-.bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;gap:12px;
-  position:sticky;top:0;z-index:20;border-bottom:2px solid var(--gold);}
-.bar img{width:34px;height:37px;display:block;flex:none;}
-.bar .t{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.1rem;line-height:1.05;}
-.bar .s{font-size:.66rem;color:#9db0c8;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
-  font-family:"Barlow Semi Condensed",sans-serif;}
-.mode{margin-left:auto;font-family:"Barlow Semi Condensed",sans-serif;font-size:.64rem;letter-spacing:.13em;
-  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:4px;
-  background:rgba(214,173,80,.16);color:var(--gold);border:1px solid rgba(214,173,80,.5);}
+/* --- the bar — county badge owns the brand; program is the subline --- */
+.bar{background:var(--navy);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:14px;
+  position:sticky;top:0;z-index:20;border-bottom:3px solid var(--gold);}
+.bar img{width:48px;height:52px;display:block;flex:none;filter:drop-shadow(0 1px 0 rgba(0,0,0,.35));}
+.bar .brand{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.bar .county{font-family:"Oswald",sans-serif;font-weight:700;font-size:1.28rem;line-height:1.05;
+  letter-spacing:.02em;text-transform:uppercase;color:#fff;}
+.bar .program{font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:.72rem;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold);}
+.mode{margin-left:auto;font-family:"Oswald",sans-serif;font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:600;padding:4px 0 4px 10px;border-radius:0;
+  background:transparent;color:#9db0a8;border:0;border-left:1px solid rgba(255,255,255,.22);}
 
 /* --- the hero ---
    Every screen gets a top. The navy block from the bar carries on down and
    rounds off, and the one sentence that says where you are lives in it -
    so the screen opens with a statement rather than with body text. */
-.hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:6px 18px 24px;
-  border-radius:0 0 20px 20px;}
-.hero .eyebrow{font-family:"Barlow Semi Condensed",sans-serif;font-size:.66rem;letter-spacing:.17em;
+.hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:10px 18px 22px;
+  border-radius:0;border-bottom:3px solid var(--gold);}
+.hero .eyebrow{font-family:"Oswald",sans-serif;font-size:.66rem;letter-spacing:.17em;
   text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:3px;}
-.hero h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:2.05rem;
+.hero h1{font-family:"Oswald",sans-serif;font-weight:700;font-size:2.05rem;
   line-height:1.05;margin:0;color:#fff;letter-spacing:-.005em;}
-.hero .sub{color:#a9bcd3;font-size:.93rem;margin:6px 0 0;}
+.hero .sub{color:#b7c4b8;font-size:.93rem;margin:6px 0 0;}
 .hero .chip{border-color:rgba(255,255,255,.45);color:#dbe5f0;}
 .wrap{padding:0 18px 44px;position:relative;}
 
 /* --- sections --- */
-h2{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;
+h2{font-family:"Oswald",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;
   text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;display:flex;align-items:center;gap:8px;}
 h2:first-child{margin-top:16px;}
 h2:after{content:"";flex:1;height:1px;background:var(--line);}
 h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);border:1px solid var(--line);
-  color:var(--ink-2);border-radius:20px;padding:1px 8px;order:9;}
+  color:var(--ink-2);border-radius:2px;padding:1px 7px;order:9;}
 .sub{color:var(--ink-3);font-size:.92rem;margin:0 0 14px;}
 
 /* --- the card ---
@@ -110,7 +129,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .card.act:active{transform:scale(.994);}
 .bd{flex:1;min-width:0;}
 .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.h{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:1.16rem;
+.h{display:block;font-family:"Oswald",sans-serif;font-weight:700;font-size:1.16rem;
   line-height:1.2;letter-spacing:.002em;}
 .m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:3px;}
 .flag{display:block;font-size:.86rem;font-weight:600;line-height:1.35;margin-top:5px;
@@ -119,7 +138,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .card.act:hover .go{color:var(--ink-2);}
 
 /* --- level identity --- */
-.chip{display:inline-block;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:.66rem;
+.chip{display:inline-block;font-family:"Oswald",sans-serif;font-weight:700;font-size:.66rem;
   letter-spacing:.11em;text-transform:uppercase;padding:2px 7px;border-radius:4px;
   border:1px solid currentColor;white-space:nowrap;}
 .c-emt{color:var(--emt);}.c-aemt{color:var(--aemt);}.c-pmd{color:var(--pmd);}
@@ -129,7 +148,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 /* --- notes: a rule, not a box. a box shouts; a rule states. --- */
 .note{border-radius:var(--r-sm);padding:12px 14px;margin:0 0 11px;font-size:.91rem;line-height:1.45;
   border-left:3px solid var(--ink-3);background:var(--surface);color:var(--ink-2);}
-.note b{display:block;font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.note b{display:block;font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;margin-bottom:4px;color:var(--ink-3);}
 .n-ok{border-left-color:var(--ok);background:var(--ok-bg);}.n-ok b{color:var(--ok);}
 .n-warn{border-left-color:var(--warn);background:var(--warn-bg);}.n-warn b{color:var(--warn);}
@@ -139,7 +158,7 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 /* --- panels and rows --- */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:14px 16px;margin-bottom:11px;}
-.lab{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.lab{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:7px;}
 .kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-2);
   font-size:.93rem;align-items:center;}
@@ -148,12 +167,12 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 .kv .k{color:var(--ink-3);}.kv .v{font-weight:600;text-align:right;}
 .prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:10px 0 6px;}
 .prog i{display:block;height:100%;border-radius:5px;background:var(--emt);}
-.big{font-family:"Barlow Semi Condensed",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}
+.big{font-family:"Oswald",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}
 .big small{font-size:1rem;color:var(--ink-3);font-weight:600;}
 
 /* --- controls --- */
 .btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:none;
-  border-radius:var(--r);padding:16px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;
+  border-radius:var(--r);padding:16px;font-family:"Oswald",sans-serif;font-weight:700;
   font-size:1.1rem;letter-spacing:.01em;cursor:pointer;margin-top:10px;min-height:56px;
   box-shadow:var(--lift);transition:background .12s ease, transform .08s ease;}
 .btn:hover{background:var(--navy-2);}
@@ -163,6 +182,12 @@ h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);
 textarea{width:100%;min-height:104px;border:1px solid var(--line);border-radius:var(--r-sm);
   padding:12px 13px;font:inherit;color:inherit;background:var(--paper);resize:vertical;}
 textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
+.field{margin-bottom:12px;}
+.field .lab{margin-bottom:6px;}
+.field input,.field select{width:100%;padding:14px 13px;font:inherit;font-size:1.05rem;
+  color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-sm);}
+.field input:focus,.field select:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
+.field .hint{font-size:.82rem;color:var(--ink-3);margin-top:5px;}
 .pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:none;
   background-color:var(--raised);color:inherit;border:1px solid var(--line);border-radius:var(--r);
   padding:15px 42px 15px 16px;font:inherit;cursor:pointer;margin-bottom:10px;min-height:56px;
@@ -173,7 +198,29 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 .more{background:none;border:1px solid var(--line);border-radius:var(--r);width:100%;padding:13px;
   font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-height:50px;}
 .more:hover{border-color:var(--ink-4);color:var(--ink);}
-.back{background:none;border:none;color:var(--ink-3);font-family:"Barlow Semi Condensed",sans-serif;
+/* Division desk tabs — one job per pane, less scroll */
+.tabs{display:flex;gap:2px;margin:0 -4px 16px;padding:0 0 0;border-bottom:1px solid var(--line);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tabs button{flex:1 0 auto;min-width:4.6rem;background:none;border:0;border-bottom:2px solid transparent;
+  margin-bottom:-1px;padding:11px 10px 10px;font-family:"Oswald",sans-serif;font-size:.72rem;
+  letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--ink-3);cursor:pointer;
+  transition:color .18s ease,border-color .18s ease;}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--gold);}
+.tabs button .ct{display:inline-block;min-width:1.1em;margin-left:4px;font-family:"IBM Plex Mono",monospace;
+  font-size:.68rem;letter-spacing:0;color:var(--gold);vertical-align:baseline;}
+.pane{animation:paneIn .22s ease;}
+@keyframes paneIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.menu-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.menu-list button.menu-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  width:100%;text-align:left;background:var(--raised);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;font:inherit;color:var(--ink);cursor:pointer;min-height:56px;}
+.menu-list button.menu-row:hover{border-color:var(--ink-4);}
+.menu-list button.menu-row .h{font-family:"Oswald",sans-serif;font-size:1.05rem;font-weight:600;
+  letter-spacing:.02em;display:block;}
+.menu-list button.menu-row .m{font-size:.84rem;color:var(--ink-3);margin-top:2px;display:block;}
+.menu-list button.menu-row .go{color:var(--ink-3);font-size:1.2rem;flex:none;}
+.back{background:none;border:none;color:var(--ink-3);font-family:"Oswald",sans-serif;
   font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:pointer;
   padding:8px 0;margin:4px 0 6px;}
 .back:hover{color:var(--ink);}
@@ -181,7 +228,7 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 /* --- the next-step rail --- */
 .next{border-left:3px solid var(--gold);padding:2px 0 2px 13px;margin:18px 0 6px;font-size:.89rem;
   color:var(--ink-2);line-height:1.5;}
-.next b{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.15em;
+.next b{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.15em;
   text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}
 
 /* --- the record --- */
@@ -189,11 +236,11 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
   background:var(--raised);box-shadow:var(--lift);}
 .rec.cur{border-left:4px solid var(--gold);}
 .rec.dup{border-left:4px solid var(--stop);}
-.rec .when{font-family:"Barlow Semi Condensed",sans-serif;font-size:.72rem;letter-spacing:.13em;
+.rec .when{font-family:"Oswald",sans-serif;font-size:.72rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;}
 .rec .when b{color:var(--gold);font-weight:700;}
 .rec .fld{margin-top:10px;}
-.rec .fld .l{font-family:"Barlow Semi Condensed",sans-serif;font-size:.7rem;letter-spacing:.13em;
+.rec .fld .l{font-family:"Oswald",sans-serif;font-size:.7rem;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-3);}
 .rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;}
 .fresh{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px;}
@@ -207,6 +254,65 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 :focus-visible{outline:2.5px solid var(--gold);outline-offset:2px;border-radius:4px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}
   .card.act:active,.btn:active{transform:none;}}
+
+/* --- Field Training: phase track, evidence bars, clock, moves, strip --- */
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:500;}
+.phase-track{display:flex;gap:4px;margin:14px 0 0;}
+.phase-track .p{flex:1;}
+.phase-track .pip{height:5px;border-radius:3px;background:var(--line);}
+.phase-track .pip.on{background:var(--gold);}
+.phase-track .pip.now{background:var(--emt);}
+.phase-track .lab{font-family:"Oswald",sans-serif;font-size:.6rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}
+.phase-track .lab.on{color:var(--ink);}
+.stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);}
+.stats .n{font-family:"IBM Plex Mono",monospace;font-size:1.15rem;line-height:1;}
+.stats .l{font-size:.74rem;color:var(--ink-3);margin-top:2px;}
+.bars4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px;}
+.seg{display:flex;gap:2px;margin-bottom:4px;}
+.seg i{display:block;width:8px;height:14px;border-radius:1px;background:var(--line);}
+.seg i.on{background:var(--emt);}
+.bars4 .have{font-family:"IBM Plex Mono",monospace;font-size:.74rem;}
+.bars4 .have span{color:var(--ink-3);}
+.bars4 .bl{font-size:.66rem;color:var(--ink-3);line-height:1.25;margin-top:1px;}
+.move{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;
+  border-radius:10px;border:1px solid var(--warn);background:var(--warn-bg);}
+.move.due{border-color:var(--stop);background:var(--stop-bg);}
+.move.ok{border-color:var(--ok);background:var(--ok-bg);}
+.move .bd{flex:1;min-width:0;}
+.move .h{font-weight:600;font-size:.95rem;}
+.move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}
+.move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;
+  padding:10px 13px;font-family:"Oswald",sans-serif;font-weight:700;font-size:.9rem;
+  cursor:pointer;min-height:44px;}
+.move.due .go-btn{background:var(--stop);color:#fff;}
+.clock{position:relative;width:52px;height:52px;flex:none;}
+.clock svg{display:block;}
+.clock .nums{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;line-height:1;}
+.clock .nums b{font-family:"IBM Plex Mono",monospace;font-size:.92rem;font-weight:500;}
+.clock .nums span{font-family:"Oswald",sans-serif;font-size:.52rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:1px;}
+.decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-shadow:var(--lift-2);
+  overflow:hidden;margin-bottom:16px;}
+.decision .top{display:flex;padding:15px 16px 0;}
+.decision .body{flex:1;min-width:0;padding:0 0 14px;}
+.strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;}
+.strip .tile{flex:0 0 148px;scroll-snap-align:start;background:var(--raised);border:1px solid var(--line);
+  border-radius:10px;padding:12px;box-shadow:var(--lift);}
+.strip .tile.due{border-color:var(--stop);}
+.strip .tile.soon{border-color:var(--warn);}
+.strip .tile .h{font-family:"Oswald",sans-serif;font-weight:700;font-size:1.05rem;
+  line-height:1.15;margin:0;}
+.strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}
+.strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}
+.btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shadow:none;margin-top:8px;}
+.btn.ghost-danger[disabled]{opacity:.35;}
+.line-mark{font-family:"Oswald",sans-serif;font-weight:700;font-size:.62rem;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}
+@keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}
 </style>
 </head>
 <body>
@@ -217,14 +323,27 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
          tracker; a 49,000-character line in here made the file that has to be
          pasted into Apps Script fragile enough to break on the way in. -->
     <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGYAAABvCAMAAAApDkWYAAABgFBMVEUAAAAAAAC6wbr0+Pfk6um2u7fT2Nb9/v7EysYnKCgXFxc2NzdGSEiVl5ZmaGhVV1amqah1d3fd4+GGh4fr8fDs8/Hs8vHs8vHr8fG9w8Hs8/Ha4N7n6Oh+gYGeoqHl6+uqqqrc3Nzo7u3n7ezp7u3p7u7m7eycoZ1eYGC/v7+4//8/QEHMzMzX1/bZ6enV//9/f398gXydn6C5v8DZ3+AeHyAfICAA/wAA//8gIB8+QD5VVVVcX2Cqqv+2ttqq1NSq/6rAx78AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB9M5mmAAAAgHRSTlP/AP7+/v7+A/7//////v///v/+/9CwTHCP/jH+E//+LAMJ1qtMcZD//wQD/wULEAYC////////AQH//wP/AwcGA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD5YO4UAAAvTSURBVHjanZoHf9o8E8ANGpa8BxAghGa0TdP5rHfv7/+l3rvTsGzLhEb9lQA2+vumTiNZXWxp+kJ/fzkddzcfn7aPj9y2x83244fd7niy96XppX6SS4wX+mm6+7DdQMcs0gC33d8cv1vUz2PMb067/Wbon0upDgLb+qBk5y8A68Px3/ijz3/9GQwxfjl+2HLXvyjb+ovOkqBleVH157XkFrXfnfzjXYEh4b8enRhS3NU66JxespBWlcrcCqSHOCiJCnK8MQwu7oqgx6IRXGDPHORToin7tjZXdHWWRNrsj/D7l/QyBiEPO6Mr2VRGCt2WQiDtNyTDGz34gCKB6L6iJBLf7l5mIiVTCAiCN9+eay9GgV+08EbgG+wyL+oWn6NRPd5QMtGT1EV5SyLdnCagZALZkyCiMgxNLI3fSXij8Fph2DljpXsOI4VocxCsOhgQdJZGMPfwpdFWV9qeEnji2ndTo0lAnspcqxnrE0/kyrhbQRakRyWJJpiUIGSRVjt/wq6ahJQlFRNokpa7ziujR/s0LThBqYxGQfySk0QPXnOJVxdBDp/sbb3VBlocdC+hqxyeupBM+L6tXGgy031OsreNTjID2jkTIWaA1F4LMjG2pb6QoVhZMK6FvZL03krod+UQWqBaJgoAYY/bo9FcgriHPflm7QMEni+3PibMn6JivGQcwDxzT5B79aFZlHE25JvOcnRMvv+OnAT+gwtzJuGx86pvC6sRpzXUBxolI8ORYHSlcZrCd6Wxem2FaRu8N09qBR2D5lKUZgvvOzAn0c3ja6e1nrQGP22wN7hWW+cD5+baKQnuzYpWSJTmjhw9b0yEgctwtr9PkxNSSk1uhQ5lwkFYzefG1xREe06X8kFOq73CB1BmhXG6wxt1A93frJIdpKfC5ikIxlpS1FTut5LhM5JFBH6nlaqsNNYXwEjlkPfQMmUe9lDBUPU9ebJaKIY4gPY3bnsxztrja1G2eZCYtR5SAGQAY//MpGpVVdxpF7TNd8nW2hTMwfu2L8uysnbtDZxyZaGTpZa3wmbzgp6nzE2udgGG1kIM965jm9RkFNaQx1STbuumgces6NVJVvSK7kRhNDmQUF43oL6bZOMwSWkeyj5Hb8fNekphzZnlLSsFG13SNVioNAZRZnzwv2D75NE5Jo26udaFiZWkUlI1VTbVUcPw9Q/ox+S7UbNpp/EZwmI+gjTdRO9DfMdaybRu8gPP8mEgGFpV+VyaBMPVU8LIY8mWDWmo4C4iok1LcFCd846rolm4z2X2AMM9pkWX72NWH7cvFGYFvC4JnQ9uhp842yYuQIy2yNGWKZmurd0zASUHZEAdFaiVMpAf8lqIMVav45rQdd8oqMkOQX1AFdz6ORJTWeCFujOYLHmlZbWtxDh3SodxwTbG6ld+DekPPO0VjK6ajgim08aFNvfNZBFRL/VjMJ2+xMBMwoMmSmpCYevwG/OY4F2yLC5Is4jJZgzOb9fUv1pTxX6L8imrRSzdVZ/HMJsg2UxaUXZTBrTO9A9zAmy3gxp7ZgzFDtPuyAW2cUy9jjAIY5oaML1L99Z67RSDDv00yj8uolQc4jESpiIOY8Ls4DHT7iA8n5KPEYeEC5xfxNg3hMmdnW2bmpqSzU0ktxxYN+6cjTFiDUWKwxgP0v5WGclwH6EWYHcz/AhxCxrqQozAGaG0GOtoOZPS3C7iGD5L6FWAgWiAh28VGzACUg5MQh3GdNsqcTA/mA0PNHoe5/yWDYzySwUd/k/JwaEVzHShWRegbotGCcQPHjHqjn1ITnw0oo4wEgbPzESIsCCQpuuEgLrKYaokL5Wiu7qYo2H1tUu+zpOaw5AL9spyhLo1GELxAfMrQIR5FO8R45GbH5PVPD7rAFNYCvmX6lAIztfi1kjTsU6tLWRtrKZmQQh2PSWreeDkDgMVUbP2GJRIQpeSK4eR6B/BDcA9x1La12T1gU3TQyZ92mhV2AmCUDXd2tpmPb4K12apBqNzCzOCHZ9VQoJZaTK1nje0v8PMrs3qOvJnwERcrbSYplTRzni3hFkf9NzR2A4w/5qPOC4+b6M9gaYg4mX0CYSqYo6Gs7XtLEc7H7gdnGiqN46OEHkAkUc84ISYZR/gC89sMDxC4XdRD0gBs+wDiyCDUTNd8vmg0qIHICad11Bh8uRyLa6QBiGuypk8McxxYYobMc6gtTiIMDLIDxYyL8ZwuEsR8xmNc5fE880CCDFy+AgJhy8MNsY04ND/XUXGAgwqNxiYd3Ikjgw/q9YVh361yLc7NM0LLaZ827DZAA7TEFBD1+HIQlXfCCNH7qzaMszp86i5R8z9ah+da8BcWWe0qqnYSGmzqFF+1NOR4unBLA2BS7O51kKemltmhHEuMB8FwJ33IIdZ6Do9RrQWTJ0njhbNARQ1ZWQyeqSloZXVWrsAKZ4jWVrGUg3kgHpe8JHO7Hrakbnp0fQ+N8xPOVzFUurz38c/7ykF+EXIH4/R2bPuVTx5UnUTuaBUmU9i8zhg0tUNi02/a7mUoRcwYLZqHHzbVTqsdeLY1kUmWwvD2iJGqOeJA7wPMItOoOfq9xh6glktkI8TzeZbugoxR8Zjc9BqIs5QkSnzdwQS6tfxuot1gGEdGtN0bD1gEjPtF1eC0seiWo88TmQjb+YsnWLes/mUIZmUgzACa2No2dn6QvcDSKh6QRi/eL8oTlDc4qbKCLNGS+TPa1dml+PQ5PyUzjC7uHWCUh193jiFshht1uGcYvWSMMNWRLp6imecWvnMeOcwQgUYqJHlQUxrJ5iLMS9MiHnHeCx2knK9lq6mHjDKYbQdXtfjZS8RChPs35A4ZQzjpoRYMXiMdJhPdkiT+aRoeRyECTEpiBPLbCKcIzuM9BhfCU9qFrYL9onC3Sicg0SGNzfvpLJF+yQpLObA+HwyCIXzU3Q3CsU5bSJTR19Mmd0DNxIIK03mNJpP7P9uAUMxOp/UDTP+c4A5OE+zs/txhaZgVguV2dJOIcZos7RKQMWcHuVR7Seqo5/BaLZ5SC9sSKZsprZPHoMXtHJLUDAVxXxsl4TGK8ITlU23VykXTOrgdrTmo+2CHTRRPmu/VhOYBr3sZpVe3MXFgUdNZlvWyNZqvf1sSj9nOTXKMts0vYwhbysn4WwXjr15TdPDxloY1yC9KZoubX1TzhmZp6iqqm3bu958mT035wab3QQS+Onc5KFhdqv01R129GpWJG9sGgyzn1Ei5wXQPPxWj5ahC9PgWek1KWr6k9VVW+vJUhzbfk6vwaQpRI/KRkv+pmW0g5+bL3RS89kOz5nxTToXJnr6YZVuxnsJuKMFrTGYijYtII92TOJ+PvtzEJeziFk+y2Hc4Bxi5PAO4l0w3ErK4EOdgYNkQfZ3hdk1R0aMG5ShNIfD76qnQwJMQqyUqDRyddGGM8lZXF48mfIZs0F4HsBu/cG7VrGeHVpUWtb/4Xb8nCvvRwnz1XM2lHXcxBdVlePUDd/VJT5ARZhMF33n5scFj7ry5eM8WL07eXLaGMN/4AL1J2b227OaYt9uChNlu3hwaPnUEHFKpzSzgwKYf6K3Zag03HNvcCMhf5Vy4QzUwPFxg5gqwbM2pLSCtmtl7SgPf0nfcNTKcDB+ctvwna4bPKhUUBLLiyLPrI9tH1ZvOGrl/UDpyS6JP4ISVkts++MC5SLGxs+oAKvUaFvbp/79yyXKZQzmg80ka2ncGD1k4yVL9OQ3H4Mz00U8HTFEusbjCb8FR7oyYWL/IuU1DHB+wLjAXH18/l3lNcsKyVu/oUTD2GXKqxjUODqcnVQqedY504deG0XSWPBulb7Wy6uYVXqPazqM0xj9qZVtwTJVZYUz/uYKyhUYcoStUVymGllp9qeqk1D+ZefXwuWnMNDPf9BAGO+fQHl4BqOwZrlZXUO5DoMW3uHRoiYIVTx7Asa/v4ZyJQY5JxSoc6UVKewqs/wMhlTzHgUyy+aQNSEmH66lXI9Bj/uGR/54mZljK+9XV1N+AmPOsdHhL7T99t2rMflGDPb7D3NQ8loPexOGukZX+DlRoP0f5fOq4z32+bYAAAAASUVORK5CYII=" alt="Sumter County EMS">
-    <div><div class="s">Sumter County EMS</div><div class="t">Field Training</div></div>
+    <div class="brand">
+      <div class="county">Sumter County EMS</div>
+      <div class="program">Field Training</div>
+    </div>
     <span class="mode" id="mode">…</span>
   </div>
-  <div class="wrap" id="view"><p class="sub">Loading…</p></div>
+  <div class="wrap" id="view"><p class="sub" id="boot-msg">Loading Field Training…</p></div>
   <div class="foot" id="foot"></div>
 </div>
+<noscript>
+  <div style="max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-serif">
+    <h1>Field Training needs JavaScript</h1>
+    <p>Turn JavaScript on for this site, then reload.</p>
+  </div>
+</noscript>
 
 <script>
+// If this script never finishes, the message below stays so a blank page is impossible.
+try {
+  document.getElementById('boot-msg').textContent = 'Starting…';
+} catch (e0) {}
 // The scriptlet below prints the payload RAW. The escaping kind would turn
 // every quote in this JSON into &quot; and make the line invalid JavaScript,
 // and the page would sit on "Loading" forever because the script died before
@@ -236,7 +355,17 @@ textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}
 // invalid JavaScript, and evaluate() then throws a SyntaxError reported
 // against the line in Code.gs that called it - nowhere near here.
 var BOOT = <?!= boot ?>;
-var S = { screen: 'main', ctx: null, busy: false };
+var S = { screen: 'main', ctx: null, busy: false, divTab: 'waiting' };
+
+window.onerror = function (msg, src, line) {
+  try {
+    var v = document.getElementById('view');
+    if (v) v.innerHTML = '<div class="hero"><h1>Field Training could not start</h1>' +
+      '<p class="sub">A script error stopped the page. Redeploy a new version after a full paste, or check Executions in the Apps Script editor.</p></div>' +
+      '<div class="note n-stop"><b>Error</b>' + String(msg || 'unknown') +
+      (line ? ' (line ' + line + ')' : '') + '</div>';
+  } catch (e1) {}
+};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -294,9 +423,26 @@ function picker(id, placeholder, items, handler, selected){
 }
 function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }
 function pickRecord(v){ if (v === '') return; openRecord(v); }
+function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }
+function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }
+function pickClosedReport(v){
+  if (v === '') return;
+  var t = (BOOT.data.closedPeople || [])[Number(v)];
+  if (t) openTraineeReport(t.name);
+}
 function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }
 
 function render(){
+  try { return renderInner_(); }
+  catch (e) {
+    try {
+      paint(hero('Field Training', 'Screen failed', '')+
+        '<div class="note n-stop"><b>Error</b>'+esc((e && e.message) || e)+'</div>'+
+        '<button class="btn" onclick="S.screen=\'main\';S.ctx=null;render()">Back</button>');
+    } catch (e2) {}
+  }
+}
+function renderInner_(){
   /* LIVE is the system doing its job and wants no badge at all. Emptying the
      text was not enough: the chip keeps its border, background and padding, so
      what shipped was a small amber lozenge with nothing written in it, sitting
@@ -320,10 +466,18 @@ function render(){
   if (S.screen === 'reflect')  return paintReflect();
   if (S.screen === 'receipt')  return paintReceipt();
   if (S.screen === 'signoff')  return paintSignoff();
+  if (S.screen === 'acceptSkill') return paintAcceptSkill();
   if (S.screen === 'ack')      return paintAck();
   if (S.screen === 'trainee')  return paintTraineeSheet();
   if (S.screen === 'person')   return paintPersonSheet();
+  if (S.screen === 'advance')  return paintAdvance();
+  if (S.screen === 'release')  return paintRelease();
+  if (S.screen === 'closeTrainee') return paintCloseTrainee();
   if (S.screen === 'record')   return paintRecord();
+  if (S.screen === 'settle')   return paintSettle();
+  if (S.screen === 'formWait') return paintFormWait();
+  if (S.screen === 'addTrainee') return paintAddTrainee();
+  if (S.screen === 'addFto') return paintAddFto();
 
   switch (v.role) {
     case 'TRAINEE':            return paintTrainee(d);
@@ -336,34 +490,87 @@ function render(){
 }
 function paint(h){ el('view').innerHTML = h; window.scrollTo(0,0); }
 
-/* ---------------- trainee ---------------- */
+/* ---------------- trainee — My Line ---------------- */
+function phaseTrackHtml(phase){
+  var cur = 1;
+  var m = String(phase||'').match(/(\d)/);
+  if (m) cur = Number(m[1]);
+  var names = ['Phase 1','Phase 2','Phase 3','Phase 4'];
+  var h = '<div class="phase-track">';
+  for (var i=1;i<=4;i++){
+    var cls = i < cur ? 'on' : (i === cur ? 'now' : '');
+    h += '<div class="p"><div class="pip '+cls+'"></div><div class="lab'+(i<=cur?' on':'')+'">'+names[i-1]+'</div></div>';
+  }
+  return h + '</div>';
+}
+function barsHtml(bars, colorVar){
+  if (!bars || !bars.length) return '';
+  var fill = colorVar || 'var(--emt)';
+  var h = '<div class="bars4">';
+  bars.forEach(function(b){
+    var need = Math.max(1, Number(b.need)||1);
+    var have = Math.max(0, Number(b.have)||0);
+    var cells = '';
+    for (var i=0;i<need;i++) cells += '<i class="'+(i<have?'on':'')+'" style="'+(i<have?'background:'+fill:'')+'"></i>';
+    h += '<div><div class="seg">'+cells+'</div>'+
+         '<div class="have">'+have+'<span>/'+need+'</span></div>'+
+         '<div class="bl">'+esc(b.label)+'</div></div>';
+  });
+  return h + '</div>';
+}
+function skillBars(s){
+  if (s.bars && s.bars.length) return s.bars;
+  return [
+    { label: 'Successful', have: Number(s.successful)||0, need: 3 },
+    { label: 'Independent', have: Number(s.independent)||0, need: 2 },
+    { label: 'Dates', have: Number(s.distinctDates)||0, need: 2 },
+    { label: 'FTOs', have: Number(s.distinctFtos)||0, need: 2 }
+  ];
+}
+function clockHtml(hoursLeft, pct){
+  var color = hoursLeft <= 12 ? 'var(--stop)' : (hoursLeft <= 36 ? 'var(--warn)' : 'var(--ok)');
+  var r = 22, c = 2*Math.PI*r;
+  var dash = Math.max(0, Math.min(c, c * ((pct||0)/100)));
+  return '<div class="clock"><svg width="52" height="52" viewBox="0 0 52 52">'+
+    '<circle cx="26" cy="26" r="22" fill="none" stroke="var(--line)" stroke-width="4"/>'+
+    '<circle cx="26" cy="26" r="22" fill="none" stroke="'+color+'" stroke-width="4" stroke-linecap="round" '+
+    'stroke-dasharray="'+dash+' '+c+'" transform="rotate(-90 26 26)"/></svg>'+
+    '<div class="nums"><b style="color:'+color+'">'+esc(String(hoursLeft))+'</b><span>hrs</span></div></div>';
+}
+
 function paintTrainee(d){
   if (d.error) return paint(hero('', 'No record', '')+
     '<div class="note n-stop"><b>Not found</b>'+esc(d.error)+'</div>');
-  var h = hero('Your training', d.name,
+  var h = hero('My Line', d.name,
     lvlChip(d.levelKey,d.level)+' &nbsp; '+esc(d.phase||'no phase set'));
-  h += '<div class="panel"><div class="lab">Skills signed off</div><div class="big">'+d.signed+
-       ' <small>of '+d.applicable+'</small></div><div class="prog"><i style="width:'+d.percent+
-       '%;background:var(--'+esc(d.levelKey)+')"></i></div>'+
-       '<div style="font-size:.85rem;color:var(--ink-3)">'+
-       (d.waiting.length ? d.waiting.length+' waiting on the Training Division' : 'Nothing waiting on anyone else')+
+
+  h += '<div class="panel">'+
+       '<div class="lab">Where you are</div>'+
+       '<div style="display:flex;align-items:baseline;gap:9px">'+
+       '<div class="big" style="font-size:1.85rem">'+(esc(d.phase)||'Phase ?')+'</div>'+
+       (d.dayInPhase!=null ? '<div class="mono" style="color:var(--ink-3)">day '+d.dayInPhase+'</div>' : '')+
+       '</div>'+
+       phaseTrackHtml(d.phase)+
+       '<div class="stats">'+
+       '<div><div class="n">'+esc(String(d.evalCount||0))+'</div><div class="l">shifts evaluated</div></div>'+
+       '<div><div class="n">'+(d.evalAvg!=null?esc(String(d.evalAvg)):'—')+'</div><div class="l">average</div></div>'+
+       '<div><div class="n" style="color:var(--ok)">'+esc(String(d.signed))+'</div><div class="l">skills signed off</div></div>'+
        '</div></div>';
 
-  h += sec('Waiting on you');
-  // In staging the reflection is filed in the portal so the flow can be tried
-  // end to end. Against the real tracker the existing self-reflection FORM is
-  // the one that files it - that form has the trigger and the destination, and
-  // this portal must not become a second writer into a tab it does not own.
-  //
-  // This used to read canWrite(), which meant STAGING when it was written and
-  // quietly came to mean STAGING or LIVE when the third mode was added. The
-  // button reappeared against the live tracker without anybody deciding it
-  // should. isPractice() cannot drift that way.
-  if (isPractice()){
-    h += '<button class="card act"'+spine('due')+' onclick="S.screen=\'reflect\';render()">'+
-         '<span class="bd"><span class="h">Weekly reflection</span>'+
-         '<span class="m">Your own words. Takes about four minutes.</span></span>'+
-         '<span class="go">&rsaquo;</span></button>';
+  var moves = d.nextMoves || [];
+  if (moves.length){
+    h += sec('Waiting on you', moves.length);
+    moves.forEach(function(m){
+      var cls = m.urgency==='due'?'due':(m.urgency==='ok'?'ok':'');
+      h += '<div class="move '+cls+'"><div class="bd"><div class="h">'+esc(m.title)+'</div>'+
+           '<div class="m">'+esc(m.blurb||'')+'</div></div>';
+      if (m.action==='ack' && canWrite() && m.row){
+        h += '<button class="go-btn" onclick="ack('+m.row+')">Got it</button>';
+      } else if (m.action==='reflect' && isPractice()){
+        h += '<button class="go-btn" onclick="S.screen=\'reflect\';render()">File it</button>';
+      }
+      h += '</div>';
+    });
   }
   h += formCards(d.forms);
   (d.coaching||[]).forEach(function(c){
@@ -371,15 +578,29 @@ function paintTrainee(d){
       h += '<button class="card act"'+spine('soon')+' onclick="ack('+c.row+')">'+
            '<span class="bd"><span class="h">Coaching from '+esc(c.from)+'</span>'+
            '<span class="m">'+esc(c.text)+'</span></span><span class="go">&rsaquo;</span></button>';
-    } else {
-      h += '<div class="card"'+spine('soon')+'><div class="h">Coaching from '+esc(c.from)+'</div>'+
-           '<div class="m">'+esc(c.text)+'</div>'+
-           (c.book ? '<div class="m" style="color:var(--ink-3)">from '+esc(c.book)+'</div>' : '')+
-           '</div>';
     }
   });
 
-  h += sec('Where things stand');
+  if (d.skills && d.skills.length){
+    var withDiv = [], building = [], done = [];
+    d.skills.forEach(function(s){
+      if (s.signed) done.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
+      else building.push(s);
+    });
+    h += sec('What each skill still needs', d.skills.length);
+    h += '<p class="sub">Four bars each. All four full and it goes to Training Division.</p>';
+    withDiv.concat(building).slice(0,8).forEach(function(s){
+      var tag = s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness || 'Building');
+      var tagCls = s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute';
+      h += '<div class="card"><div class="hd"><span class="h" style="font-size:1rem">'+esc(s.skill)+'</span>'+
+           '<span class="chip '+tagCls+'">'+esc(tag)+'</span></div>'+
+           barsHtml(skillBars(s), 'var(--'+esc(d.levelKey||'emt')+')')+'</div>';
+    });
+    if (done.length) h += '<p class="sub">'+done.length+' already signed off.</p>';
+  }
+
+  h += sec('Your chart');
   h += freshRow(d.freshness);
   h += '<div class="panel">'+
        kv('Training officer', d.fto || 'not assigned')+
@@ -389,41 +610,6 @@ function paintTrainee(d){
        '<span class="bd"><span class="h">My whole record</span>'+
        '<span class="m">Everything ever submitted about you, newest first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
-
-  /* Not the whole catalogue. What is with the Division is the only part that
-     is out of your hands; the rest is a count and a button. A screen you have
-     to scroll past is a screen nobody reads. */
-  if (d.skills && d.skills.length){
-    var withDiv = [], building = [], done = [];
-    d.skills.forEach(function(s){
-      if (s.signed) done.push(s);
-      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);
-      else building.push(s);
-    });
-    h += sec('Your skills', d.skills.length);
-    h += '<p class="sub" style="margin-bottom:10px">'+done.length+' signed off &middot; '+
-         withDiv.length+' with the Division &middot; '+building.length+' still building</p>';
-    if (withDiv.length){
-      h += '<div class="panel">';
-      withDiv.forEach(function(s){
-        h += kv(s.skill, '<span class="chip c-warn">With the Division</span>');
-      });
-      h += '</div>';
-    }
-    if (building.length){
-      h += picker('pick-skill', building.length+' still building\u2026',
-        building.map(function(s,i){ return { value: String(i), label: s.skill }; }),
-        'pickSkill', (S.skillPick == null ? '' : S.skillPick));
-      var picked = (S.skillPick == null) ? null : building[S.skillPick];
-      if (picked){
-        h += '<div class="panel">'+
-             kv('Successful reps', String(picked.successful))+
-             kv('Independent reps', String(picked.independent))+
-             kv('Where it stands', '<span class="chip c-mute">'+
-                esc(picked.readiness || 'building')+'</span>')+'</div>';
-      }
-    }
-  }
   h += '<div class="next"><b>What happens next</b>Anything you file goes to your training officer and the Training Division. Nobody else sees it.</div>';
   paint(h);
 }
@@ -494,38 +680,119 @@ function ack(row){
     .withFailureHandler(function(e){ alert(e.message||e); }).ackCoachingV1(row);
 }
 
-/* ---------------- fto ---------------- */
+/* ---------------- fto — Tonight ---------------- */
 function paintFto(d){
-  var h = hero('Field Training Officer', 'Your trainees',
-    d.trainees.length+(d.trainees.length===1?' person':' people')+' ride with you');
-  if (!d.trainees.length) h += '<div class="note n-info"><b>Nobody assigned</b>No trainees list you as their training officer.</div>';
-  d.trainees.forEach(function(t,i){
-    h += '<button class="card act"'+spine(t.setupComplete ? '' : 'soon')+
-      ' onclick="openTrainee('+i+')">'+
+  var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;
+  // End-of-shift first: one job — file for whoever is overdue.
+  var h = hero('Tonight',
+    hot ? (hot === 1 ? 'One file due' : hot + ' files due') : 'Shift quiet',
+    (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+
+    (hot ? ' &middot; <span style="color:var(--gold)">start with the one below</span>' : ''));
+  if (!d.trainees.length){
+    h += '<div class="note n-info"><b>Nobody on your line</b>When Training assigns someone to you, they land here after the shift.</div>';
+    paint(h);
+    return;
+  }
+
+  var list = (d.trainees||[]).slice().sort(function(a,b){
+    // due must be 1 not 0 — (0||fallback) would demote overdue to last.
+    var rank = { due:1, soon:2 };
+    var ra = rank[a.urgency] || 9, rb = rank[b.urgency] || 9;
+    return ra - rb;
+  });
+  // Lead card: only when someone is actually overdue — not a decorative first row.
+  var lead = list[0];
+  var leadIdx = d.trainees.indexOf(lead);
+  if (lead && lead.urgency === 'due'){
+    h += '<button class="card act" onclick="openTrainee('+leadIdx+')"'+
+         ' style="--accent:var(--stop);margin-bottom:14px">'+
+         '<span class="bd"><span class="lab" style="margin:0">File tonight</span>'+
+         '<span class="h" style="font-size:1.35rem">'+esc(lead.name)+'</span>'+
+         '<span class="m">'+esc(lead.phase||'')+
+         (lead.daysSinceEval<0?' · never evaluated':' · '+lead.daysSinceEval+'d since last eval')+
+         '</span><span class="m">Opens eval and skills with both names filled.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+    list = list.slice(1);
+    if (list.length) h += sec('Also on your line', list.length);
+  } else if (!hot){
+    h += '<div class="note n-ok"><b>Nothing overdue</b>Tap a name if you rode with them tonight anyway.</div>';
+  }
+  list.forEach(function(t){
+    var i = d.trainees.indexOf(t);
+    var chip = t.urgency==='due'
+      ? '<span class="chip c-stop">'+(t.daysSinceEval<0?'Never evaluated':(t.daysSinceEval+'d silent'))+'</span>'
+      : (t.urgency==='soon' ? '<span class="chip c-warn">Due soon</span>' : '');
+    h += '<button class="card act"'+spine(t.urgency||'')+' onclick="openTrainee('+i+')">'+
       '<span class="bd">'+
-      '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
-      '<span class="m">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.lastEval)+'</span>'+
-      (t.setupComplete ? '' : '<span class="flag">Setup incomplete &mdash; tell the Division</span>')+
+      '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+chip+'</span>'+
+      '<span class="m">'+esc(t.phase||'no phase')+
+      (t.dayInPhase!=null?' &middot; day '+t.dayInPhase:'')+
+      ' &middot; '+esc(String(t.evalCount||0))+' evals'+
+      (t.evalAvg!=null?' &middot; avg '+t.evalAvg:'')+'</span>'+
+      (t.setupComplete?'':'<span class="flag">Setup incomplete — tell Training Division</span>')+
       '</span><span class="go">&rsaquo;</span></button>';
   });
-  if (d.forms && d.forms.length){
-    h += sec('Anything else')+formCards(d.forms);
-  }
-  h += '<div class="next"><b>How this works</b>Pick the person, not the form. The skills log you get is already the one for their level, with both names filled in.</div>';
+  if (d.forms && d.forms.length) h += sec('Blank forms')+formCards(d.forms);
   paint(h);
+}
+function openPerson(i){
+  var t = (BOOT.data.people||[])[i];
+  if (!t) return;
+  S.ctx = t; S.screen = 'person'; render();
+  if (!t.detailLoaded) loadPersonDetail_(t.name, 'person');
 }
 function openTrainee(i){
   var t = (BOOT.data.trainees||[])[i];
   if (!t) return;
   S.ctx = t; S.screen = 'trainee'; render();
+  if (!t.detailLoaded) loadPersonDetail_(t.name, 'trainee');
+}
+function loadPersonDetail_(name, screen){
+  if (S.detailBusy) return;
+  S.detailBusy = true;
+  google.script.run
+    .withSuccessHandler(function(d){
+      S.detailBusy = false;
+      if (!d || !d.name) return;
+      // Merge into the list entry and the open sheet context.
+      var lists = [BOOT.data.people, BOOT.data.trainees];
+      lists.forEach(function(list){
+        if (!list) return;
+        list.forEach(function(p){
+          if (!normMatch(p.name, d.name)) return;
+          p.skills = d.skills; p.forms = d.forms; p.freshness = d.freshness;
+          if (d.clearance) p.clearance = d.clearance;
+          if (d.releaseReady != null) p.releaseReady = d.releaseReady;
+          if (d.phase4 != null) p.phase4 = d.phase4;
+          p.detailLoaded = true;
+        });
+      });
+      if (S.ctx && normMatch(S.ctx.name, d.name)){
+        S.ctx.skills = d.skills; S.ctx.forms = d.forms; S.ctx.freshness = d.freshness;
+        if (d.clearance) S.ctx.clearance = d.clearance;
+        if (d.releaseReady != null) S.ctx.releaseReady = d.releaseReady;
+        if (d.phase4 != null) S.ctx.phase4 = d.phase4;
+        S.ctx.detailLoaded = true;
+      }
+      if (S.screen === screen || S.screen === 'person' || S.screen === 'trainee') render();
+    })
+    .withFailureHandler(function(e){
+      S.detailBusy = false;
+      alert(e.message || e);
+    })
+    .personDetailV1(name);
 }
 function paintTraineeSheet(){
   var t = S.ctx || {};
-  var h = hero('Your trainee', t.name,
+  var h = hero('Tonight', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
-    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back to Tonight</button>';
   h += freshRow(t.freshness);
-  h += '<div class="panel">'+kv('Last evaluation', esc(t.lastEval))+
+  h += '<div class="panel">'+
+       kv('Last evaluation', esc(t.lastEval))+
+       kv('Evals on file', esc(String(t.evalCount||0))+
+          (t.evalAvg!=null?' &middot; avg '+esc(String(t.evalAvg)):''))+
+       kv('Waiting on Division', esc(String(t.waitingCount||0)))+
        kv('Setup', t.setupComplete ? '<span class="chip c-ok">Complete</span>'
                                    : '<span class="chip c-warn">Incomplete</span>')+'</div>';
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
@@ -533,130 +800,355 @@ function paintTraineeSheet(){
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
   h += sec('File something for '+firstName(t.name));
-  h += (t.forms && t.forms.length)
-    ? formCards(t.forms)
-    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
-  h += '<div class="next"><b>Where it goes</b>Straight into the tracker, the same way it always has. Nothing about your forms changed.</div>';
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading forms…</b></div>';
+  } else {
+    h += (t.forms && t.forms.length)
+      ? formCards(t.forms)
+      : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  }
+  if (canWrite() && (BOOT.viewer.role === 'FTO' || BOOT.viewer.role === 'TRAINING_DIVISION')){
+    h += sec('Coaching note');
+    h += '<div class="panel"><div class="lab">Note for '+esc(firstName(t.name))+'</div>'+
+         '<textarea id="coach-note" placeholder="What they need to hear. Goes on their record in your name." '+
+         'oninput="syncCoachBtn()"></textarea></div>'+
+         '<button class="btn" id="coach-go" disabled onclick="submitCoaching('+jsStr(t.name)+')">File coaching</button>';
+  }
+  h += '<div class="next"><b>Where it goes</b>Straight into the tracker vault — same forms, same record. Field Training just opens the right door.</div>';
   paint(h);
+  syncCoachBtn();
+}
+function syncCoachBtn(){
+  var why = (el('coach-note') && el('coach-note').value || '').trim();
+  if (el('coach-go')) el('coach-go').disabled = why.length < 8 || S.busy;
+}
+function submitCoaching(name){
+  if (S.busy) return;
+  var note = (el('coach-note') && el('coach-note').value || '').trim();
+  if (note.length < 8) { alert('Type the coaching note.'); return; }
+  S.busy = true;
+  var b = el('coach-go');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Coaching filed.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) b.textContent = 'File coaching';
+      syncCoachBtn();
+      alert(e.message||e);
+    })
+    .createCoachingV1(name, note);
+}
+function submitAssign(traineeName){
+  if (S.busy) return;
+  var sel = el('asg-fto');
+  var fto = sel && sel.value ? String(sel.value).trim() : '';
+  if (!fto) { alert('Pick a training officer.'); return; }
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Assigned.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      alert(e.message||e);
+    })
+    .assignFtoV1(traineeName, fto);
 }
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
 /* ---------------- division ---------------- */
-/* This screen answers one question before it does anything else: what needs a
-   decision from me. Everything after that is a count with a disclosure behind
-   it. Ten identical rows of names is not information, and a spreadsheet row
-   number is my diagnostics on somebody else's phone - neither belongs here. */
+/* Decide first. Tabs hold the rest so the phone is not one long scroll. */
 function paintDivision(d){
   var q = d.queue || [];
   var missingBy = {};
   (d.incomplete||[]).forEach(function(t){ missingBy[t.name] = t.missing; });
 
-  // Every active trainee is either asking something of you or is not. Only
-  // the first kind gets a row; the rest get counted and hidden behind a
-  // button, because a name with nothing next to it is just noise.
-  /* Three lists, not two. Someone you have already looked at and said
-     something about is not an alarm any more - and is not gone either. */
   var flagged = [], seen = [], quiet = [];
   (d.people||[]).forEach(function(t,i){
     if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }
     if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});
   });
 
-  var h = hero('Training Division',
-    q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'
-             : 'Nothing waiting on you',
-    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+
-    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look')+
-    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));
+  var ready = (d.releaseReady || []).filter(function(r){
+    return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; });
+  });
+  var showReady = !!(ready.length && canWrite());
+  var fw = d.formWaiting || {};
+  var closed = d.closedPeople || [];
+  var house = housekeeping(d);
+  var inboxN = (fw.waiting || 0) + (house ? 1 : 0);
+
+  var tab = S.divTab || 'waiting';
+  if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';
+
+  var sub = 'Queue clear';
+  if (q.length === 1) sub = '1 sign-off waiting';
+  else if (q.length > 1) sub = q.length + ' sign-offs waiting';
+  else if (showReady) sub = 'Ready to clear for the truck';
+
+  var h = hero('Division desk',
+    sub,
+    d.activeCount+' in training'+
+    (flagged.length ? ' &middot; '+flagged.length+' need a look' : '')+
+    (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
     h += '<div class="note n-warn"><b>Read only</b>This portal is in '+esc(d.mode)+
-         ' mode, so sign-offs cannot be approved from here yet.</div>';
+         ' mode, so sign-offs cannot be decided from here yet.</div>';
 
   h += warnRow(d.warnings);
 
-  /* Something wrong with the system rather than with a person. It belongs at
-     the top with the other system-level alerts, not floating between two
-     groups of people where it reads as a third sign-off. */
-  (d.retiredForms||[]).forEach(function(f){
-    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere in this portal. '+esc(f.why)+
-         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
-  });
+  h += '<div class="tabs" role="tablist">'+
+    tabBtn('waiting','Decide', q.length)+
+    tabBtn('moves','Moves', flagged.length + seen.length)+
+    tabBtn('people','People', (d.people||[]).length)+
+    tabBtn('inbox','Inbox', inboxN)+
+    tabBtn('menu','Menu')+
+    '</div>';
 
+  h += '<div class="pane">';
+  if (tab === 'waiting') h += paintDivWaiting_(d, q, ready, showReady);
+  else if (tab === 'moves') h += paintDivMoves_(flagged, seen, missingBy);
+  else if (tab === 'people') h += paintDivPeople_(d, quiet);
+  else if (tab === 'inbox') h += paintDivInbox_(d, fw, house);
+  else h += paintDivMenu_(d, closed);
+  h += '</div>';
 
+  paint(h);
+}
+
+function tabBtn(id, label, n){
+  var on = (S.divTab || 'waiting') === id ? ' on' : '';
+  return '<button type="button" role="tab" class="'+on+'" onclick="setDivTab('+jsStr(id)+')">'+
+    esc(label)+(n ? '<span class="ct">'+esc(String(n))+'</span>' : '')+'</button>';
+}
+
+function setDivTab(id){
+  S.divTab = id || 'waiting';
+  S.screen = 'main';
+  render();
+  try { window.scrollTo(0, 0); } catch (e) {}
+  if (S.divTab === 'inbox') ensureDivisionInbox_();
+}
+
+function ensureDivisionInbox_(){
+  if (!BOOT.data || BOOT.data.inboxLoaded || S.inboxBusy) return;
+  S.inboxBusy = true;
+  google.script.run
+    .withSuccessHandler(function(inbox){
+      S.inboxBusy = false;
+      if (!inbox) return;
+      BOOT.data.inboxLoaded = true;
+      BOOT.data.duplicateSubs = inbox.duplicateSubs || [];
+      BOOT.data.formWaiting = inbox.formWaiting || { waiting: 0, list: [] };
+      BOOT.data.forms = inbox.forms || [];
+      BOOT.data.retiredForms = inbox.retiredForms || [];
+      if (inbox.settleWarn){
+        BOOT.data.warnings = (BOOT.data.warnings || []).concat([inbox.settleWarn]);
+      }
+      if (S.screen === 'main') render();
+    })
+    .withFailureHandler(function(){ S.inboxBusy = false; })
+    .divisionInboxV1();
+}
+
+function paintDivWaiting_(d, q, ready, showReady){
+  var h = '';
   if (!q.length){
-    h += '<div class="note n-ok"><b>Sign-offs clear</b>No skill is waiting on your decision.</div>';
+    h += '<div class="note n-ok"><b>Nothing waiting</b>When a skill needs your call, it shows here first.</div>';
   } else {
-    h += sec('Sign-offs', d.queueCount);
-    q.forEach(function(x){ h += signoffCard(x); });
+    var lead = q[0];
+    h += decisionLeadHtml(lead);
+    if (q.length > 1){
+      h += sec('Behind it', q.length - 1);
+      q.slice(1).forEach(function(x){ h += signoffCard(x); });
+    }
     if (d.queueCount > q.length)
-      h += '<p class="sub" style="margin-top:-2px">Showing the oldest '+q.length+' of '+
-           d.queueCount+'.</p>';
+      h += '<p class="sub">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';
   }
-
-  /* Decisions already made here, waiting on the tracker to make them
-     permanent. After the queue, because what you have already decided must
-     never sit above what is still waiting on you - and not dropped either,
-     which is what they would be if the count simply stopped mentioning them. */
-  var staged = d.staged || [];
-  if (staged.length){
-    h += '<div class="note n-info"><b>'+staged.length+' waiting on the tracker</b>'+
-         'You have decided '+(staged.length===1?'this one':'these')+' already. '+
-         'The tracker turns '+(staged.length===1?'it':'them')+' into permanent sign-offs: '+
-         'tick RECORD on the row, or run &ldquo;Record pending decisions&rdquo; from its menu.</div>';
-    h += picker('pick-staged', staged.length+' already decided\u2026', staged.map(function(x){
-      return { value: x.trainee,
-               label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
-    }), 'pickRecord');
+  if (showReady){
+    h += sec('Ready for the truck', ready.length);
+    h += '<p class="sub" style="margin-bottom:9px">Phase 4 and every skill signed off. Clear them as an independent partner.</p>';
+    ready.forEach(function(r){
+      var idx = -1, person = null;
+      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) { idx = i; person = p; } });
+      if (idx < 0) return;
+      h += '<button class="card act"'+spine('gold')+' onclick="openPerson('+idx+')">'+
+           '<span class="bd"><span class="hd"><span class="h">'+esc(r.name)+'</span>'+
+           lvlChip((person&&person.levelKey), r.level)+'</span>'+
+           '<span class="m">'+esc(String(r.signed||0))+' / '+esc(String(r.total||0))+
+           ' skills signed · clear for the truck</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    });
   }
+  return h;
+}
 
+function paintDivMoves_(flagged, seen, missingBy){
+  var h = '';
+  if (!flagged.length && !seen.length){
+    return '<div class="note n-ok"><b>No open moves</b>Nobody needs a look right now.</div>';
+  }
   if (flagged.length){
-    h += sec('Needs a look', flagged.length);
+    h += sec('Next moves', flagged.length);
+    h += '<p class="sub" style="margin-bottom:9px">Open each one — assign an FTO, fix the record, or hold it with your words.</p>';
     flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
-
-  /* Looked at, and something said about it. Not an alarm any more, and not
-     gone either - the finding is still on the card, with who holds it and
-     until when. */
   if (seen.length){
     h += sec('Seen, and holding', seen.length);
     seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });
   }
-
-  if ((d.people||[]).length){
-    h += sec('Anyone else', (d.people||[]).length);
-    h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+d.people.length+
-         ' have nothing outstanding. Pick a name to open their record.</p>';
-    h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
-      return { value: String(i),
-               label: t.name + ' \u2014 ' + (t.phase || 'no phase set') +
-                      (t.needs ? ' \u00b7 needs a look' : '') };
-    }), 'pickPerson');
-  }
-
-  if (d.forms && d.forms.length) h += sec('Forms')+formCards(d.forms);
-
-  h += housekeeping(d);
-
-  h += sec('System')+'<div class="panel">'+
-    kv('Delivery mode','<span class="chip c-warn">'+esc(d.mode)+'</span>')+
-    kv('Active trainees', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' closed, not counted</span>')+
-    kv('Form links', d.formLinks ? '<span class="chip c-ok">Live</span>'
-                                 : '<span class="chip c-warn">Off</span>')+
-    '</div>';
-  paint(h);
+  return h;
 }
 
-/* Approving writes a decision into the queue. Against a tracker this portal
-   cannot write, the item is shown and the decision is recorded where it has
-   always been recorded, rather than offered and then refused. */
+function paintDivPeople_(d, quiet){
+  var h = sec('Anyone in training', (d.people||[]).length);
+  h += '<p class="sub" style="margin-bottom:9px">'+quiet.length+' of '+(d.people||[]).length+
+       ' have nothing outstanding. Pick a name to open their record.</p>';
+  h += picker('pick-person', 'Open a trainee\u2026', (d.people||[]).map(function(t,i){
+    return { value: String(i),
+             label: t.name + ' \u2014 ' + (t.phase || 'no phase set') +
+                    (t.needs ? ' \u00b7 needs a look' : '') };
+  }), 'pickPerson');
+  return h;
+}
+
+function paintDivInbox_(d, fw, house){
+  var h = '';
+  if (!d.inboxLoaded){
+    h += '<div class="note n-info"><b>Loading inbox…</b>Form responses and Settle load after the desk is open.</div>';
+    ensureDivisionInbox_();
+    return h;
+  }
+  if ((fw.waiting || 0) > 0){
+    h += sec('Skills log & forms waiting', fw.waiting);
+    h += '<p class="sub" style="margin-bottom:9px">'+
+         (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+
+         'Open → clear from this desk (with a reason) or leave for tracker ingest.</p>';
+    h += picker('pick-formwait', fw.waiting+' waiting\u2026', (fw.list||[]).map(function(x,i){
+      return { value: String(i),
+               label: (x.kind==='skills'?'Skills · ':'') + (x.trainee || 'unnamed') +
+                      ' \u2014 ' + (x.when || x.stamp || 'no date') +
+                      (x.by ? ' \u00b7 ' + x.by : '') };
+    }), 'pickFormWait');
+  } else {
+    h += '<div class="note n-ok"><b>Inbox clear</b>No form responses waiting on the desk.</div>';
+  }
+  if (house) h += sec('Settle')+house;
+  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);
+  return h;
+}
+
+function paintDivMenu_(d, closed){
+  var h = '<p class="sub" style="margin-bottom:12px">Roster, reports, and desk tools — off the main Decide screen.</p>';
+  var shareUrl = String((d && d.portalUrl) || BOOT.portalUrl || '').trim();
+  if (shareUrl){
+    h += sec('Portal link for the crew');
+    h += '<div class="panel" style="margin-bottom:14px">'+
+         '<div class="lab">Hand them this address</div>'+
+         '<div class="mono" style="word-break:break-all;font-size:.92rem;margin:6px 0 10px">'+esc(shareUrl)+'</div>'+
+         '<button type="button" class="btn ghost" onclick="copyPortalLink('+jsStr(shareUrl)+')">Copy link</button>'+
+         '<p class="sub" style="margin-top:10px">Set or change the short address in the Apps Script editor with '+
+         '<span class="mono">setPortalShortAddress("https://…")</span>. '+
+         'Suggested Sites Hub: sites.google.com/view/scemsfieldtraininghub</p>'+
+         '</div>';
+  } else {
+    h += '<div class="note n-info" style="margin-bottom:14px"><b>No short portal address yet</b>'+
+         'Deploy the web app, embed it on the Sites Hub (or a county redirect), then run '+
+         '<span class="mono">setPortalShortAddress("https://…")</span> in the portal project. '+
+         '<span class="mono">portalAddress()</span> prints both links.</div>';
+  }
+  h += '<div class="menu-list">';
+  if (d.canAddTrainee){
+    h += '<button type="button" class="menu-row" onclick="openAddTrainee()">'+
+         '<span><span class="h">Bring someone on</span><span class="m">New trainee on the master and forms</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  if (d.canAddFto !== false && canWrite()){
+    h += '<button type="button" class="menu-row" onclick="openAddFto()">'+
+         '<span><span class="h">Add an FTO</span><span class="m">Writes the tracker roster and form dropdowns</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+    h += '<button type="button" class="menu-row" onclick="syncMatrixEvidence()">'+
+         '<span><span class="h">Sync matrix from evidence</span><span class="m">Logged skills stuck IN PROGRESS</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+    h += '<button type="button" class="menu-row" onclick="refreshQueue()">'+
+         '<span><span class="h">Refresh sign-off queue</span><span class="m">READY skills missing from OPEN</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+  h += '</div>';
+  if (closed.length){
+    h += sec('Released — prior reports', closed.length);
+    h += '<p class="sub" style="margin-bottom:9px">Pull a printable report (Save as PDF from the print dialog).</p>';
+    h += picker('pick-closed', 'Report for a released trainee\u2026', closed.map(function(t,i){
+      return { value: String(i),
+               label: t.name + ' \u2014 ' + (t.status || 'Closed') +
+                      (t.level ? ' \u00b7 ' + t.level : '') };
+    }), 'pickClosedReport');
+  }
+  h += deskDetails(d);
+  return h;
+}
+
+/* Approving / returning writes a decision into the queue. Against a tracker
+   this portal cannot write, the item is shown and the decision is recorded
+   where it has always been recorded. */
+function decisionLeadHtml(q){
+  var left = (q.hoursLeft != null) ? q.hoursLeft : 72;
+  var pct = (q.clockPct != null) ? q.clockPct : 100;
+  var h = '<div class="decision"><div class="top">'+
+    '<div style="width:5px;background:var(--'+esc((BOOT.data.people||[]).reduce(function(k,p){
+      return normMatch(p.name,q.trainee)?p.levelKey:k;},'gold'))+');flex:none;margin:-15px 0 0 -16px;align-self:stretch;border-radius:11px 0 0 0"></div>'+
+    '<div class="body" style="padding-left:12px;flex:1">'+
+    '<div style="display:flex;gap:12px;align-items:flex-start">'+
+    '<div style="flex:1;min-width:0">'+
+    '<div class="lab" style="margin:0">Ready for your sign-off</div>'+
+    '<div class="h" style="font-size:1.44rem;margin-top:2px">'+esc(q.skill)+'</div>'+
+    '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+
+    clockHtml(left, pct)+
+    '</div>';
+  if (q.bars && q.bars.length){
+    h += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'+
+         '<div class="lab">Against the catalog</div>'+barsHtml(q.bars)+'</div>';
+  } else if (q.evidence){
+    h += '<div style="margin-top:12px;font-size:.9rem;color:var(--ink-2)">'+esc(q.evidence)+'</div>';
+  }
+  if (q.recommend){
+    h += '<div class="note n-info" style="margin-top:12px"><b>FTO recommendation</b>'+esc(q.recommend)+'</div>';
+  }
+  h += '</div></div>';
+  if (canWrite() && !q.from){
+    h += '<div style="padding:0 16px 16px">'+
+         '<button class="btn" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
+         jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">Decide</button>'+
+         '<div class="next" style="margin-top:10px">Type your reason on the next screen to approve or return.</div></div>';
+  } else {
+    h += '<div style="padding:0 16px 16px"><div class="flag" style="--accent:var(--warn)">'+
+         (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'
+                 : 'Read only — switch to LIVE to decide here.')+'</div></div>';
+  }
+  return h + '</div>';
+}
+function normMatch(a,b){
+  return String(a||'').toLowerCase().replace(/\s+/g,'')===String(b||'').toLowerCase().replace(/\s+/g,'');
+}
 function signoffCard(q){
   if (canWrite() && !q.from){
     return '<button class="card act"'+spine('gold')+' onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
       jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">'+
       '<span class="bd"><span class="h">'+esc(q.skill)+'</span>'+
-      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span>'+
+      '<span class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+
+      (q.hoursLeft!=null?' &middot; '+q.hoursLeft+'h left':'')+'</span>'+
       (q.evidence ? '<span class="m" style="color:var(--ink-2)">'+esc(short(q.evidence, 64))+'</span>' : '')+
       '</span><span class="go">&rsaquo;</span></button>';
   }
@@ -664,8 +1156,8 @@ function signoffCard(q){
     '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+
     '<div class="m" style="margin-top:7px">'+esc(q.evidence)+'</div>'+
     '<div class="flag" style="--accent:var(--warn)">'+
-    (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there.'
-            : 'Record the decision in the tracker. This portal is read only.')+'</div></div>';
+    (q.from ? 'This row is in '+esc(q.from)+', not this book. Record the decision there.'
+            : 'Read only — switch to LIVE to decide from Field Training.')+'</div></div>';
 }
 
 /* One row per person, and the row says what it wants. The index is the one
@@ -680,9 +1172,10 @@ function personCard(t, i, missing){
     '<span class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</span>'+
     '<span class="m">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no training officer')+'</span>'+
     (why ? '<span class="flag"'+(held ? ' style="--accent:var(--ink-3)"' : '')+'>'+
-           esc(cap(why))+'</span>' : '')+
+           esc(t.nextMove && t.nextMove.title ? t.nextMove.title : cap(why))+'</span>' : '')+
     (held ? '<span class="m">Seen '+esc(t.ack.when)+' &middot; back on the list '+
             esc(t.ack.until)+'</span>' : '')+
+    (t.nextMove && t.nextMove.blurb && !held ? '<span class="m">'+esc(t.nextMove.blurb)+'</span>' : '')+
     '</span><span class="go">&rsaquo;</span></button>';
 }
 function urgentNeedV(w){
@@ -692,41 +1185,121 @@ function cap(s){ s = String(s==null?'':s); return s.charAt(0).toUpperCase()+s.sl
 function short(s, n){ s = String(s==null?'':s).trim(); n = n || 44;
   return s.length > n ? s.slice(0,n)+'…' : s; }
 
-/* Data-quality work. Real, but it is not a decision about a person, so it
-   sits under a count until you ask for it. */
+/* Data-quality and vault chores. Real, but not the job of the first screen.
+   Kept behind a quiet disclosure so Waiting on you stays human. */
 function housekeeping(d){
   var subs = d.duplicateSubs || [], dupes = d.duplicates || [];
   if (!subs.length && !dupes.length) return '';
-  var h = sec('Housekeeping');
+  var h = '';
   if (subs.length){
     h += '<p class="sub" style="margin-bottom:9px">'+subs.length+' same-day '+
-         (subs.length===1?'submission':'submissions')+', where two of a kind landed on one '+
-         'day and somebody has to say which stands. Both are kept. Pick one to read them '+
-         'side by side.</p>';
-    h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x){
-      return { value: x.trainee,
+         (subs.length===1?'submission pair':'submission pairs')+
+         ' to settle — both stay on file; open a pair and say how it stands.</p>';
+    h += picker('pick-sameday', subs.length+' to settle\u2026', subs.map(function(x,i){
+      return { value: String(i),
                label: x.trainee + ' \u2014 ' + x.source + (x.group ? ' \u00b7 ' + x.group : '') +
                       ' \u00b7 ' + x.when + ' (' + x.count + ')' };
-    }), 'pickRecord');
+    }), 'pickSettle');
   }
   if (dupes.length){
-    h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'record':'records')+
-         '</b>'+esc(dupes.join(', '))+' '+(dupes.length===1?'appears':'appear')+
-         ' more than once in the trainee master.</div>';
+    h += '<div class="note n-warn"><b>Possible duplicate '+(dupes.length===1?'name':'names')+
+         '</b>'+esc(dupes.join(', '))+' on the trainee master.</div>';
   }
   return h;
 }
 
-function openPerson(i){
-  var t = (BOOT.data.people||[])[i];
-  if (!t) return;
-  S.ctx = t; S.screen = 'person'; render();
+/** Folded machinery: staged decisions, retired forms, mode. Not in the hero. */
+function deskDetails(d){
+  var staged = d.staged || [];
+  var retired = d.retiredForms || [];
+  if (!staged.length && !retired.length && !d.mode) return '';
+
+  var open = !!S.showDesk;
+  var bits = [];
+  if (staged.length) bits.push(staged.length+' decided');
+  if (retired.length) bits.push(retired.length+' form note'+(retired.length===1?'':'s'));
+  var label = bits.length ? bits.join(' · ') : 'Desk details';
+
+  var h = '<button class="more" style="margin-top:22px" onclick="S.showDesk=!S.showDesk;render()">'+
+          (open ? 'Hide' : 'Show')+' '+label+'</button>';
+  if (!open) return h;
+
+  if (staged.length){
+    h += '<p class="sub">Open queue rows that already have a decision filled (legacy / half-finished). '+
+         'Finish or clear them from Field Training when you can write.</p>';
+    h += picker('pick-staged', staged.length+' half-finished\u2026', staged.map(function(x){
+      return { value: x.trainee,
+               label: x.trainee + ' \u2014 ' + x.skill + ' \u00b7 ' + x.decision };
+    }), 'pickRecord');
+  }
+  if (retired.length){
+    h += '<p class="sub">Old form links still accepting answers somewhere. Close them in Drive when you can — '+
+         'not urgent for today&rsquo;s decisions.</p>';
+    retired.forEach(function(f){
+      h += '<div class="note n-info"><b>'+esc(f.title)+'</b>'+esc(f.why||'Retired; still open somewhere.')+'</div>';
+    });
+  }
+  h += '<div class="panel" style="margin-top:10px">'+
+    kv('Mode','<span class="chip c-mute">'+esc(d.mode)+'</span>')+
+    kv('In training', d.activeCount+' <span class="chip c-mute">'+d.closedCount+' cleared</span>')+
+    kv('Form links', d.formLinks ? '<span class="chip c-ok">On</span>'
+                                 : '<span class="chip c-warn">Off</span>')+
+    '</div>';
+  return h;
 }
+
 function paintPersonSheet(){
   var t = S.ctx || {};
+  var clear = t.clearance || {};
   var h = hero('Trainee record', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading record…</b>Skills and forms are loading — the rest of the desk is already up.</div>';
+  }
+
+  h += '<div class="panel">'+
+       '<div class="lab">Where they are</div>'+
+       phaseTrackHtml(t.phase)+
+       (t.dayInPhase!=null
+         ? '<div class="m" style="margin-top:8px">Day '+esc(t.dayInPhase)+' in this phase</div>'
+         : '')+
+       '</div>';
+
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+    h += sec('Lifecycle');
+    if (t.canAdvance && t.nextPhase){
+      h += '<button class="card act"'+spine('gold')+' onclick="openAdvance()">'+
+           '<span class="bd"><span class="h">Advance to '+esc(t.nextPhase)+'</span>'+
+           '<span class="m">Type why. Phase and phase-start date update together.</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    }
+
+    if (t.releaseReady){
+      h += '<div class="note n-ok"><b>Ready for the truck</b>'+
+           esc(String(clear.signed||0))+' / '+esc(String(clear.total||0))+
+           ' skills signed off. Clear them as an independent partner.</div>';
+      h += '<button class="card act"'+spine('due')+' onclick="openRelease()">'+
+           '<span class="bd"><span class="h">Clear '+esc(firstName(t.name)||'trainee')+' for the truck</span>'+
+           '<span class="m">Successful completion — independent partner on a truck.</span></span>'+
+           '<span class="go">&rsaquo;</span></button>';
+    } else if (t.phase4){
+      h += '<div class="note n-warn"><b>Not ready for the truck yet</b>Phase 4, but skills or sign-offs are still open:</div>';
+      (clear.gaps||[]).slice(0,8).forEach(function(g){
+        h += '<div class="m" style="margin:0 0 6px 2px">· '+esc(g)+'</div>';
+      });
+      h += '<div class="next" style="margin-top:10px">Finish those before clearing for the truck.</div>';
+    } else if (!t.canAdvance){
+      h += '<div class="note n-info"><b>Phase</b>Fix the phase on the master before advancing or clearing.</div>';
+    }
+
+    h += '<button class="card act"'+spine('soon')+' onclick="openCloseTrainee()">'+
+         '<span class="bd"><span class="h">End training / close</span>'+
+         '<span class="m">Sets Closed / Released. Stops Monday status cards. Not a truck clearance.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
+  }
+
   /* The card you tapped said why. Losing the reason on the way in is how a
      screen becomes a dead end: three problems named on one page and nothing
      to do about any of them on the next. */
@@ -751,15 +1324,221 @@ function paintPersonSheet(){
   h += freshRow(t.freshness);
   h += '<div class="panel">'+kv('Training officer', esc(t.fto||'not assigned'))+
        kv('Shift', esc(t.shift||'not set'))+'</div>';
+
+  h += '<button class="btn ghost" style="margin-top:10px" onclick="openTraineeReport('+jsStr(t.name)+')">'+
+       'Print / save PDF report</button>';
+
+  if (t.skills && t.skills.length){
+    var withDiv = [], building = [], signed = [], acceptNow = [];
+    function barsMetClient(s){
+      var bars = s.bars || [];
+      if (!bars.length) return false;
+      for (var bi = 0; bi < bars.length; bi++){
+        if (Number(bars[bi].have || 0) < Number(bars[bi].need || 0)) return false;
+      }
+      return true;
+    }
+    t.skills.forEach(function(s){
+      if (s.signed) signed.push(s);
+      else if (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s)) {
+        withDiv.push(s);
+        acceptNow.push(s);
+      } else building.push(s);
+    });
+    h += sec('Skills on the matrix', t.skills.length);
+    h += '<p class="sub" style="margin-bottom:9px">'+
+         signed.length+' signed · '+withDiv.length+' ready to accept · '+
+         building.length+' building</p>';
+    function skillRow(s, canAccept){
+      var tag = s.signed ? 'Signed' :
+        (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s) ? 'Ready to accept' : (s.readiness || 'Building'));
+      var tagCls = s.signed ? 'c-ok' : (canAccept ? 'c-warn' : 'c-mute');
+      var row = '<div class="card"><div class="hd"><span class="h">'+esc(s.skill)+'</span>'+
+        '<span class="chip '+tagCls+'">'+esc(tag)+'</span></div>'+
+        (s.bars && s.bars.length ? barsHtml(s.bars) : '');
+      if (canAccept && canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){
+        row += '<button class="btn" style="margin-top:10px" onclick="openAcceptSkill('+
+          jsStr(t.name)+','+jsStr(s.skillId||'')+','+jsStr(s.skill)+')">Accept on tracker</button>';
+      }
+      row += '</div>';
+      return row;
+    }
+    withDiv.forEach(function(s){ h += skillRow(s, true); });
+    building.slice(0, 8).forEach(function(s){ h += skillRow(s, false); });
+    if (building.length > 8) h += '<p class="sub">+ '+(building.length-8)+' more building</p>';
+    if (signed.length && !withDiv.length && building.length <= 8){
+      h += '<button class="more" onclick="S.showSignedSkills=!S.showSignedSkills;render()">'+
+           (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';
+      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s, false); });
+    }
+    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && acceptNow.length){
+      h += '<div class="next"><b>Accept writes the tracker</b>Queue closes, permanent sign-off log gets a row, and the skills matrix shows SIGNED OFF.</div>';
+    }
+  }
+
+  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !== false)){
+    var officers = BOOT.data.officers || [];
+    if (officers.length){
+      h += sec('Who trains them');
+      h += '<div class="panel"><div class="lab">Assigned FTO</div>'+
+           '<select class="pick" id="asg-fto" aria-label="Assigned FTO">'+
+           '<option value="">Pick a training officer\u2026</option>';
+      officers.forEach(function(o){
+        h += '<option value="'+esc(o.name)+'"'+(normMatch(o.name,t.fto)?' selected':'')+'>'+
+             esc(o.name)+'</option>';
+      });
+      h += '</select></div>'+
+           '<button class="btn" onclick="submitAssign('+jsStr(t.name)+')">Save assignment</button>';
+    }
+  }
   h += '<button class="card act" onclick="openRecord('+jsStr(t.name)+')">'+
        '<span class="bd"><span class="h">Their whole record</span>'+
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
   h += sec('File something for '+firstName(t.name));
-  h += (t.forms && t.forms.length)
-    ? formCards(t.forms)
-    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading forms…</b></div>';
+  } else {
+    h += (t.forms && t.forms.length)
+      ? formCards(t.forms)
+      : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  }
   paint(h);
+}
+
+function openAdvance(){
+  var t = S.ctx || {};
+  if (!t.name || !t.nextPhase) return;
+  S.screen = 'advance'; render();
+}
+function paintAdvance(){
+  var t = S.ctx || {};
+  var h = hero('Advance', t.name,
+    esc(t.phase||'?')+' → '+esc(t.nextPhase||'?'))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-info"><b>What this writes</b>CURRENT PHASE and PHASE START DATE on the trainee master, '+
+    'plus your reason on the audit trail. One step only — Phase 4 does not auto-clear them.</div>'+
+    '<div class="panel"><div class="lab">Why you are advancing them</div>'+
+    '<textarea id="adv-why" placeholder="Goes on the permanent record in your name. No default wording." '+
+    'oninput="syncLifeBtns(\'adv\')"></textarea></div>'+
+    '<button class="btn" id="adv-go" disabled onclick="submitAdvance()">Advance to '+
+    esc(t.nextPhase||'')+'</button>';
+  paint(h);
+  syncLifeBtns('adv');
+}
+function submitAdvance(){
+  if (S.busy) return;
+  var why = (el('adv-why') && el('adv-why').value || '').trim();
+  if (why.length < 8) { alert('Type why you are advancing them.'); return; }
+  S.busy = true;
+  var b = el('adv-go');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Advanced.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'Advance to '+(S.ctx.nextPhase||''); }
+      syncLifeBtns('adv');
+      alert(e.message||e);
+    })
+    .advanceTraineePhaseV1(S.ctx.name, why);
+}
+
+function openRelease(){
+  var t = S.ctx || {};
+  if (!t.name) return;
+  S.screen = 'release'; render();
+}
+function paintRelease(){
+  var t = S.ctx || {};
+  var h = hero('Clear for the truck', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-ok"><b>Independent partner</b>They finished training. Status becomes Cleared / Independent. '+
+    'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archived with who and when.</div>'+
+    '<div class="panel"><div class="lab">Why they are cleared</div>'+
+    '<textarea id="rel-why" placeholder="Completed all phases and required skills — cleared to ride as an independent partner." '+
+    'oninput="syncLifeBtns(\'rel\')"></textarea></div>'+
+    '<button class="btn" id="rel-go" disabled onclick="submitRelease()">Clear for independent partner duty</button>';
+  paint(h);
+  syncLifeBtns('rel');
+}
+function submitRelease(){
+  if (S.busy) return;
+  var why = (el('rel-why') && el('rel-why').value || '').trim();
+  if (why.length < 8) { alert('Type why they are cleared for independent partner duty.'); return; }
+  if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner duty? This cannot be undone from Field Training.')) return;
+  S.busy = true;
+  var b = el('rel-go');
+  if (b) { b.disabled = true; b.textContent = 'Clearing…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Cleared for independent partner duty.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'Clear for independent partner duty'; }
+      syncLifeBtns('rel');
+      alert(e.message||e);
+    })
+    .releaseTraineeV1(S.ctx.name, why);
+}
+
+function openCloseTrainee(){
+  var t = S.ctx || {};
+  if (!t.name) return;
+  S.screen = 'closeTrainee'; render();
+}
+function paintCloseTrainee(){
+  var t = S.ctx || {};
+  var h = hero('End training', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-warn"><b>Closed / Released</b>They leave Active training. No Monday status cards. '+
+    'Form Trainee lists drop their name. This is not clearance for the truck.</div>'+
+    '<div class="panel"><div class="lab">Why training is ending</div>'+
+    '<textarea id="close-why" placeholder="Goes on the permanent record in your name." '+
+    'oninput="syncLifeBtns(\'close\')"></textarea></div>'+
+    '<button class="btn ghost-danger" id="close-go" disabled onclick="submitCloseTrainee()">End training / close</button>';
+  paint(h);
+  syncLifeBtns('close');
+}
+function submitCloseTrainee(){
+  if (S.busy) return;
+  var why = (el('close-why') && el('close-why').value || '').trim();
+  if (why.length < 8) { alert('Type why training is ending.'); return; }
+  if (!confirm('Close '+((S.ctx&&S.ctx.name)||'this trainee')+' out of training? They will stop getting Monday updates.')) return;
+  S.busy = true;
+  var b = el('close-go');
+  if (b) { b.disabled = true; b.textContent = 'Closing…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Closed out of training.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'End training / close'; }
+      syncLifeBtns('close');
+      alert(e.message||e);
+    })
+    .closeTraineeV1(S.ctx.name, why);
+}
+
+function syncLifeBtns(kind){
+  var id = 'adv-why', btn = 'adv-go';
+  if (kind === 'rel') { id = 'rel-why'; btn = 'rel-go'; }
+  if (kind === 'close') { id = 'close-why'; btn = 'close-go'; }
+  var why = (el(id) && el(id).value || '').trim();
+  if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;
 }
 function openAck(name, finding){
   S.ctx = { name:name, finding:finding, from:S.screen };
@@ -769,22 +1548,17 @@ function paintAck(){
   var c = S.ctx || {};
   paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+
     '<button class="back" onclick="S.screen=\''+(c.from||'main')+'\';render()">&larr; Back</button>'+
-    '<div class="note n-info"><b>This does not clear it</b>Nothing here changes the record or '+
-    'the finding. It records that you saw it, in your words, and holds it off the list for as '+
-    'long as you ask. When that runs out it is back exactly as it is now.</div>'+
+    '<div class="note n-info"><b>Does not clear the finding</b>Records that you saw it and holds it off the list for the days you choose. When that ends, it returns unchanged.</div>'+
     '<div class="panel"><div class="lab">What are you doing about it</div>'+
-    '<textarea id="ackwhy" placeholder="Goes on the record in your name. An acknowledgment with '+
-    'nothing in it is how a problem gets buried."></textarea></div>'+
+    '<textarea id="ackwhy" placeholder="Goes on the record in your name."></textarea></div>'+
     '<div class="panel"><div class="lab">Hold it off the list for</div>'+
     picker('ackdays', '', [
       { value:'3',  label:'3 days'  },
       { value:'7',  label:'7 days'  },
       { value:'14', label:'14 days' },
-      { value:'30', label:'30 days — the longest a hold can be' }
+      { value:'30', label:'30 days (maximum)' }
     ], 'pickDays', String(S.ackDays || 7))+'</div>'+
-    '<button class="btn" id="ackgo" onclick="sendAck()">Record it</button>'+
-    '<div class="next"><b>Why it comes back</b>A hold that never expires is a way to hide '+
-    'something permanently. This one runs out, and the finding returns unchanged.</div>');
+    '<button class="btn" id="ackgo" onclick="sendAck()">Record it</button>');
 }
 function pickDays(v){ S.ackDays = Number(v) || 7; }
 function sendAck(){
@@ -799,49 +1573,321 @@ function sendAck(){
 }
 
 function openSignoff(row,trainee,skill,evidence,requestId){
-  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'' };
+  var q = (BOOT.data.queue||[]).filter(function(x){ return Number(x.row)===Number(row); })[0] || {};
+  S.ctx = {
+    row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'',
+    bars: q.bars || null, recommend: q.recommend || '', hoursLeft: q.hoursLeft, clockPct: q.clockPct
+  };
   S.screen = 'signoff'; render();
 }
+
+function openAcceptSkill(trainee, skillId, skill){
+  var personBackup = (S.screen === 'person') ? S.ctx : null;
+  S.ctx = {
+    acceptTrainee: trainee,
+    acceptSkillId: skillId || '',
+    acceptSkill: skill || '',
+    fromPerson: !!personBackup,
+    personBackup: personBackup
+  };
+  S.screen = 'acceptSkill'; render();
+}
+
+function paintAcceptSkill(){
+  var c = S.ctx || {};
+  var back = c.fromPerson
+    ? '<button class="back" onclick="backFromAcceptSkill()">&larr; Back</button>'
+    : '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  var h = hero('Accept skill', c.acceptSkill || 'Skill',
+    esc(c.acceptTrainee || ''))+back;
+  h += '<div class="note n-info"><b>Writes the live tracker</b>Queue row, sign-off log, and matrix SIGNED OFF.</div>';
+  h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
+    '<textarea id="acceptWhy" placeholder="This goes on the permanent record in your name." '+
+    'oninput="syncAcceptBtn()"></textarea></div>'+
+    '<button class="btn" id="acceptGo" disabled onclick="submitAcceptSkill()">Accept on tracker</button>';
+  paint(h);
+  syncAcceptBtn();
+}
+
+function backFromAcceptSkill(){
+  var c = S.ctx || {};
+  if (c.personBackup){ S.ctx = c.personBackup; S.screen = 'person'; render(); return; }
+  S.screen = 'main'; render();
+}
+
+function syncAcceptBtn(){
+  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();
+  if (el('acceptGo')) el('acceptGo').disabled = why.length < 8 || S.busy;
+}
+
+function submitAcceptSkill(){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why you are accepting this.'); return; }
+  S.busy = true;
+  var b = el('acceptGo');
+  if (b){ b.disabled = true; b.textContent = 'Saving on tracker…'; }
+  google.script.run
+    .withSuccessHandler(function(msg){
+      S.busy = false;
+      alert(msg || 'Accepted on the tracker.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b){ b.textContent = 'Accept on tracker'; syncAcceptBtn(); }
+      alert(e.message || e);
+    })
+    .acceptSkillV1(c.acceptTrainee, c.acceptSkillId || '', c.acceptSkill || '', why);
+}
+
+/* ---------------- bring someone on ---------------- */
+function openAddTrainee(){
+  S.screen = 'addTrainee'; render();
+}
+function paintAddTrainee(){
+  var d = BOOT.data || {};
+  var officers = d.officers || [];
+  var h = hero('Bring someone on', 'New trainee',
+    'They land in training and on the forms already in service.')+
+    '<button class="back" onclick="S.divTab=\'menu\';S.screen=\'main\';render()">&larr; Back</button>';
+
+  h += '<div class="panel">'+
+    '<div class="field"><div class="lab">Full name</div>'+
+    '<input id="at-name" autocomplete="name" placeholder="Casey Holt" /></div>'+
+    '<div class="field"><div class="lab">Work email</div>'+
+    '<input id="at-email" type="email" autocomplete="email" placeholder="casey.holt@example.org" />'+
+    '<div class="hint">How they sign into Field Training.</div></div>'+
+    '<div class="field"><div class="lab">Level</div>'+
+    '<select id="at-level">'+
+    '<option value="">Pick one…</option>'+
+    '<option value="EMT">EMT</option>'+
+    '<option value="Advanced EMT">Advanced EMT</option>'+
+    '<option value="Paramedic">Paramedic</option>'+
+    '</select>'+
+    '<div class="hint">Chooses which skills log their FTO gets.</div></div>'+
+    '<div class="field"><div class="lab">Starting phase</div>'+
+    '<select id="at-phase">'+
+    '<option value="Phase 1">Phase 1</option>'+
+    '<option value="Phase 2">Phase 2</option>'+
+    '<option value="Phase 3">Phase 3</option>'+
+    '<option value="Phase 4">Phase 4</option>'+
+    '</select></div>'+
+    '<div class="field"><div class="lab">Training officer</div>'+
+    '<select id="at-fto"><option value="">Assign later…</option>';
+  officers.forEach(function(o){
+    h += '<option value="'+esc(o.name)+'">'+esc(o.name)+'</option>';
+  });
+  h += '</select>'+
+    (officers.length ? '' :
+      '<div class="hint">No active FTOs on the roster yet. Add an FTO first, or leave blank.</div>')+
+    '</div>'+
+    '<div class="field"><div class="lab">Entry profile (optional)</div>'+
+    '<input id="at-entry" maxlength="1" placeholder="A" style="max-width:4.5rem;text-transform:uppercase" />'+
+    '<div class="hint">Letter from the ENTRY PROFILE KEY on the master.</div></div>'+
+    '</div>';
+
+  h += '<button class="btn" id="at-go" onclick="submitAddTrainee()">Add to Field Training</button>'+
+    '<div class="next"><b>What this does</b>Writes one row on the trainee master and refreshes '+
+    'Trainee dropdowns on the Google Forms you already use. No new form is created.</div>'+
+    '<div class="next"><b>Afterward</b>Open the tracker once if their skill matrix rows need a rebuild. '+
+    'Evaluations and skills logs work as soon as the form lists refresh.</div>';
+  paint(h);
+}
+function submitAddTrainee(){
+  if (S.busy) return;
+  var name = (el('at-name') && el('at-name').value || '').trim();
+  var email = (el('at-email') && el('at-email').value || '').trim();
+  var level = (el('at-level') && el('at-level').value || '').trim();
+  var phase = (el('at-phase') && el('at-phase').value || 'Phase 1').trim();
+  var fto = (el('at-fto') && el('at-fto').value || '').trim();
+  var entry = (el('at-entry') && el('at-entry').value || '').trim().toUpperCase();
+  if (!name) { alert('Type their full name.'); return; }
+  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }
+  if (!level) { alert('Pick a level.'); return; }
+
+  S.busy = true;
+  var b = el('at-go');
+  if (b) { b.disabled = true; b.textContent = 'Adding…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || (name + ' is in training.'));
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.disabled = false; b.textContent = 'Add to Field Training'; }
+      alert(e.message || e);
+    })
+    .addTraineeV1({ name: name, email: email, level: level, phase: phase,
+                    fto: fto, entry: entry });
+}
+
+function openAddFto(){
+  S.divTab = 'menu';
+  S.screen = 'addFto'; render();
+}
+function paintAddFto(){
+  var h = hero('Add an FTO', 'New training officer',
+    'They land on the tracker roster and on the FTO dropdowns already in service.')+
+    '<button class="back" onclick="S.divTab=\'menu\';S.screen=\'main\';render()">&larr; Back</button>';
+  h += '<div class="panel">'+
+    '<div class="field"><div class="lab">Full name</div>'+
+    '<input id="af-name" autocomplete="name" placeholder="Chyna Gray" /></div>'+
+    '<div class="field"><div class="lab">Work email</div>'+
+    '<input id="af-email" type="email" autocomplete="email" placeholder="chyna.gray@example.org" />'+
+    '<div class="hint">How they sign into Field Training.</div></div>'+
+    '<div class="field"><div class="lab">Shift</div>'+
+    '<select id="af-shift">'+
+    '<option value="">Set later…</option>'+
+    '<option value="A">A</option><option value="B">B</option>'+
+    '<option value="C">C</option><option value="D">D</option>'+
+    '</select></div>'+
+    '<div class="field"><div class="lab">Cert level</div>'+
+    '<select id="af-level">'+
+    '<option value="">Set later…</option>'+
+    '<option value="EMT">EMT</option>'+
+    '<option value="Advanced EMT">Advanced EMT</option>'+
+    '<option value="Paramedic">Paramedic</option>'+
+    '</select>'+
+    '<div class="hint">What they are signed off to train stays blank for a person to fill in on the roster.</div></div>'+
+    '</div>'+
+    '<button class="btn" id="af-go" onclick="submitAddFto()">Add to roster</button>'+
+    '<div class="next"><b>What this does</b>Appends one row on '+
+    '22 FTO ROSTER and refreshes FTO name lists on the Google Forms you already use.</div>'+
+    '<div class="next"><b>Then</b>Assign them to a trainee from that trainee\'s person sheet.</div>';
+  paint(h);
+}
+function submitAddFto(){
+  if (S.busy) return;
+  var name = (el('af-name') && el('af-name').value || '').trim();
+  var email = (el('af-email') && el('af-email').value || '').trim();
+  var shift = (el('af-shift') && el('af-shift').value || '').trim();
+  var level = (el('af-level') && el('af-level').value || '').trim();
+  if (!name) { alert('Type their full name.'); return; }
+  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }
+
+  S.busy = true;
+  var b = el('af-go');
+  if (b) { b.disabled = true; b.textContent = 'Adding…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || (name + ' is on the roster.'));
+      S.divTab = 'menu';
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.disabled = false; b.textContent = 'Add to roster'; }
+      alert(e.message || e);
+    })
+    .addFtoV1({ name: name, email: email, shift: shift, level: level });
+}
+
 function paintSignoff(){
   var c = S.ctx || {};
-  paint(hero('The decision', c.skill, esc(c.trainee))+
-    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>'+
-    '<div class="panel"><div class="lab">Evidence on file</div>'+
-    '<div style="font-size:.93rem">'+esc(c.evidence)+'</div></div>'+
-    '<div class="panel"><div class="lab">Why are you approving this</div>'+
-    '<textarea id="why" placeholder="This goes on the permanent record in your name."></textarea></div>'+
-    '<button class="btn" id="ap" onclick="approve()">Approve sign-off</button>'+
-    '<div class="next"><b>No pre-filled wording</b>The old system wrote "Evidence thresholds met" without checking anything. You type it, or nothing is written.</div>'+
-    '<div class="next"><b>Where this goes</b>Your decision, your name and your reason go onto the queue row. '+
-    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+
-    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only thing '+
-    'allowed to write the sign-off log, and it runs the authority and evidence checks on the way.</div>');
+  var h = hero('The decision', c.skill, esc(c.trainee))+
+    '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.hoursLeft != null){
+    h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'+
+         clockHtml(c.hoursLeft, c.clockPct||0)+
+         '<div class="m">Hours left on the 72-hour clock before this goes stale on the desk.</div></div>';
+  }
+  if (c.bars && c.bars.length){
+    h += '<div class="panel"><div class="lab">Evidence against the catalog</div>'+barsHtml(c.bars)+'</div>';
+  } else {
+    h += '<div class="panel"><div class="lab">Evidence on file</div>'+
+         '<div style="font-size:.93rem">'+esc(c.evidence||'—')+'</div></div>';
+  }
+  if (c.recommend){
+    h += '<div class="note n-info"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';
+  }
+  h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
+    '<textarea id="why" placeholder="This goes on the permanent record in your name." '+
+    'oninput="syncDecideBtns()"></textarea></div>'+
+    '<button class="btn" id="ap" disabled onclick="approve()">Approve sign-off</button>'+
+    '<button class="btn ghost-danger" id="ret" disabled onclick="returnSkill()">Return for more evidence</button>'+
+    '<div class="next">Both buttons need your reason (at least a sentence). Approve writes the sign-off log and marks the skill SIGNED OFF on the matrix.</div>';
+  paint(h);
+  syncDecideBtns();
+}
+function syncDecideBtns(){
+  var why = (el('why') && el('why').value || '').trim();
+  var ok = why.length >= 8;
+  if (el('ap')) el('ap').disabled = !ok || S.busy;
+  if (el('ret')) el('ret').disabled = !ok || S.busy;
 }
 function approve(){
   if (S.busy) return;
   var why = el('why').value.trim();
   if (why.length < 8) { alert('Type why you are approving this.'); return; }
   S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';
-  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload(); })
-    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approve sign-off';
+  if (el('ret')) el('ret').disabled = true;
+  google.script.run.withSuccessHandler(function(msg){
+      S.busy=false;
+      if (msg) alert(msg);
+      S.screen='main'; reload();
+    })
+    .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncDecideBtns();
       alert(e.message||e); })
     .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
 }
+function returnSkill(){
+  if (S.busy) return;
+  var why = el('why').value.trim();
+  if (why.length < 8) { alert('Type why you are returning this.'); return; }
+  S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';
+  if (el('ap')) el('ap').disabled = true;
+  google.script.run.withSuccessHandler(function(msg){
+      S.busy=false;
+      if (msg) alert(msg);
+      S.screen='main'; reload();
+    })
+    .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence'; syncDecideBtns();
+      alert(e.message||e); })
+    .returnSignoffV1(S.ctx.row, why, S.ctx.requestId||'');
+}
 
-/* ---------------- supervisor / medical ---------------- */
+/* ---------------- supervisor — shift strip ---------------- */
 function paintSupervisor(d){
-  var h = hero('Shift supervisor', d.shift,
-    'Read only. Nothing here asks you to do anything.');
-  if (!d.trainees.length) h += '<div class="note n-ok"><b>Nobody on shift</b>No active trainees are assigned to this shift.</div>';
-  d.trainees.forEach(function(t){
-    h += '<div class="card"><div class="hd"><span class="h">'+esc(t.name)+'</span>'+
-      lvlChip(t.levelKey,t.level)+'</div>'+
-      '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last evaluation '+esc(t.lastEval)+'</div></div>';
-  });
+  var hot = d.hotCount || 0;
+  var h = hero('My shift', d.shift,
+    (d.trainees||[]).length+' on the line'+
+    (hot ? ' &middot; <span style="color:var(--gold)">'+hot+' hot tonight</span>' : ' &middot; all quiet'));
+  if (!d.trainees.length){
+    h += '<div class="note n-ok"><b>Nobody on shift</b>No active trainees are assigned to this shift.</div>';
+  } else {
+    h += '<p class="sub">Swipe the strip. Red wants a look tonight. Tap a name for the next move.</p>';
+    h += '<div class="strip">';
+    d.trainees.forEach(function(t){
+      h += '<div class="tile '+(t.urgency||'')+'">'+
+           '<div class="h">'+esc(t.name)+'</div>'+
+           '<div class="m">'+esc(t.phase||'')+' &middot; '+esc(short(t.fto,18)||'no FTO')+'</div>'+
+           (t.why ? '<div class="flag">'+esc(t.nextMove && t.nextMove.title ? t.nextMove.title : t.why)+'</div>'
+                  : '<div class="m" style="margin-top:8px;color:var(--ok)">Clear</div>')+
+           '</div>';
+    });
+    h += '</div>';
+    h += sec('Everyone', d.trainees.length);
+    d.trainees.forEach(function(t){
+      h += '<div class="card"'+spine(t.urgency||'')+'>'+
+        '<div class="hd"><span class="h">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level)+'</div>'+
+        '<div class="m">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+
+        ' &middot; last eval '+esc(t.lastEval)+'</div>'+
+        (t.nextMove ? '<div class="flag">'+esc(t.nextMove.title)+'</div>' : '')+
+        '</div>';
+    });
+  }
   if (d.forms && d.forms.length){
     h += sec('If something cannot wait')+formCards(d.forms);
   }
-  h += '<div class="next"><b>Deliberately thin</b>Supervisors get situational awareness, not personnel-development detail.</div>';
+  h += '<div class="next"><b>Deliberately thin</b>You get situational awareness for tonight — not a second Training desk.</div>';
   paint(h);
 }
 function paintMedical(d){
@@ -851,14 +1897,6 @@ function paintMedical(d){
     total+(total===1?' open case':' open cases')+' for you. Nothing else.');
   h += warnRow(d.warnings);
 
-  /* Something wrong with the system rather than with a person. It belongs at
-     the top with the other system-level alerts, not floating between two
-     groups of people where it reads as a third sign-off. */
-  (d.retiredForms||[]).forEach(function(f){
-    h += '<div class="note n-stop"><b>Retired form still open</b>'+esc(f.title)+
-         ' is no longer offered anywhere in this portal. '+esc(f.why)+
-         ' Anything already submitted to it is sitting in the form, not in the tracker.</div>';
-  });
   if (!total) h += '<div class="note n-ok"><b>Nothing pending</b>No open concern requires your authority.</div>';
   cases.forEach(function(c){
     h += '<button class="card act"'+spine('pmd')+' onclick="openRecord('+jsStr(c.trainee)+')">'+
@@ -899,6 +1937,255 @@ function freshRow(list){
          (f.count>1 ? ' <span style="color:var(--ink-3)">('+f.count+')</span>' : '')+'</span>';
   });
   return h + '</div>';
+}
+
+function refreshQueue(){
+  if (S.busy) return;
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Done.');
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .refreshValidationQueueV1();
+}
+
+function syncMatrixEvidence(){
+  if (S.busy) return;
+  if (!confirm('Recount the skills matrix from the evidence log, mark skills READY when the bars are met, then refresh the sign-off queue?')) return;
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Done.');
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .syncMatrixFromEvidenceV1();
+}
+
+function openFormWait(i){
+  var list = (BOOT.data && BOOT.data.formWaiting && BOOT.data.formWaiting.list) || [];
+  var item = list[i];
+  if (!item) return;
+  S.ctx = { formMeta: item, form: null, err: '', from: 'main' };
+  S.screen = 'formWait';
+  var req = (S.formWaitReq = (S.formWaitReq || 0) + 1);
+  render();
+  google.script.run
+    .withSuccessHandler(function(r){
+      if (req !== S.formWaitReq || S.screen !== 'formWait') return;
+      S.ctx.form = r; render();
+    })
+    .withFailureHandler(function(e){
+      if (req !== S.formWaitReq || S.screen !== 'formWait') return;
+      S.ctx.err = e.message || String(e); render();
+    })
+    .formResponseDetailV1(item.tab, item.row);
+}
+
+function paintFormWait(){
+  var c = S.ctx || {};
+  var meta = c.formMeta || {};
+  var back = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.err) return paint(hero('Waiting response', meta.trainee || '', '')+back+
+    '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
+  if (!c.form) return paint(hero('Waiting response', meta.trainee || '', 'Reading the form response&hellip;')+back);
+
+  var p = c.form;
+  var h = hero(p.kind === 'skills' ? 'Skills log response' : 'Form response',
+    p.trainee || 'Unnamed trainee',
+    (p.when || p.stamp || 'no date')+(p.by ? ' · '+esc(p.by) : ''))+back;
+  if (p.inLog){
+    h += '<div class="note n-ok"><b>Matched in the evidence log</b>This response id is already on file. You can still clear it from the desk.</div>';
+  } else if (p.dayHint){
+    h += '<div class="note n-warn"><b>Same day has evidence</b>Something for this trainee is on the log that day, but this response id is not linked. Clear from the desk, or Sync matrix from evidence on Home if skills are stuck.</div>';
+  } else {
+    h += '<div class="note n-warn"><b>Waiting on ingest</b>Still only on the form-response tab. '+
+         'Clear it here, or run <b>catchUpUnprocessed</b> in the tracker if ingest never fired.</div>';
+  }
+  h += '<div class="panel"><div class="lab">Tab</div><div style="font-size:.93rem">'+esc(p.tab)+
+       ' · row '+esc(String(p.row))+'</div></div>';
+  (p.fields||[]).forEach(function(f){
+    h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
+         '<div class="v">'+esc(f.value)+'</div></div>';
+  });
+  if (p.trainee){
+    h += '<button class="btn" style="margin-top:16px" onclick="openRecord('+jsStr(p.trainee)+')">'+
+         'Open personnel record</button>';
+  }
+  if (canWrite() && !p.deskCleared){
+    h += '<div class="panel" style="margin-top:14px"><div class="lab">Clear from this desk (required)</div>'+
+         '<textarea id="formReviewWhy" placeholder="Why this can leave Waiting on you. Does not ingest or delete the form response."></textarea></div>'+
+         '<button class="btn" onclick="clearFormWait()">Clear from Waiting on you</button>';
+  }
+  h += '<div class="next"><b>What this is</b>'+esc(p.note||'')+'</div>';
+  paint(h);
+}
+
+function clearFormWait(){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var p = c.form || c.formMeta;
+  if (!p) return;
+  var why = (el('formReviewWhy') && el('formReviewWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why you are clearing this from the desk.'); return; }
+  S.busy = true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Cleared.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })
+    .reviewFormResponseV1(p.tab, p.row, why);
+}
+
+function openTraineeReport(name){
+  if (!name) return;
+  google.script.run
+    .withSuccessHandler(function(html){
+      var w = window.open('', '_blank');
+      if (!w){ alert('Allow pop-ups to open the report, then Print → Save as PDF.'); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    })
+    .withFailureHandler(function(e){ alert(e.message || e); })
+    .traineeReportHtmlV1(name);
+}
+
+function copyPortalLink(url){
+  var u = String(url || '').trim();
+  if (!u) return;
+  function ok(){ alert('Copied.\n\n' + u); }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(u).then(ok).catch(function(){
+      window.prompt('Copy this portal link:', u);
+    });
+  } else {
+    window.prompt('Copy this portal link:', u);
+  }
+}
+
+function openSettle(i){
+  var list = (BOOT.data && BOOT.data.duplicateSubs) || [];
+  var item = list[i];
+  if (!item) return;
+  S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };
+  S.screen = 'settle';
+  var req = (S.settleReq = (S.settleReq || 0) + 1);
+  render();
+  google.script.run
+    .withSuccessHandler(function(r){
+      if (req !== S.settleReq || S.screen !== 'settle') return;
+      S.ctx.settle = r; render();
+    })
+    .withFailureHandler(function(e){
+      if (req !== S.settleReq || S.screen !== 'settle') return;
+      S.ctx.err = e.message || String(e); render();
+    })
+    .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);
+}
+
+function paintSettle(){
+  var c = S.ctx || {};
+  var meta = c.settleMeta || {};
+  var back = '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+  if (c.err) return paint(hero('Settle', meta.trainee || '', '')+back+
+    '<div class="note n-stop"><b>Cannot open</b>'+esc(c.err)+'</div>');
+  if (!c.settle) return paint(hero('Settle', meta.trainee || '', 'Reading both sides&hellip;')+back);
+
+  var p = c.settle;
+  var hasLocal = (p.sides || []).some(function(s){ return Number(s.row) > 0; });
+  var h = hero('Settle', p.trainee,
+    esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group) : ''))+back;
+  h += '<div class="note n-info"><b>Both stay on file</b>'+esc(p.why)+
+       '. Your call is who stands for the record — nothing is deleted.</div>';
+
+  (p.sides || []).forEach(function(s){
+    var local = Number(s.row) > 0;
+    var picked = local && String(c.keepRow) === String(s.row);
+    h += '<div class="rec'+(picked?' cur':'')+'" style="margin-top:10px">'+
+         '<div class="when"><span>'+(local ? 'Row '+esc(String(s.row)) : 'Other book')+
+         ' · '+esc(s.when)+
+         (s.by ? ' · '+esc(s.by) : '')+
+         (s.book ? ' · in '+esc(s.book) : '')+'</span>'+
+         (picked ? '<b>Stands</b>' : '')+'</div>';
+    if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
+    (s.fields||[]).forEach(function(f){
+      h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
+           '<div class="v">'+esc(f.value)+'</div></div>';
+    });
+    if (canWrite() && local){
+      h += '<button class="btn '+(picked?'':'ghost')+'" style="margin-top:10px" '+
+           'onclick="S.ctx.keepRow='+jsStr(String(s.row))+';render()">'+
+           (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button>';
+    }
+    h += '</div>';
+  });
+
+  if (!canWrite()){
+    h += '<div class="flag" style="--accent:var(--warn);margin-top:14px">Read only — switch to LIVE to settle from Field Training.</div>';
+    return paint(h);
+  }
+
+  if (!hasLocal){
+    h += '<div class="note n-warn" style="margin-top:14px"><b>No row on this book</b>'+
+         'Both sides live elsewhere. You can still mark Both stand or Not a conflict.</div>';
+  }
+
+  h += '<div class="panel" style="margin-top:14px"><div class="lab">Your reason (required)</div>'+
+       '<textarea id="settleWhy" placeholder="Why both stand, why this row, or why this is not a conflict." '+
+       'oninput="syncSettleBtns()">'+esc(c.whyText||'')+'</textarea></div>';
+  h += '<button class="btn" id="sbBoth" disabled onclick="doSettle(\'BOTH_STAND\')">Both stand</button>';
+  if (hasLocal){
+    h += '<button class="btn" id="sbKeep" disabled onclick="doSettle(\'KEEP_ROW\')">This one stands</button>';
+  }
+  h += '<button class="btn ghost" id="sbNot" disabled onclick="doSettle(\'NOT_A_CONFLICT\')">Not a conflict</button>';
+  h += '<div class="next"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS. '+
+       'Raw rows stay. Settle stops raising this pair.</div>';
+  paint(h);
+  syncSettleBtns();
+}
+
+function syncSettleBtns(){
+  var why = (el('settleWhy') && el('settleWhy').value || '').trim();
+  if (S.ctx) S.ctx.whyText = why;
+  var ok = why.length >= 8 && !S.busy;
+  var keepOk = ok && S.ctx && Number(S.ctx.keepRow) > 0;
+  if (el('sbBoth')) el('sbBoth').disabled = !ok;
+  if (el('sbNot')) el('sbNot').disabled = !ok;
+  if (el('sbKeep')) el('sbKeep').disabled = !keepOk;
+}
+
+function doSettle(decision){
+  if (S.busy) return;
+  var c = S.ctx || {};
+  var p = c.settle || c.settleMeta;
+  if (!p) return;
+  var why = (el('settleWhy') && el('settleWhy').value || '').trim();
+  if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); return; }
+  if (decision === 'KEEP_ROW' && !(Number(c.keepRow) > 0)) {
+    alert('Pick which row stands first.'); return;
+  }
+  S.busy = true; syncSettleBtns();
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Settled.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false; syncSettleBtns();
+      alert(e.message || e);
+    })
+    .settleDuplicateV1(p.trainee, p.tab, p.dupKey, decision, why,
+                       c.keepRow || '', p.source || (c.settleMeta && c.settleMeta.source) || '');
 }
 
 function openRecord(name){
@@ -962,6 +2249,8 @@ function recCard(s, isCurrent){
   if (s.group) h += '<div class="h" style="margin-top:5px">'+esc(s.group)+'</div>';
   if (s.possibleDuplicate) h += '<div class="m" style="color:var(--stop);margin-top:5px">'+
     'Possible duplicate - another submission of this kind on the same day.</div>';
+  else if (s.settledDuplicate) h += '<div class="m" style="color:var(--ink-3);margin-top:5px">'+
+    'Settled — Division already recorded how this pair stands.</div>';
   (s.fields||[]).forEach(function(f){
     h += '<div class="fld"><div class="l">'+esc(f.label)+'</div>'+
          '<div class="v">'+esc(f.value)+'</div></div>';
@@ -972,11 +2261,58 @@ function recCard(s, isCurrent){
 function reload(){
   google.script.run.withSuccessHandler(function(r){
     BOOT.viewer = r.viewer; BOOT.data = r.data; BOOT.mode = r.mode;
+    if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;
+    BOOT.error = r.error || ''; BOOT.deferred = false;
     S.screen = 'main'; render();
   }).withFailureHandler(function(e){ alert(e.message||e); }).refreshV1();
 }
 
-render();
+function startLine(){
+  paint(hero('Field Training', 'Opening…',
+    'Loading your desk. If Google asks for permission, allow it — then this page continues.'));
+  google.script.run
+    .withSuccessHandler(function(r){
+      BOOT.viewer = r.viewer || BOOT.viewer;
+      BOOT.data = r.data || {};
+      BOOT.mode = r.mode || BOOT.mode;
+      if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;
+      BOOT.error = r.error || '';
+      BOOT.deferred = false;
+      S.screen = 'main';
+      render();
+      // Inbox is heavy (FormApp / response tabs) — fill it in the background.
+      if (BOOT.viewer && BOOT.viewer.role === 'TRAINING_DIVISION') ensureDivisionInbox_();
+    })
+    .withFailureHandler(function(e){
+      var msg = String((e && e.message) || e || 'unknown');
+      paint(hero('Field Training', 'Could not open', '')+
+        '<div class="note n-stop"><b>Blocked</b>'+esc(msg)+'</div>'+
+        '<div class="note n-info"><b>Do this in order</b>'+
+        '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+
+        '2. Run <b>authorizePortalNow</b> — finish every Google permission screen '+
+        '(Advanced → Go to SCEMS Portal if shown).<br>'+
+        '3. Deploy → Manage deployments → Edit → <b>New version</b> → Deploy.<br>'+
+        '4. Settings must be: Execute as <b>Me</b>, Who has access: '+
+        '<b>Anyone with a Google account</b> (not Anyone).<br>'+
+        '5. Open the /exec link in an Incognito window signed into one account only.'+
+        '</div>'+
+        '<button class="btn" onclick="startLine()">Try again</button>');
+    })
+    .refreshV1();
+}
+
+try {
+  if (BOOT.deferred) startLine();
+  else render();
+} catch (bootErr) {
+  try {
+    document.getElementById('view').innerHTML =
+      '<div class="hero"><h1>Field Training could not start</h1>' +
+      '<p class="sub">The page loaded but the script crashed while starting. ' +
+      'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></div>' +
+      '<div class="note n-stop"><b>Error</b>' + String((bootErr && bootErr.message) || bootErr) + '</div>';
+  } catch (e2) {}
+}
 </script>
 </body>
 </html>

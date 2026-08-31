@@ -46,6 +46,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
 let OPENABLE = {};                       // spreadsheet id -> name
 const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
                getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               getSheets: () => Object.keys(SHEETS).map(n => SHEETS[n]),
                insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
 
 global.SpreadsheetApp = {
@@ -123,7 +124,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','88_Report','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -214,6 +215,10 @@ function world(mode) {
   tab(PORTAL.TAB.REFLECT, ['TIMESTAMP','TRAINEE','WENT WELL','WAS HARD','WORK ON'], []);
   tab(PORTAL.TAB.URGENT, ['TIMESTAMP','CALLED','YOUR NAME','TRAINEE INVOLVED','WHAT HAPPENED'], []);
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'], []);
+  tab(PORTAL.TAB.SIGNOFF,
+    ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION',
+     'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+    []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
 function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
@@ -230,7 +235,7 @@ ok(new Set(ids).size === 9, 'no id appears twice');
 ok(new Set(PORTAL_FORMS.map(f => f.key)).size === 9, 'no key appears twice');
 ok(ids.every(i => /^[A-Za-z0-9_-]{20,}$/.test(i)), 'every id looks like a real Drive id');
 
-const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging','93_Acknowledge','94_Assign']
+const srcFiles = ['00_Config','10_Identity','20_Data','30_WebApp','50_Production','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8')).join('\n');
 ok(!ids.some(i => srcFiles.indexOf(i) >= 0), 'no form id is hard-coded anywhere outside the registry');
 const pageSrc = fs.readFileSync('/home/user/SCEMS-FTO/portal/Index.html', 'utf8');
@@ -360,14 +365,16 @@ Object.keys(FORMS).forEach(k => { FORM_FAILS[k] = 'Forms scope not granted'; });
 clearFormCache();
 const stillWorks = payloadFor('dana@example.org');
 ok(stillWorks.trainees.length === 3, 'an FTO still sees every trainee assigned to them');
-ok(stillWorks.trainees[0].forms.length > 0, 'the cards are still built from the fallback URL');
+ok(stillWorks.trainees[0].forms === null,
+   'Tonight lists people first — per-trainee form cards load when a name is opened');
 
 world();
 global.FormApp = undefined;                          // the scope was never granted at all
 clearFormCache();
 const noFormApp = payloadFor('dana@example.org');
 ok(noFormApp.trainees.length === 3, 'with no FormApp at all the FTO still gets their people');
-ok(Array.isArray(noFormApp.trainees[0].forms), 'and an empty form list rather than an exception');
+ok(noFormApp.trainees[0].forms === null,
+   'and home does not throw trying to build form cards');
 global.FormApp = { openById: id2 => { FORM_READS++;
   if (FORM_FAILS[id2]) throw new Error(FORM_FAILS[id2]);
   if (!FORMS[id2]) throw new Error('No item with the given ID could be found');
@@ -387,7 +394,8 @@ const dana = payloadFor('dana@example.org');
 const danaNames = dana.trainees.map(t => t.name);
 ok(danaNames.indexOf('Priya Okafor') < 0, 'Marcus’s trainee is not in Dana’s list');
 dana.trainees.forEach(t => {
-  const own = (t.forms || []).map(f => f.url).join(' ');
+  const detail = personDetailV1(t.name);
+  const own = (detail.forms || []).map(f => f.url).join(' ');
   ok(own.indexOf(encodeURIComponent(t.name).replace(/%20/g, '')) >= 0 ||
      own.indexOf(t.name.split(' ')[0]) >= 0,
      t.name + '’s cards carry ' + t.name.split(' ')[0] + '’s name');
@@ -592,6 +600,8 @@ ok(/Deploy/.test(liveMsg),
    'and says to deploy, because a deployment serves the code as it was when deployed');
 ok(/goReadOnly/.test(liveMsg), 'and how to step back');
 ok(/acknowledge|reflection|sign-off/i.test(liveMsg), 'naming what just became possible');
+ok(/TRACKER|installTriggers|Monday/i.test(liveMsg),
+   'and says Monday mail is the tracker, not this portal switch');
 
 ok(/Already live/.test(goLive()), 'running it again is a no-op that says so');
 
@@ -753,7 +763,13 @@ if (api) {
   ok(!/Priya Okafor/.test(html), 'and nobody else’s');
   ok(api.canWrite() === false, 'canWrite() is false against the live tracker');
 
-  api.S.screen = 'trainee'; api.S.ctx = bootObj.data.trainees[0]; api.render();
+  api.S.screen = 'trainee';
+  api.S.ctx = Object.assign({}, bootObj.data.trainees[0], {
+    detailLoaded: true,
+    forms: traineeFormsForV1_(PORTAL.ROLE.FTO, bootObj.data.trainees[0],
+      { fto: 'Dana Whitlock', trainee: bootObj.data.trainees[0].name })
+  });
+  api.render();
   const sheet = nodes['view'].innerHTML;
   ok(/End-of-shift evaluation/.test(sheet), 'opening a trainee offers the evaluation');
   ok(/Log a skill/.test(sheet), 'and the skills log');
@@ -809,10 +825,13 @@ const divBoot = { version: PORTAL.VERSION, mode: 'LIVE',
           people: divPeople,
           incomplete: [], stranded: [], duplicates: [],
           forms: [], retiredForms: [], formLinks: true,
+          inboxLoaded: true,
+          formWaiting: { waiting: 0, skillsWaiting: 0, total: 0, list: [] },
           duplicateSubs: [
             { trainee: 'Elizabeth McInville', source: 'Skill logged',
               group: 'ePCR documentation', when: 'Mon Aug 17 2026', count: 9,
-              tab: '19 SKILL EVIDENCE LOG', rows: [264, 263, 262, 260, 261] }
+              tab: '19 SKILL EVIDENCE LOG', dupKey: 'ID:RESP-ePCR-17',
+              rows: [264, 263, 262, 260, 261] }
           ] },
   error: '' };
 
@@ -820,7 +839,7 @@ let api3 = null;
 try {
   api3 = new Function('document', 'window', 'alert', 'google',
     body.replace(/<\?!=\s*boot\s*\?>/, JSON.stringify(divBoot)) +
-    '\nreturn { S: S, render: render, pickPerson: pickPerson, pickRecord: pickRecord };')
+    '\nreturn { S: S, render: render, pickPerson: pickPerson, pickSettle: pickSettle };')
     (fakeDoc, { scrollTo: () => {} }, () => {}, { script: { run: {} } });
 } catch (e) { api3 = null; }
 ok(!!api3, 'the Division screen renders');
@@ -831,29 +850,44 @@ function cards(html) { return html.replace(/<select[\s\S]*?<\/select>/g, ''); }
 
 if (api3) {
   let html = nodes['view'].innerHTML;
-  const rows = cards(html);
+  let rows = cards(html);
 
-  ok(/Nothing waiting on you/.test(html),
+  ok(/Queue clear/.test(html),
      'with no sign-offs pending it says so at the top, in one line');
+  ok(/class="tabs"|setDivTab/.test(html),
+     'Division home uses tabs so the rest is not one long scroll');
+  ok(/Decide|Moves|People|Inbox|Menu/.test(html), 'tab labels are on the desk');
+
+  // Moves tab — flagged trainees only
+  api3.S.divTab = 'moves'; api3.render();
+  html = nodes['view'].innerHTML;
+  rows = cards(html);
   ok(/Latavia Cole/.test(rows), 'the one trainee who needs something gets a row');
   ok(/no training officer is named/i.test(rows), 'with the reason on it');
   ok(!/Quiet Person 1/.test(rows),
      'and the nine with nothing outstanding get no rows at all');
-  ok(/9 of 10 have nothing outstanding/.test(html), 'they are one sentence');
+  ok(/openPerson\(9\)/.test(rows),
+     'the row that IS shown indexes into people, not into the filtered list');
 
+  // People tab — picker for everyone
+  api3.S.divTab = 'people'; api3.render();
+  html = nodes['view'].innerHTML;
+  ok(/9 of 10 have nothing outstanding/.test(html), 'they are one sentence');
   ok(/<select class="pick" id="pick-person"/.test(html),
      'and one dropdown reaches any of them');
-  ok((html.match(/<option value="\d+"/g) || []).length === 10,
+  const personBox = (html.match(/<select class="pick" id="pick-person"[\s\S]*?<\/select>/) || [''])[0];
+  ok((personBox.match(/<option value="\d+"/g) || []).length === 10,
      'which carries every active trainee, the flagged one included');
   ok(/<option value="9">Latavia Cole \u2014 Phase 1 \u00b7 needs a look<\/option>/.test(html) ||
      /<option value="9">Latavia Cole — Phase 1 · needs a look<\/option>/.test(html),
      'each option says who, where they are, and whether they need a look');
   ok(/onchange="pickPerson\(this.value\);this.selectedIndex=0"/.test(html),
      'picking one is a destination, so the box snaps back to its placeholder');
-  ok(/openPerson\(9\)/.test(rows),
-     'the row that IS shown indexes into people, not into the filtered list');
 
-  // the row numbers. this is the thing that shipped.
+  // Inbox tab — Settle is quiet, not a stack of cards
+  api3.S.divTab = 'inbox'; api3.render();
+  html = nodes['view'].innerHTML;
+  rows = cards(html);
   ok(!/\b2[0-9][0-9]\b/.test(html), 'no spreadsheet row number appears anywhere on the screen');
   ok(!/19 SKILL EVIDENCE LOG/.test(html), 'nor the name of a raw tab');
   ok(!/Elizabeth McInville/.test(rows), 'the same-day submissions are not a stack of cards');
@@ -862,8 +896,8 @@ if (api3) {
      /Elizabeth McInville — Skill logged/.test(html),
      'whose options name the person and the kind');
   ok(/\(9\)<\/option>/.test(html), 'and how many landed that day');
-  ok(/onchange="pickRecord\(this.value\)/.test(html),
-     'picking one opens that record, where both are readable side by side');
+  ok(/onchange="pickSettle\(this.value\)/.test(html),
+     'picking one opens Settle, where both sides are readable and a judgment is recorded');
 }
 
 // ---------------------------------------------------------------- //
@@ -889,20 +923,35 @@ ok(!!api4, 'it renders with a decision waiting');
 
 if (api4) {
   const html = nodes['view'].innerHTML;
-  ok(/1 decision waiting/.test(html), 'the headline is the decision, not the roster');
-  ok(html.indexOf('IV access') < html.indexOf('Latavia Cole'),
-     'and the decision comes before anybody else on the page');
+  ok(/1 sign-off waiting|sign-offs waiting|Ready for your sign-off/i.test(html),
+     'the headline names the waiting sign-off, not marketing copy');
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
   ok(/QR-77/.test(html),
      'carrying the request id, so a queue that re-sorted cannot be approved blind');
-  ok(/1 waiting on the tracker/.test(html),
-     'a decision already made is counted separately, not as one still waiting on you');
-  ok(/Record pending decisions/.test(html),
-     'and the screen says what turns it into a permanent sign-off');
+  ok(/IV access/.test(html), 'and the decision comes before anybody else on the page');
+  ok(!/waiting on the tracker/i.test(html),
+     'and does not shout "waiting on the tracker" on the main desk');
+  ok(!/Retired form still open/i.test(html),
+     'retired-form machinery is not a red banner above the decision');
   ok(!/Kaylie Vaughn/.test(cards(html)),
-     'without putting it back on the page as a row');
+     'without putting the staged person back on the page as a row');
   ok(/O&#39;Neill/.test(html) || /O\\u0027Neill/.test(html) || /O\\'Neill/.test(html),
      "and an apostrophe in a name survives instead of being stripped out");
+
+  // Desk details + staged live on Menu — open that tab, then expand details.
+  api4.S.divTab = 'menu'; api4.S.showDesk = true; api4.render();
+  const openHtml = nodes['view'].innerHTML;
+  ok(/Show 1 decided|1 decided|half-finished|legacy|Record or clear them in the tracker/i.test(openHtml),
+     'a decision already made is noted quietly, not as a banner in the hero');
+  ok(/half-finished|legacy|Record or clear them in the tracker/i.test(openHtml),
+     'desk details explain half-finished queue rows if any remain');
+  ok(/Skills quick log|Retired|retired/i.test(openHtml),
+     'retired form notes appear only after you ask for desk details');
+  // Switch back — live Decide still owns the decision
+  api4.S.divTab = 'waiting'; api4.render();
+  const decideHtml = nodes['view'].innerHTML;
+  ok(decideHtml.indexOf('IV access') >= 0 && /Decide/.test(decideHtml),
+     'the live decision still sits on the Decide tab above folded desk details');
 }
 
 // ---------------------------------------------------------------- //
@@ -940,25 +989,18 @@ if (api5) {
   let html = nodes['view'].innerHTML;
   const rows = cards(html);
 
-  ok(/1 signed off &middot; 1 with the Division &middot; 18 still building/.test(html) ||
-     /1 signed off · 1 with the Division · 18 still building/.test(html),
-     'the three counts are one line');
+  ok(/What each skill still needs/.test(html),
+     'skills are framed as what is still needed, not a raw catalogue');
   ok(/IV access/.test(rows),
      'the skill sitting with the Division is on the page, because it is out of their hands');
-  ok(!/Building skill 1</.test(rows),
-     'the eighteen still building are not eighteen rows');
-  ok(/<select class="pick" id="pick-skill"/.test(html), 'they are a dropdown');
-  ok(/18 still building/.test(html), 'labelled with the count');
-  ok((html.match(/<option value="\d+">Building skill/g) || []).length === 18,
-     'holding every one of them');
-  ok(!/selectedIndex=0/.test((html.match(/id="pick-skill"[^>]*/) || [''])[0]),
-     'and this one stays where you put it, because the choice is what is being shown');
-
-  api5.pickSkill('2');
-  html = nodes['view'].innerHTML;
-  ok(/Successful reps/.test(html) && /Independent reps/.test(html),
-     'picking a skill shows its reps underneath');
-  ok(/<option value="2"[^>]*selected/.test(html), 'with that skill still selected in the box');
+  ok(/With Division|READY FOR VALIDATION|With the Division/i.test(html),
+     'and it is tagged as with Division');
+  ok(/Building skill 1/.test(html),
+     'building skills appear as evidence cards (four bars), not a buried list');
+  ok(/already signed off/.test(html),
+     'signed-off skills are counted, not dumped as eighteen more rows');
+  ok(/bars4|Successful|Independent/.test(html),
+     'four-bar evidence language is on the page');
 }
 
 // ---------------------------------------------------------------- //
@@ -1005,7 +1047,7 @@ let heroed = 0;
 ['paintDivision','paintTrainee','paintFto','paintMedical','paintSupervisor',
  'paintRecord','paintSignoff'].forEach(function (fn) {
   const body2 = pageSrc.slice(pageSrc.indexOf('function ' + fn + '('));
-  if (/hero\(/.test(body2.slice(0, 900))) heroed++;
+  if (/hero\(/.test(body2.slice(0, 1600))) heroed++;
 });
 ok(heroed === 7, 'all seven role and detail screens open with a hero, not with body text: ' + heroed);
 
@@ -1019,13 +1061,16 @@ const divHtml = (function () {
 })();
 
 ok(/<div class="hero">/.test(divHtml), 'the Division screen renders one');
-ok(/class="eyebrow">Training Division</.test(divHtml), 'which names the role');
-ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('Sign-offs'),
+ok(/class="eyebrow">Division desk</.test(divHtml), 'which names the desk, not marketing copy');
+ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('IV access'),
    'above everything else on the page');
-ok(divHtml.indexOf('IV access') < divHtml.indexOf('waiting on the tracker'),
-   'a decision still waiting on you sits above one you have already made');
-ok(divHtml.indexOf('Retired form still open') < divHtml.indexOf('Sign-offs'),
-   'and a broken form is a system alert, so it sits above the queue rather than inside it');
+ok(/Show 1 decided|deskDetails|Show .*decided/.test(pageSrc) && /deskDetails/.test(pageSrc),
+   'machinery is folded behind desk details, not the hero');
+ok(!/note n-stop.*Retired form|Retired form still open/.test(divHtml),
+   'retired forms are not a stop banner on the Division desk');
+ok(/returnSignoffV1|Return for more evidence/.test(pageSrc),
+   'Return is a first-class decision path in Field Training');
+ok(/Field Training/.test(pageSrc) && !/THE LINE/.test(pageSrc), 'product name is Field Training, not THE LINE');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -206,16 +206,14 @@ function decisionAlerts(v) {
 }
 
 /* ---- ported from zz (effective winner) ---- */
-/** Override. The weekly roll-up, in the house style. */
+/** Override. The weekly roll-up, in the house style.
+ *  Only Active trainees (not Cleared / Closed / withdrawn). */
 function weeklyRollup() {
   var master = ss().getSheetByName(TAB.MASTER);
   if (!master) return 'Trainee Master not found.';
 
-  var names = [];
-  master.getRange(5, 1, 40, 10).getValues().forEach(function (r) {
-    var n = String(r[0] || '').trim();
-    if (n && n.indexOf('EXAMPLE') !== 0) names.push(n);
-  });
+  var names = activeTraineesV20_1_().map(function (r) { return r.name; })
+    .filter(function (n) { return n && String(n).indexOf('EXAMPLE') !== 0; });
 
   var GOLD = '#c9a227', MUTE = '#847d6d';
   var week = Utilities.formatDate(new Date(), 'America/New_York', 'MMMM d, yyyy');

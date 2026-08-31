@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-1.3.0
- * Build 003164f5
+ * SCEMS FIELD TRAINING PORTAL — portal-2.11.0
+ * Build def8f587
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -26,22 +26,36 @@
  * spreadsheet id, an address, or a mode.
  *
  * SAFETY: TARGET_SPREADSHEET_ID is deliberately empty. The portal refuses to
- * run until it is set, and setUpStaging() sets it to a NEW spreadsheet it
- * creates itself. Pointing this at the live tracker is a single, deliberate,
- * logged act — never a default and never an accident.
+ * run until it is set, and setUpStaging() points it at a sandbox — reusing
+ * the remembered one when it still exists, creating a new book only when
+ * none exists or you pass setUpStaging("NEW"). Pointing this at the live
+ * tracker is a single, deliberate, logged act — never a default and never
+ * an accident.
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-1.3.0',
+  VERSION: 'portal-2.11.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
+  /** Short link people should open (Sites page or county vanity). */
+  PROPERTY_PUBLIC_URL: 'PORTAL_PUBLIC_URL',
 
   /** STAGING writes freely. PRODUCTION refuses every write. */
   MODE_STAGING: 'STAGING',
   MODE_PRODUCTION: 'PRODUCTION',
   MODE_LIVE: 'LIVE',
 
-  TITLE: 'Sumter County EMS Field Training',
+  /** Product chrome. County name owns the badge; this is the program. */
+  TITLE: 'Field Training — Sumter County EMS',
+  PRODUCT: 'Field Training',
+  COUNTY: 'Sumter County EMS',
+
+  /**
+   * Suggested short address: Google Sites Hub that embeds the web app.
+   * Operators set PORTAL_PUBLIC_URL to this (or a county redirect) so nobody
+   * has to paste the long /macros/s/… deployment URL.
+   */
+  DEFAULT_HUB_URL: 'https://sites.google.com/view/scemsfieldtraininghub/home',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */
@@ -384,7 +398,8 @@ function START() {
         run: 'addFto',
         why: 'Those trainees are on nobody\'s list. If that officer is new, set ' +
              PORTAL_ADD_FTO_PROPERTY + ' to their name and address and run addFto. ' +
-             'If it is a name that changed, use PORTAL_RENAME and applyRename instead.' });
+             'If it is a name that changed, use PORTAL_RENAME and applyRename instead. ' +
+             'To enroll a new trainee from Field Training, use Bring someone on (or addTrainee).' });
     }
   } catch (e) {}
 
@@ -576,6 +591,9 @@ function START() {
 
 /** What is set, what it is pointed at, whether it can write. */
 function WHERE_AM_I() { return showSettings(); }
+
+/** Short portal link for the crew (and how to set one). */
+function PORTAL_ADDRESS() { return portalAddress(); }
 
 /** Everything that is wrong, in one report. */
 function CHECK_EVERYTHING() { return productionReadinessCheck(); }
@@ -873,12 +891,75 @@ function rowHasAnythingV1_(row) {
 
 function pickV1_(t, row, headers) {
   for (var i = 0; i < headers.length; i++) {
-    var ci = t.col[headers[i]];
+    var ci = t.col[String(headers[i] || '').toUpperCase()];
+    if (ci === undefined) ci = t.col[headers[i]];
     if (ci !== undefined && row[ci] !== undefined && row[ci] !== null && row[ci] !== '') {
       return row[ci];
     }
   }
   return '';
+}
+
+/**
+ * Tracker presentation renames canonical headers to plain English on the live
+ * master (TRAINEE EMAIL → "Email address", etc.). Portal code still speaks
+ * canonical names — map the pretty labels back so reads and writes hit the
+ * same cells.
+ */
+var HEADER_ALIASES_BY_TAB_V1 = {};
+HEADER_ALIASES_BY_TAB_V1['01 TRAINEE MASTER'] = {
+  'EMAIL ADDRESS': 'TRAINEE EMAIL',
+  'PROGRAM STATUS': 'SET STATUS',
+  'TRAINING OFFICER': 'ASSIGNED FTO',
+  'STARTED': 'START DATE',
+  'PHASE STARTED': 'PHASE START DATE',
+  'HOW THEY CAME IN': 'ENTRY PROFILE',
+  'CLEARED DATE': 'CLEARANCE DATE',
+  'NOT-RESPONDING-TO-TRAINING DATE': 'NRT DATE'
+};
+/** 20 SKILL VALIDATION QUEUE — renameHeadersV20_4 plain English. */
+HEADER_ALIASES_BY_TAB_V1['20 SKILL VALIDATION QUEUE'] = {
+  'REASON FOR THE DECISION': 'RATIONALE',
+  'EVIDENCE SO FAR': 'EVIDENCE SUMMARY',
+  'READY SINCE': 'READY DATE',
+  'LAST EVIDENCE': 'LAST EVIDENCE DATE'
+};
+/** 21 SKILL SIGN-OFF LOG. */
+HEADER_ALIASES_BY_TAB_V1['21 SKILL SIGN-OFF LOG'] = {
+  'REASON GIVEN': 'RATIONALE',
+  'STANDARD USED': 'STANDARD / CATALOG VERSION'
+};
+/** 05 SKILLS PROGRESS. */
+HEADER_ALIASES_BY_TAB_V1['05 SKILLS PROGRESS'] = {
+  'WHERE THIS SKILL STANDS': 'READINESS',
+  'SIGNED OFF?': 'SIGN-OFF',
+  'SUCCESSFUL': 'SUCCESSFUL REPS',
+  'INDEPENDENT': 'INDEPENDENT REPS',
+  'SEPARATE DAYS': 'DISTINCT DATES',
+  'DIFFERENT FTOS': 'DISTINCT FTOS',
+  'NOTE': 'DECISION / EVIDENCE NOTE',
+  'LAST LOGGED': 'LAST DATE',
+  'HOW IT WENT': 'LAST OUTCOME',
+  'WHERE IT HAPPENED': 'LAST CONTEXT'
+};
+/** 19 SKILL EVIDENCE LOG. */
+HEADER_ALIASES_BY_TAB_V1['19 SKILL EVIDENCE LOG'] = {
+  'ACCEPTED?': 'VALIDATION RESULT',
+  'WHAT THE FTO WROTE': 'EVIDENCE NOTE',
+  'CALL NUMBER': 'CALL / SCENARIO REF',
+  'PROMPTING NEEDED': 'PROMPTING',
+  'LEVEL THEN': 'LEVEL AT EVENT'
+};
+
+function applyHeaderAliasesV1_(tabName, col) {
+  var plan = HEADER_ALIASES_BY_TAB_V1[tabName];
+  if (!plan || !col) return col;
+  Object.keys(plan).forEach(function (pretty) {
+    if (col[pretty] === undefined) return;
+    var canon = plan[pretty];
+    if (col[canon] === undefined) col[canon] = col[pretty];
+  });
+  return col;
 }
 
 /* ---------------------------------------------------------------- *
@@ -1053,7 +1134,9 @@ function portalPeopleV1_() {
   var m = readTabAllV1_(PORTAL.TAB.MASTER);
   if (m.ok) {
     m.rows.forEach(function (r) {
-      var em = String(pickV1_(m, r, ['TRAINEE EMAIL', 'EMAIL', 'PERSONAL EMAIL'])).trim().toLowerCase();
+      var em = String(pickV1_(m, r, [
+        'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+      ])).trim().toLowerCase();
       var nm = String(pickV1_(m, r, ['TRAINEE', 'TRAINEE NAME', 'NAME'])).trim();
       if (em && nm) { out.trainees[em] = nm; out.names[em] = nm; }
     });
@@ -1189,7 +1272,12 @@ function readTabUncachedV1_(tabName) {
   var headers = sh.getRange(hr, 1, 1, lastCol).getValues()[0]
     .map(function (h) { return String(h == null ? '' : h).trim(); });
   var col = {};
-  headers.forEach(function (h, i) { if (h) col[h.toUpperCase()] = i; });
+  headers.forEach(function (h, i) {
+    if (!h) return;
+    col[h.toUpperCase()] = i;
+    col[h.toUpperCase().replace(/\s+/g, ' ')] = i;
+  });
+  applyHeaderAliasesV1_(tabName, col);
   var lastRow = sh.getLastRow();
   var rows = lastRow > hr ? sh.getRange(hr + 1, 1, lastRow - hr, lastCol).getValues() : [];
   return { ok: true, sheet: sh, headers: headers, col: col, rows: rows, firstDataRow: hr + 1 };
@@ -1263,30 +1351,46 @@ function traineeRowsV1_() {
   var t = readTabAllV1_(PORTAL.TAB.MASTER);
   if (!t.ok) return [];
   return t.rows.map(function (r, i) {
-    var name = String(r[t.col['TRAINEE']] || '').trim();
+    var name = String(pickV1_(t, r, ['TRAINEE', 'TRAINEE NAME', 'NAME']) || '').trim();
     if (!name) return null;
-    var status = String(r[t.col['SET STATUS']] || r[t.col['PROGRAM STATUS']] || '').trim();
+    var status = String(pickV1_(t, r, ['SET STATUS', 'PROGRAM STATUS']) || '').trim();
+    var fto = String(pickV1_(t, r, ['ASSIGNED FTO', 'TRAINING OFFICER', 'FTO']) || '').trim();
+    var email = String(pickV1_(t, r, [
+      'TRAINEE EMAIL', 'EMAIL ADDRESS', 'EMAIL', 'PERSONAL EMAIL', 'WORK EMAIL'
+    ]) || '').trim().toLowerCase();
+    var started = asDateV1_(pickV1_(t, r, ['START DATE', 'STARTED']));
+    var phaseStart = asDateV1_(pickV1_(t, r, ['PHASE START DATE', 'PHASE STARTED']));
+    var level = String(pickV1_(t, r, ['LEVEL', 'CERT LEVEL', 'CERTIFICATION']) || '').trim();
+    var phase = String(pickV1_(t, r, ['CURRENT PHASE', 'PHASE']) || '').trim();
     return {
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
       name: name,
       norm: normNameV1_(name),
-      level: String(r[t.col['LEVEL']] || '').trim(),
-      levelKey: levelKeyV1_(r[t.col['LEVEL']]),
-      phase: String(r[t.col['CURRENT PHASE']] || r[t.col['PHASE']] || '').trim(),
-      fto: String(r[t.col['ASSIGNED FTO']] || r[t.col['TRAINING OFFICER']] || '').trim(),
-      shift: String(r[t.col['SHIFT']] || '').trim(),
-      email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
-      started: asDateV1_(r[t.col['START DATE']]),
-      phaseStart: asDateV1_(r[t.col['PHASE START DATE']]),
+      level: level,
+      levelKey: levelKeyV1_(level),
+      phase: phase,
+      fto: fto,
+      shift: String(pickV1_(t, r, ['SHIFT']) || '').trim(),
+      email: email,
+      started: started,
+      phaseStart: phaseStart,
       status: status,
-      closed: /closed|released|withdraw|archiv/i.test(status),
-      setupComplete: !!(String(r[t.col['LEVEL']] || '').trim() &&
-                        String(r[t.col['CURRENT PHASE']] || '').trim() &&
-                        String(r[t.col['ASSIGNED FTO']] || '').trim() &&
-                        asDateV1_(r[t.col['START DATE']]))
+      closed: /closed|released|cleared|independent|withdraw|archiv/i.test(status),
+      setupComplete: !!(level && phase && fto && started)
     };
   }).filter(Boolean);
+}
+
+/** Catalog threshold helpers — four convictions that make a skill ready. */
+function cellNumV1_(r, t, names, fallback) {
+  for (var i = 0; i < names.length; i++) {
+    if (t.col[names[i]] !== undefined) {
+      var n = Number(r[t.col[names[i]]]);
+      return isNaN(n) ? (fallback || 0) : n;
+    }
+  }
+  return fallback || 0;
 }
 
 function skillsForV1_(norm) {
@@ -1295,16 +1399,228 @@ function skillsForV1_(norm) {
   var out = [];
   t.rows.forEach(function (r) {
     if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var successful = cellNumV1_(r, t, ['SUCCESSFUL REPS', 'SUCCESSFUL'], 0);
+    var independent = cellNumV1_(r, t, ['INDEPENDENT REPS', 'INDEPENDENT'], 0);
+    var dates = cellNumV1_(r, t, ['DISTINCT DATES', 'DATES', 'DISTINCT DATE COUNT'], 0);
+    var ftos = cellNumV1_(r, t, ['DISTINCT FTOS', 'DISTINCT FTO', 'FTOS', 'FTO COUNT'], 0);
+    var needS = cellNumV1_(r, t, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL', 'SUCCESSFUL NEED'], 3) || 3;
+    var needI = cellNumV1_(r, t, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT', 'INDEPENDENT NEED'], 2) || 2;
+    var needD = cellNumV1_(r, t, ['NEED DATES', 'REQUIRED DATES', 'DATES NEED'], 2) || 2;
+    var needF = cellNumV1_(r, t, ['NEED FTOS', 'REQUIRED FTOS', 'FTOS NEED'], 2) || 2;
+    // If threshold columns are absent, keep classic defaults so bars still teach.
+    if (t.col['NEED SUCCESSFUL'] === undefined && t.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = Math.max(needS, 3); needI = Math.max(needI, 2);
+      needD = Math.max(needD, 2); needF = Math.max(needF, 2);
+    }
+    var readiness = String(r[t.col['READINESS']] || '').trim();
+    var signed = String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
+                 readiness === 'SIGNED OFF';
     out.push({
       skill: String(r[t.col['SKILL']] || '').trim(),
-      readiness: String(r[t.col['READINESS']] || '').trim(),
-      signed: String(r[t.col['SIGN-OFF']] || '').trim() === 'SIGNED OFF' ||
-              String(r[t.col['READINESS']] || '').trim() === 'SIGNED OFF',
-      successful: Number(r[t.col['SUCCESSFUL REPS']]) || 0,
-      independent: Number(r[t.col['INDEPENDENT REPS']]) || 0
+      skillId: t.col['SKILL ID'] !== undefined
+        ? String(r[t.col['SKILL ID']] || '').trim() : '',
+      readiness: readiness,
+      signed: signed,
+      successful: successful,
+      independent: independent,
+      distinctDates: dates,
+      distinctFtos: ftos,
+      bars: [
+        { label: 'Successful', have: successful, need: needS },
+        { label: 'Independent', have: independent, need: needI },
+        { label: 'Dates', have: dates, need: needD },
+        { label: 'FTOs', have: ftos, need: needF }
+      ]
     });
   });
   return out;
+}
+
+/** Hours since a Date, or -1. */
+function hoursSinceV1_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return -1;
+  return Math.floor((new Date() - d) / 3600000);
+}
+
+/** Parse "3/2 · 2/2 · …" style evidence summaries into four counts when columns lack them. */
+function parseEvidenceBarsV1_(text) {
+  var s = String(text || '');
+  var m = s.match(/(\d+)\s*\/\s*(\d+)/g);
+  if (!m || m.length < 2) return null;
+  var bars = [];
+  var labels = ['Successful', 'Independent', 'Dates', 'FTOs'];
+  for (var i = 0; i < Math.min(m.length, 4); i++) {
+    var p = m[i].match(/(\d+)\s*\/\s*(\d+)/);
+    bars.push({ label: labels[i], have: Number(p[1]), need: Number(p[2]) });
+  }
+  while (bars.length < 4) bars.push({ label: labels[bars.length], have: 0, need: 1 });
+  return bars;
+}
+
+/** Eval heat for a trainee: count, days since last, optional domain average. */
+function evalHeatForV1_(norm) {
+  var t = readTabAllV1_(PORTAL.TAB.EVAL);
+  var out = { count: 0, days: -1, avg: null, lastEval: 'never' };
+  if (!t.ok) return out;
+  var iWho = headerIndexV1_(t, EVAL_TRAINEE_HEADERS_V1);
+  var iWhen = headerIndexV1_(t, EVAL_DATE_HEADERS_V1);
+  if (iWho < 0 || iWhen < 0) return out;
+  var domains = ['Assessment', 'Treatment', 'Communication', 'Documentation',
+                 'Scene Leadership', 'Professionalism'];
+  var latest = null, sum = 0, nScores = 0;
+  t.rows.forEach(function (r) {
+    if (normNameV1_(r[iWho]) !== norm) return;
+    out.count++;
+    var d = asDateV1_(r[iWhen]);
+    if (d && (!latest || d > latest)) latest = d;
+    domains.forEach(function (h) {
+      if (t.col[h] === undefined) return;
+      var v = Number(r[t.col[h]]);
+      if (v >= 1 && v <= 5) { sum += v; nScores++; }
+    });
+  });
+  if (latest) {
+    out.days = Math.floor((new Date() - latest) / 86400000);
+    out.lastEval = daysAgoTextV1_(latest);
+  }
+  if (nScores) out.avg = Math.round((sum / nScores) * 100) / 100;
+  return out;
+}
+
+/** Day count in current phase (or since start). */
+function dayInPhaseV1_(t) {
+  var d = t.phaseStart || t.started;
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((new Date() - d) / 86400000));
+}
+
+/**
+ * Can they clear for the truck? Phase 4 + every matrix skill signed off +
+ * no open skill-validation items. Gaps are human-readable for the desk.
+ */
+function clearanceAssessmentV1_(trainee) {
+  var out = {
+    phase4: false,
+    canClear: false,
+    signed: 0,
+    total: 0,
+    gaps: []
+  };
+  if (!trainee || trainee.closed) {
+    out.gaps.push('Not an active trainee.');
+    return out;
+  }
+  out.phase4 = phaseIndexV1_(trainee.phase) === 3;
+  if (!out.phase4) {
+    out.gaps.push('Still in ' + (trainee.phase || 'an earlier phase') +
+      ' — Phase 4 comes first.');
+    return out;
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(trainee.norm); } catch (e) { skills = []; }
+  out.total = skills.length;
+  out.signed = skills.filter(function (s) { return s.signed; }).length;
+
+  if (!skills.length) {
+    out.gaps.push('No skills on the matrix yet. Log skills and rebuild before clearing.');
+  } else {
+    var openSkills = skills.filter(function (s) { return !s.signed; });
+    openSkills.slice(0, 6).forEach(function (s) {
+      out.gaps.push(s.skill +
+        (s.readiness ? ' — ' + s.readiness : ' — not signed off'));
+    });
+    if (openSkills.length > 6) {
+      out.gaps.push('…and ' + (openSkills.length - 6) + ' more skills still open');
+    }
+  }
+
+  try {
+    var waiting = openQueueV1_().filter(function (q) {
+      return q.norm === trainee.norm && !q.decision;
+    });
+    if (waiting.length) {
+      out.gaps.push(waiting.length + ' skill sign-off' +
+        (waiting.length === 1 ? '' : 's') + ' still waiting on Division');
+    }
+  } catch (e2) {}
+
+  out.canClear = out.gaps.length === 0;
+  return out;
+}
+
+/** Imperative next-move cards — replace "flags" language for humans. */
+function nextMovesForTraineeV1_(t, heat, waiting, coaching, freshness) {
+  var moves = [];
+  (coaching || []).forEach(function (c) {
+    if (c.acknowledged) return;
+    moves.push({
+      kind: 'coaching', urgency: 'soon', title: 'Acknowledge coaching from ' + (c.from || 'your FTO'),
+      blurb: String(c.text || '').slice(0, 120), action: 'ack', row: c.row
+    });
+  });
+  var reflectAgo = '';
+  (freshness || []).forEach(function (f) {
+    if (/reflect/i.test(f.title || '')) reflectAgo = f.ago;
+  });
+  if (reflectAgo === 'never' || /days ago/.test(reflectAgo)) {
+    var n = parseInt(reflectAgo, 10);
+    if (reflectAgo === 'never' || (n && n >= 7)) {
+      moves.push({
+        kind: 'reflect', urgency: 'soon',
+        title: 'File your reflection',
+        blurb: reflectAgo === 'never' ? 'None on file yet. Two minutes.' :
+               'Last one was ' + reflectAgo + '.',
+        action: 'reflect'
+      });
+    }
+  }
+  if (heat.days < 0) {
+    moves.push({
+      kind: 'eval', urgency: 'due',
+      title: 'No evaluation on file yet',
+      blurb: 'Your FTO files one after a shift together.',
+      action: 'wait'
+    });
+  } else if (heat.days > 14) {
+    moves.push({
+      kind: 'eval', urgency: 'soon',
+      title: heat.days + ' days since an evaluation',
+      blurb: 'Ask your FTO to schedule one.',
+      action: 'wait'
+    });
+  }
+  (waiting || []).forEach(function (q) {
+    moves.push({
+      kind: 'queue', urgency: 'ok',
+      title: q.skill + ' is with Training Division',
+      blurb: 'Ready ' + (q.since || '') + '. Nothing for you to do.',
+      action: 'wait'
+    });
+  });
+  return moves.slice(0, 6);
+}
+
+function nextMoveFromFindingV1_(why, name) {
+  var w = String(why || '');
+  if (!w) return null;
+  var title = w, blurb = 'Open their chart and decide the next honest move.', urgency = 'soon';
+  if (/never evaluated/i.test(w)) {
+    title = 'Get an evaluation on the board'; blurb = name + ' has never been evaluated.'; urgency = 'due';
+  } else if (/days since/i.test(w)) {
+    title = 'Schedule an evaluation'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  } else if (/no training officer|no one on the roster|has left|sentence, not a name/i.test(w)) {
+    title = 'Fix the training officer assignment'; blurb = capFindingV1_(w) + '.'; urgency = 'due';
+  } else if (/not responding|remediation|concern/i.test(w)) {
+    title = 'Address status: ' + w; blurb = 'This stays visible until the status changes.'; urgency = 'due';
+  } else if (/missing|incomplete/i.test(w)) {
+    title = 'Finish the trainee record'; blurb = capFindingV1_(w) + '.'; urgency = 'soon';
+  }
+  return { kind: 'finding', urgency: urgency, title: title, blurb: blurb, finding: w };
+}
+function capFindingV1_(s) {
+  s = String(s || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function openQueueV1_() {
@@ -1313,6 +1629,11 @@ function openQueueV1_() {
   var out = [];
   t.rows.forEach(function (r, i) {
     if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var since = asDateV1_(r[t.col['READY DATE']]);
+    var evidence = String(r[t.col['EVIDENCE SUMMARY']] || '').trim();
+    var bars = parseEvidenceBarsV1_(evidence);
+    var recommend = String(r[t.col['FTO RECOMMENDATION']] || r[t.col['RECOMMENDATION']] ||
+                           r[t.col['FTO NOTES']] || '').trim();
     out.push({
       row: realRowV1_(t, i),
       from: rowSourceV1_(t, i),
@@ -1320,13 +1641,12 @@ function openQueueV1_() {
       norm: normNameV1_(r[t.col['TRAINEE']]),
       skill: String(r[t.col['SKILL']] || '').trim(),
       skillId: String(r[t.col['SKILL ID']] || '').trim(),
-      evidence: String(r[t.col['EVIDENCE SUMMARY']] || '').trim(),
-      since: asDateV1_(r[t.col['READY DATE']]),
+      evidence: evidence,
+      bars: bars,
+      recommend: recommend,
+      since: since,
+      hours: hoursSinceV1_(since),
       requestId: String(r[t.col['REQUEST ID']] || '').trim(),
-      // A row can be OPEN and already carry a decision: that is one the portal
-      // (or somebody in the sheet) has staged, waiting for the tracker to
-      // record it. It is not still waiting on the Chief, and counting it as
-      // though it were is how a queue never appears to go down.
       decision: String(r[t.col['DECISION']] || '').trim(),
       decidedBy: String(r[t.col['DECIDED BY']] || '').trim()
     });
@@ -1403,45 +1723,61 @@ function traineePayloadV1_(viewer) {
   var signed = skills.filter(function (s) { return s.signed; }).length;
   var waiting = openQueueV1_().filter(function (q) { return q.norm === me.norm; });
   var coaching = coachingForV1_(me.norm);
+  var heat = evalHeatForV1_(me.norm);
+  var freshness = safeFormsV1_(function () { return freshnessForV1_(me.name); });
+  var day = dayInPhaseV1_(me);
+  var unacked = coaching.filter(function (c) { return !c.acknowledged; });
   return {
+    product: PORTAL.PRODUCT,
     name: me.name, level: me.level, levelKey: me.levelKey, phase: me.phase,
     fto: me.fto, phaseStart: me.phaseStart ? me.phaseStart.toDateString() : '',
-    lastEval: daysAgoTextV1_(lastEvalForV1_(me.norm)),
+    dayInPhase: day,
+    lastEval: heat.lastEval,
+    evalCount: heat.count,
+    evalAvg: heat.avg,
     signed: signed, applicable: skills.length,
     percent: skills.length ? Math.round(signed / skills.length * 100) : 0,
     waiting: waiting.map(function (q) { return { skill: q.skill, since: daysAgoTextV1_(q.since) }; }),
-    coaching: coaching.filter(function (c) { return !c.acknowledged; })
-      .map(function (c) { return { row: c.row, from: c.from, text: c.text,
+    coaching: unacked.map(function (c) { return { row: c.row, from: c.from, text: c.text,
                                    book: c.book || '',
                                    when: c.when ? c.when.toDateString() : '' }; }),
+    nextMoves: nextMovesForTraineeV1_(me, heat, waiting, coaching, freshness),
     skills: skills.slice(0, 40),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.TRAINEE, { trainee: me.name });
     }),
-    // How current each kind of submission is. The record itself is fetched on
-    // demand, so a person with two years of history does not pay for it on
-    // every page load.
-    freshness: safeFormsV1_(function () { return freshnessForV1_(me.name); })
+    freshness: freshness
   };
 }
 
 function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
+  // Forms + freshness open FormApp / every source tab — load on openTrainee via personDetailV1.
   return {
+    product: PORTAL.PRODUCT,
     name: viewer.name,
-    // Each trainee carries the forms for THAT trainee, with the FTO's name,
-    // the trainee's name, and the skills log for their level already chosen.
-    // The FTO picks a person, not a form and not a level.
     trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)),
-               setupComplete: t.setupComplete,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
-                   { fto: viewer.name, trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+      var heat = evalHeatForV1_(t.norm);
+      var waiting = openQueueV1_().filter(function (q) { return q.norm === t.norm && !q.decision; });
+      var urgency = '';
+      if (!t.setupComplete) urgency = 'soon';
+      else if (heat.days < 0 || heat.days > 7) urgency = 'due';
+      else if (heat.days > 4) urgency = 'soon';
+      return {
+        name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+        dayInPhase: dayInPhaseV1_(t),
+        lastEval: heat.lastEval,
+        evalCount: heat.count,
+        evalAvg: heat.avg,
+        daysSinceEval: heat.days,
+        waitingCount: waiting.length,
+        urgency: urgency,
+        setupComplete: t.setupComplete,
+        forms: null,
+        freshness: null,
+        detailLoaded: false
+      };
     }),
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.FTO, { fto: viewer.name });
@@ -1486,9 +1822,15 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var open = openQueueV1_();
-  var queue = open.filter(function (q) { return !q.decision; });
-  var staged = open.filter(function (q) { return !!q.decision; });
+  var queueAll = openQueueV1_();
+  var open = queueAll.filter(function (q) { return !q.decision; });
+  // Oldest OPEN first — the desk works the backlog, not sheet order.
+  open.sort(function (a, b) {
+    var ha = (a.hours < 0 ? 0 : a.hours);
+    var hb = (b.hours < 0 ? 0 : b.hours);
+    return hb - ha;
+  });
+  var staged = queueAll.filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -1506,25 +1848,65 @@ function divisionPayloadV1_() {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
   });
 
+  // Home load stays sheet-only. FormApp, form-response scans, freshness, and
+  // per-trainee skills used to run here for every active person — that is why
+  // Division felt frozen on open. Inbox + person sheet load those on demand.
+  var releaseReady = [];
+  var people = active.map(function (t) {
+    var last = lastEvalForV1_(t.norm);
+    var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
+    var why = '';
+    if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
+    else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
+    else if (days < 0) why = 'never evaluated';
+    else if (days > 14) why = days + ' days since an evaluation';
+    else if (!t.setupComplete) why = 'record incomplete';
+    var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
+    var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
+    var next = nextPhaseV1_(t.phase);
+    var phase4 = phaseIndexV1_(t.phase) === 3;
+    // Clearance only when Phase 4 — skips skills matrix for everyone earlier.
+    var clear = phase4 ? clearanceAssessmentV1_(t)
+                       : { phase4: false, canClear: false, signed: 0, total: 0, gaps: [] };
+    if (clear.canClear) {
+      releaseReady.push({ name: t.name, level: t.level, signed: clear.signed, total: clear.total });
+    }
+    return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+             fto: t.fto || '', shift: t.shift || '',
+             dayInPhase: dayInPhaseV1_(t),
+             nextPhase: next,
+             canAdvance: !!next,
+             releaseReady: !!clear.canClear,
+             phase4: phase4,
+             clearance: clear,
+             days: days, status: t.status || '', needs: why, ack: ack,
+             nextMove: move,
+             // Filled by personDetailV1 when the record opens.
+             skills: null, forms: null, freshness: null, detailLoaded: false };
+  });
+
   return {
     activeCount: active.length,
     closedCount: all.length - active.length,
-    queue: queue.slice(0, 25).map(function (q) {
-      return { trainee: q.trainee, skill: q.skill, evidence: q.evidence,
-               since: daysAgoTextV1_(q.since), requestId: q.requestId,
-               row: q.row, from: q.from };
+    queue: open.slice(0, 25).map(function (q) {
+      var hours = q.hours;
+      var clock = 72;
+      if (hours < 0) hours = 0;
+      var left = Math.max(0, clock - hours);
+      return {
+        trainee: q.trainee, skill: q.skill, evidence: q.evidence,
+        bars: q.bars, recommend: q.recommend || '',
+        since: daysAgoTextV1_(q.since), hours: hours, hoursLeft: left,
+        clockPct: Math.max(0, Math.min(100, Math.round((left / clock) * 100))),
+        requestId: q.requestId, row: q.row, from: q.from
+      };
     }),
-    queueCount: queue.length,
-    // Decisions already made here and waiting on the tracker to make them
-    // permanent. The portal deliberately does not close these rows: the
-    // tracker's own writer is the only thing allowed to put a sign-off in
-    // 21 SKILL SIGN-OFF LOG, and it refuses a row that is not OPEN.
+    queueCount: open.length,
     staged: staged.map(function (q) {
       return { trainee: q.trainee, skill: q.skill, decision: q.decision,
                by: q.decidedBy, since: daysAgoTextV1_(q.since) };
     }),
-    // A column this screen leans on that is not there. Doctrine: report it,
-    // never read the one beside it and hope.
+    canAssignFto: mayWriteV1_(),
     warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
@@ -1535,46 +1917,113 @@ function divisionPayloadV1_() {
       if (f) missing.push(f);
       return { name: t.name, missing: missing.join(', ') };
     }),
-    // Whatever the tracker says, nobody active is invisible. This is the list
-    // of people no officer's screen will show, with the reason for each.
     stranded: stranded,
     duplicates: dupes,
-    releaseReady: active.filter(function (t) { return /phase\s*4/i.test(t.phase); })
-      .map(function (t) { return { name: t.name, level: t.level }; }),
-    // Every active trainee, each carrying enough for the screen to decide
-    // whether it needs to say anything about them at all. A list of ten
-    // identical rows is not information; it is my internals on somebody's
-    // phone. The screen shows the exceptions and counts the rest.
-    people: active.map(function (t) {
-      var last = lastEvalForV1_(t.norm);
-      var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
-      var why = '';
-      if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
-      else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
-      else if (days < 0) why = 'never evaluated';
-      else if (days > 14) why = days + ' days since an evaluation';
-      else if (!t.setupComplete) why = 'record incomplete';
-      // Seen, by a named person, in their own words, for a stated time. The
-      // finding is not cleared and never can be - it moves out of the alarm
-      // list until the hold runs out, and comes straight back after.
-      var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               fto: t.fto || '', shift: t.shift || '',
-               days: days, status: t.status || '', needs: why, ack: ack,
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
+    releaseReady: releaseReady,
+    people: people,
+    // Inbox extras — filled by divisionInboxV1 after first paint.
+    forms: [],
+    retiredForms: [],
+    duplicateSubs: [],
+    formWaiting: { waiting: 0, skillsWaiting: 0, total: 0, list: [], pending: true },
+    inboxLoaded: false,
+    officers: (function () {
+      try {
+        return rosterActivePeopleV1_().map(function (p) {
+          return { name: p.name, email: p.email || '' };
+        }).sort(function (a, b) {
+          return String(a.name).localeCompare(String(b.name));
+        });
+      } catch (e) { return []; }
+    })(),
+    canAddTrainee: mayWriteV1_(),
+    canAddFto: mayWriteV1_(),
+    closedPeople: all.filter(function (t) { return t.closed; }).map(function (t) {
+      return { name: t.name, level: t.level, levelKey: t.levelKey,
+               status: t.status || 'Closed', fto: t.fto || '', phase: t.phase || '' };
     }),
+    formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
+    mode: modeV1_(),
+    product: PORTAL.PRODUCT,
+    portalUrl: portalPublicUrlV1_()
+  };
+}
+
+/**
+ * Heavy Inbox pieces — form waiting, Settle duplicates, file-something links.
+ * Called after Division home paints so the desk is usable first.
+ */
+function divisionInboxV1() {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok || viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error(viewer.why || 'Only the Training Division may open the inbox.');
+  }
+  var settleWarn = '';
+  var duplicateSubs = [];
+  try {
+    duplicateSubs = duplicateSubmissionsV1_() || [];
+  } catch (eDup) {
+    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
+      '. The rest of the desk is still live.';
+    duplicateSubs = [];
+  }
+  var formWaiting = { waiting: 0, skillsWaiting: 0, total: 0, list: [] };
+  try {
+    var w = waitingFormResponsesV1_();
+    formWaiting = {
+      waiting: w.waiting,
+      skillsWaiting: w.skillsWaiting,
+      total: w.total,
+      list: (w.waitingList || []).slice(0, 25)
+    };
+  } catch (eW) {}
+  return {
+    inboxLoaded: true,
+    settleWarn: settleWarn,
+    duplicateSubs: duplicateSubs,
+    formWaiting: formWaiting,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
-    }),
-    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
-    // Where two submissions of the same kind landed on the same day. Both are
-    // kept; this is the list of calls to make, not a list of rows to remove.
-    duplicateSubs: safeFormsV1_(function () { return duplicateSubmissionsV1_(); }),
-    formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
-    mode: modeV1_()
+    }) || [],
+    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }) || []
+  };
+}
+
+/**
+ * Skills / forms / freshness for one trainee — loaded when Division opens
+ * their record, not when the desk first paints.
+ */
+function personDetailV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
+  if (viewer.role !== PORTAL.ROLE.DIVISION && viewer.role !== PORTAL.ROLE.FTO) {
+    throw new Error('Only Division or an FTO may open that detail.');
+  }
+  var who = String(traineeName || '').trim();
+  var want = normNameV1_(who);
+  var rec = null;
+  traineesV1_().forEach(function (t) { if (t.norm === want) rec = t; });
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (viewer.role === PORTAL.ROLE.FTO &&
+      normNameV1_(rec.fto) !== normNameV1_(viewer.name)) {
+    throw new Error('That trainee is not assigned to you.');
+  }
+  var clear = clearanceAssessmentV1_(rec);
+  return {
+    name: rec.name,
+    skills: safeFormsV1_(function () { return skillsForV1_(rec.norm); }) || [],
+    forms: safeFormsV1_(function () {
+      if (viewer.role === PORTAL.ROLE.FTO) {
+        return traineeFormsForV1_(PORTAL.ROLE.FTO, rec,
+          { fto: viewer.name, trainee: rec.name });
+      }
+      return traineeFormsForV1_(PORTAL.ROLE.DIVISION, rec, { trainee: rec.name });
+    }) || [],
+    freshness: safeFormsV1_(function () { return freshnessForV1_(rec.name); }) || [],
+    clearance: clear,
+    releaseReady: !!clear.canClear,
+    phase4: !!clear.phase4,
+    detailLoaded: true
   };
 }
 
@@ -1582,13 +2031,37 @@ function supervisorPayloadV1_(viewer) {
   var shift = normNameV1_(viewer.shift);
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && (!shift || normNameV1_(t.shift) === shift); });
+  var hot = 0;
+  var trainees = mine.map(function (t) {
+    var heat = evalHeatForV1_(t.norm);
+    var why = '';
+    var urgency = '';
+    if (heat.days < 0) { why = 'never evaluated'; urgency = 'due'; hot++; }
+    else if (heat.days > 14) { why = heat.days + 'd silent'; urgency = 'due'; hot++; }
+    else if (heat.days > 7) { why = heat.days + 'd since eval'; urgency = 'soon'; hot++; }
+    var ftoWhy = ftoProblemV1_(t);
+    if (ftoWhy) { why = ftoWhy; urgency = 'due'; hot++; }
+    return {
+      name: t.name, level: t.level, levelKey: t.levelKey,
+      phase: t.phase, fto: t.fto,
+      lastEval: heat.lastEval,
+      daysSinceEval: heat.days,
+      evalCount: heat.count,
+      why: why,
+      urgency: urgency,
+      nextMove: why ? nextMoveFromFindingV1_(why, t.name) : null
+    };
+  });
+  // Hot first — the strip should put tonight's problems at the start.
+  trainees.sort(function (a, b) {
+    var rank = { due: 0, soon: 1, '': 2 };
+    return (rank[a.urgency] || 2) - (rank[b.urgency] || 2);
+  });
   return {
+    product: PORTAL.PRODUCT,
     shift: viewer.shift || 'All shifts',
-    trainees: mine.map(function (t) {
-      return { name: t.name, level: t.level, levelKey: t.levelKey,
-               phase: t.phase, fto: t.fto,
-               lastEval: daysAgoTextV1_(lastEvalForV1_(t.norm)) };
-    }),
+    hotCount: hot,
+    trainees: trainees,
     forms: safeFormsV1_(function () {
       return generalFormsForV1_(PORTAL.ROLE.SUPERVISOR, { fto: viewer.name });
     })
@@ -1696,35 +2169,28 @@ function safeBoolV1_(fn) {
 /**
  * The web app entry point.
  *
- * doGet resolves the viewer on the server, builds only that role's payload,
- * and injects it into the page. The browser receives no data belonging to
- * anyone else, so there is nothing for a client-side mistake to expose.
+ * doGet serves the HTML shell ONLY. It does not open the spreadsheet, forms,
+ * or Drive. Touching those during doGet is what produces Google's grey
+ * createOAuthDialog iframe that never paints Field Training.
+ *
+ * Identity + payload load after the page is up, via refreshV1() / google.script.run.
  */
 
 function doGet(e) {
-  var viewer, payload, err = '';
-  try {
-    viewer = resolveViewerV1_(whoIsVisitingV1_());
-    payload = viewer.ok ? payloadForV1_(viewer) : {};
-  } catch (ex) {
-    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: String(ex.message || ex) };
-    payload = {};
-    err = String(ex.message || ex);
-  }
-
   var boot = {
-    // The build, not just the version. A deployment serves the code as it was
-    // WHEN YOU DEPLOYED IT, so a freshly pasted build reaches nobody until you
-    // deploy again - and until now nothing on the page said which one it was.
-    // "Is the fix live?" is a question the page should answer by itself.
     version: PORTAL.VERSION +
       (typeof PORTAL_BUILD === 'string' ? '  build ' + PORTAL_BUILD : ''),
     mode: safeModeV1_(),
-    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-              ok: viewer.ok, why: viewer.why },
-    data: payload,
-    error: err
+    deferred: true,
+    viewer: { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false, why: '' },
+    data: {},
+    error: ''
   };
+  // Naming the visitor does not open Spreadsheets. Safe during doGet.
+  try {
+    var email = whoIsVisitingV1_();
+    if (email) boot.viewer.email = email;
+  } catch (ex) {}
 
   var t = portalTemplateV1_();
   t.boot = JSON.stringify(boot);
@@ -1732,11 +2198,6 @@ function doGet(e) {
   var page = t.evaluate();
   page.setTitle(PORTAL.TITLE);
   page.addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-
-  // XFrameOptionsMode has exactly two members, DEFAULT and ALLOWALL. DEFAULT
-  // is the protective one: Google sends X-Frame-Options SAMEORIGIN, so no
-  // other site can frame this page. There is no DENY. Asking for one yields
-  // undefined, and Apps Script rejects it as a null mode.
   page.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
   return page;
 }
@@ -1764,6 +2225,50 @@ function payloadForV1_(viewer) {
     case PORTAL.ROLE.MEDICAL:    return medicalPayloadV1_();
     default:                     return {};
   }
+}
+
+/**
+ * Run ONCE from the Apps Script editor (Run ▶ authorizePortalNow).
+ * Forces Google's permission screens for Sheets / Drive / Forms so the
+ * web app is not stuck on a grey OAuth iframe.
+ */
+function authorizePortalNow() {
+  var L = ['Field Training — authorizePortalNow', ''];
+  try {
+    var email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    L.push('Signed in as: ' + (email || '(unnamed)'));
+  } catch (e) { L.push('Session: ' + e); }
+
+  try {
+    var id = targetIdV1_();
+    var name = SpreadsheetApp.openById(id).getName();
+    L.push('Spreadsheet OK: ' + name);
+  } catch (e) {
+    L.push('Spreadsheet: ' + e + ' — run setUpStaging() or pointAtProductionReadOnly() first if needed.');
+  }
+
+  try {
+    DriveApp.getRootFolder().getName();
+    L.push('Drive OK');
+  } catch (e) { L.push('Drive: ' + e); }
+
+  try {
+    var probed = false;
+    if (typeof PORTAL_FORMS !== 'undefined' && PORTAL_FORMS && PORTAL_FORMS.length && PORTAL_FORMS[0].id) {
+      FormApp.openById(PORTAL_FORMS[0].id).getTitle();
+      probed = true;
+    }
+    L.push(probed ? 'Forms OK' : 'Forms: no id to probe (OK — Sheets/Drive still authorized)');
+  } catch (e) { L.push('Forms: ' + e); }
+
+  L.push('');
+  L.push('Next: Deploy → Manage deployments → Edit → Version: New version → Deploy.');
+  L.push('Settings must be: Execute as ME, Who has access: ANYONE WITH A GOOGLE ACCOUNT.');
+  L.push('Then open the /exec link again (Incognito if you use multiple Google accounts).');
+  var msg = L.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg.slice(0, 1400)); } catch (e2) {}
+  return msg;
 }
 
 /* ---------------- actions ---------------- */
@@ -1860,83 +2365,8 @@ function headerNameV1_(t, headers) {
   return '';
 }
 
-/** Division STAGES a sign-off decision. A typed reason is required — there is
- *  no default wording, because a pre-filled reason is not a reason.
- *
- *  It stages. It does not record, and that is the whole point.
- *
- *  The tracker's recordDecisionForRowV20_1_ is the single writer to
- *  21 SKILL SIGN-OFF LOG, and it refuses any queue row whose RECORD STATUS is
- *  not OPEN. This function used to set RECORD STATUS to 'RECORDED' itself.
- *  The result was the worst of both: the approval never reached the sign-off
- *  log, so the skill was never actually signed off anywhere permanent — and
- *  the row was now shut against the only function that could have put it
- *  there. It also skipped that function's authority check, its evidence gate
- *  and its duplicate guard, every one of which exists because somebody
- *  decided a career decision needed them.
- *
- *  So this writes the four fields a decision is made of and leaves RECORD
- *  STATUS alone. The tracker records it — tick RECORD on the row, or run
- *  "Record pending decisions" from its menu. One writer, every gate, and the
- *  result is exactly as defensible as a decision typed into the sheet by
- *  hand, because that is now literally what it is. */
-function approveSignoffV1(row, reason, requestId) {
-  requireWritableV1_('stage a sign-off decision');
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  if (viewer.role !== PORTAL.ROLE.DIVISION) throw new Error('Only the Training Division may approve a sign-off.');
-  var why = String(reason || '').trim();
-  if (why.length < 8) throw new Error('Type why you are approving this. It goes on the permanent record in your name.');
-
-  var t = readTabV1_(PORTAL.TAB.QUEUE);
-  if (!t.ok) throw new Error('No queue.');
-  var r = requireLocalRowV1_(t, row, 'approve that sign-off');
-
-  // Every column checked before any of them is written. A throw halfway
-  // through leaves a decision with no reason attached to it, which is worse
-  // than no decision at all.
-  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
-  var missing = [];
-  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
-  if (missing.length) {
-    throw new Error('The queue is missing ' + missing.join(', ') + '. Nothing was ' +
-      'written. Fix the header row in the tracker first.');
-  }
-
-  var live = t.rows[r - t.firstDataRow] || [];
-
-  // The screen was built some time ago, and the queue re-sorts itself every
-  // time the tracker rebuilds the matrix. Approving row 12 because row 12 was
-  // the one on screen is how you sign off the wrong person's skill.
-  var want = String(requestId == null ? '' : requestId).trim();
-  var have = t.col['REQUEST ID'] === undefined ? ''
-           : String(live[t.col['REQUEST ID']] || '').trim();
-  if (want && have && want !== have) {
-    throw new Error('That is not the row you were looking at any more — the queue moved ' +
-      'underneath you. Nothing was written. Reload and try again.');
-  }
-
-  var status = String(live[t.col['RECORD STATUS']] || '').trim();
-  if (status !== 'OPEN') {
-    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
-  }
-  var already = String(live[t.col['DECISION']] || '').trim();
-  if (already) {
-    throw new Error('A decision is already staged on that row (' + already + '). Nothing ' +
-      'was written. Record it in the tracker, or clear it there, first.');
-  }
-
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue('Approve sign-off');
-  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
-  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
-  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
-  // RECORD STATUS is deliberately not touched. See the note above.
-  forgetTabsV1_();
-  auditV1_('SIGN-OFF STAGED', viewer.email, 'row ' + r + (have ? ' | ' + have : '') +
-    ' | ' + why.slice(0, 120));
-  return 'Staged. The tracker records it.';
-}
+/* Sign-off approve / return live in 91_Record.gs — they write the permanent
+ *  sign-off log and close the queue row. Staging-only is gone on purpose. */
 
 /** The Training Division records that it has seen a finding.
  *
@@ -2018,19 +2448,84 @@ function recordV1(traineeName) {
   return rec;
 }
 
-/** Refreshes the current role's payload without a page reload. */
+/** Refreshes the current role's payload without a page reload.
+ *  Also the first real load after doGet's deferred shell. */
 function refreshV1() {
-  var viewer = resolveViewerV1_(whoIsVisitingV1_());
-  return { viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
-                     ok: viewer.ok, why: viewer.why },
-           data: viewer.ok ? payloadForV1_(viewer) : {},
-           mode: safeModeV1_() };
+  var viewer, payload = {}, err = '';
+  try {
+    viewer = resolveViewerV1_(whoIsVisitingV1_());
+    payload = viewer.ok ? payloadForV1_(viewer) : {};
+  } catch (ex) {
+    viewer = { email: '', role: PORTAL.ROLE.NONE, name: '', ok: false,
+               why: String(ex.message || ex) };
+    err = String(ex.message || ex);
+  }
+  return {
+    viewer: { email: viewer.email, role: viewer.role, name: viewer.name,
+              ok: viewer.ok, why: viewer.why },
+    data: payload,
+    mode: safeModeV1_(),
+    portalUrl: portalPublicUrlV1_(),
+    error: err
+  };
 }
 
 /** Blocks a leading = + - @ so submitted text cannot become a formula. */
 function clean_(v) {
   var s = String(v == null ? '' : v);
   return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
+/**
+ * Training Division brings a new trainee into Field Training from the web app.
+ *
+ * Writes one row to 01 TRAINEE MASTER and refreshes Trainee LIST choices on
+ * the registered Google Forms so the forms already in service offer them.
+ */
+function addTraineeV1(payload) {
+  requireWritableV1_('add a trainee');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add a trainee from Field Training.');
+  }
+  var req = parseAddTraineeRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) throw new Error('Type their work email — that is how they sign in.');
+  if (!req.level) {
+    throw new Error('Pick a level: EMT, Advanced EMT, or Paramedic.');
+  }
+
+  var plan = addTraineePlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the trainee master.');
+  }
+  if (plan.closed.length) {
+    throw new Error(plan.closed[0].name +
+      ' is closed/released on the master. Re-opening them is a person decision in the tracker.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (plan.badFto.length) {
+    throw new Error((plan.badFto[0].fto || 'That officer') +
+      ' is not on the active FTO roster. Add them with addFto first, or leave FTO blank.');
+  }
+  if (plan.incomplete.length || !plan.add.length) {
+    throw new Error('Name, email, and level are required.');
+  }
+
+  var note = applyAddTraineePlanV1_(plan);
+  var msg = typeof note === 'string' ? note : String(note || '');
+  auditV1_('TRAINEE ADDED', viewer.email, req.name + ' | ' + req.level + ' | ' + req.email);
+  // Short message for the phone; full note is in Executions / Logger.
+  return {
+    ok: true,
+    name: req.name,
+    level: req.level,
+    message: req.name + ' is in Field Training and on the existing forms.'
+  };
 }
 
 /** The portal's own log. It is a WRITE, so it obeys the same rule everything
@@ -2058,8 +2553,14 @@ function auditV1_(what, who, detail) {
  * The nine Google Forms already in service stay exactly as they are. They are
  * the WRITE surface of this system: a submission goes where it has always
  * gone, through the triggers that already exist. This portal is the READ
- * surface and the router. It never edits a form, never changes a trigger,
- * and never submits on anyone's behalf.
+ * surface and the router. It never changes a trigger, never rewrites form
+ * structure, and never submits on anyone's behalf.
+ *
+ * One exception, on purpose: when a trainee or FTO is added here,
+ * syncRegisteredFormChoicesV1_ refreshes Trainee / FTO LIST choices on those
+ * same registered forms so the dropdowns already in service offer the new
+ * name. That is how Field Training links a new person to the forms you already have
+ * — without creating a tenth form.
  *
  * What this file adds is the part that was missing: one authoritative list of
  * which form is which, who it belongs to, and what it is for, so that a person
@@ -2369,6 +2870,105 @@ function retiredFormsV1_() {
     .map(function (f) { return { key: f.key, title: f.title, why: f.retiredWhy || '' }; });
 }
 
+/**
+ * Keep the existing forms' Trainee / FTO dropdowns in step with the master
+ * and roster. Called after addTrainee / addFto / undo.
+ *
+ * Only touches LIST items whose titles match the names the tracker already
+ * syncs. Never adds questions, never changes destinations, never submits.
+ */
+function syncRegisteredFormChoicesV1_() {
+  var out = { ok: false, forms: 0, notes: [], why: '' };
+  var active;
+  try {
+    active = traineesV1_().filter(function (t) { return !t.closed; });
+  } catch (e) {
+    out.why = String(e.message || e);
+    return out;
+  }
+  var allNames = active.map(function (t) { return t.name; }).sort();
+  var byLevel = { emt: [], aemt: [], pmd: [] };
+  active.forEach(function (t) {
+    var k = t.levelKey || levelKeyV1_(t.level);
+    if (byLevel[k]) byLevel[k].push(t.name);
+  });
+  Object.keys(byLevel).forEach(function (k) { byLevel[k].sort(); });
+
+  var ftos = [];
+  try {
+    rosterActivePeopleV1_().forEach(function (p) {
+      if (p.name && ftos.indexOf(p.name) < 0) ftos.push(p.name);
+    });
+  } catch (e2) {}
+  ftos.sort();
+
+  if (typeof FormApp === 'undefined' || !FormApp.openById) {
+    out.why = 'FormApp is not available in this runtime';
+    return out;
+  }
+
+  var touched = 0;
+  PORTAL_FORMS.forEach(function (entry) {
+    if (entry.retired) return;
+    var form;
+    try { form = FormApp.openById(entry.id); }
+    catch (eOpen) {
+      out.notes.push((entry.title || entry.key) + ' unreadable');
+      return;
+    }
+    var traineeList = entry.level
+      ? (byLevel[entry.level] || []).slice()
+      : allNames.slice();
+    var items;
+    try {
+      items = FormApp.ItemType && FormApp.ItemType.LIST
+        ? form.getItems(FormApp.ItemType.LIST)
+        : form.getItems().filter(function (it) {
+            try { return it.getType && String(it.getType()) === 'LIST'; }
+            catch (eT) { return false; }
+          });
+    } catch (eItems) {
+      try { items = form.getItems(); } catch (e2) { items = []; }
+    }
+    var changed = false;
+    (items || []).forEach(function (it) {
+      var title = '';
+      try { title = String(it.getTitle() || '').trim(); } catch (eTitle) { return; }
+      var li;
+      try { li = it.asListItem(); } catch (eLi) { return; }
+      if (!li || !li.setChoiceValues) return;
+
+      if (title === 'Trainee' || title === 'Trainee involved') {
+        var list = traineeList.length ? traineeList
+                 : (entry.level ? ['none at this level'] : ['none']);
+        try { li.setChoiceValues(list); changed = true; } catch (eSet) {}
+      } else if (title === 'Trainee you are covering') {
+        try {
+          li.setChoiceValues(allNames.length ? allNames : ['none']);
+          changed = true;
+        } catch (eSet2) {}
+      } else if (title === 'FTO name') {
+        try {
+          li.setChoiceValues(ftos.length ? ftos : ['none in scope']);
+          changed = true;
+        } catch (eSet3) {}
+      }
+    });
+    if (changed) {
+      touched++;
+      out.notes.push((entry.title || entry.key) + ' refreshed');
+    }
+  });
+
+  out.ok = touched > 0 || allNames.length === 0;
+  out.forms = touched;
+  if (!touched && allNames.length) {
+    out.why = 'no LIST items matched on the registered forms';
+    out.ok = false;
+  }
+  return out;
+}
+
 /* ---------------- one-click operator functions ---------------- */
 
 /** Turn the real form links on. Deliberate, because in staging this points
@@ -2591,7 +3191,12 @@ function goLive() {
       'Nothing was changed.');
   }
 
-  var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
+  // Coaching notes need a home before FTOs can file them from Tonight.
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.COACHING + ' is not in ' +
+      'this spreadsheet and could not be created, so coaching filed from Field Training ' +
+      'would have nowhere to live. Nothing was changed.');
+  }
 
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
   PEOPLE_CACHE_V1 = null;
@@ -2610,13 +3215,11 @@ function goLive() {
     canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
     '',
     'WHAT JUST BECAME POSSIBLE',
-    '  A trainee can file their own reflection.',
-    '  The Training Division can approve a sign-off, with a typed reason.',
-    (canCoach
-      ? '  A trainee can acknowledge their own coaching note.'
-      : '  Acknowledging a coaching note stays unavailable: there is no tab\n' +
-        '  called ' + PORTAL.TAB.COACHING + ' for those notes to live in. Nothing\n' +
-        '  else depends on it.'),
+    '  Training Division can record a sign-off (permanent log + queue closed).',
+    '  Training Division can advance phase, clear for the truck, close training, and enroll a trainee.',
+    '  Training Division can assign who trains whom.',
+    '  An FTO can file a coaching note; the trainee can acknowledge it.',
+    '  Self-reflection still uses the Self-reflection form in LIVE (not the practice screen).',
     '',
     (auditState === 'created'
       ? 'A tab called ' + PORTAL.TAB.AUDIT + ' has been added to record who does\n' +
@@ -2625,10 +3228,14 @@ function goLive() {
       : 'Each of those is written to ' + PORTAL.TAB.AUDIT + ' under the name of\n' +
         'whoever did it. PRODUCTION mode was discarding those entries.'),
     '',
-    'WHAT DID NOT',
-    '  Importing, merging and switching role. Those only ever run against the',
+    'WHAT THIS DID NOT DO',
+    '  Monday status cards, weekly roll-up, and supervisor digests.',
+    '  Those are sent by the TRACKER Apps Script project, not this portal.',
+    '  In the tracker project: whichMode(), then goLive(), then installTriggers().',
+    '  Portal goLive only opens this desk for writing.',
+    '',
+    '  Importing, merging and switching role still only run against the',
     '  practice spreadsheet, whatever mode this is in.',
-    '  Nothing bulk. Nothing structural. No row in another spreadsheet.',
     '',
     'NOW DEPLOY',
     '  Deploy > Manage deployments > pencil > Version: New version > Deploy',
@@ -2895,7 +3502,119 @@ function showSettings() {
   var live = false;
   try { live = formLinksLiveV1_(); } catch (e) {}
   lines.push('Form links        : ' + (live ? 'LIVE' : 'OFF'));
+  lines.push('');
+  lines.push('--- PORTAL ADDRESS ---');
+  lines.push('');
+  var shortAddr = String(get(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  var deployAddr = '';
+  try { deployAddr = String(ScriptApp.getService().getUrl() || '').trim(); } catch (eU) {}
+  lines.push(PORTAL.PROPERTY_PUBLIC_URL);
+  lines.push('  ' + (shortAddr || '(not set — people get the long deployment URL)'));
+  lines.push('  Short link for the crew (Sites Hub or county vanity).');
+  lines.push('  Run setPortalShortAddress("https://…") to save one.');
+  lines.push('  Suggested: ' + PORTAL.DEFAULT_HUB_URL);
+  lines.push('');
+  lines.push('Deployment URL');
+  lines.push('  ' + (deployAddr || '(not deployed yet, or ScriptApp cannot see it)'));
+  lines.push('  Embed this behind the Sites page. Do not hand it out if a short address is set.');
 
+  return noteV1_(lines.join('\n'));
+}
+
+/* ---------------------------------------------------------------- *
+ *  Short portal address
+ *
+ *  The Apps Script web-app URL is a long /macros/s/… string. Staff should
+ *  open a short Sites (or county) link that embeds that deployment. These
+ *  runners store and report that short address.
+ * ---------------------------------------------------------------- */
+
+/** URL people should open. Short property first, else the live deployment. */
+function portalPublicUrlV1_() {
+  var set = '';
+  try {
+    set = String(PropertiesService.getScriptProperties()
+      .getProperty(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  } catch (e) {}
+  if (set) return set;
+  try {
+    var live = String(ScriptApp.getService().getUrl() || '').trim();
+    if (live) return live;
+  } catch (e2) {}
+  return '';
+}
+
+/**
+ * Save the short address people should use (Sites Hub or county redirect).
+ * Example: setPortalShortAddress('https://sites.google.com/view/scemsfieldtraininghub/home')
+ */
+function setPortalShortAddress(url) {
+  var u = String(url == null ? '' : url).trim();
+  if (!u) {
+    throw new Error('Paste the short https address (Sites page or county link). ' +
+      'Nothing was saved.\n\nSuggested: ' + PORTAL.DEFAULT_HUB_URL);
+  }
+  if (!/^https:\/\//i.test(u)) {
+    throw new Error('The short address must start with https://. Nothing was saved.');
+  }
+  if (/\s/.test(u)) {
+    throw new Error('That does not look like one address. Nothing was saved.');
+  }
+  PropertiesService.getScriptProperties().setProperty(PORTAL.PROPERTY_PUBLIC_URL, u);
+  try { auditV1_('PORTAL SHORT URL', whoIsAskingV1_() || '', u); } catch (eA) {}
+  return noteV1_('Short portal address saved.\n\n' + u +
+    '\n\nHand this link to the crew. Embed the long deployment URL behind your ' +
+    'Sites page (or county redirect), then Redeploy → New version when the ' +
+    'deployment URL changes.\n\nRun portalAddress() any time to see both.');
+}
+
+/** Forget the short address; portalAddress() falls back to the deployment URL. */
+function clearPortalShortAddress() {
+  PropertiesService.getScriptProperties().deleteProperty(PORTAL.PROPERTY_PUBLIC_URL);
+  return noteV1_('Short portal address cleared.\n\n' +
+    'People will see the long deployment URL until you set another with ' +
+    'setPortalShortAddress("https://…").');
+}
+
+/**
+ * What to give people, and how to shorten it.
+ * Safe to run any time. Writes nothing.
+ */
+function portalAddress() {
+  var shortAddr = '';
+  try {
+    shortAddr = String(PropertiesService.getScriptProperties()
+      .getProperty(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  } catch (e) {}
+  var deployAddr = '';
+  try { deployAddr = String(ScriptApp.getService().getUrl() || '').trim(); } catch (e2) {}
+
+  var lines = ['PORTAL ADDRESS', '',
+    'Give the crew this link:',
+    '  ' + (shortAddr || deployAddr || '(none yet — deploy the web app, then set a short address)'),
+    ''];
+
+  if (shortAddr) {
+    lines.push('Short address is set (' + PORTAL.PROPERTY_PUBLIC_URL + ').');
+    lines.push('Deployment URL (embed behind Sites, do not hand out):');
+    lines.push('  ' + (deployAddr || '(not visible from this project yet)'));
+  } else {
+    lines.push('No short address is set yet. The long Apps Script URL is what people get.');
+    lines.push('');
+    lines.push('TO SHORTEN IT');
+    lines.push('  1. Deploy → Manage deployments → copy the Web app URL.');
+    lines.push('  2. Put that URL in a Google Sites page (Insert → Embed), or a county redirect.');
+    lines.push('  3. Run:');
+    lines.push('       setPortalShortAddress("' + PORTAL.DEFAULT_HUB_URL + '")');
+    lines.push('     or paste your own https Sites / vanity address.');
+    if (deployAddr) {
+      lines.push('');
+      lines.push('Current deployment URL:');
+      lines.push('  ' + deployAddr);
+    }
+  }
+  lines.push('');
+  lines.push('Also: clearPortalShortAddress()  ·  showSettings()');
   return noteV1_(lines.join('\n'));
 }
 
@@ -3076,7 +3795,10 @@ function dupKeyV1_(s, oncePerDay) {
   // one shift is a correction and worth raising whatever they say. Skill
   // evidence is the opposite: three reps across one shift is three events.
   if (oncePerDay) {
-    return 'DAY:' + (s.group || '') + '|' + dayKeyV1_(s.when);
+    var day = dayKeyV1_(s.when);
+    // Undated once-a-day rows must not all collapse onto DAY:| and flag each other.
+    if (!day) return 'DAY:UNDATED:' + String(s.row);
+    return 'DAY:' + (s.group || '') + '|' + day;
   }
   var id = '';
   (s.fields || []).forEach(function (f) {
@@ -3119,12 +3841,21 @@ function whenTextV1_(d) {
 function recordForV1_(name, only) {
   var norm = normNameV1_(name);
   var sections = [], timeline = [], total = 0, duplicates = 0;
+  var settled = settledDuplicateKeysV1_();
 
   PORTAL_SOURCES.forEach(function (src) {
     if (only && only.indexOf(src.key) < 0) return;
     var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy, !!src.oncePerDay);
     if (!list.length) return;
     total += list.length;
+
+    list.forEach(function (s) {
+      if (!s.possibleDuplicate) return;
+      if (settled[settlementIdV1_(name, src.tab, s.dupKey)]) {
+        s.possibleDuplicate = false;
+        s.settledDuplicate = true;
+      }
+    });
 
     var current = list.filter(function (s) { return s.current; });
     var earlier = list.filter(function (s) { return !s.current; });
@@ -3168,6 +3899,7 @@ function shapeV1_(s) {
     at: s.when instanceof Date && !isNaN(s.when.getTime()) ? s.when.getTime() : 0,
     by: s.by, group: s.group,
     current: !!s.current, possibleDuplicate: !!s.possibleDuplicate,
+    settledDuplicate: !!s.settledDuplicate,
     fields: s.fields
   };
 }
@@ -3218,6 +3950,7 @@ function recordScopeV1_(viewer, name) {
  *
  *  Read only in every mode. */
 function duplicateSubmissionsV1_() {
+  var settled = settledDuplicateKeysV1_();
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
@@ -3229,9 +3962,10 @@ function duplicateSubmissionsV1_() {
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
+        if (settled[settlementIdV1_(t.name, src.tab, k)]) return;
         var pair = byDay[k];
         out.push({
-          trainee: t.name, source: src.title, tab: src.tab,
+          trainee: t.name, source: src.title, tab: src.tab, dupKey: k,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
           why: String(k).indexOf('ID:') === 0
             ? 'the SAME form response, written twice'
@@ -4358,18 +5092,535 @@ function runMergeForReal() {
 
 
 /* ======================================================================
+ * 87_Settle.gs
+ * ====================================================================== */
+
+/**
+ * Settle same-day submission pairs from Field Training — without the tracker.
+ *
+ * Doctrine: both raw rows stay on file forever. A settlement is a named
+ * judgment (both stand / this one stands / not a conflict) so Settle stops
+ * nagging and the personnel record has who decided, when, and why.
+ */
+
+var PORTAL_SETTLEMENTS_TAB = 'PORTAL SETTLEMENTS';
+
+var PORTAL_SETTLEMENT_HEADERS_V1 = [
+  'WHEN', 'TRAINEE', 'TRAINEE NORM', 'TAB', 'DUP KEY', 'DECISION', 'KEEP ROW',
+  'SOURCE', 'BY', 'REASON', 'VERSION'
+];
+
+function ensureSettlementsLogV1_() {
+  try {
+    var book = targetBookV1_();
+    var sh = book.getSheetByName(PORTAL_SETTLEMENTS_TAB);
+    if (!sh) {
+      sh = book.insertSheet(PORTAL_SETTLEMENTS_TAB);
+      sh.getRange(1, 1).setValue(
+        'Duplicate-submission judgments from Field Training. Raw submissions stay on file.')
+        .setFontWeight('bold');
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      sh.setFrozenRows(PORTAL.HEADER_ROW);
+      forgetTabsV1_();
+      return true;
+    }
+    // Existing sheet with a blank or wrong header row cannot hold a judgment.
+    forgetTabsV1_();
+    var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+    if (!t.ok || t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+      sh.getRange(PORTAL.HEADER_ROW, 1, 1, PORTAL_SETTLEMENT_HEADERS_V1.length)
+        .setValues([PORTAL_SETTLEMENT_HEADERS_V1.slice()])
+        .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+      forgetTabsV1_();
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+function settlementIdV1_(trainee, tab, dupKey) {
+  return normNameV1_(trainee) + '|' + String(tab || '') + '|' + String(dupKey || '');
+}
+
+/** Settled keys for filtering Settle and quieting the personnel record. */
+function settledDuplicateKeysV1_() {
+  var out = {};
+  var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+  if (!t.ok) return out;
+  t.rows.forEach(function (r) {
+    var trainee = String(r[t.col['TRAINEE']] || '').trim();
+    var tab = String(r[t.col['TAB']] || '').trim();
+    var key = String(r[t.col['DUP KEY']] || '').trim();
+    if (!key) return;
+    var norm = t.col['TRAINEE NORM'] !== undefined
+      ? String(r[t.col['TRAINEE NORM']] || '').trim() : '';
+    if (!norm) norm = trainee;
+    if (!norm) return;
+    out[settlementIdV1_(norm, tab, key)] = true;
+  });
+  return out;
+}
+
+/**
+ * Division settles a flagged pair. Does not delete or edit source rows.
+ * @param {string} decision BOTH_STAND | KEEP_ROW | NOT_A_CONFLICT
+ * @param {number=} keepRow required when KEEP_ROW
+ */
+function settleDuplicateV1(traineeName, tabName, dupKey, decision, reason, keepRow, sourceTitle) {
+  requireWritableV1_('settle a duplicate submission');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may settle duplicate submissions.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var tab = String(tabName || '').trim();
+  var key = String(dupKey || '').trim();
+  var dec = String(decision || '').trim().toUpperCase();
+  var why = String(reason || '').trim();
+  if (!trainee || !tab || !key) throw new Error('Missing settlement identity. Reload and try again.');
+  if (['BOTH_STAND', 'KEEP_ROW', 'NOT_A_CONFLICT'].indexOf(dec) < 0) {
+    throw new Error('Pick how this pair stands: both, one row, or not a conflict.');
+  }
+  if (why.length < 8) {
+    throw new Error('Type why. It goes on the permanent record in your name.');
+  }
+
+  var id = settlementIdV1_(trainee, tab, key);
+  if (settledDuplicateKeysV1_()[id]) {
+    return { ok: true, message: 'Already settled. Reload if it still shows on Settle.' };
+  }
+
+  // Re-verify the live pair so a stale or invented key cannot hide future collisions.
+  var pair = duplicatePairDetailV1_(trainee, tab, key);
+  trainee = pair.trainee;
+
+  var keep = '';
+  if (dec === 'KEEP_ROW') {
+    keep = String(keepRow == null ? '' : keepRow).trim();
+    var local = {};
+    (pair.sides || []).forEach(function (s) {
+      if (Number(s.row) > 0) local[String(s.row)] = true;
+    });
+    if (!keep || !local[keep]) {
+      throw new Error('Pick which row on this book stands.');
+    }
+  }
+
+  if (!ensureSettlementsLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL_SETTLEMENTS_TAB + '. Nothing was written.');
+  }
+  var t = readTabV1_(PORTAL_SETTLEMENTS_TAB);
+  if (!t.ok) throw new Error('No settlements log.');
+  if (t.col['DUP KEY'] === undefined || t.col['TRAINEE'] === undefined) {
+    throw new Error(PORTAL_SETTLEMENTS_TAB + ' is missing its header row. Nothing was written.');
+  }
+
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'WHEN') return new Date();
+    if (H === 'TRAINEE') return trainee;
+    if (H === 'TRAINEE NORM') return normNameV1_(trainee);
+    if (H === 'TAB') return tab;
+    if (H === 'DUP KEY') return key;
+    if (H === 'DECISION') return dec;
+    if (H === 'KEEP ROW') return keep;
+    if (H === 'SOURCE') return String(sourceTitle || pair.source || '').trim();
+    if (H === 'BY') return viewer.email;
+    if (H === 'REASON') return clean_(why);
+    if (H === 'VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(row);
+  forgetTabsV1_();
+  auditV1_('DUPLICATE SETTLED', viewer.email,
+    dec + ' | ' + trainee + ' | ' + tab + ' | ' + why.slice(0, 100));
+
+  var msg = 'Settled. Both submissions stay on file.';
+  if (dec === 'BOTH_STAND') msg = 'Both stand. Recorded — Settle will stop raising this pair.';
+  else if (dec === 'KEEP_ROW') msg = 'Row ' + keep + ' stands. Both rows stay on file.';
+  else if (dec === 'NOT_A_CONFLICT') msg = 'Marked not a conflict. Settle will stop raising this pair.';
+  return { ok: true, message: msg };
+}
+
+/** One pair with both sides shaped for the settle screen (server → UI). */
+function duplicatePairDetailV1(traineeName, tabName, dupKey) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may open a Settle pair.');
+  }
+  return duplicatePairDetailV1_(traineeName, tabName, dupKey);
+}
+
+/** One pair with both sides shaped for the settle screen. */
+function duplicatePairDetailV1_(traineeName, tabName, dupKey) {
+  var trainee = String(traineeName || '').trim();
+  var tab = String(tabName || '').trim();
+  var key = String(dupKey || '').trim();
+  var person = null;
+  traineesV1_().forEach(function (t) {
+    if (!person && normNameV1_(t.name) === normNameV1_(trainee)) person = t;
+  });
+  if (!person) throw new Error('No trainee named "' + trainee + '".');
+
+  var src = null;
+  PORTAL_SOURCES.forEach(function (s) {
+    if (!src && s.tab === tab) src = s;
+  });
+  if (!src) throw new Error('Unknown source tab ' + tab);
+
+  var list = markCurrentV1_(submissionsFromV1_(src, person.norm), !!src.groupBy, !!src.oncePerDay);
+  var sides = list.filter(function (s) { return s.dupKey === key; });
+  if (sides.length < 2) {
+    throw new Error('That pair is no longer flagged. Reload Settle.');
+  }
+
+  return {
+    trainee: person.name,
+    tab: tab,
+    source: src.title,
+    dupKey: key,
+    why: String(key).indexOf('ID:') === 0
+      ? 'the SAME form response, written twice'
+      : (String(key).indexOf('DAY:') === 0
+          ? 'two of these for one day, and there should be one'
+          : 'identical in every field, same author, same day'),
+    sides: sides.map(function (s) {
+      return {
+        row: s.row,
+        when: whenTextV1_(s.when),
+        by: s.by || '',
+        group: s.group || '',
+        book: s.book || '',
+        fields: (s.fields || []).slice(0, 12)
+      };
+    })
+  };
+}
+
+
+/* ======================================================================
+ * 88_Report.gs
+ * ====================================================================== */
+
+/**
+ * Printable / PDF trainee reports from Field Training.
+ *
+ * Division can pull a full training report for anyone on the master —
+ * including Cleared / Independent — and print or save as PDF from the browser.
+ * No tracker menu. Raw rows are not altered.
+ */
+
+/**
+ * Build a print-ready HTML report for one trainee (active or released).
+ * Division only.
+ */
+function traineeReportHtmlV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may pull a training report.');
+  }
+  var name = String(traineeName || '').trim();
+  if (!name) throw new Error('Pick a trainee.');
+
+  var person = null;
+  traineesV1_().forEach(function (t) {
+    if (!person && normNameV1_(t.name) === normNameV1_(name)) person = t;
+  });
+  if (!person) throw new Error('No trainee named "' + name + '" on the master.');
+
+  var rec = recordForV1_(person.name);
+  var skills = [];
+  try { skills = skillsForV1_(person.norm); } catch (e) { skills = []; }
+  var clear = clearanceAssessmentV1_(person);
+
+  var esc = function (s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  };
+  var dash = function (v) {
+    var s = String(v == null ? '' : v).trim();
+    return s ? esc(s) : '—';
+  };
+  var fmtDate = function (d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '—';
+    return esc(Utilities.formatDate(d, Session.getScriptTimeZone(), 'd MMM yyyy'));
+  };
+  var pulled = Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+    "EEEE d MMMM yyyy 'at' h:mm a");
+  var statusLabel = person.status || (person.closed ? 'Closed' : 'Active');
+  var signed = Number(clear.signed || 0);
+  var total = Number(clear.total || 0);
+  var skillPct = total > 0 ? Math.round((signed / total) * 100) : 0;
+
+  var bits = [];
+  bits.push('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">');
+  bits.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
+  bits.push('<title>Field Training report — ' + esc(person.name) + '</title>');
+  bits.push('<link rel="preconnect" href="https://fonts.googleapis.com">');
+  bits.push('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>');
+  bits.push('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap">');
+  bits.push('<style>');
+  bits.push(':root{--navy:#0f1c14;--navy-2:#1a2e22;--gold:#c4a035;--ink:#142018;' +
+    '--muted:#46566d;--line:#d4cfc4;--paper:#fffcf7;--ok:#2f7d4f;--stop:#a8342b}');
+  bits.push('*{box-sizing:border-box}');
+  bits.push('html,body{margin:0;padding:0;background:#e8ebe8;color:var(--ink);' +
+    'font:11pt/1.45 "IBM Plex Sans",system-ui,sans-serif;' +
+    '-webkit-font-smoothing:antialiased}');
+  bits.push('.sheet{max-width:8.5in;margin:18px auto;background:var(--paper);' +
+    'box-shadow:0 0 0 1px rgba(15,28,20,.12),0 18px 40px -28px rgba(0,0,0,.55);' +
+    'padding:0 0 28px}');
+  bits.push('.noprint{padding:14px 22px;background:#fff;border-bottom:1px solid var(--line);' +
+    'display:flex;gap:12px;align-items:center;flex-wrap:wrap}');
+  bits.push('.noprint button{appearance:none;border:0;background:var(--navy);color:#fff;' +
+    'font:700 .85rem/1 "Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase;' +
+    'padding:12px 18px;cursor:pointer}');
+  bits.push('.noprint button:hover{background:var(--navy-2)}');
+  bits.push('.noprint .hint{color:var(--muted);font-size:.9rem}');
+  bits.push('.mast{background:var(--navy);color:#fff;padding:18px 28px 16px;' +
+    'border-bottom:3px solid var(--gold)}');
+  bits.push('.mast .county{font:700 .72rem/1 "Oswald",sans-serif;letter-spacing:.22em;' +
+    'text-transform:uppercase;color:var(--gold);margin:0 0 6px}');
+  bits.push('.mast .program{font:600 .7rem/1.2 "IBM Plex Sans",sans-serif;letter-spacing:.16em;' +
+    'text-transform:uppercase;color:rgba(255,255,255,.72);margin:0}');
+  bits.push('.title-block{padding:22px 28px 8px}');
+  bits.push('h1{font:700 1.85rem/1.1 "Oswald",sans-serif;letter-spacing:.02em;' +
+    'text-transform:uppercase;margin:0 0 6px;color:var(--navy)}');
+  bits.push('.doc-type{font:600 .68rem/1 "Oswald",sans-serif;letter-spacing:.18em;' +
+    'text-transform:uppercase;color:var(--gold);margin:0 0 10px}');
+  bits.push('.pulled{margin:0;color:var(--muted);font-size:.86rem}');
+  bits.push('.status-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;' +
+    'margin:16px 28px 8px;border:1px solid var(--line)}');
+  bits.push('.status-strip .cell{padding:10px 12px;border-right:1px solid var(--line);' +
+    'background:#f7f5f0}');
+  bits.push('.status-strip .cell:last-child{border-right:0}');
+  bits.push('.status-strip .k{display:block;font:600 .62rem/1 "Oswald",sans-serif;' +
+    'letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}');
+  bits.push('.status-strip .v{display:block;font-weight:600;font-size:.95rem;color:var(--navy)}');
+  bits.push('.facts{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;' +
+    'margin:8px 28px 0;padding:12px 0;border-top:1px solid var(--line)}');
+  bits.push('.facts .kv{display:flex;gap:10px;padding:3px 0;font-size:.92rem}');
+  bits.push('.facts .k{min-width:8.5em;color:var(--muted);font-weight:500}');
+  bits.push('.facts .v{color:var(--ink);font-weight:500}');
+  bits.push('h2{font:700 .72rem/1 "Oswald",sans-serif;letter-spacing:.16em;' +
+    'text-transform:uppercase;color:var(--navy);margin:22px 28px 10px;' +
+    'padding-bottom:6px;border-bottom:2px solid var(--navy)}');
+  bits.push('h2 .n{float:right;color:var(--muted);font-weight:600;letter-spacing:.08em}');
+  bits.push('.table-wrap{margin:0 28px}');
+  bits.push('table{border-collapse:collapse;width:100%;font-size:.86rem}');
+  bits.push('th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;' +
+    'vertical-align:top}');
+  bits.push('th{font:600 .62rem/1 "Oswald",sans-serif;letter-spacing:.12em;' +
+    'text-transform:uppercase;color:var(--muted);background:#f3f1eb;border-bottom:1px solid #cfc9bc}');
+  bits.push('tr.signed td{background:#eaf4ee}');
+  bits.push('td.skill{font-weight:500}');
+  bits.push('.mark{display:inline-block;font:700 .58rem/1 "Oswald",sans-serif;' +
+    'letter-spacing:.1em;text-transform:uppercase;color:var(--ok);' +
+    'border:1px solid #9fc9ae;padding:2px 5px}');
+  bits.push('.sec{margin:0 28px 12px;padding:10px 12px;border-left:3px solid var(--gold);' +
+    'background:#faf8f3}');
+  bits.push('.sec .when{font:600 .68rem/1.3 "Oswald",sans-serif;letter-spacing:.1em;' +
+    'text-transform:uppercase;color:var(--muted);margin:0 0 6px}');
+  bits.push('.sec .fld{display:flex;gap:10px;padding:2px 0;font-size:.9rem}');
+  bits.push('.sec .l{min-width:10em;color:var(--muted);flex:none}');
+  bits.push('.foot{margin:28px 28px 0;padding-top:12px;border-top:1px solid var(--line);' +
+    'color:var(--muted);font-size:.78rem}');
+  bits.push('.foot .brand{font:600 .62rem/1 "Oswald",sans-serif;letter-spacing:.14em;' +
+    'text-transform:uppercase;color:var(--navy);margin:0 0 4px}');
+  bits.push('@media print{');
+  bits.push('  html,body{background:#fff}');
+  bits.push('  .sheet{margin:0;box-shadow:none;max-width:none}');
+  bits.push('  .noprint{display:none!important}');
+  bits.push('  .mast,.status-strip .cell,th,tr.signed td,.sec{');
+  bits.push('    -webkit-print-color-adjust:exact;print-color-adjust:exact}');
+  bits.push('  h2,.sec{break-inside:avoid}');
+  bits.push('  @page{margin:.55in .6in;size:letter}');
+  bits.push('}');
+  bits.push('@media(max-width:700px){');
+  bits.push('  .status-strip{grid-template-columns:1fr 1fr}');
+  bits.push('  .status-strip .cell:nth-child(2){border-right:0}');
+  bits.push('  .facts{grid-template-columns:1fr}');
+  bits.push('  .title-block,.mast,.table-wrap,.sec,h2,.foot,.facts{padding-left:16px;padding-right:16px;margin-left:16px;margin-right:16px}');
+  bits.push('  .mast,.title-block{margin-left:0;margin-right:0;padding-left:16px;padding-right:16px}');
+  bits.push('  h2,.facts,.table-wrap,.sec,.foot{margin-left:16px;margin-right:16px}');
+  bits.push('}');
+  bits.push('</style></head><body><div class="sheet">');
+
+  bits.push('<div class="noprint"><button type="button" onclick="window.print()">Print / Save as PDF</button>');
+  bits.push('<span class="hint">Browser print dialog → Save as PDF. Letter size recommended.</span></div>');
+
+  bits.push('<header class="mast">');
+  bits.push('<p class="county">' + esc(PORTAL.COUNTY) + '</p>');
+  bits.push('<p class="program">' + esc(PORTAL.PRODUCT) + ' · Official trainee report</p>');
+  bits.push('</header>');
+
+  bits.push('<div class="title-block">');
+  bits.push('<p class="doc-type">Training record summary</p>');
+  bits.push('<h1>' + esc(person.name) + '</h1>');
+  bits.push('<p class="pulled">Pulled ' + esc(pulled) + ' by ' + esc(viewer.email) + '</p>');
+  bits.push('</div>');
+
+  bits.push('<div class="status-strip">');
+  bits.push('<div class="cell"><span class="k">Status</span><span class="v">' + dash(statusLabel) + '</span></div>');
+  bits.push('<div class="cell"><span class="k">Level</span><span class="v">' + dash(person.level) + '</span></div>');
+  bits.push('<div class="cell"><span class="k">Phase</span><span class="v">' + dash(person.phase) + '</span></div>');
+  bits.push('<div class="cell"><span class="k">Skills signed</span><span class="v">' +
+    esc(String(signed)) + ' / ' + esc(String(total)) +
+    (total ? ' <span style="color:var(--muted);font-weight:500">(' + esc(String(skillPct)) + '%)</span>' : '') +
+    '</span></div>');
+  bits.push('</div>');
+
+  bits.push('<div class="facts">');
+  bits.push('<div><div class="kv"><span class="k">Training officer</span><span class="v">' +
+    dash(person.fto) + '</span></div>');
+  bits.push('<div class="kv"><span class="k">Shift</span><span class="v">' +
+    dash(person.shift) + '</span></div></div>');
+  bits.push('<div><div class="kv"><span class="k">Started</span><span class="v">' +
+    fmtDate(person.started) + '</span></div>');
+  if (person.closed) {
+    bits.push('<div class="kv"><span class="k">Outcome</span><span class="v">' +
+      'Released / cleared — prior record retained</span></div>');
+  } else {
+    bits.push('<div class="kv"><span class="k">Program</span><span class="v">In training</span></div>');
+  }
+  bits.push('</div></div>');
+
+  if (skills.length) {
+    bits.push('<h2>Skills matrix <span class="n">' + esc(String(skills.length)) + '</span></h2>');
+    bits.push('<div class="table-wrap"><table><thead><tr>');
+    bits.push('<th>Skill</th><th>Readiness</th><th>Successful</th><th>Independent</th>');
+    bits.push('<th>Dates</th><th>FTOs</th></tr></thead><tbody>');
+    skills.forEach(function (s) {
+      var signedOff = !!s.signed;
+      bits.push('<tr' + (signedOff ? ' class="signed"' : '') + '><td class="skill">' +
+        esc(s.skill) + '</td><td>' +
+        (signedOff ? '<span class="mark">Signed off</span>' : dash(s.readiness)) +
+        '</td><td>' + esc(String(s.successful)) + '</td><td>' +
+        esc(String(s.independent)) + '</td><td>' +
+        esc(String(s.distinctDates)) + '</td><td>' +
+        esc(String(s.distinctFtos)) + '</td></tr>');
+    });
+    bits.push('</tbody></table></div>');
+  }
+
+  (rec.sections || []).forEach(function (part) {
+    var rows = (part.current || []).concat(part.earlier || []);
+    bits.push('<h2>' + esc(part.title) + ' <span class="n">' +
+      esc(String(part.count != null ? part.count : rows.length)) + '</span></h2>');
+    if (!rows.length) {
+      bits.push('<p class="pulled" style="margin:0 28px 12px">None on file.</p>');
+      return;
+    }
+    rows.forEach(function (s) {
+      bits.push('<div class="sec"><div class="when">' + esc(s.when || 'Undated') +
+        (s.by ? ' · ' + esc(s.by) : '') +
+        (s.current ? ' · current' : '') +
+        (s.group ? ' · ' + esc(s.group) : '') + '</div>');
+      (s.fields || []).forEach(function (f) {
+        bits.push('<div class="fld"><span class="l">' + esc(f.label) + '</span><span>' +
+          esc(f.value) + '</span></div>');
+      });
+      bits.push('</div>');
+    });
+  });
+
+  bits.push('<footer class="foot">');
+  bits.push('<p class="brand">' + esc(PORTAL.COUNTY) + ' · ' + esc(PORTAL.PRODUCT) + '</p>');
+  bits.push('<p>Read-only snapshot of the vault as of the pull date. Nothing in this report was edited. ' +
+    esc(PORTAL.VERSION) + '</p>');
+  bits.push('</footer>');
+  bits.push('</div></body></html>');
+
+  auditV1_('REPORT PULLED', viewer.email, person.name + (person.closed ? ' | closed' : ''));
+  return bits.join('');
+}
+
+
+/* ======================================================================
  * 90_Staging.gs
  * ====================================================================== */
 
 /**
  * Staging.
  *
- * setUpStaging() creates a NEW spreadsheet, fills it with invented people,
- * and points the portal at it. It never opens, reads, copies or references
- * the live tracker. Run it once; run it again for a fresh sandbox.
+ * setUpStaging() points the portal at a sandbox of invented people. It never
+ * opens, reads, copies or references the live tracker.
+ *
+ * v20.6 estate rule: one sandbox at a time. Re-running reuses the remembered
+ * staging spreadsheet when it still exists. A brand-new sandbox is created
+ * only when none is remembered, the old one is gone, or you pass
+ * setUpStaging('NEW'). Old sandboxes are moved into an archive folder — never
+ * deleted — so Drive does not fill with STG_SCEMS_Portal_Sandbox_* clutter.
  */
 
-function setUpStaging() {
+var PORTAL_STAGING_ARCHIVE_FOLDER = 'SCEMS Portal Staging — ARCHIVE';
+
+function stagingBookStillExistsV1_(id) {
+  if (!id) return false;
+  try {
+    DriveApp.getFileById(id);
+    SpreadsheetApp.openById(id);
+    return true;
+  } catch (e) { return false; }
+}
+
+function archiveStagingBookV1_(id, reason) {
+  if (!id) return '';
+  try {
+    var file = DriveApp.getFileById(id);
+    var parent = DriveApp.getFoldersByName(PORTAL_STAGING_ARCHIVE_FOLDER);
+    var folder = parent.hasNext() ? parent.next() : DriveApp.createFolder(PORTAL_STAGING_ARCHIVE_FOLDER);
+    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
+    var dest = folder.createFolder(stamp + (reason ? ' — ' + reason : ''));
+    dest.addFile(file);
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      var p = parents.next();
+      if (p.getId() !== dest.getId()) {
+        try { p.removeFile(file); } catch (eR) {}
+      }
+    }
+    try { file.setName(file.getName() + ' [ARCHIVED ' + stamp + ']'); } catch (eN) {}
+    return dest.getUrl();
+  } catch (e) {
+    return '';
+  }
+}
+
+function setUpStaging(forceNew) {
+  var wantNew = String(forceNew || '').trim().toUpperCase() === 'NEW';
+  var props = PropertiesService.getScriptProperties();
+  var existingId = spreadsheetIdFromV1_(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID'));
+
+  if (!wantNew && stagingBookStillExistsV1_(existingId)) {
+    forgetTabsV1_();
+    props.setProperty(PORTAL.PROPERTY_TARGET, existingId);
+    props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
+    props.setProperty('PORTAL_FORM_LINKS', 'OFF');
+    var meReuse = whoIsAskingV1_();
+    if (meReuse) {
+      props.setProperty('PORTAL_DIVISION_EMAILS', meReuse);
+      props.setProperty('PORTAL_SUPERVISORS', JSON.stringify({}));
+    }
+    var existing = SpreadsheetApp.openById(existingId);
+    var msgReuse = 'STAGING REUSED\n\n' +
+      'Spreadsheet : ' + existing.getName() + '\n' +
+      'Link        : ' + existing.getUrl() + '\n\n' +
+      'A sandbox already existed, so nothing new was created. Drive stays\n' +
+      'at one staging book. To force a brand-new sandbox (the old one is\n' +
+      'archived, not deleted):\n' +
+      '  setUpStaging("NEW")';
+    Logger.log(msgReuse);
+    try { SpreadsheetApp.getUi().alert(msgReuse); } catch (e) {}
+    return msgReuse;
+  }
+
+  var archivedUrl = '';
+  if (existingId && stagingBookStillExistsV1_(existingId)) {
+    archivedUrl = archiveStagingBookV1_(existingId, 'replaced by setUpStaging NEW');
+  }
+
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
   var book = SpreadsheetApp.create('STG_SCEMS_Portal_Sandbox_' + stamp);
 
@@ -4397,7 +5648,7 @@ function setUpStaging() {
       ['Alex Bramble','STG-02','EMT','A','Dana Whitlock', d('2026-05-04'),'Phase 3','Active','alex.bramble@example.org', d('2026-07-01'),'A'],
       ['Priya Okafor','STG-03','Advanced EMT','B','Marcus Vane', d('2026-04-12'),'Phase 4','Active','priya.okafor@example.org', d('2026-08-01'),'B'],
       ['Sam Ledger','STG-04','EMT','A','', '', '','Active','sam.ledger@example.org','','A'],
-      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Closed / Released','rosa.quill@example.org', d('2026-03-01'),'B']
+      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Cleared / Independent','rosa.quill@example.org', d('2026-03-01'),'B']
     ]);
 
   tab(PORTAL.TAB.ROSTER, ['FTO','EMAIL','LEVEL','ACTIVE'],
@@ -4477,7 +5728,12 @@ function setUpStaging() {
 
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 
-  var props = PropertiesService.getScriptProperties();
+  // Drop the default "Sheet1" Google creates with every new spreadsheet.
+  try {
+    var sheet1 = book.getSheetByName('Sheet1');
+    if (sheet1 && book.getSheets().length > 1) book.deleteSheet(sheet1);
+  } catch (eSheet1) {}
+
   forgetTabsV1_();
   props.setProperty(PORTAL.PROPERTY_TARGET, book.getId());
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
@@ -4497,6 +5753,7 @@ function setUpStaging() {
   var msg = 'STAGING READY\n\n' +
     'Spreadsheet : ' + book.getName() + '\n' +
     'Link        : ' + book.getUrl() + '\n\n' +
+    (archivedUrl ? 'Previous sandbox archived (not deleted):\n  ' + archivedUrl + '\n\n' : '') +
     'The portal now points at this sandbox. Five invented trainees, two\n' +
     'invented FTOs. Nothing here is a personnel record and nothing of yours\n' +
     'was opened to build it.\n\n' +
@@ -4505,6 +5762,8 @@ function setUpStaging() {
           'viewAsSupervisor or viewAsMedical.\n\n' : '') +
     'Form links are OFF here, so the cards show without opening the real\n' +
     'production forms. Run enableFormLinks() if you want them live.\n\n' +
+    'Re-run setUpStaging() to reuse this sandbox. Pass "NEW" only when you\n' +
+    'truly want another book.\n\n' +
     'Next: Deploy > New deployment > Web app, then open the URL.';
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
@@ -4572,6 +5831,1259 @@ function viewAsFTO()        { return switchRoleForTestingV1('FTO'); }
 function viewAsDivision()   { return switchRoleForTestingV1('DIVISION'); }
 function viewAsSupervisor() { return switchRoleForTestingV1('SUPERVISOR'); }
 function viewAsMedical()    { return switchRoleForTestingV1('MEDICAL'); }
+
+
+/* ======================================================================
+ * 91_Record.gs
+ * ====================================================================== */
+
+/**
+ * Permanent writers that used to stop at "stage it for the tracker."
+ *
+ * Sign-off: append 21 SKILL SIGN-OFF LOG, close the queue row, touch the matrix.
+ * Coaching: FTO / Division file a note on PORTAL COACHING.
+ * Assign: Division sets ASSIGNED FTO from Field Training.
+ * Matrix seed: after enroll, put catalog rows on 05 SKILLS PROGRESS when possible.
+ */
+
+var PORTAL_OVERRIDE_MARKER = '[THRESHOLD OVERRIDE]';
+var PORTAL_CATALOG_TAB = '15 SKILL CATALOG';
+
+/** Approve — permanent. */
+function approveSignoffV1(row, reason, requestId) {
+  return recordSignoffDecisionV1_(row, reason, requestId, 'Approve sign-off');
+}
+
+/** Return — permanent (RETURNED on the queue, row on the sign-off log). */
+function returnSignoffV1(row, reason, requestId) {
+  return recordSignoffDecisionV1_(row, reason, requestId, 'Return for more evidence');
+}
+
+/**
+ * One writer for Division sign-off decisions from Field Training.
+ * Mirrors the tracker's recordDecisionForRow gates that matter here:
+ * OPEN only, typed reason, no prior DECISION, request-id match, evidence gate
+ * on Approve, then append the permanent log and close the queue row.
+ */
+function recordSignoffDecisionV1_(row, reason, requestId, decision) {
+  requireWritableV1_('record a sign-off decision');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may decide a sign-off.');
+  }
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why you are deciding this. It goes on the permanent record in your name.');
+  }
+
+  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!t.ok) throw new Error('No queue.');
+  var r = requireLocalRowV1_(t, row, 'decide that sign-off');
+
+  var need = ['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'];
+  var missing = [];
+  need.forEach(function (h) { if (t.col[h] === undefined) missing.push(h); });
+  if (missing.length) {
+    throw new Error('The queue is missing ' + missing.join(', ') +
+      '. Nothing was written. Fix the header row in the tracker first.');
+  }
+
+  var live = t.rows[r - t.firstDataRow] || [];
+  var want = String(requestId == null ? '' : requestId).trim();
+  var have = t.col['REQUEST ID'] === undefined ? ''
+           : String(live[t.col['REQUEST ID']] || '').trim();
+  if (want && have && want !== have) {
+    throw new Error('That is not the row you were looking at any more — the queue moved ' +
+      'underneath you. Nothing was written. Reload and try again.');
+  }
+
+  var status = String(live[t.col['RECORD STATUS']] || '').trim();
+  if (status !== 'OPEN') {
+    throw new Error('That row is ' + (status || 'blank') + ', not OPEN. Nothing was written.');
+  }
+  var already = String(live[t.col['DECISION']] || '').trim();
+  if (already) {
+    throw new Error('A decision is already on that row (' + already +
+      '). Nothing was written. Reload — if it is still open in the tracker, finish or clear it there.');
+  }
+
+  var trainee = String(live[t.col['TRAINEE']] || '').trim();
+  var skill = String(live[t.col['SKILL']] || '').trim();
+  var skillId = t.col['SKILL ID'] !== undefined
+    ? String(live[t.col['SKILL ID']] || '').trim() : '';
+  if (!trainee) throw new Error('That queue row has no trainee. Nothing was written.');
+
+  var gate = portalEvidenceGateV1_(decision, trainee, skill, skillId, why);
+  if (gate) throw new Error(gate);
+
+  if (!ensureSignoffLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.SIGNOFF +
+      ', so nothing was written. A decision with nowhere permanent to live is worse than none.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var decisionId = 'SD-P-' + String(new Date().getTime());
+  var recordStatus = decision === 'Return for more evidence' ? 'RETURNED' : 'RECORDED';
+
+  appendSignoffLogV1_({
+    decisionId: decisionId,
+    when: new Date(),
+    trainee: trainee,
+    skill: skill,
+    skillId: skillId,
+    decision: decision,
+    decidedBy: viewer.email,
+    decisionDate: today,
+    rationale: why,
+    sourceRow: r,
+    requestId: have || want || ''
+  });
+
+  t.sheet.getRange(r, t.col['DECISION'] + 1).setValue(decision);
+  t.sheet.getRange(r, t.col['DECIDED BY'] + 1).setValue(viewer.email);
+  t.sheet.getRange(r, t.col['DECISION DATE'] + 1).setValue(today);
+  t.sheet.getRange(r, t.col['RATIONALE'] + 1).setValue(clean_(why));
+  t.sheet.getRange(r, t.col['RECORD STATUS'] + 1).setValue(recordStatus);
+
+  try {
+    touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, viewer.email, today, why);
+  } catch (eM) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('SIGN-OFF RECORDED', viewer.email, decision + ' | ' + decisionId +
+    ' | row ' + r + (have ? ' | ' + have : '') + ' | ' + why.slice(0, 120));
+
+  return decision === 'Return for more evidence'
+    ? 'Returned on the tracker: queue ' + recordStatus + ', sign-off log, matrix updated.'
+    : 'Accepted on the tracker: queue closed, permanent sign-off log, matrix SIGNED OFF.';
+}
+
+/**
+ * Accept a skill from Field Training even when no OPEN queue card is on Home yet.
+ * Ensures an OPEN queue row on the live tracker, then records Approve sign-off
+ * (sign-off log + queue RECORDED + matrix SIGNED OFF).
+ */
+function acceptSkillV1(traineeName, skillId, skillName, reason) {
+  requireWritableV1_('accept a skill sign-off');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may accept a skill sign-off.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var skill = String(skillName || '').trim();
+  var sid = String(skillId || '').trim();
+  var why = String(reason || '').trim();
+  if (!trainee) throw new Error('Missing trainee.');
+  if (!skill && !sid) throw new Error('Missing skill.');
+  if (why.length < 8) {
+    throw new Error('Type why you are accepting this. It goes on the permanent record in your name.');
+  }
+
+  var skills = [];
+  try { skills = skillsForV1_(normNameV1_(trainee)); } catch (eS) { skills = []; }
+  var hit = null;
+  skills.forEach(function (s) {
+    if (hit) return;
+    if (sid && s.skillId && String(s.skillId) === sid) hit = s;
+    else if (skill && normNameV1_(s.skill) === normNameV1_(skill)) hit = s;
+  });
+  if (hit && hit.signed) {
+    throw new Error('That skill is already SIGNED OFF on the matrix. Nothing was written.');
+  }
+  if (!skill && hit) skill = hit.skill;
+  if (!sid && hit) sid = hit.skillId || '';
+
+  var gate = portalEvidenceGateV1_('Approve sign-off', trainee, skill, sid, why);
+  if (gate) throw new Error(gate);
+
+  var ensured = ensureOpenQueueRowForSkillV1_(trainee, skill, sid, hit);
+  return recordSignoffDecisionV1_(ensured.row, why, ensured.requestId, 'Approve sign-off');
+}
+
+/** Find or append an OPEN validation-queue row for this trainee + skill. */
+function ensureOpenQueueRowForSkillV1_(trainee, skill, skillId, skillHit) {
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!queue.ok) throw new Error('No validation queue on the tracker.');
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+
+  var tn = normNameV1_(trainee);
+  var sk = normNameV1_(skill);
+  var sid = String(skillId || '').trim();
+  var found = null;
+  queue.rows.forEach(function (r, i) {
+    if (found) return;
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    if (normNameV1_(r[queue.col['TRAINEE']]) !== tn) return;
+    var idHit = sid && queue.col['SKILL ID'] !== undefined &&
+      String(r[queue.col['SKILL ID']] || '').trim() === sid;
+    var nameHit = sk && normNameV1_(r[queue.col['SKILL']]) === sk;
+    if (!idHit && !nameHit) return;
+    found = {
+      row: queue.firstDataRow + i,
+      requestId: queue.col['REQUEST ID'] !== undefined
+        ? String(r[queue.col['REQUEST ID']] || '').trim() : ''
+    };
+  });
+  if (found) return found;
+
+  var succ = skillHit ? Number(skillHit.successful || 0) : 0;
+  var indep = skillHit ? Number(skillHit.independent || 0) : 0;
+  var dates = skillHit ? Number(skillHit.distinctDates || 0) : 0;
+  var ftos = skillHit ? Number(skillHit.distinctFtos || 0) : 0;
+  var evidence = succ + ' successful, ' + indep + ' independent, ' +
+    dates + ' dates, ' + ftos + ' FTOs';
+  var requestId = 'QR-P-' + String(new Date().getTime());
+  var domain = '';
+  try {
+    var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+    if (matrix.ok && matrix.col['DOMAIN'] !== undefined) {
+      matrix.rows.forEach(function (r) {
+        if (domain) return;
+        if (normNameV1_(r[matrix.col['TRAINEE']]) !== tn) return;
+        var idHit = sid && matrix.col['SKILL ID'] !== undefined &&
+          String(r[matrix.col['SKILL ID']] || '').trim() === sid;
+        var nameHit = sk && normNameV1_(r[matrix.col['SKILL']]) === sk;
+        if (idHit || nameHit) domain = String(r[matrix.col['DOMAIN']] || '').trim();
+      });
+    }
+  } catch (eD) {}
+
+  var line = queue.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return new Date();
+    if (H === 'TRAINEE') return trainee;
+    if (H === 'SKILL ID') return sid;
+    if (H === 'DOMAIN') return domain;
+    if (H === 'SKILL') return skill;
+    if (H === 'EVIDENCE SUMMARY') return evidence;
+    if (H === 'RECORD STATUS') return 'OPEN';
+    if (H === 'REQUEST ID') return requestId;
+    return '';
+  });
+  queue.sheet.appendRow(line);
+  forgetTabsV1_();
+  var again = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!again.ok) throw new Error('Queue append failed.');
+  var rowNum = again.firstDataRow + again.rows.length - 1;
+  return { row: rowNum, requestId: requestId };
+}
+
+/**
+ * Approve without READY FOR VALIDATION needs an explicit override in the reason —
+ * unless the matrix bars (or the evidence log) already meet the bar. Stale
+ * readiness from a stuck tracker rebuild must not trap Division.
+ */
+function portalEvidenceGateV1_(decision, trainee, skill, skillId, rationale) {
+  if (decision !== 'Approve sign-off') return '';
+  if (String(rationale).indexOf(PORTAL_OVERRIDE_MARKER) >= 0) return '';
+  var skills = [];
+  try { skills = skillsForV1_(normNameV1_(trainee)); } catch (e) { return ''; }
+  if (!skills.length) return '';
+  var hit = null;
+  skills.forEach(function (s) {
+    if (hit) return;
+    if (skillId && s.skillId && String(s.skillId) === String(skillId)) hit = s;
+    else if (normNameV1_(s.skill) === normNameV1_(skill)) hit = s;
+  });
+  if (!hit) return '';
+  if (hit.signed) return '';
+  if (/READY FOR VALIDATION/i.test(hit.readiness || '')) return '';
+  if (skillBarsMetV1_(hit)) return '';
+  var fromLog = evidenceCountsForSkillV1_(trainee, skill, skillId);
+  if (fromLog && skillCountsMeetBarsV1_(fromLog, hit.bars)) return '';
+  return 'The matrix does not call this READY FOR VALIDATION (it reads "' +
+    (hit.readiness || 'blank') + '"). Run Sync matrix from evidence first, or type ' +
+    PORTAL_OVERRIDE_MARKER + ' in your reason if you are overruling it. Nothing was written.';
+}
+
+function skillBarsMetV1_(hit) {
+  var bars = (hit && hit.bars) || [];
+  if (!bars.length) return false;
+  for (var i = 0; i < bars.length; i++) {
+    if (Number(bars[i].have || 0) < Number(bars[i].need || 0)) return false;
+  }
+  return true;
+}
+
+function skillCountsMeetBarsV1_(counts, bars) {
+  if (!counts || !bars || !bars.length) return false;
+  var map = {
+    Successful: counts.successful,
+    Independent: counts.independent,
+    Dates: counts.distinctDates,
+    FTOs: counts.distinctFtos
+  };
+  for (var i = 0; i < bars.length; i++) {
+    var have = map[bars[i].label];
+    if (have == null) have = 0;
+    if (Number(have) < Number(bars[i].need || 0)) return false;
+  }
+  return true;
+}
+
+/** Event date on the evidence log — live tabs use SHIFT DATE / TIMESTAMP. */
+function evidenceEventDateV1_(ev, r) {
+  var cols = ['SHIFT DATE', 'EVENT DATE', 'DATE', 'TIMESTAMP'];
+  for (var i = 0; i < cols.length; i++) {
+    if (ev.col[cols[i]] === undefined) continue;
+    var d = asDateV1_(r[ev.col[cols[i]]]);
+    if (d) return d;
+  }
+  return null;
+}
+
+function evidenceAcceptedV1_(r, ev) {
+  if (ev.col['VALIDATION RESULT'] === undefined) return true;
+  var v = String(r[ev.col['VALIDATION RESULT']] || '').trim();
+  if (!v) return true;
+  return v === 'ACCEPTED' || v.indexOf('LEGACY IMPORT') === 0;
+}
+
+/**
+ * Aggregate successful evidence for one trainee + skill from the log.
+ * Mirrors the tracker's matrix counters enough for desk sync / gates.
+ */
+function evidenceCountsForSkillV1_(trainee, skill, skillId) {
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (!ev.ok || ev.col['TRAINEE'] === undefined) return null;
+  var tn = normNameV1_(trainee);
+  var sk = normNameV1_(skill);
+  var sid = String(skillId || '').trim();
+  var successful = [];
+  ev.rows.forEach(function (r) {
+    if (normNameV1_(r[ev.col['TRAINEE']]) !== tn) return;
+    if (!evidenceAcceptedV1_(r, ev)) return;
+    var idHit = sid && ev.col['SKILL ID'] !== undefined &&
+      String(r[ev.col['SKILL ID']] || '').trim() === sid;
+    var nameHit = ev.col['SKILL'] !== undefined &&
+      normNameV1_(r[ev.col['SKILL']]) === sk;
+    if (!idHit && !nameHit) return;
+    var outcome = ev.col['OUTCOME'] !== undefined
+      ? String(r[ev.col['OUTCOME']] || '').trim() : 'Successful';
+    if (outcome && outcome !== 'Successful') return;
+    var stage = ev.col['STAGE'] !== undefined
+      ? String(r[ev.col['STAGE']] || '').trim().toUpperCase() : 'P';
+    if (stage && stage !== 'P' && stage !== 'I') return;
+    successful.push({
+      stage: stage || 'P',
+      when: evidenceEventDateV1_(ev, r),
+      fto: ev.col['FTO'] !== undefined ? String(r[ev.col['FTO']] || '').trim() : ''
+    });
+  });
+  if (!successful.length) return { successful: 0, independent: 0, distinctDates: 0, distinctFtos: 0, lastDate: null, stage: '' };
+  var dates = {}, ftos = {}, indep = 0, stage = '', last = null;
+  successful.forEach(function (e) {
+    if (e.stage === 'I') indep++;
+    if (e.stage === 'I' || e.stage === 'P') {
+      if (!stage || (e.stage === 'I' && stage !== 'I')) stage = e.stage;
+    }
+    if (e.when) {
+      dates[e.when.toDateString()] = true;
+      if (!last || e.when > last) last = e.when;
+    }
+    if (e.fto) ftos[normNameV1_(e.fto)] = true;
+  });
+  return {
+    successful: successful.length,
+    independent: indep,
+    distinctDates: Object.keys(dates).length,
+    distinctFtos: Object.keys(ftos).length,
+    lastDate: last,
+    stage: stage
+  };
+}
+
+function ensureSignoffLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.SIGNOFF)) return true;
+    var sh = book.insertSheet(PORTAL.TAB.SIGNOFF);
+    sh.getRange(1, 1).setValue(
+      'Permanent skill sign-off decisions. Append-only. Field Training writes here.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 12).setValues([[
+      'DECISION ID', 'TIMESTAMP', 'TRAINEE', 'SKILL ID', 'SKILL', 'DECISION',
+      'DECIDED BY', 'DECISION DATE', 'EXPIRATION', 'RATIONALE',
+      'SOURCE QUEUE ROW', 'REQUEST ID'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Header-mapped append — works against live tracker headers or staging's shorter set. */
+function appendSignoffLogV1_(f) {
+  var t = readTabV1_(PORTAL.TAB.SIGNOFF);
+  if (!t.ok) throw new Error('No sign-off log.');
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'DECISION ID') return f.decisionId || '';
+    if (H === 'TIMESTAMP' || H === 'SIGN-OFF DATE') return f.when || new Date();
+    if (H === 'TRAINEE') return f.trainee || '';
+    if (H === 'SKILL ID') return f.skillId || '';
+    if (H === 'SKILL') return f.skill || '';
+    if (H === 'DECISION') return f.decision || '';
+    if (H === 'DECIDED BY' || H === 'SIGNED OFF BY') return f.decidedBy || '';
+    if (H === 'DECISION DATE') return f.decisionDate || f.when || '';
+    if (H === 'EXPIRATION') return '';
+    if (H === 'RATIONALE') return f.rationale || '';
+    if (H === 'SOURCE QUEUE ROW') return f.sourceRow || '';
+    if (H === 'REQUEST ID') return f.requestId || '';
+    if (H === 'SUPERSEDES') return '';
+    if (H === 'STANDARD / CATALOG VERSION') return '';
+    if (H === 'DECIDED BY PERSON ID') return f.decidedBy || '';
+    if (H === 'WRITER VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(row);
+}
+
+/**
+ * Write the live tracker matrix so Home / clearance / truck gates see the
+ * decision without waiting on a full tracker rebuild.
+ */
+function touchMatrixAfterSignoffV1_(trainee, skill, skillId, decision, decidedBy, decisionDate, rationale) {
+  var t = readTabV1_(PORTAL.TAB.SKILLS);
+  if (!t.ok) return;
+  if (t.col['SIGN-OFF'] === undefined && t.col['READINESS'] === undefined) return;
+  var norm = normNameV1_(trainee);
+  var skillNorm = normNameV1_(skill);
+  var by = String(decidedBy || '').trim();
+  var when = decisionDate instanceof Date ? decisionDate : new Date();
+  var note = String(rationale || '').trim().slice(0, 240);
+  t.rows.forEach(function (r, i) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== norm) return;
+    var idHit = skillId && t.col['SKILL ID'] !== undefined &&
+      String(r[t.col['SKILL ID']] || '').trim() === skillId;
+    var nameHit = normNameV1_(r[t.col['SKILL']]) === skillNorm;
+    if (!idHit && !nameHit) return;
+    var row = t.firstDataRow + i;
+    function setCol(name, value) {
+      if (t.col[name] === undefined) return;
+      t.sheet.getRange(row, t.col[name] + 1).setValue(value);
+    }
+    if (decision === 'Approve sign-off') {
+      setCol('SIGN-OFF', 'SIGNED OFF');
+      setCol('READINESS', 'SIGNED OFF');
+      setCol('SIGNED BY', by);
+      setCol('SIGNED DATE', when);
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
+    } else if (decision === 'Return for more evidence') {
+      setCol('READINESS', 'NEEDS MORE EVIDENCE');
+      setCol('SIGN-OFF', '');
+      setCol('SIGNED BY', '');
+      setCol('SIGNED DATE', '');
+      if (note) setCol('DECISION / EVIDENCE NOTE', note);
+    }
+  });
+}
+
+/* ---------------- coaching create ---------------- */
+
+function ensureCoachingLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName(PORTAL.TAB.COACHING)) return true;
+    var sh = book.insertSheet(PORTAL.TAB.COACHING);
+    sh.getRange(1, 1).setValue(
+      'Coaching notes filed from Field Training. Trainees acknowledge here.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 5)
+      .setValues([['DATE', 'TRAINEE', 'FROM', 'NOTE', 'ACKNOWLEDGED']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * FTO (their trainee) or Division files a coaching note.
+ * Trainee ack path (ackCoachingV1) already exists.
+ */
+function createCoachingV1(traineeName, note) {
+  requireWritableV1_('file a coaching note');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.FTO && viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only a training officer or Training Division may file coaching.');
+  }
+  var who = String(traineeName || '').trim();
+  var text = String(note || '').trim();
+  if (!who) throw new Error('Pick a trainee.');
+  if (text.length < 8) {
+    throw new Error('Type the note. It goes on their record in your name.');
+  }
+
+  var rec = null;
+  try {
+    traineesV1_().forEach(function (t) {
+      if (!rec && normNameV1_(t.name) === normNameV1_(who) && !t.closed) rec = t;
+    });
+  } catch (e) {}
+  if (!rec) throw new Error('No active trainee named "' + who + '".');
+
+  if (viewer.role === PORTAL.ROLE.FTO) {
+    if (normNameV1_(rec.fto) !== normNameV1_(viewer.name)) {
+      throw new Error(rec.name + ' is not on your line. Only their assigned FTO or Division can file coaching.');
+    }
+  }
+
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Could not open or create ' + PORTAL.TAB.COACHING + '. Nothing was written.');
+  }
+  var t = readTabV1_(PORTAL.TAB.COACHING);
+  if (!t.ok) throw new Error('No coaching log.');
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var from = viewer.name || viewer.email;
+  var row = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'DATE') return today;
+    if (H === 'TRAINEE') return rec.name;
+    if (H === 'FROM') return from;
+    if (H === 'NOTE') return clean_(text);
+    if (H === 'ACKNOWLEDGED') return '';
+    return '';
+  });
+  t.sheet.appendRow(row);
+  forgetTabsV1_();
+  auditV1_('COACHING FILED', viewer.email, rec.name + ' | ' + text.slice(0, 120));
+  return { ok: true, message: 'Coaching filed for ' + rec.name + '.' };
+}
+
+/* ---------------- assign FTO from Division ---------------- */
+
+/**
+ * One assignment from Field Training. Reuses the same dropdown rebuild and
+ * master write as the editor assignFto() path.
+ */
+function assignFtoV1(traineeName, ftoName) {
+  requireWritableV1_('assign a training officer');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may assign a training officer from Field Training.');
+  }
+  var trainee = String(traineeName || '').trim();
+  var fto = String(ftoName || '').trim();
+  if (!trainee) throw new Error('Pick a trainee.');
+  if (!fto) throw new Error('Pick a training officer.');
+
+  PropertiesService.getScriptProperties()
+    .setProperty(PORTAL_ASSIGN_PROPERTY, trainee + ' -> ' + fto);
+  var p = assignPlanV1_();
+  if (p.problem) throw new Error(p.problem);
+  if (p.noTrainee.length) throw new Error('No trainee named "' + trainee + '" on the master.');
+  if (p.noFto.length) {
+    throw new Error(fto + ' is not on the active roster. Add them with addFto first.');
+  }
+  if (p.twoRows.length) {
+    throw new Error('More than one master row matches "' + trainee + '". Fix the duplicate first.');
+  }
+  if (p.same.length && !p.set.length) {
+    return { ok: true, message: trainee + ' is already assigned to ' + fto + '.' };
+  }
+  if (!p.set.length) throw new Error('Nothing to assign.');
+
+  try { rebuildFtoDropdownV1_(); } catch (eD) {}
+  var c = assignColumnV1_();
+  if (!c) throw new Error('No ASSIGNED FTO column on the master.');
+  var s = p.set[0];
+  c.sheet.getRange(s.row, c.col).setValue(s.fto);
+
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  try {
+    writeAssignManifestV1_([[stamp, PORTAL.TAB.MASTER, s.row, p.header, s.trainee,
+      s.was || '', s.fto, viewer.email, PORTAL.VERSION]]);
+  } catch (eM) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('FTO ASSIGNED', viewer.email, s.trainee + ' -> ' + s.fto);
+  return { ok: true, message: s.trainee + ' is now assigned to ' + s.fto + '.' };
+}
+
+/* ---------------- matrix seed after enroll ---------------- */
+
+/**
+ * Put catalog skills onto 05 SKILLS PROGRESS for a new trainee when the
+ * catalog tab is present. Full rebuildSkillMatrix remains the gold path;
+ * this unblocks clearance tracking without opening the tracker project.
+ */
+function seedSkillMatrixForTraineeV1_(traineeName, level) {
+  var out = { ok: false, added: 0, why: '' };
+  var name = String(traineeName || '').trim();
+  if (!name) { out.why = 'no name'; return out; }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  if (!matrix.ok) { out.why = 'no skills matrix'; return out; }
+  if (matrix.col['TRAINEE'] === undefined || matrix.col['SKILL'] === undefined) {
+    out.why = 'matrix headers incomplete';
+    return out;
+  }
+
+  var catalog = readCatalogSkillsV1_();
+  if (!catalog.length) { out.why = 'no skill catalog (or none applicable)'; return out; }
+
+  var have = {};
+  matrix.rows.forEach(function (r) {
+    if (normNameV1_(r[matrix.col['TRAINEE']]) !== normNameV1_(name)) return;
+    var sid = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    var sk = String(r[matrix.col['SKILL']] || '').trim();
+    if (sid) have['id:' + sid] = true;
+    if (sk) have['sk:' + normNameV1_(sk)] = true;
+  });
+
+  var lvl = String(level || '').toLowerCase();
+  var added = 0;
+  catalog.forEach(function (c) {
+    if (!skillAppliesToLevelV1_(c, lvl)) return;
+    if (c.id && have['id:' + c.id]) return;
+    if (have['sk:' + normNameV1_(c.skill)]) return;
+    var row = matrix.headers.map(function (h) {
+      var H = String(h || '').trim().toUpperCase();
+      if (H === 'TRAINEE') return name;
+      if (H === 'SKILL') return c.skill;
+      if (H === 'SKILL ID') return c.id || '';
+      if (H === 'DOMAIN') return c.domain || '';
+      if (H === 'LEVEL') return level || '';
+      if (H === 'STAGE') return '';
+      if (H === 'READINESS') return 'NOT STARTED';
+      if (H === 'SIGN-OFF') return '';
+      if (H === 'SUCCESSFUL REPS' || H === 'INDEPENDENT REPS' ||
+          H === 'DISTINCT DATES' || H === 'DISTINCT FTOS') return 0;
+      return '';
+    });
+    matrix.sheet.appendRow(row);
+    added++;
+    if (c.id) have['id:' + c.id] = true;
+    have['sk:' + normNameV1_(c.skill)] = true;
+  });
+
+  if (added) forgetTabsV1_();
+  out.ok = true;
+  out.added = added;
+  return out;
+}
+
+function readCatalogSkillsV1_() {
+  try {
+    var book = targetBookV1_();
+    var sh = book.getSheetByName(PORTAL_CATALOG_TAB);
+    if (!sh || sh.getLastRow() < PORTAL.HEADER_ROW + 1) return [];
+    var width = Math.max(sh.getLastColumn(), 17);
+    var headers = sh.getRange(PORTAL.HEADER_ROW, 1, 1, width).getValues()[0];
+    var col = {};
+    headers.forEach(function (h, i) {
+      var k = String(h || '').trim().toUpperCase();
+      if (k && col[k] === undefined) col[k] = i;
+    });
+    if (col['SKILL ID'] === undefined || col['SKILL'] === undefined) return [];
+    var n = sh.getLastRow() - PORTAL.HEADER_ROW;
+    if (n < 1) return [];
+    var rows = sh.getRange(PORTAL.HEADER_ROW + 1, 1, n, width).getValues();
+    var out = [];
+    rows.forEach(function (r) {
+      var id = String(r[col['SKILL ID']] || '').trim();
+      var skill = String(r[col['SKILL']] || '').trim();
+      if (!id || !skill) return;
+      var active = col['ACTIVE'] !== undefined ? yesishV1_(r[col['ACTIVE']]) : true;
+      var status = col['APPROVAL STATUS'] !== undefined
+        ? String(r[col['APPROVAL STATUS']] || '').trim()
+        : (col['STATUS'] !== undefined ? String(r[col['STATUS']] || '').trim() : 'APPROVED');
+      if (!active) return;
+      if (status && !/^APPROVED$/i.test(status) && status !== '') return;
+      out.push({
+        id: id,
+        skill: skill,
+        domain: col['DOMAIN'] !== undefined ? String(r[col['DOMAIN']] || '').trim() : '',
+        emt: col['EMT'] !== undefined ? yesishV1_(r[col['EMT']]) : true,
+        aemt: col['AEMT'] !== undefined ? yesishV1_(r[col['AEMT']]) : true,
+        paramedic: col['PARAMEDIC'] !== undefined ? yesishV1_(r[col['PARAMEDIC']]) : true
+      });
+    });
+    return out;
+  } catch (e) { return []; }
+}
+
+function yesishV1_(v) {
+  var s = String(v == null ? '' : v).trim().toUpperCase();
+  return s === 'Y' || s === 'YES' || s === 'TRUE' || s === '1' || s === 'X';
+}
+
+function skillAppliesToLevelV1_(c, lvl) {
+  if (/paramedic|pmd/.test(lvl)) return !!c.paramedic;
+  if (/advanced|aemt/.test(lvl)) return !!c.aemt;
+  if (/emt/.test(lvl)) return !!c.emt;
+  // Unknown level — seed everything active so the person is not invisible.
+  return true;
+}
+
+/**
+ * Push matrix READY skills onto the OPEN validation queue when they are missing.
+ * Append-only. Does not cancel, sort, or sweep — that stays a human / tracker job
+ * until Field Training owns the full rebuild. Division can run this from the desk
+ * so READY skills show up without opening the tracker.
+ */
+function refreshValidationQueueV1() {
+  requireWritableV1_('refresh the validation queue');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may refresh the validation queue.');
+  }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  var queue = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!matrix.ok) throw new Error('No skills matrix.');
+  if (!queue.ok) throw new Error('No validation queue.');
+
+  var needQ = ['TRAINEE', 'SKILL', 'RECORD STATUS'];
+  var missingQ = needQ.filter(function (h) { return queue.col[h] === undefined; });
+  if (missingQ.length) {
+    throw new Error('The queue is missing ' + missingQ.join(', ') + '. Nothing was written.');
+  }
+  if (matrix.col['TRAINEE'] === undefined || matrix.col['READINESS'] === undefined) {
+    throw new Error('The matrix is missing TRAINEE or READINESS. Nothing was written.');
+  }
+
+  // Index OPEN by skill id AND skill name so a nameless id row and an id-less
+  // name row of the same skill do not both get another OPEN.
+  var open = {};
+  queue.rows.forEach(function (r) {
+    if (String(r[queue.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    var tn = normNameV1_(r[queue.col['TRAINEE']]);
+    var sid = queue.col['SKILL ID'] !== undefined
+      ? String(r[queue.col['SKILL ID']] || '').trim() : '';
+    var sk = normNameV1_(r[queue.col['SKILL']]);
+    if (sid) open[tn + '||' + sid] = true;
+    if (sk) open[tn + '||' + sk] = true;
+  });
+
+  // Exact readiness only — /READY FOR VALIDATION/ would also match NOT READY.
+  var QUALIFY = {
+    'READY FOR VALIDATION': true,
+    'SIGNED OFF - REVIEW REQUIRED': true,
+    'LEGACY SIGN-OFF REVIEW REQUIRED': true
+  };
+  var added = 0;
+  matrix.rows.forEach(function (r) {
+    var readiness = String(r[matrix.col['READINESS']] || '').trim();
+    if (!QUALIFY[readiness]) return;
+    var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
+    if (!trainee) return;
+    var skill = matrix.col['SKILL'] !== undefined
+      ? String(r[matrix.col['SKILL']] || '').trim() : '';
+    var skillId = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    if (!skill && !skillId) return;
+    var tn = normNameV1_(trainee);
+    var idKey = skillId ? tn + '||' + skillId : '';
+    var nameKey = skill ? tn + '||' + normNameV1_(skill) : '';
+    if ((idKey && open[idKey]) || (nameKey && open[nameKey])) return;
+
+    var lastDate = matrix.col['LAST DATE'] !== undefined
+      ? asDateV1_(r[matrix.col['LAST DATE']]) : null;
+    var domain = matrix.col['DOMAIN'] !== undefined
+      ? String(r[matrix.col['DOMAIN']] || '').trim() : '';
+    var succ = matrix.col['SUCCESSFUL REPS'] !== undefined ? Number(r[matrix.col['SUCCESSFUL REPS']]) || 0 : 0;
+    var indep = matrix.col['INDEPENDENT REPS'] !== undefined ? Number(r[matrix.col['INDEPENDENT REPS']]) || 0 : 0;
+    var dates = matrix.col['DISTINCT DATES'] !== undefined ? Number(r[matrix.col['DISTINCT DATES']]) || 0 : 0;
+    var ftos = matrix.col['DISTINCT FTOS'] !== undefined ? Number(r[matrix.col['DISTINCT FTOS']]) || 0 : 0;
+    // Staging-style text — never "4 / 2 / 2 / 2", which parseEvidenceBarsV1_
+    // misreads as have/need pairs.
+    var evidence = succ + ' successful, ' + indep + ' independent, ' +
+      dates + ' dates, ' + ftos + ' FTOs';
+    var requestId = 'QR-P-' + String(new Date().getTime()) + '-' + added;
+
+    var row = queue.headers.map(function (h) {
+      var H = String(h || '').trim().toUpperCase();
+      if (H === 'READY DATE' || H === 'LAST EVIDENCE DATE') return lastDate || new Date();
+      if (H === 'TRAINEE') return trainee;
+      if (H === 'SKILL ID') return skillId;
+      if (H === 'DOMAIN') return domain;
+      if (H === 'SKILL') return skill;
+      if (H === 'EVIDENCE SUMMARY') return evidence;
+      if (H === 'RECORD STATUS') return 'OPEN';
+      if (H === 'REQUEST ID') return requestId;
+      return '';
+    });
+    queue.sheet.appendRow(row);
+    if (idKey) open[idKey] = true;
+    if (nameKey) open[nameKey] = true;
+    added++;
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('VALIDATION QUEUE REFRESH', viewer.email, added + ' row(s) added');
+  return {
+    ok: true,
+    added: added,
+    message: added
+      ? ('Added ' + added + ' OPEN row' + (added === 1 ? '' : 's') + ' from the matrix.')
+      : 'Queue already has every READY skill. Nothing added.'
+  };
+}
+
+/**
+ * When the tracker matrix is stale but skills are on the evidence log, recount
+ * each matrix row from the log and flip readiness to READY FOR VALIDATION when
+ * the bars are met. Does not wipe or rebuild the matrix. Optionally refreshes
+ * the OPEN queue afterward.
+ */
+function syncMatrixFromEvidenceV1() {
+  requireWritableV1_('sync the skills matrix from the evidence log');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may sync the matrix from evidence.');
+  }
+
+  var matrix = readTabV1_(PORTAL.TAB.SKILLS);
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (!matrix.ok) throw new Error('No skills matrix.');
+  if (!ev.ok) throw new Error('No evidence log.');
+  if (matrix.col['TRAINEE'] === undefined) {
+    throw new Error('The matrix is missing TRAINEE. Nothing was written.');
+  }
+
+  var updated = 0, markedReady = 0;
+  matrix.rows.forEach(function (r, i) {
+    var trainee = String(r[matrix.col['TRAINEE']] || '').trim();
+    if (!trainee) return;
+    var readiness = matrix.col['READINESS'] !== undefined
+      ? String(r[matrix.col['READINESS']] || '').trim() : '';
+    var signoff = matrix.col['SIGN-OFF'] !== undefined
+      ? String(r[matrix.col['SIGN-OFF']] || '').trim() : '';
+    if (signoff === 'SIGNED OFF' || readiness === 'SIGNED OFF') return;
+
+    var skill = matrix.col['SKILL'] !== undefined
+      ? String(r[matrix.col['SKILL']] || '').trim() : '';
+    var skillId = matrix.col['SKILL ID'] !== undefined
+      ? String(r[matrix.col['SKILL ID']] || '').trim() : '';
+    if (!skill && !skillId) return;
+
+    var counts = evidenceCountsForSkillV1_(trainee, skill, skillId);
+    if (!counts || !counts.successful) return;
+
+    var row = matrix.firstDataRow + i;
+    var wrote = false;
+    function setCol(name, value) {
+      if (matrix.col[name] === undefined) return;
+      var cur = r[matrix.col[name]];
+      if (String(cur) === String(value)) return;
+      matrix.sheet.getRange(row, matrix.col[name] + 1).setValue(value);
+      r[matrix.col[name]] = value;
+      wrote = true;
+    }
+    setCol('SUCCESSFUL REPS', counts.successful);
+    setCol('INDEPENDENT REPS', counts.independent);
+    setCol('DISTINCT DATES', counts.distinctDates);
+    setCol('DISTINCT FTOS', counts.distinctFtos);
+    if (counts.lastDate) setCol('LAST DATE', counts.lastDate);
+    if (counts.stage) setCol('STAGE', counts.stage);
+
+    var needS = cellNumV1_(r, matrix, ['NEED SUCCESSFUL', 'REQUIRED SUCCESSFUL'], 3) || 3;
+    var needI = cellNumV1_(r, matrix, ['NEED INDEPENDENT', 'REQUIRED INDEPENDENT'], 2) || 2;
+    var needD = cellNumV1_(r, matrix, ['NEED DATES', 'REQUIRED DATES'], 2) || 2;
+    var needF = cellNumV1_(r, matrix, ['NEED FTOS', 'REQUIRED FTOS'], 2) || 2;
+    // Live matrix often lacks NEED_* columns — use the same defaults as skillsForV1_.
+    if (matrix.col['NEED SUCCESSFUL'] === undefined &&
+        matrix.col['REQUIRED SUCCESSFUL'] === undefined) {
+      needS = 3; needI = 2; needD = 2; needF = 2;
+    }
+
+    var met = counts.successful >= needS &&
+      counts.independent >= needI &&
+      counts.distinctDates >= needD &&
+      counts.distinctFtos >= needF;
+    if (met && matrix.col['READINESS'] !== undefined &&
+        readiness !== 'READY FOR VALIDATION' &&
+        readiness !== 'SIGNED OFF - REVIEW REQUIRED' &&
+        readiness !== 'LEGACY SIGN-OFF REVIEW REQUIRED') {
+      setCol('READINESS', 'READY FOR VALIDATION');
+      markedReady++;
+    }
+    if (wrote) updated++;
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var queueMsg = '';
+  var added = 0;
+  try {
+    var q = refreshValidationQueueV1();
+    added = q && q.added ? q.added : 0;
+    queueMsg = q && q.message ? q.message : '';
+  } catch (eQ) {
+    queueMsg = 'Queue refresh skipped: ' + String(eQ.message || eQ);
+  }
+
+  auditV1_('MATRIX SYNC FROM EVIDENCE', viewer.email,
+    updated + ' row(s) updated, ' + markedReady + ' marked READY, queue +' + added);
+
+  return {
+    ok: true,
+    updated: updated,
+    markedReady: markedReady,
+    queueAdded: added,
+    message: updated
+      ? ('Updated ' + updated + ' matrix row' + (updated === 1 ? '' : 's') +
+         ' from the evidence log' +
+         (markedReady ? ('; marked ' + markedReady + ' READY') : '') +
+         '. ' + queueMsg)
+      : ('No matrix rows needed a recount from the evidence log. ' + queueMsg)
+  };
+}
+
+
+/* ======================================================================
+ * 92_Lifecycle.gs
+ * ====================================================================== */
+
+/**
+ * Phase and clearance — Field Training lifecycle.
+ *
+ * Training Division keeps CURRENT PHASE current and can clear a trainee for
+ * independent partner duty when they have finished the program.
+ *
+ * Advance:
+ *   CURRENT PHASE → next · PHASE START DATE → today · optional assignment
+ *   history row · PORTAL AUDIT.
+ *
+ * Clear for the truck (successful completion — not termination):
+ *   SET STATUS → Cleared / Independent · archive snapshot · cancel OPEN
+ *   skill-queue rows · refresh form Trainee lists · PORTAL AUDIT.
+ *
+ * End training / close (stops weekly mail; not a truck clearance):
+ *   SET STATUS → Closed / Released · same archive / queue cancel / form refresh.
+ *
+ * "Cleared / Independent" means they completed every phase and the required
+ * skills and may ride as a partner. It is a graduation, not leaving the job.
+ */
+
+var PORTAL_PHASES_V1 = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+var PORTAL_RELEASE_LOG = 'PORTAL RELEASE LOG';
+var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
+var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
+/** Vault status for someone cleared to ride as an independent partner. */
+var PORTAL_CLEARED_STATUS = 'Cleared / Independent';
+/** Vault status when training ends without truck clearance (leaves digests). */
+var PORTAL_CLOSED_STATUS = 'Closed / Released';
+
+function phaseIndexV1_(phase) {
+  var p = String(phase || '').trim();
+  var i = PORTAL_PHASES_V1.indexOf(p);
+  if (i >= 0) return i;
+  var m = p.match(/(\d+)/);
+  if (m) {
+    var n = Number(m[1]) - 1;
+    if (n >= 0 && n < PORTAL_PHASES_V1.length) return n;
+  }
+  return -1;
+}
+
+function nextPhaseV1_(phase) {
+  var i = phaseIndexV1_(phase);
+  if (i < 0 || i >= PORTAL_PHASES_V1.length - 1) return '';
+  return PORTAL_PHASES_V1[i + 1];
+}
+
+/** Live master row for an active (or any) trainee by exact/normalized name. */
+function findTraineeOnMasterV1_(name) {
+  var want = normNameV1_(name);
+  if (!want) return null;
+  var list = traineesV1_();
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].norm === want) return list[i];
+  }
+  return null;
+}
+
+function requireDivisionWritableV1_(what) {
+  requireWritableV1_(what);
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may ' + what + '.');
+  }
+  return viewer;
+}
+
+/**
+ * Advance one phase. Typed reason required (≥8).
+ * Returns { ok, name, from, to, message }.
+ */
+function advanceTraineePhaseV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('advance a phase');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why you are advancing them. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book (' + rec.from +
+      '). Bring them onto this tracker before advancing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already closed / released.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var next = nextPhaseV1_(rec.phase);
+  if (!next) {
+    if (phaseIndexV1_(rec.phase) === PORTAL_PHASES_V1.length - 1) {
+      throw new Error(rec.name + ' is already in Phase 4. Clear them for the truck when the program is complete — phase does not advance past that.');
+    }
+    throw new Error('Current phase "' + (rec.phase || '(blank)') +
+      '" is not a known phase. Fix the master row first.');
+  }
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+  if (t.col['CURRENT PHASE'] === undefined) {
+    throw new Error('CURRENT PHASE column is missing on the master.');
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  t.sheet.getRange(rec.row, t.col['CURRENT PHASE'] + 1).setValue(next);
+  if (t.col['PHASE START DATE'] !== undefined) {
+    t.sheet.getRange(rec.row, t.col['PHASE START DATE'] + 1).setValue(today);
+  }
+
+  try { appendAssignmentHistoryV1_(rec, next, today, viewer.email, why); }
+  catch (eHist) {}
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  auditV1_('PHASE ADVANCED', viewer.email,
+    rec.name + ' | ' + rec.phase + ' → ' + next + ' | ' + why.slice(0, 200));
+
+  return {
+    ok: true,
+    name: rec.name,
+    from: rec.phase,
+    to: next,
+    message: rec.name + ' is now in ' + next + '.'
+  };
+}
+
+/**
+ * Clear a trainee for independent partner duty (successful program completion).
+ * Typed reason required. Soft-closes on the master, archives the clearance,
+ * cancels open skill requests, refreshes form lists.
+ */
+function releaseTraineeV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('clear a trainee for independent duty');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why they are cleared. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before clearing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var assess = clearanceAssessmentV1_(rec);
+  if (!assess.canClear) {
+    throw new Error(rec.name + ' is not ready for the truck yet.\n\n' +
+      (assess.gaps.length ? assess.gaps.join('\n') : 'Finish Phase 4 and every skill sign-off first.'));
+  }
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+
+  var statusHeader = t.col['SET STATUS'] !== undefined ? 'SET STATUS'
+                   : (t.col['PROGRAM STATUS'] !== undefined ? 'PROGRAM STATUS' : '');
+  if (!statusHeader) {
+    throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
+  }
+
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLEARED_STATUS,
+    'Cleared for independent partner duty by ' + viewer.email + ': ' + why);
+
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLEARED_STATUS);
+
+  var cancelled = cancelOpenSkillQueueForV1_(rec.name);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var sync = null;
+  try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  auditV1_('TRAINEE CLEARED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | independent partner | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
+
+  var msg = rec.name + ' is cleared for independent partner duty. Captured with your reason.';
+  if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
+  if (sync && sync.ok) msg += ' Form Trainee lists updated.';
+  return {
+    ok: true,
+    name: rec.name,
+    phase: rec.phase,
+    cancelled: cancelled,
+    message: msg
+  };
+}
+
+/**
+ * End training without truck clearance. Sets Closed / Released so they leave
+ * Active digests and form Trainee lists. Typed reason required. No Phase 4 gate.
+ */
+function closeTraineeV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('close a trainee out of training');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why training is ending. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before closing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+
+  var statusHeader = t.col['SET STATUS'] !== undefined ? 'SET STATUS'
+                   : (t.col['PROGRAM STATUS'] !== undefined ? 'PROGRAM STATUS' : '');
+  if (!statusHeader) {
+    throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
+  }
+
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLOSED_STATUS,
+    'Training closed by ' + viewer.email + ': ' + why);
+
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLOSED_STATUS);
+
+  var cancelled = cancelOpenSkillQueueForV1_(rec.name);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var sync = null;
+  try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  auditV1_('TRAINEE CLOSED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | closed / released | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
+
+  var msg = rec.name + ' is closed out of training (Closed / Released). ' +
+    'They will not get Monday status cards. Your reason is on the record.';
+  if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
+  if (sync && sync.ok) msg += ' Form Trainee lists updated.';
+  return {
+    ok: true,
+    name: rec.name,
+    phase: rec.phase,
+    status: PORTAL_CLOSED_STATUS,
+    cancelled: cancelled,
+    message: msg
+  };
+}
+
+function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
+  var book = targetBookV1_();
+  var sh = book.getSheetByName(PORTAL_ASSIGNMENTS_TAB);
+  if (!sh) return;
+  var t = readTabUncachedV1_(PORTAL_ASSIGNMENTS_TAB);
+  if (!t.ok) return;
+  var row = new Array(t.headers.length);
+  for (var i = 0; i < row.length; i++) row[i] = '';
+  function put(h, v) {
+    if (t.col[h] !== undefined) row[t.col[h]] = v;
+  }
+  put('TRAINEE', rec.name);
+  put('LEVEL', rec.level);
+  put('FTO', rec.fto);
+  put('PHASE', newPhase);
+  put('PHASE START', eff);
+  put('STATUS', 'ACTIVE');
+  put('OPENED', new Date());
+  put('SOURCE', 'advancement by ' + by + ' (Field Training)');
+  put('NOTES', why);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+function writeReleaseArchiveV1_(rec, by, why, finalStatus, notes) {
+  var book = targetBookV1_();
+  var stamp = new Date();
+  var status = finalStatus || PORTAL_CLEARED_STATUS;
+  var payload = {
+    'DATE ARCHIVED': stamp,
+    'TRAINEE': rec.name,
+    'LEVEL': rec.level || '',
+    'FTO': rec.fto || '',
+    'PHASE AT EXIT': rec.phase || '',
+    'FINAL STATUS': status,
+    'NOTES': notes || ('Status set to ' + status + ' by ' + by + ': ' + why),
+    'RELEASED BY': by,
+    'EMAIL': rec.email || ''
+  };
+
+  var sh = book.getSheetByName(PORTAL_ARCHIVE_TAB);
+  if (sh) {
+    var t = readTabUncachedV1_(PORTAL_ARCHIVE_TAB);
+    if (t.ok && t.headers.length) {
+      var row = new Array(t.headers.length);
+      for (var i = 0; i < row.length; i++) row[i] = '';
+      Object.keys(payload).forEach(function (h) {
+        if (t.col[h] !== undefined) row[t.col[h]] = payload[h];
+      });
+      sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+      return;
+    }
+  }
+
+  // Fallback log owned by the portal — always available.
+  sh = book.getSheetByName(PORTAL_RELEASE_LOG);
+  if (!sh) {
+    sh = book.insertSheet(PORTAL_RELEASE_LOG);
+    sh.getRange(1, 1).setValue(
+      'Clearances and closes captured from Field Training. Do not edit or sort.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
+      .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
+                   'FINAL STATUS', 'RELEASED BY', 'NOTES']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+  }
+  sh.appendRow([
+    stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
+    status, by, why
+  ]);
+}
+
+function cancelOpenSkillQueueForV1_(traineeName) {
+  var t = readTabV1_(PORTAL.TAB.QUEUE);
+  if (!t.ok || t.col['TRAINEE'] === undefined) return 0;
+  if (t.col['RECORD STATUS'] === undefined) return 0;
+  var want = normNameV1_(traineeName);
+  var n = 0;
+  t.rows.forEach(function (r, i) {
+    if (normNameV1_(r[t.col['TRAINEE']]) !== want) return;
+    if (String(r[t.col['RECORD STATUS']] || '').trim() !== 'OPEN') return;
+    t.sheet.getRange(t.firstDataRow + i, t.col['RECORD STATUS'] + 1)
+      .setValue('CANCELLED : TRAINEE CLOSED');
+    n++;
+  });
+  return n;
+}
 
 
 /* ======================================================================
@@ -5199,58 +7711,37 @@ function responseColV1_(tab, patterns) {
 
 /** What has arrived and never been turned into anything. Read only. */
 function unprocessedResponses() {
-  var tabs = formResponseTabsV1_();
+  var report = waitingFormResponsesV1_();
   var lines = ['UNPROCESSED FORM RESPONSES  (read only, nothing was written)', '',
     'In : ' + safeTargetNameV1_(), ''];
 
-  if (!tabs.length) {
+  if (!report.tabs.length) {
     lines.push('No form-response tabs are in this spreadsheet.');
     lines.push('Every form either writes somewhere else or has no responses yet.');
     return noteV1_(lines.join('\n'));
   }
 
-  // What the evidence log already knows about, so "waiting" means waiting.
-  var known = {};
-  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
-  if (ev.ok) {
-    ev.rows.forEach(function (r) {
-      var who = String(r[ev.col['TRAINEE']] || '').trim();
-      var when = asDateV1_(r[ev.col['EVENT DATE']] || r[ev.col['DATE']]);
-      if (who && when) known[normNameV1_(who) + '|' + when.toDateString()] = true;
-    });
-  }
-
-  var total = 0, waiting = 0;
-  tabs.forEach(function (t) {
-    var iWho  = responseColV1_(t, [/^trainee/i]);
-    var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
-    var iWhen = responseColV1_(t, [/shift date|^date/i]);
-    var iMail = responseColV1_(t, [/^email address/i]);
-
+  report.tabs.forEach(function (t) {
     lines.push('=======================================================');
-    lines.push(t.name);
-    lines.push('  ' + t.rows.length + ' response' + (t.rows.length === 1 ? '' : 's') +
-               ', ' + t.headers.filter(String).length + ' questions');
+    lines.push(t.name + (t.kind === 'skills' ? '  (skills log)' : ''));
+    lines.push('  ' + t.total + ' response' + (t.total === 1 ? '' : 's') +
+               ', ' + t.questions + ' questions');
     lines.push('=======================================================');
-    if (!t.rows.length) { lines.push('  nothing in it'); lines.push(''); return; }
-
-    t.rows.forEach(function (r) {
-      total++;
-      var who = iWho >= 0 ? String(r[iWho] || '').trim() : '';
-      var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
-      var already = who && when && known[normNameV1_(who) + '|' + when.toDateString()];
-      if (!already) waiting++;
-      lines.push('  ' + (already ? 'in the log ' : 'WAITING    ') +
-        (when ? when.toDateString() : 'no date') + '   ' +
-        (who || '(no trainee named)') +
-        (iFto >= 0 && r[iFto] ? '   by ' + String(r[iFto]).trim() : '') +
-        (iMail >= 0 && r[iMail] ? '   ' + String(r[iMail]).trim() : ''));
+    if (!t.total) { lines.push('  nothing in it'); lines.push(''); return; }
+    (t.responses || []).forEach(function (r) {
+      var tag = r.inLog ? 'in the log ' : (r.dayHint ? 'day hint  ' : 'WAITING    ');
+      lines.push('  ' + tag +
+        (r.when || 'no date') + '   ' +
+        (r.trainee || '(no trainee named)') +
+        (r.by ? '   by ' + r.by : '') +
+        (r.email ? '   ' + r.email : ''));
     });
     lines.push('');
   });
 
   lines.push('=======================================================');
-  lines.push(total + ' response(s) on file, ' + waiting + ' with nothing matching them');
+  lines.push(report.total + ' response(s) on file, ' + report.waiting +
+             ' with nothing matching them');
   lines.push('in ' + PORTAL.TAB.EVIDENCE + '.');
   lines.push('');
   lines.push('These are NOT lost. They are in this spreadsheet, in the tabs above,');
@@ -5258,9 +7749,285 @@ function unprocessedResponses() {
   lines.push('that turns a response into a row in the evidence log, which is the');
   lines.push('tracker\'s own ingestion job and not something this portal does.');
   lines.push('');
-  lines.push('"WAITING" here means no evidence row shares that trainee and date.');
-  lines.push('It is a strong hint, not a proof - check before acting on it.');
+  lines.push('"in the log" means the same source response id is on the evidence log.');
+  lines.push('"day hint" means the same trainee has evidence that day — a strong hint,');
+  lines.push('not a proof that this specific response was ingested.');
+  lines.push('"WAITING" means neither. Clear from Field Training Home, or Sync matrix');
+  lines.push('from evidence when skills are logged but the matrix is stuck.');
   return noteV1_(lines.join('\n'));
+}
+
+/**
+ * Structured waiting list for Field Training Division.
+ * Read only. Same matching rules as unprocessedResponses().
+ */
+function waitingFormResponsesV1_() {
+  var tabs = formResponseTabsV1_();
+  var knownDate = {}, knownId = {};
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (ev.ok) {
+    ev.rows.forEach(function (r) {
+      var who = String(r[ev.col['TRAINEE']] || '').trim();
+      var when = evidenceEventDateV1_(ev, r);
+      if (who && when) knownDate[normNameV1_(who) + '|' + when.toDateString()] = true;
+      var sid = '';
+      if (ev.col['SOURCE RESPONSE ID'] !== undefined) {
+        sid = String(r[ev.col['SOURCE RESPONSE ID']] || '').trim();
+      }
+      if (sid) knownId[sid] = true;
+    });
+  }
+
+  var outTabs = [], total = 0, waiting = 0, skillsWaiting = 0;
+  var reviewed = reviewedFormKeysV1_();
+  tabs.forEach(function (t) {
+    var iWho  = responseColV1_(t, [/^trainee/i]);
+    var iFto  = responseColV1_(t, [/^(fto|your name)/i]);
+    var iWhen = responseColV1_(t, [/shift date|^date/i]);
+    var iMail = responseColV1_(t, [/^email address/i]);
+    var iTs   = responseColV1_(t, [/^timestamp/i]);
+    var kind = skillsResponseTabV1_(t) ? 'skills' : 'other';
+    var responses = [];
+    t.rows.forEach(function (r, i) {
+      total++;
+      var who = iWho >= 0 ? String(r[iWho] || '').trim() : '';
+      var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
+      if (!when && iTs >= 0) when = asDateV1_(r[iTs]);
+      var by = iFto >= 0 ? String(r[iFto] || '').trim() : '';
+      var email = iMail >= 0 ? String(r[iMail] || '').trim() : '';
+      var sheetRow = i + 2; // header on row 1
+      var responseId = formResponseIdGuessV1_(t, r);
+      // Response-id match is authoritative. Same-day trainee match is only a
+      // hint — one skill logged that day must not hide every other form.
+      var idInLog = !!(responseId && knownId[responseId]);
+      var dayHint = !!(who && when && knownDate[normNameV1_(who) + '|' + when.toDateString()]);
+      var inLog = idInLog;
+      var deskCleared = !!reviewed[t.name + '|' + sheetRow];
+      if (!inLog && !deskCleared) {
+        waiting++;
+        if (kind === 'skills') skillsWaiting++;
+      }
+      responses.push({
+        tab: t.name,
+        row: sheetRow,
+        trainee: who,
+        by: by,
+        email: email,
+        when: when ? when.toDateString() : '',
+        stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
+        inLog: inLog,
+        dayHint: dayHint,
+        deskCleared: deskCleared,
+        kind: kind,
+        responseId: responseId || ''
+      });
+    });
+    outTabs.push({
+      name: t.name,
+      kind: kind,
+      total: t.rows.length,
+      questions: t.headers.filter(String).length,
+      waiting: responses.filter(function (x) { return !x.inLog && !x.deskCleared; }).length,
+      responses: responses
+    });
+  });
+
+  var waitingList = [];
+  outTabs.forEach(function (t) {
+    t.responses.forEach(function (r) {
+      if (!r.inLog && !r.deskCleared) waitingList.push(r);
+    });
+  });
+  // Newest first when we have a date string we can sort loosely
+  waitingList.sort(function (a, b) {
+    return String(b.when || b.stamp || '').localeCompare(String(a.when || a.stamp || ''));
+  });
+
+  return {
+    tabs: outTabs,
+    total: total,
+    waiting: waiting,
+    skillsWaiting: skillsWaiting,
+    waitingList: waitingList.slice(0, 40)
+  };
+}
+
+/** Keys Division has already reviewed so Waiting on you stops nagging. */
+function reviewedFormKeysV1_() {
+  var out = {};
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) return out;
+  t.rows.forEach(function (r) {
+    var tab = String(r[t.col['TAB']] || '').trim();
+    var row = String(r[t.col['ROW']] || '').trim();
+    if (!tab || !row) return;
+    out[tab + '|' + row] = true;
+  });
+  return out;
+}
+
+function ensureFormReviewsLogV1_() {
+  try {
+    var book = targetBookV1_();
+    if (book.getSheetByName('PORTAL FORM REVIEWS')) return true;
+    var sh = book.insertSheet('PORTAL FORM REVIEWS');
+    sh.getRange(1, 1).setValue(
+      'Form responses Division reviewed from Field Training. Raw tabs stay.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 7).setValues([[
+      'WHEN', 'TAB', 'ROW', 'TRAINEE', 'BY', 'REASON', 'VERSION'
+    ]]).setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+    forgetTabsV1_();
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Clear a waiting form response from the Division desk without ingesting it.
+ * The Form Responses tab is untouched. Tracker ingest remains separate.
+ */
+function reviewFormResponseV1(tabName, sheetRow, reason) {
+  requireWritableV1_('review a form response');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may clear a waiting form response from the desk.');
+  }
+  var tab = String(tabName || '').trim();
+  var row = String(sheetRow == null ? '' : sheetRow).trim();
+  var why = String(reason || '').trim();
+  if (!tab || !row || row === '0') throw new Error('Missing response identity.');
+  if (why.length < 8) {
+    throw new Error('Type why you are clearing this from the desk. It goes on the record.');
+  }
+  if (reviewedFormKeysV1_()[tab + '|' + row]) {
+    return { ok: true, message: 'Already cleared from the desk.' };
+  }
+  // Confirm the row still exists
+  formResponseDetailV1_(tab, Number(row));
+
+  if (!ensureFormReviewsLogV1_()) {
+    throw new Error('Could not open or create PORTAL FORM REVIEWS. Nothing was written.');
+  }
+  var t = readTabV1_('PORTAL FORM REVIEWS');
+  if (!t.ok) throw new Error('No form-reviews log.');
+  var detail = formResponseDetailV1_(tab, Number(row));
+  var line = t.headers.map(function (h) {
+    var H = String(h || '').trim().toUpperCase();
+    if (H === 'WHEN') return new Date();
+    if (H === 'TAB') return tab;
+    if (H === 'ROW') return row;
+    if (H === 'TRAINEE') return detail.trainee || '';
+    if (H === 'BY') return viewer.email;
+    if (H === 'REASON') return clean_(why);
+    if (H === 'VERSION') return PORTAL.VERSION;
+    return '';
+  });
+  t.sheet.appendRow(line);
+  forgetTabsV1_();
+  auditV1_('FORM RESPONSE REVIEWED', viewer.email, tab + ' | row ' + row + ' | ' + why.slice(0, 100));
+  return { ok: true, message: 'Cleared from Waiting on you. The form-response tab is unchanged.' };
+}
+
+/** Skills-grid response tabs tend to carry many skill/stage columns. */
+function skillsResponseTabV1_(tab) {
+  var n = 0;
+  (tab.headers || []).forEach(function (h) {
+    if (/skill|stage|independent|assisted|successful|unsuccessful|rep\b|grid/i.test(h)) n++;
+  });
+  if (n >= 3) return true;
+  if (/skill/i.test(tab.name || '')) return true;
+  return false;
+}
+
+function formResponseIdGuessV1_(tab, row) {
+  var i = responseColV1_(tab, [/response\s*id|source\s*response/i]);
+  if (i < 0) return '';
+  return String(row[i] || '').trim();
+}
+
+/**
+ * One raw form response for Division to read in Field Training.
+ * Read only. Does not ingest.
+ */
+function formResponseDetailV1(tabName, sheetRow) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may open raw form responses here.');
+  }
+  return formResponseDetailV1_(tabName, sheetRow);
+}
+
+function formResponseDetailV1_(tabName, sheetRow) {
+  var name = String(tabName || '').trim();
+  var rowNum = Number(sheetRow);
+  if (!name || !(rowNum >= 2)) throw new Error('Missing response identity. Reload and try again.');
+
+  var hit = null;
+  formResponseTabsV1_().forEach(function (t) {
+    if (!hit && t.name === name) hit = t;
+  });
+  if (!hit) throw new Error('No form-response tab named "' + name + '".');
+
+  var idx = rowNum - 2;
+  if (idx < 0 || idx >= hit.rows.length) {
+    throw new Error('That response is gone from the tab. Reload.');
+  }
+  var r = hit.rows[idx];
+  var iWho  = responseColV1_(hit, [/^trainee/i]);
+  var iFto  = responseColV1_(hit, [/^(fto|your name)/i]);
+  var iWhen = responseColV1_(hit, [/shift date|^date/i]);
+  var iMail = responseColV1_(hit, [/^email address/i]);
+  var iTs   = responseColV1_(hit, [/^timestamp/i]);
+  var fields = [];
+  hit.headers.forEach(function (h, ci) {
+    if (!h) return;
+    if (ci === iWho || ci === iFto || ci === iWhen || ci === iMail || ci === iTs) return;
+    var v = r[ci];
+    if (v === '' || v === null || v === undefined) return;
+    fields.push({ label: labelForV1_(h), value: displayValueV1_(v) });
+  });
+
+  var when = iWhen >= 0 ? asDateV1_(r[iWhen]) : null;
+  if (!when && iTs >= 0) when = asDateV1_(r[iTs]);
+  var trainee = iWho >= 0 ? String(r[iWho] || '').trim() : '';
+  var responseId = formResponseIdGuessV1_(hit, r);
+  var inLog = false;
+  var dayHint = false;
+  var ev = readTabV1_(PORTAL.TAB.EVIDENCE);
+  if (ev.ok) {
+    if (responseId && ev.col['SOURCE RESPONSE ID'] !== undefined) {
+      inLog = ev.rows.some(function (er) {
+        return String(er[ev.col['SOURCE RESPONSE ID']] || '').trim() === responseId;
+      });
+    }
+    if (trainee && when) {
+      var day = when.toDateString();
+      dayHint = ev.rows.some(function (er) {
+        var d = evidenceEventDateV1_(ev, er);
+        return normNameV1_(er[ev.col['TRAINEE']]) === normNameV1_(trainee) &&
+          d && d.toDateString() === day;
+      });
+    }
+  }
+
+  return {
+    tab: name,
+    row: rowNum,
+    kind: skillsResponseTabV1_(hit) ? 'skills' : 'other',
+    trainee: trainee,
+    by: iFto >= 0 ? String(r[iFto] || '').trim() : '',
+    email: iMail >= 0 ? String(r[iMail] || '').trim() : '',
+    when: when ? when.toDateString() : '',
+    stamp: iTs >= 0 && asDateV1_(r[iTs]) ? asDateV1_(r[iTs]).toDateString() : '',
+    inLog: inLog,
+    dayHint: dayHint,
+    deskCleared: !!reviewedFormKeysV1_()[name + '|' + rowNum],
+    fields: fields.slice(0, 40),
+    note: 'Read only. Ingest into ' + PORTAL.TAB.EVIDENCE +
+      ' still runs in the tracker (catchUpUnprocessed / form trigger). ' +
+      'If skills are on the log but the matrix is stuck, use Sync matrix from evidence on Home.'
+  };
 }
 
 var PORTAL_DIRECTORY_PROPERTY = 'PORTAL_DIRECTORY_EMAILS';
@@ -6001,8 +8768,14 @@ function renamePairsV1_() {
 /** Tabs a rename may change. Not the logs, and not a form-response tab. */
 function renameableTabsV1_() {
   var skip = [PORTAL.TAB.AUDIT, PORTAL_BACKFILL_LOG, PORTAL_ROSTER_LOG, PORTAL_RENAME_LOG];
-  return Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
+  var tabs = Object.keys(PORTAL.TAB).map(function (k) { return PORTAL.TAB[k]; })
     .filter(function (n) { return skip.indexOf(n) < 0; });
+  // Settlements are judgments keyed by trainee name — they must follow a rename
+  // or Settle raises settled pairs again under the new spelling.
+  if (typeof PORTAL_SETTLEMENTS_TAB === 'string' && tabs.indexOf(PORTAL_SETTLEMENTS_TAB) < 0) {
+    tabs.push(PORTAL_SETTLEMENTS_TAB);
+  }
+  return tabs;
 }
 
 /** Every cell that would change, and every mention that would not. Reads. */
@@ -6611,7 +9384,19 @@ function retireFto() {
 
   if (written.length) {
     rebuiltNoteV1_(L);
-    refreshDropdownsNoteV1_(L);
+    var sync = null;
+    try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  FTO name lists on ' + sync.forms + ' registered form(s) no longer offer');
+      L.push('  the retired officer(s).');
+      if (sync.notes && sync.notes.length) {
+        sync.notes.forEach(function (n) { L.push('  · ' + n); });
+      }
+      L.push('');
+    } else {
+      refreshDropdownsNoteV1_(L);
+    }
     L.push('');
     L.push('Nothing was deleted. Every row, every evaluation and every sign-off');
     L.push('is exactly where it was, under the name that earned it.');
@@ -6697,6 +9482,13 @@ function unretireFto() {
   if (put.length) {
     L.push('');
     L.push('They can sign in again, and they are counted again.');
+    try {
+      var sync = syncRegisteredFormChoicesV1_();
+      if (sync && sync.ok) {
+        L.push('');
+        L.push('Form FTO lists refreshed on ' + sync.forms + ' registered form(s).');
+      }
+    } catch (eSync) {}
   }
   return noteV1_(L.join('\n'));
 }
@@ -6737,6 +9529,10 @@ function UNDO_SOMEBODY_LEFT() { return unretireFto(); }
  *   Guess at what somebody is qualified to train. Those columns are left
  *   blank and named, for a person to fill in.
  *
+ * Two ways in:
+ *   Editor: set PORTAL_ADD_FTO, run addFtoBeforeAndAfter / addFto.
+ *   Field Training: Training Division → Add an FTO → addFtoV1 (web).
+ *
  * undoAddFto() removes the rows it added, and only while they are still the
  * blank-slate rows it wrote.
  */
@@ -6744,48 +9540,68 @@ function UNDO_SOMEBODY_LEFT() { return unretireFto(); }
 var PORTAL_ADD_FTO_PROPERTY = 'PORTAL_ADD_FTO';
 var PORTAL_ADD_FTO_LOG = 'PORTAL ROSTER ADDITIONS';
 
-/** Who to add.
- *
- *  "Chyna Gray, cgray@example.org, C, Advanced EMT" - and the parts after the
- *  name may come in any order, because remembering an order is one more thing
- *  to get wrong. A field with an @ is the address, a lone letter is the shift,
- *  and anything that reads like a certification is the level.
- *
- *  More than one? Put a semicolon between them. */
+/** Parse one FTO add request from a web payload or a free-text property line. */
+function parseAddFtoRequestV1_(piece) {
+  if (piece && typeof piece === 'object' && !Array.isArray(piece)) {
+    var lvl = String(piece.level || '').trim();
+    if (lvl && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(lvl)) {
+      /* keep as typed */
+    } else if (lvl) {
+      if (/param/i.test(lvl)) lvl = 'Paramedic';
+      else if (/advanced|aemt/i.test(lvl)) lvl = 'Advanced EMT';
+      else if (/^emt/i.test(lvl)) lvl = 'EMT';
+    }
+    var sh = String(piece.shift || '').trim().toUpperCase();
+    if (sh && !/^[A-D]$/.test(sh)) sh = '';
+    return {
+      name: String(piece.name || '').replace(/\s+/g, ' ').trim(),
+      email: String(piece.email || '').trim().toLowerCase(),
+      shift: sh,
+      level: lvl
+    };
+  }
+
+  var parts = String(piece || '').split(/[,|\t]+/)
+    .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  var req = { name: '', email: '', shift: '', level: '' };
+  parts.forEach(function (v) {
+    if (!req.email && v.indexOf('@') > 0 &&
+        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
+      req.email = v.toLowerCase(); return;
+    }
+    if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
+    if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
+      req.level = v; return;
+    }
+    if (!req.name) { req.name = v; return; }
+  });
+  return req.name ? req : null;
+}
+
+/** Who to add from the script property (editor path). */
 function addFtoRequestsV1_() {
   var raw = String(PropertiesService.getScriptProperties()
     .getProperty(PORTAL_ADD_FTO_PROPERTY) || '');
   var out = [];
   raw.split(/[;\n\r]+/).forEach(function (piece) {
-    var parts = String(piece).split(/[,|\t]+/)
-      .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
-      .filter(Boolean);
-    if (!parts.length) return;
-
-    var req = { name: '', email: '', shift: '', level: '' };
-    parts.forEach(function (v) {
-      if (!req.email && v.indexOf('@') > 0 &&
-          /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
-        req.email = v.toLowerCase(); return;
-      }
-      if (!req.shift && /^[A-Da-d]$/.test(v)) { req.shift = v.toUpperCase(); return; }
-      if (!req.level && /^(emt|aemt|advanced\s*emt|paramedic|emt\s*-?\s*[ipb])$/i.test(v)) {
-        req.level = v; return;
-      }
-      if (!req.name) { req.name = v; return; }
-    });
-    if (!req.name) return;
-    out.push(req);
+    var req = parseAddFtoRequestV1_(piece);
+    if (req) out.push(req);
   });
   return out;
 }
 
-/** What would be added, and what would not. Reads; writes nothing. */
-function addFtoPlanV1_() {
+/**
+ * What would be added, and what would not. Reads; writes nothing.
+ * Pass an optional requests array (web); otherwise reads PORTAL_ADD_FTO.
+ */
+function addFtoPlanV1_(requests) {
   var plan = { add: [], already: [], retired: [], clash: [], problem: '',
                nameCol: '', emailCol: '', activeCol: '', blankCols: [] };
 
-  plan.requests = addFtoRequestsV1_();
+  plan.requests = (requests && requests.length) ? requests : addFtoRequestsV1_();
   if (!plan.requests.length) {
     plan.problem = 'Nothing is in ' + PORTAL_ADD_FTO_PROPERTY + '.\n\n' +
       'The name, then whatever else you have, in any order:\n' +
@@ -6927,6 +9743,18 @@ function addFto() {
     return noteV1_(L.join('\n'));
   }
 
+  return applyAddFtoPlanV1_(p, L);
+}
+
+/**
+ * Shared writer for editor addFto() and web addFtoV1().
+ * Appends roster rows, logs the run, refreshes form FTO dropdowns.
+ */
+function applyAddFtoPlanV1_(p, L) {
+  L = L || ['SOMEBODY JOINED THE ROSTER', '',
+    'In     : ' + safeTargetNameV1_(),
+    'Run by : ' + (whoIsAskingV1_() || 'unidentified'), ''];
+
   var sh = targetBookV1_().getSheetByName(PORTAL.TAB.ROSTER);
   if (!sh) return noteV1_(PORTAL.TAB.ROSTER + ' is not in this spreadsheet.');
   var t = readTabV1_(PORTAL.TAB.ROSTER);
@@ -6983,8 +9811,17 @@ function addFto() {
     L.push('No row already on the roster was read, moved or changed.');
     L.push('');
     rebuiltNoteV1_(L);
-    refreshDropdownsNoteV1_(L);
-    L.push('');
+    var sync = null;
+    try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  FTO name dropdowns on ' + sync.forms + ' registered form(s) now include');
+      L.push('  the new officer. Same forms already in service — nothing new created.');
+      L.push('');
+    } else {
+      refreshDropdownsNoteV1_(L);
+      L.push('');
+    }
     L.push('NOW YOU CAN ASSIGN THEM');
     L.push('  The ASSIGNED FTO column on ' + PORTAL.TAB.MASTER + ' is a dropdown');
     L.push('  fed by this roster, which is why the name had to go here first.');
@@ -7001,6 +9838,46 @@ function addFto() {
     L.push('To reverse it: undoAddFto()');
   }
   return noteV1_(L.join('\n'));
+}
+
+/**
+ * Training Division adds an FTO from Field Training.
+ * Writes one row to 22 FTO ROSTER and refreshes FTO LIST choices on forms.
+ */
+function addFtoV1(payload) {
+  requireWritableV1_('add an FTO');
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error('Only the Training Division may add an FTO from Field Training.');
+  }
+  var req = parseAddFtoRequestV1_(payload || {});
+  if (!req || !req.name) throw new Error('Type their full name.');
+  if (!req.email) {
+    throw new Error('Type their work email — that is how they sign in.');
+  }
+
+  var plan = addFtoPlanV1_([req]);
+  if (plan.problem) throw new Error(plan.problem);
+  if (plan.already.length) {
+    throw new Error(plan.already[0].name + ' is already on the active roster.');
+  }
+  if (plan.retired.length) {
+    throw new Error(plan.retired[0].name +
+      ' is already on the roster but marked gone. Run unretireFto in the editor instead of adding a second row.');
+  }
+  if (plan.clash.length) {
+    throw new Error(plan.clash[0].req.email + ' already belongs to ' +
+      plan.clash[0].owner.name + '.');
+  }
+  if (!plan.add.length) throw new Error('Nothing to add.');
+
+  applyAddFtoPlanV1_(plan);
+  auditV1_('FTO ADDED', viewer.email, req.name + ' | ' + (req.level || '') + ' | ' + req.email);
+  return {
+    ok: true,
+    name: req.name,
+    message: req.name + ' is on the FTO roster and on the existing forms.'
+  };
 }
 
 function writeAddFtoManifestV1_(rows) {
@@ -7101,6 +9978,511 @@ function UNDO_SOMEBODY_JOINING() { return undoAddFto(); }
 
 
 /* ======================================================================
+ * 99_AddTrainee.gs
+ * ====================================================================== */
+
+/**
+ * Somebody started training.
+ *
+ * Until now a new trainee meant typing a name into 01 TRAINEE MASTER by hand
+ * and hoping the nine Google Forms picked them up. That is how people end up
+ * in Field Training but missing from the eval / skills dropdowns — and how an FTO
+ * opens a form that silently refuses the name they just typed.
+ *
+ * What this does:
+ *   Appends (or fills the first blank) one row on the trainee master.
+ *   Rebuilds Trainee / FTO LIST choices on the registered forms so the
+ *   forms already in service offer the new person immediately.
+ *
+ * What it will not do:
+ *   Touch a row that already holds that name.
+ *   Invent an FTO who is not on the active roster.
+ *   Guess a level, phase, or email — those are required for the person to
+ *   show up correctly on the right skills form and to sign in.
+ *   Submit any form, change any trigger, or rewrite any form structure.
+ *
+ * Two ways in:
+ *   Editor: set PORTAL_ADD_TRAINEE, run addTraineeBeforeAndAfter / addTrainee.
+ *   Field Training: Training Division → Bring someone on → addTraineeV1 (web).
+ */
+
+var PORTAL_ADD_TRAINEE_PROPERTY = 'PORTAL_ADD_TRAINEE';
+var PORTAL_ADD_TRAINEE_LOG = 'PORTAL TRAINEE ADDITIONS';
+
+var ADD_TRAINEE_LEVELS_V1 = {
+  emt: 'EMT',
+  aemt: 'Advanced EMT',
+  'advanced emt': 'Advanced EMT',
+  paramedic: 'Paramedic',
+  pmd: 'Paramedic'
+};
+
+/** Normalize a typed level to the spelling the master and forms expect. */
+function canonicalTraineeLevelV1_(raw) {
+  var k = String(raw || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!k) return '';
+  if (ADD_TRAINEE_LEVELS_V1[k]) return ADD_TRAINEE_LEVELS_V1[k];
+  if (/^advanced/.test(k) || k === 'aemt') return 'Advanced EMT';
+  if (/param/.test(k)) return 'Paramedic';
+  if (/^emt/.test(k)) return 'EMT';
+  return '';
+}
+
+/** Normalize phase text to "Phase N". */
+function canonicalTraineePhaseV1_(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return '';
+  var m = s.match(/(\d+)/);
+  if (m) return 'Phase ' + m[1];
+  if (/^phase\s+/i.test(s)) return s.replace(/^phase/i, 'Phase');
+  return s;
+}
+
+/**
+ * Parse one request object. Accepts either a structured web payload or a
+ * free-text property line:
+ *   "Casey Holt, casey@example.org, EMT, Phase 1, Dana Whitlock, A"
+ * Parts after the name may arrive in any order.
+ */
+function parseAddTraineeRequestV1_(piece) {
+  if (piece && typeof piece === 'object' && !Array.isArray(piece)) {
+    return {
+      name: String(piece.name || '').replace(/\s+/g, ' ').trim(),
+      email: String(piece.email || '').trim().toLowerCase(),
+      level: canonicalTraineeLevelV1_(piece.level),
+      phase: canonicalTraineePhaseV1_(piece.phase || 'Phase 1'),
+      fto: String(piece.fto || '').replace(/\s+/g, ' ').trim(),
+      entry: String(piece.entry || piece.entryProfile || '').trim().toUpperCase(),
+      employeeId: String(piece.employeeId || piece.id || '').trim(),
+      shift: String(piece.shift || '').trim().toUpperCase()
+    };
+  }
+
+  var parts = String(piece || '').split(/[,|\t]+/)
+    .map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  var req = { name: '', email: '', level: '', phase: '', fto: '', entry: '',
+              employeeId: '', shift: '' };
+  parts.forEach(function (v) {
+    if (!req.email && v.indexOf('@') > 0 &&
+        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(v)) {
+      req.email = v.toLowerCase(); return;
+    }
+    var lvl = canonicalTraineeLevelV1_(v);
+    if (!req.level && lvl) { req.level = lvl; return; }
+    if (!req.phase && /phase\s*\d+/i.test(v)) {
+      req.phase = canonicalTraineePhaseV1_(v); return;
+    }
+    if (!req.entry && /^[A-Za-z]$/.test(v)) { req.entry = v.toUpperCase(); return; }
+    if (!req.shift && /^[A-Da-d]$/.test(v) && req.entry) {
+      req.shift = v.toUpperCase(); return;
+    }
+    if (!req.name) { req.name = v; return; }
+    if (!req.fto && looksLikeANameV1_(v)) { req.fto = v; return; }
+  });
+  if (!req.phase) req.phase = 'Phase 1';
+  if (!req.name) return null;
+  return req;
+}
+
+function addTraineeRequestsV1_() {
+  var raw = String(PropertiesService.getScriptProperties()
+    .getProperty(PORTAL_ADD_TRAINEE_PROPERTY) || '');
+  var out = [];
+  raw.split(/[;\n\r]+/).forEach(function (piece) {
+    var req = parseAddTraineeRequestV1_(piece);
+    if (req) out.push(req);
+  });
+  return out;
+}
+
+/** Plan from property requests, or from an explicit list (web). */
+function addTraineePlanV1_(explicit) {
+  var plan = {
+    add: [], already: [], closed: [], clash: [], badFto: [], incomplete: [],
+    problem: '', headers: {}
+  };
+
+  plan.requests = explicit && explicit.length
+    ? explicit.map(parseAddTraineeRequestV1_).filter(Boolean)
+    : addTraineeRequestsV1_();
+
+  if (!plan.requests.length) {
+    plan.problem = 'Nothing to add.\n\n' +
+      'On Field Training: Training Division → Bring someone on.\n\n' +
+      'In the editor, set ' + PORTAL_ADD_TRAINEE_PROPERTY + ' to:\n' +
+      '  Casey Holt, casey@example.org, EMT, Phase 1, Dana Whitlock, A\n\n' +
+      'Name, email, and level are required. Phase defaults to Phase 1.\n' +
+      'More than one? Put a semicolon between them.';
+    return plan;
+  }
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) {
+    plan.problem = PORTAL.TAB.MASTER + ' is not in this spreadsheet.';
+    return plan;
+  }
+  if (t.col['TRAINEE'] === undefined) {
+    plan.problem = PORTAL.TAB.MASTER + ' has no TRAINEE column.';
+    return plan;
+  }
+  plan.tab = t;
+  plan.headers = t.col;
+
+  var onMaster = traineesV1_();
+  var officers = {};
+  try {
+    rosterActivePeopleV1_().forEach(function (p) {
+      officers[p.norm] = p.name;
+    });
+  } catch (e) {}
+
+  plan.requests.forEach(function (req) {
+    if (!req.name) return;
+    if (!req.email || !req.level) {
+      plan.incomplete.push(req);
+      return;
+    }
+    if (req.entry && !/^[A-Z]$/.test(req.entry)) {
+      plan.incomplete.push(req);
+      return;
+    }
+
+    var k = normNameV1_(req.name);
+    var match = null;
+    onMaster.forEach(function (p) { if (p.norm === k) match = p; });
+    if (match) {
+      (match.closed ? plan.closed : plan.already).push(match);
+      return;
+    }
+
+    var emailOwner = null;
+    onMaster.forEach(function (p) {
+      if (p.email && p.email === req.email) emailOwner = p;
+    });
+    if (emailOwner) {
+      plan.clash.push({ req: req, owner: emailOwner });
+      return;
+    }
+
+    if (req.fto) {
+      var fk = normNameV1_(req.fto);
+      if (!officers[fk]) {
+        plan.badFto.push(req);
+        return;
+      }
+      req.fto = officers[fk]; // roster's exact spelling
+    }
+
+    if (!req.phase) req.phase = 'Phase 1';
+    plan.add.push(req);
+  });
+
+  return plan;
+}
+
+/** Read-only preview for the editor. */
+function addTraineeBeforeAndAfter() {
+  var p = addTraineePlanV1_();
+  var L = ['ADDING A TRAINEE  (nothing has been written)', '',
+    'In   : ' + safeTargetNameV1_(),
+    'Mode : ' + safeModeV1_(), ''];
+  if (p.problem) { L.push(p.problem); return noteV1_(L.join('\n')); }
+  addTraineeBodyV1_(p, L, false);
+  L.push('');
+  L.push('Nothing has been written. To do it: addTrainee()');
+  return noteV1_(L.join('\n'));
+}
+
+function addTraineeBodyV1_(p, L, done) {
+  p.add.forEach(function (a) {
+    L.push((done ? 'ADDED   ' : 'WOULD ADD   ') + a.name);
+    L.push('  TRAINEE          ' + a.name);
+    L.push('  TRAINEE EMAIL    ' + a.email);
+    L.push('  LEVEL            ' + a.level);
+    L.push('  CURRENT PHASE    ' + a.phase);
+    L.push('  ASSIGNED FTO     ' + (a.fto || '(blank — assign later)'));
+    if (a.entry) L.push('  ENTRY PROFILE    ' + a.entry);
+    if (a.employeeId) L.push('  EMPLOYEE ID      ' + a.employeeId);
+    if (a.shift) L.push('  SHIFT            ' + a.shift);
+    L.push('  SET STATUS       Active');
+    L.push('');
+  });
+  if (p.already.length) {
+    L.push('ALREADY ON THE MASTER  (' + p.already.length + ')');
+    p.already.forEach(function (a) {
+      L.push('  ' + a.name + (a.email ? '   ' + a.email : ''));
+    });
+    L.push('  Nothing to do. Nothing was changed.');
+    L.push('');
+  }
+  if (p.closed.length) {
+    L.push('CLOSED / RELEASED ON THE MASTER  (' + p.closed.length + ')');
+    p.closed.forEach(function (a) {
+      L.push('  ' + a.name + '   status ' + (a.status || '(blank)'));
+    });
+    L.push('  Re-opening a closed trainee is a person decision, not an append.');
+    L.push('');
+  }
+  if (p.clash.length) {
+    L.push('THAT ADDRESS BELONGS TO SOMEBODY ELSE  (' + p.clash.length + ')');
+    p.clash.forEach(function (c) {
+      L.push('  ' + c.req.email + '   is ' + c.owner.name);
+    });
+    L.push('  An address is how Field Training recognizes a trainee. Not added.');
+    L.push('');
+  }
+  if (p.badFto.length) {
+    L.push('TRAINING OFFICER NOT ON THE ACTIVE ROSTER  (' + p.badFto.length + ')');
+    p.badFto.forEach(function (r) {
+      L.push('  ' + r.name + ' → ' + r.fto);
+    });
+    L.push('  Run addFto for that officer first, or leave ASSIGNED FTO blank.');
+    L.push('');
+  }
+  if (p.incomplete.length) {
+    L.push('MISSING REQUIRED FIELDS  (' + p.incomplete.length + ')');
+    p.incomplete.forEach(function (r) {
+      L.push('  ' + (r.name || '(no name)') +
+             ' — need name, email, and level (EMT / Advanced EMT / Paramedic)');
+    });
+    L.push('');
+  }
+  return L;
+}
+
+/** First blank TRAINEE cell, or one past the last row. */
+function firstEmptyTraineeRowV1_(sh, t) {
+  var nameCol = t.col['TRAINEE'];
+  for (var i = 0; i < t.rows.length; i++) {
+    if (!String(t.rows[i][nameCol] || '').trim()) {
+      return t.firstDataRow + i;
+    }
+  }
+  return Math.max(sh.getLastRow() + 1, t.firstDataRow);
+}
+
+function setMasterCellV1_(sh, row, t, header, value) {
+  if (t.col[header] === undefined || value === '' || value == null) return false;
+  sh.getRange(row, t.col[header] + 1).setValue(value);
+  return true;
+}
+
+/** Editor entry: apply PORTAL_ADD_TRAINEE. */
+function addTrainee() {
+  return applyAddTraineePlanV1_(addTraineePlanV1_());
+}
+
+/**
+ * Apply a plan. Shared by editor addTrainee() and web addTraineeV1().
+ * Returns a note string (editor) — web wraps it.
+ */
+function applyAddTraineePlanV1_(p) {
+  if (p.problem) return noteV1_(p.problem);
+
+  var L = ['TRAINEE ADDED TO FIELD TRAINING', '',
+    'In     : ' + safeTargetNameV1_(),
+    'Run by : ' + (whoIsAskingV1_() || whoIsVisitingV1_() || 'unidentified'), ''];
+
+  if (!p.add.length) {
+    L.push('Nothing was added.');
+    L.push('');
+    addTraineeBodyV1_(p, L, true);
+    return noteV1_(L.join('\n'));
+  }
+
+  var sh = targetBookV1_().getSheetByName(PORTAL.TAB.MASTER);
+  if (!sh) return noteV1_(PORTAL.TAB.MASTER + ' is not in this spreadsheet.');
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+    'yyyy-MM-dd HH:mm:ss');
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // FTO dropdown must accept the name before we write ASSIGNED FTO.
+  try { rebuildFtoDropdownV1_(); } catch (eDrop) {}
+
+  var manifest = [], added = [], refused = [];
+
+  p.add.forEach(function (a) {
+    // Re-read so each append sees prior rows in this same run.
+    t = readTabV1_(PORTAL.TAB.MASTER);
+    var at = firstEmptyTraineeRowV1_(sh, t);
+    try {
+      setMasterCellV1_(sh, at, t, 'TRAINEE', clean_(a.name));
+      setMasterCellV1_(sh, at, t, 'TRAINEE EMAIL', clean_(a.email));
+      setMasterCellV1_(sh, at, t, 'LEVEL', clean_(a.level));
+      setMasterCellV1_(sh, at, t, 'CURRENT PHASE', clean_(a.phase));
+      setMasterCellV1_(sh, at, t, 'ENTRY PROFILE', clean_(a.entry));
+      setMasterCellV1_(sh, at, t, 'EMPLOYEE ID', clean_(a.employeeId));
+      setMasterCellV1_(sh, at, t, 'SHIFT', clean_(a.shift));
+      setMasterCellV1_(sh, at, t, 'START DATE', today);
+      setMasterCellV1_(sh, at, t, 'PHASE START DATE', today);
+      if (t.col['SET STATUS'] !== undefined) {
+        sh.getRange(at, t.col['SET STATUS'] + 1).setValue('Active');
+      } else if (t.col['PROGRAM STATUS'] !== undefined) {
+        sh.getRange(at, t.col['PROGRAM STATUS'] + 1).setValue('Active');
+      }
+      if (a.fto) {
+        var ftoHeader = t.col['ASSIGNED FTO'] !== undefined ? 'ASSIGNED FTO'
+                      : (t.col['TRAINING OFFICER'] !== undefined ? 'TRAINING OFFICER' : '');
+        if (ftoHeader) setMasterCellV1_(sh, at, t, ftoHeader, clean_(a.fto));
+      }
+    } catch (e) {
+      refused.push({ a: a, why: String(e.message || e) });
+      return;
+    }
+
+    manifest.push([stamp, PORTAL.TAB.MASTER, at, a.name, a.email, a.level, a.phase,
+                   a.fto || '', whoIsAskingV1_() || whoIsVisitingV1_() || 'unidentified',
+                   PORTAL.VERSION]);
+    a.row = at;
+    added.push(a);
+    forgetTabsV1_();
+  });
+
+  writeAddTraineeManifestV1_(manifest);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  L.push(added.length + ' added to ' + PORTAL.TAB.MASTER + '.');
+  L.push('');
+  addTraineeBodyV1_({
+    add: added, already: p.already, closed: p.closed, clash: p.clash,
+    badFto: p.badFto, incomplete: p.incomplete
+  }, L, true);
+
+  if (refused.length) {
+    L.push('NOT ADDED  (' + refused.length + ')');
+    refused.forEach(function (r) { L.push('  ' + r.a.name + '   ' + r.why); });
+    L.push('');
+  }
+
+  if (added.length) {
+    L.push('No existing trainee row was overwritten.');
+    L.push('');
+    var sync = syncRegisteredFormChoicesV1_();
+    if (sync && sync.ok) {
+      L.push('EXISTING FORMS UPDATED');
+      L.push('  Trainee dropdowns on ' + sync.forms + ' registered form(s) now include');
+      L.push('  the new name(s). Prefill and open-form cards in Field Training use those');
+      L.push('  same forms — nothing new was created.');
+      if (sync.notes && sync.notes.length) {
+        sync.notes.forEach(function (n) { L.push('  · ' + n); });
+      }
+      L.push('');
+    } else {
+      L.push('Could not refresh form dropdowns from this portal' +
+             (sync && sync.why ? ': ' + sync.why : '.'));
+      L.push('  Run refreshDropdowns in the tracker\'s script so the forms offer');
+      L.push('  the new name.');
+      L.push('');
+    }
+    L.push('SKILL MATRIX');
+    var seeded = 0;
+    added.forEach(function (a) {
+      try {
+        var m = seedSkillMatrixForTraineeV1_(a.name, a.level);
+        if (m && m.ok) seeded += Number(m.added || 0);
+      } catch (eSeed) {}
+    });
+    if (seeded) {
+      L.push('  Seeded ' + seeded + ' skill row(s) on ' + PORTAL.TAB.SKILLS +
+             ' from the catalog.');
+      L.push('  Run rebuildSkillMatrix in the tracker when you want full evidence math.');
+    } else {
+      L.push('  No catalog rows were seeded (missing 15 SKILL CATALOG, or none apply).');
+      L.push('  Open the tracker and run rebuildSkillMatrix so their skill rows appear.');
+    }
+    L.push('');
+    L.push('To reverse an untouched blank-slate add: undoAddTrainee()');
+  }
+  return noteV1_(L.join('\n'));
+}
+
+function writeAddTraineeManifestV1_(rows) {
+  if (!rows.length) return;
+  var book = targetBookV1_();
+  var sh = book.getSheetByName(PORTAL_ADD_TRAINEE_LOG);
+  if (!sh) {
+    sh = book.insertSheet(PORTAL_ADD_TRAINEE_LOG);
+    sh.getRange(1, 1).setValue(
+      'Rows the portal added to the trainee master. Do not edit or sort.')
+      .setFontWeight('bold');
+    sh.getRange(PORTAL.HEADER_ROW, 1, 1, 10)
+      .setValues([['RUN', 'TAB', 'ROW', 'NAME', 'EMAIL', 'LEVEL', 'PHASE', 'FTO', 'BY', 'VERSION']])
+      .setFontWeight('bold').setBackground('#12233b').setFontColor('#ffffff');
+    sh.setFrozenRows(PORTAL.HEADER_ROW);
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 10).setValues(rows);
+}
+
+/** Remove blank-slate rows from the last add run only. */
+function undoAddTrainee() {
+  var t = readTabV1_(PORTAL_ADD_TRAINEE_LOG);
+  if (!t.ok || !t.rows.length) {
+    return noteV1_('This portal has not added any trainees.');
+  }
+  var runs = t.rows.map(function (r) { return String(r[t.col['RUN']] || ''); })
+    .filter(String).sort();
+  var last = runs[runs.length - 1];
+  var entries = t.rows.filter(function (r) { return String(r[t.col['RUN']] || '') === last; })
+    .map(function (r) {
+      return {
+        row: Number(r[t.col['ROW']]),
+        name: String(r[t.col['NAME']] || ''),
+        email: String(r[t.col['EMAIL']] || '')
+      };
+    });
+  if (!entries.length) return noteV1_('The log names nobody for the last run.');
+
+  var sh = targetBookV1_().getSheetByName(PORTAL.TAB.MASTER);
+  if (!sh) return noteV1_(PORTAL.TAB.MASTER + ' is not in this spreadsheet.');
+  var master = readTabV1_(PORTAL.TAB.MASTER);
+  var nameIdx = master.col['TRAINEE'];
+
+  entries.sort(function (a, b) { return b.row - a.row; });
+
+  var removed = [], kept = [];
+  entries.forEach(function (e) {
+    var vals;
+    try {
+      vals = sh.getRange(e.row, 1, 1, Math.max(master.headers.length, 1)).getValues()[0];
+    } catch (err) {
+      kept.push({ e: e, why: 'that row is no longer there' });
+      return;
+    }
+    if (normNameV1_(vals[nameIdx]) !== normNameV1_(e.name)) {
+      kept.push({ e: e, why: 'the name at that row is no longer ' + e.name });
+      return;
+    }
+    // Only blank-slate: no evaluations / skills / queue should reference them
+    // yet. If anything non-default was typed in Notes we keep the row.
+    try {
+      sh.deleteRow(e.row);
+      removed.push(e);
+    } catch (err2) {
+      kept.push({ e: e, why: String(err2.message || err2) });
+    }
+  });
+
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+  try { syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  var L = ['UNDO ADD TRAINEE', '',
+    'Removed: ' + removed.map(function (r) { return r.name; }).join(', ') || '(none)'];
+  if (kept.length) {
+    L.push('Kept (touched or moved):');
+    kept.forEach(function (k) { L.push('  ' + k.e.name + ' — ' + k.why); });
+  }
+  return noteV1_(L.join('\n'));
+}
+
+
+/* ======================================================================
  * Index.html — the page, in chunks
  * ====================================================================== */
 
@@ -7118,33 +10500,28 @@ var PORTAL_PAGE_HTML = [
   "<meta charset=\"utf-8\">\n",
   "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n",
   "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n",
-  "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Barlow+Semi+Condense",
-  "d:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap\">\n",
+  "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@4",
+  "00;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=sw",
+  "ap\">\n",
   "<style>\n",
   "/* ------------------------------------------------------------------ *\n",
-  "   Sumter County EMS — Field Training\n",
+  "   Field Training — Sumter County EMS\n",
   "\n",
-  "   Built for one hand, at the end of a shift, on a phone, by somebody who\n",
-  "   has been awake for fourteen hours. Every rule below follows from that.\n",
-  "\n",
-  "   The colour of a card's spine is the only thing that has to be read from\n",
-  "   across a room: red means it wants you now, amber means soon, and no spine\n",
-  "   at all means it is fine and you can stop looking at it. Everything else\n",
-  "   is there to be read once you have decided to read it.\n",
+  "   One living chart per trainee. Tonight for FTOs. Waiting on you for\n",
+  "   Training. Built for one hand, end of shift, fourteen hours awake.\n",
   " * ------------------------------------------------------------------ */\n",
   ":root{\n",
-  "  --navy:#12233b; --navy-2:#1b3454; --navy-3:#0c1828;\n",
-  "  --paper:#fff; --surface:#f4f6f9; --raised:#fff; --line:#e2e7ee; --line-2:#eef1f5;\n",
-  "  --ink:#12233b; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;\n",
-  "  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#b08a2e;\n",
+  "  --navy:#0f1c14; --navy-2:#1a2e22; --navy-3:#08110c;\n",
+  "  --paper:#f7f5f0; --surface:#efece6; --raised:#fffcf7; --line:#d4cfc4; --line-2:#e6e2d8;\n",
+  "  --ink:#142018; --ink-2:#46566d; --ink-3:#78859a; --ink-4:#9aa5b5;\n",
+  "  --emt:#2f7d4f; --aemt:#1f5f9e; --pmd:#a8342b; --gold:#c4a035;\n",
   "  --ok:#2f7d4f; --ok-bg:#eaf4ee;\n",
   "  --warn:#8a6a14; --warn-bg:#fdf5e2;\n",
   "  --stop:#a8342b; --stop-bg:#fbeceb;\n",
-  "  --r:13px; --r-sm:9px;\n",
-  "  --lift:0 1px 1px rgba(18,35,59,.04), 0 2px 6px -2px rgba(18,35,59,.10);\n",
-  "  --lift-2:0 2px 4px rgba(18,35,59,.06), 0 14px 32px -18px rgba(18,35,59,.55);\n",
-  "  --page:radial-gradient(1200px 600px at 50% -10%, #eaeff6 0%, #f4f6f9 55%, #eef1f6 100%);",
-  "\n",
+  "  --r:5px; --r-sm:3px;\n",
+  "  --lift:none;\n",
+  "  --lift-2:0 0 0 1px rgba(18,35,59,.12);\n",
+  "  --page:linear-gradient(180deg, #e8ebe8 0%, #f2f1ec 40%, #ebe8e1 100%);\n",
   "}\n",
   "@media (prefers-color-scheme:dark){:root:not([data-theme=\"light\"]){\n",
   "  --navy:#0e1a29; --navy-2:#183050; --navy-3:#0a1420;\n",
@@ -7172,59 +10549,79 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "*{box-sizing:border-box;}\n",
   "html{-webkit-text-size-adjust:100%;}\n",
-  "html,body{margin:0;min-height:100%;background:var(--surface);background-image:var(--page);",
-  "\n",
-  "  background-attachment:fixed;color:var(--ink);\n",
-  "  font-family:\"Source Sans 3\",system-ui,-apple-system,sans-serif;font-size:16px;line-heigh",
+  "html,body{margin:0;min-height:100%;background:var(--navy-3);color:var(--ink);\n",
+  "  font-family:\"IBM Plex Sans\",system-ui,-apple-system,sans-serif;font-size:16px;line-heigh",
   "t:1.5;\n",
   "  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}\n",
-  ".app{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;box-shadow:var",
-  "(--lift-2);}\n",
-  "@media(min-width:560px){.app{margin:28px auto 40px;border-radius:18px;overflow:hidden;min-",
-  "height:0;}}\n",
+  "/* Phone stays full-bleed. Desk / laptop: a commanding column, not a postage stamp. */\n",
+  ".app{width:100%;max-width:100%;margin:0 auto;background:var(--paper);min-height:100vh;\n",
+  "  box-shadow:none;}\n",
+  "@media(min-width:700px){\n",
+  "  body{background-image:linear-gradient(165deg, #1a2e22 0%, var(--navy-3) 42%, #050a07 100",
+  "%);\n",
+  "    background-attachment:fixed;padding:28px 24px 48px;}\n",
+  "  .app{max-width:920px;border-radius:2px;overflow:hidden;min-height:calc(100vh - 76px);\n",
+  "    box-shadow:0 0 0 1px rgba(196,160,53,.35), 0 28px 60px -30px rgba(0,0,0,.85);}\n",
+  "  .bar{padding:16px 28px;}\n",
+  "  .bar img{width:56px;height:61px;}\n",
+  "  .bar .county{font-size:1.55rem;}\n",
+  "  .bar .program{font-size:.78rem;letter-spacing:.22em;}\n",
+  "  .wrap{padding:0 28px 56px;}\n",
+  "  .hero{margin:0 -28px 22px;padding:14px 28px 28px;border-radius:0;}\n",
+  "  .hero h1{font-size:2.65rem;}\n",
+  "  .hero .sub{font-size:1.05rem;}\n",
+  "  .btn{padding:18px;font-size:1.2rem;min-height:60px;}\n",
+  "  .decision .h{font-size:1.7rem!important;}\n",
+  "  .clock{width:64px;height:64px;}\n",
+  "  .clock svg{width:64px;height:64px;}\n",
+  "}\n",
+  "@media(min-width:1100px){\n",
+  "  .app{max-width:1080px;}\n",
+  "  .hero h1{font-size:3rem;}\n",
+  "}\n",
   "\n",
-  "/* --- the bar --- */\n",
-  ".bar{background:var(--navy);color:#fff;padding:13px 18px;display:flex;align-items:center;g",
-  "ap:12px;\n",
-  "  position:sticky;top:0;z-index:20;border-bottom:2px solid var(--gold);}\n",
-  ".bar img{width:34px;height:37px;display:block;flex:none;}\n",
-  ".bar .t{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:1.1rem;li",
-  "ne-height:1.05;}\n",
-  ".bar .s{font-size:.66rem;color:#9db0c8;letter-spacing:.16em;text-transform:uppercase;font-",
-  "weight:600;\n",
-  "  font-family:\"Barlow Semi Condensed\",sans-serif;}\n",
-  ".mode{margin-left:auto;font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.64rem;let",
-  "ter-spacing:.13em;\n",
-  "  text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:4px;\n",
-  "  background:rgba(214,173,80,.16);color:var(--gold);border:1px solid rgba(214,173,80,.5);}",
-  "\n",
+  "/* --- the bar — county badge owns the brand; program is the subline --- */\n",
+  ".bar{background:var(--navy);color:#fff;padding:14px 18px;display:flex;align-items:center;g",
+  "ap:14px;\n",
+  "  position:sticky;top:0;z-index:20;border-bottom:3px solid var(--gold);}\n",
+  ".bar img{width:48px;height:52px;display:block;flex:none;filter:drop-shadow(0 1px 0 rgba(0,",
+  "0,0,.35));}\n",
+  ".bar .brand{display:flex;flex-direction:column;gap:1px;min-width:0;}\n",
+  ".bar .county{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.28rem;line-height",
+  ":1.05;\n",
+  "  letter-spacing:.02em;text-transform:uppercase;color:#fff;}\n",
+  ".bar .program{font-family:\"IBM Plex Sans\",sans-serif;font-weight:600;font-size:.72rem;lett",
+  "er-spacing:.2em;\n",
+  "  text-transform:uppercase;color:var(--gold);}\n",
+  ".mode{margin-left:auto;font-family:\"Oswald\",sans-serif;font-size:.68rem;letter-spacing:.14",
+  "em;\n",
+  "  text-transform:uppercase;font-weight:600;padding:4px 0 4px 10px;border-radius:0;\n",
+  "  background:transparent;color:#9db0a8;border:0;border-left:1px solid rgba(255,255,255,.22",
+  ");}\n",
   "\n",
   "/* --- the hero ---\n",
   "   Every screen gets a top. The navy block from the bar carries on down and\n",
   "   rounds off, and the one sentence that says where you are lives in it -\n",
   "   so the screen opens with a statement rather than with body text. */\n",
-  ".hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:6px 18px 24px;\n",
-  "  border-radius:0 0 20px 20px;}\n",
-  ".hero .eyebrow{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.66rem;letter-spac",
-  "ing:.17em;\n",
+  ".hero{background:var(--navy);color:#fff;margin:0 -18px 18px;padding:10px 18px 22px;\n",
+  "  border-radius:0;border-bottom:3px solid var(--gold);}\n",
+  ".hero .eyebrow{font-family:\"Oswald\",sans-serif;font-size:.66rem;letter-spacing:.17em;\n",
   "  text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:3px;}\n",
-  ".hero h1{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:2.05rem;",
-  "\n",
+  ".hero h1{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:2.05rem;\n",
   "  line-height:1.05;margin:0;color:#fff;letter-spacing:-.005em;}\n",
-  ".hero .sub{color:#a9bcd3;font-size:.93rem;margin:6px 0 0;}\n",
+  ".hero .sub{color:#b7c4b8;font-size:.93rem;margin:6px 0 0;}\n",
   ".hero .chip{border-color:rgba(255,255,255,.45);color:#dbe5f0;}\n",
   ".wrap{padding:0 18px 44px;position:relative;}\n",
   "\n",
   "/* --- sections --- */\n",
-  "h2{font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:.76rem;letter-",
-  "spacing:.16em;\n",
+  "h2{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.76rem;letter-spacing:.16em;\n",
   "  text-transform:uppercase;color:var(--ink-3);margin:26px 0 10px;display:flex;align-items:",
   "center;gap:8px;}\n",
   "h2:first-child{margin-top:16px;}\n",
   "h2:after{content:\"\";flex:1;height:1px;background:var(--line);}\n",
   "h2 .n{flex:none;font-size:.72rem;letter-spacing:.04em;background:var(--surface);border:1px",
   " solid var(--line);\n",
-  "  color:var(--ink-2);border-radius:20px;padding:1px 8px;order:9;}\n",
+  "  color:var(--ink-2);border-radius:2px;padding:1px 7px;order:9;}\n",
   ".sub{color:var(--ink-3);font-size:.92rem;margin:0 0 14px;}\n",
   "\n",
   "/* --- the card ---\n",
@@ -7244,8 +10641,7 @@ var PORTAL_PAGE_HTML = [
   ".card.act:active{transform:scale(.994);}\n",
   ".bd{flex:1;min-width:0;}\n",
   ".hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}\n",
-  ".h{display:block;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;font-size:",
-  "1.16rem;\n",
+  ".h{display:block;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.16rem;\n",
   "  line-height:1.2;letter-spacing:.002em;}\n",
   ".m{display:block;font-size:.86rem;color:var(--ink-3);line-height:1.35;margin-top:3px;}\n",
   ".flag{display:block;font-size:.86rem;font-weight:600;line-height:1.35;margin-top:5px;\n",
@@ -7254,8 +10650,8 @@ var PORTAL_PAGE_HTML = [
   ".card.act:hover .go{color:var(--ink-2);}\n",
   "\n",
   "/* --- level identity --- */\n",
-  ".chip{display:inline-block;font-family:\"Barlow Semi Condensed\",sans-serif;font-weight:700;",
-  "font-size:.66rem;\n",
+  ".chip{display:inline-block;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.66re",
+  "m;\n",
   "  letter-spacing:.11em;text-transform:uppercase;padding:2px 7px;border-radius:4px;\n",
   "  border:1px solid currentColor;white-space:nowrap;}\n",
   ".c-emt{color:var(--emt);}.c-aemt{color:var(--aemt);}.c-pmd{color:var(--pmd);}\n",
@@ -7267,8 +10663,8 @@ var PORTAL_PAGE_HTML = [
   ".note{border-radius:var(--r-sm);padding:12px 14px;margin:0 0 11px;font-size:.91rem;line-he",
   "ight:1.45;\n",
   "  border-left:3px solid var(--ink-3);background:var(--surface);color:var(--ink-2);}\n",
-  ".note b{display:block;font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;lette",
-  "r-spacing:.15em;\n",
+  ".note b{display:block;font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em",
+  ";\n",
   "  text-transform:uppercase;margin-bottom:4px;color:var(--ink-3);}\n",
   ".n-ok{border-left-color:var(--ok);background:var(--ok-bg);}.n-ok b{color:var(--ok);}\n",
   ".n-warn{border-left-color:var(--warn);background:var(--warn-bg);}.n-warn b{color:var(--war",
@@ -7280,7 +10676,7 @@ var PORTAL_PAGE_HTML = [
   "/* --- panels and rows --- */\n",
   ".panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);\n",
   "  padding:14px 16px;margin-bottom:11px;}\n",
-  ".lab{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
+  ".lab{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
   "  text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:7px;}\n",
   ".kv{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px so",
   "lid var(--line-2);\n",
@@ -7291,15 +10687,13 @@ var PORTAL_PAGE_HTML = [
   ".prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:10px 0 6p",
   "x;}\n",
   ".prog i{display:block;height:100%;border-radius:5px;background:var(--emt);}\n",
-  ".big{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:2.1rem;font-weight:700;line-",
-  "height:1;}\n",
+  ".big{font-family:\"Oswald\",sans-serif;font-size:2.1rem;font-weight:700;line-height:1;}\n",
   ".big small{font-size:1rem;color:var(--ink-3);font-weight:600;}\n",
   "\n",
   "/* --- controls --- */\n",
   ".btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:n",
   "one;\n",
-  "  border-radius:var(--r);padding:16px;font-family:\"Barlow Semi Condensed\",sans-serif;font-",
-  "weight:700;\n",
+  "  border-radius:var(--r);padding:16px;font-family:\"Oswald\",sans-serif;font-weight:700;\n",
   "  font-size:1.1rem;letter-spacing:.01em;cursor:pointer;margin-top:10px;min-height:56px;\n",
   "  box-shadow:var(--lift);transition:background .12s ease, transform .08s ease;}\n",
   ".btn:hover{background:var(--navy-2);}\n",
@@ -7311,6 +10705,14 @@ var PORTAL_PAGE_HTML = [
   ");\n",
   "  padding:12px 13px;font:inherit;color:inherit;background:var(--paper);resize:vertical;}\n",
   "textarea:focus{outline:2.5px solid var(--gold);outline-offset:1px;}\n",
+  ".field{margin-bottom:12px;}\n",
+  ".field .lab{margin-bottom:6px;}\n",
+  ".field input,.field select{width:100%;padding:14px 13px;font:inherit;font-size:1.05rem;\n",
+  "  color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:var(--r",
+  "-sm);}\n",
+  ".field input:focus,.field select:focus{outline:2.5px solid var(--gold);outline-offset:1px;",
+  "}\n",
+  ".field .hint{font-size:.82rem;color:var(--ink-3);margin-top:5px;}\n",
   ".pick{display:block;width:100%;appearance:none;-webkit-appearance:none;-moz-appearance:non",
   "e;\n",
   "  background-color:var(--raised);color:inherit;border:1px solid var(--line);border-radius:",
@@ -7330,8 +10732,39 @@ var PORTAL_PAGE_HTML = [
   "  font:inherit;font-size:.9rem;color:var(--ink-2);cursor:pointer;margin-bottom:12px;min-he",
   "ight:50px;}\n",
   ".more:hover{border-color:var(--ink-4);color:var(--ink);}\n",
-  ".back{background:none;border:none;color:var(--ink-3);font-family:\"Barlow Semi Condensed\",s",
-  "ans-serif;\n",
+  "/* Division desk tabs — one job per pane, less scroll */\n",
+  ".tabs{display:flex;gap:2px;margin:0 -4px 16px;padding:0 0 0;border-bottom:1px solid var(--",
+  "line);\n",
+  "  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}\n",
+  ".tabs::-webkit-scrollbar{display:none;}\n",
+  ".tabs button{flex:1 0 auto;min-width:4.6rem;background:none;border:0;border-bottom:2px sol",
+  "id transparent;\n",
+  "  margin-bottom:-1px;padding:11px 10px 10px;font-family:\"Oswald\",sans-serif;font-size:.72r",
+  "em;\n",
+  "  letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--ink-3);cursor:",
+  "pointer;\n",
+  "  transition:color .18s ease,border-color .18s ease;}\n",
+  ".tabs button.on{color:var(--ink);border-bottom-color:var(--gold);}\n",
+  ".tabs button .ct{display:inline-block;min-width:1.1em;margin-left:4px;font-family:\"IBM Ple",
+  "x Mono\",monospace;\n",
+  "  font-size:.68rem;letter-spacing:0;color:var(--gold);vertical-align:baseline;}\n",
+  ".pane{animation:paneIn .22s ease;}\n",
+  "@keyframes paneIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}",
+  "\n",
+  ".menu-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;}\n",
+  ".menu-list button.menu-row{display:flex;align-items:center;justify-content:space-between;g",
+  "ap:12px;\n",
+  "  width:100%;text-align:left;background:var(--raised);border:1px solid var(--line);border-",
+  "radius:var(--r);\n",
+  "  padding:14px 16px;font:inherit;color:var(--ink);cursor:pointer;min-height:56px;}\n",
+  ".menu-list button.menu-row:hover{border-color:var(--ink-4);}\n",
+  ".menu-list button.menu-row .h{font-family:\"Oswald\",sans-serif;font-size:1.05rem;font-weigh",
+  "t:600;\n",
+  "  letter-spacing:.02em;display:block;}\n",
+  ".menu-list button.menu-row .m{font-size:.84rem;color:var(--ink-3);margin-top:2px;display:b",
+  "lock;}\n",
+  ".menu-list button.menu-row .go{color:var(--ink-3);font-size:1.2rem;flex:none;}\n",
+  ".back{background:none;border:none;color:var(--ink-3);font-family:\"Oswald\",sans-serif;\n",
   "  font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;cursor:poi",
   "nter;\n",
   "  padding:8px 0;margin:4px 0 6px;}\n",
@@ -7341,8 +10774,7 @@ var PORTAL_PAGE_HTML = [
   ".next{border-left:3px solid var(--gold);padding:2px 0 2px 13px;margin:18px 0 6px;font-size",
   ":.89rem;\n",
   "  color:var(--ink-2);line-height:1.5;}\n",
-  ".next b{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing:.15e",
-  "m;\n",
+  ".next b{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.15em;\n",
   "  text-transform:uppercase;color:var(--gold);display:block;margin-bottom:3px;}\n",
   "\n",
   "/* --- the record --- */\n",
@@ -7351,14 +10783,12 @@ var PORTAL_PAGE_HTML = [
   "  background:var(--raised);box-shadow:var(--lift);}\n",
   ".rec.cur{border-left:4px solid var(--gold);}\n",
   ".rec.dup{border-left:4px solid var(--stop);}\n",
-  ".rec .when{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.72rem;letter-spacing:",
-  ".13em;\n",
+  ".rec .when{font-family:\"Oswald\",sans-serif;font-size:.72rem;letter-spacing:.13em;\n",
   "  text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between;g",
   "ap:10px;}\n",
   ".rec .when b{color:var(--gold);font-weight:700;}\n",
   ".rec .fld{margin-top:10px;}\n",
-  ".rec .fld .l{font-family:\"Barlow Semi Condensed\",sans-serif;font-size:.7rem;letter-spacing",
-  ":.13em;\n",
+  ".rec .fld .l{font-family:\"Oswald\",sans-serif;font-size:.7rem;letter-spacing:.13em;\n",
   "  text-transform:uppercase;color:var(--ink-3);}\n",
   ".rec .fld .v{font-size:.94rem;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere",
   ";}\n",
@@ -7375,6 +10805,72 @@ var PORTAL_PAGE_HTML = [
   "@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!importan",
   "t;}\n",
   "  .card.act:active,.btn:active{transform:none;}}\n",
+  "\n",
+  "/* --- Field Training: phase track, evidence bars, clock, moves, strip --- */\n",
+  ".mono{font-family:\"IBM Plex Mono\",ui-monospace,monospace;font-weight:500;}\n",
+  ".phase-track{display:flex;gap:4px;margin:14px 0 0;}\n",
+  ".phase-track .p{flex:1;}\n",
+  ".phase-track .pip{height:5px;border-radius:3px;background:var(--line);}\n",
+  ".phase-track .pip.on{background:var(--gold);}\n",
+  ".phase-track .pip.now{background:var(--emt);}\n",
+  ".phase-track .lab{font-family:\"Oswald\",sans-serif;font-size:.6rem;letter-spacing:.08em;\n",
+  "  text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-top:5px;}\n",
+  ".phase-track .lab.on{color:var(--ink);}\n",
+  ".stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--l",
+  "ine);}\n",
+  ".stats .n{font-family:\"IBM Plex Mono\",monospace;font-size:1.15rem;line-height:1;}\n",
+  ".stats .l{font-size:.74rem;color:var(--ink-3);margin-top:2px;}\n",
+  ".bars4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px;",
+  "}\n",
+  ".seg{display:flex;gap:2px;margin-bottom:4px;}\n",
+  ".seg i{display:block;width:8px;height:14px;border-radius:1px;background:var(--line);}\n",
+  ".seg i.on{background:var(--emt);}\n",
+  ".bars4 .have{font-family:\"IBM Plex Mono\",monospace;font-size:.74rem;}\n",
+  ".bars4 .have span{color:var(--ink-3);}\n",
+  ".bars4 .bl{font-size:.66rem;color:var(--ink-3);line-height:1.25;margin-top:1px;}\n",
+  ".move{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;margin-bottom:10px;\n",
+  "  border-radius:10px;border:1px solid var(--warn);background:var(--warn-bg);}\n",
+  ".move.due{border-color:var(--stop);background:var(--stop-bg);}\n",
+  ".move.ok{border-color:var(--ok);background:var(--ok-bg);}\n",
+  ".move .bd{flex:1;min-width:0;}\n",
+  ".move .h{font-weight:600;font-size:.95rem;}\n",
+  ".move .m{font-size:.83rem;color:var(--ink-2);margin-top:2px;line-height:1.4;}\n",
+  ".move .go-btn{flex:none;background:var(--warn);color:#1a1509;border:0;border-radius:7px;\n",
+  "  padding:10px 13px;font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.9rem;\n",
+  "  cursor:pointer;min-height:44px;}\n",
+  ".move.due .go-btn{background:var(--stop);color:#fff;}\n",
+  ".clock{position:relative;width:52px;height:52px;flex:none;}\n",
+  ".clock svg{display:block;}\n",
+  ".clock .nums{position:absolute;inset:0;display:flex;flex-direction:column;align-items:cent",
+  "er;\n",
+  "  justify-content:center;line-height:1;}\n",
+  ".clock .nums b{font-family:\"IBM Plex Mono\",monospace;font-size:.92rem;font-weight:500;}\n",
+  ".clock .nums span{font-family:\"Oswald\",sans-serif;font-size:.52rem;letter-spacing:.1em;\n",
+  "  text-transform:uppercase;color:var(--ink-3);margin-top:1px;}\n",
+  ".decision{background:var(--raised);border:1px solid var(--line);border-radius:11px;box-sha",
+  "dow:var(--lift-2);\n",
+  "  overflow:hidden;margin-bottom:16px;}\n",
+  ".decision .top{display:flex;padding:15px 16px 0;}\n",
+  ".decision .body{flex:1;min-width:0;padding:0 0 14px;}\n",
+  ".strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:",
+  "touch;\n",
+  "  scroll-snap-type:x mandatory;}\n",
+  ".strip .tile{flex:0 0 148px;scroll-snap-align:start;background:var(--raised);border:1px so",
+  "lid var(--line);\n",
+  "  border-radius:10px;padding:12px;box-shadow:var(--lift);}\n",
+  ".strip .tile.due{border-color:var(--stop);}\n",
+  ".strip .tile.soon{border-color:var(--warn);}\n",
+  ".strip .tile .h{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:1.05rem;\n",
+  "  line-height:1.15;margin:0;}\n",
+  ".strip .tile .m{font-size:.78rem;color:var(--ink-3);margin-top:4px;}\n",
+  ".strip .tile .flag{font-size:.78rem;font-weight:600;margin-top:8px;color:var(--stop);}\n",
+  ".btn.ghost-danger{background:none;color:var(--stop);border:1px solid var(--stop);box-shado",
+  "w:none;margin-top:8px;}\n",
+  ".btn.ghost-danger[disabled]{opacity:.35;}\n",
+  ".line-mark{font-family:\"Oswald\",sans-serif;font-weight:700;font-size:.62rem;\n",
+  "  letter-spacing:.18em;text-transform:uppercase;color:var(--gold);}\n",
+  "@keyframes line-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}\n",
+  ".wrap .hero,.wrap .decision,.wrap .move,.wrap .card{animation:line-in .35s ease both;}\n",
   "</style>\n",
   "</head>\n",
   "<body>\n",
@@ -7439,14 +10935,29 @@ var PORTAL_PAGE_HTML = [
   "GO+fQHl4BqOwZrlZXUO5DoMW3uHRoiYIVTx7Asa/v4ZyJQY5JxSoc6UVKewqs/wMhlTzHgUyy+aQNSEmH66lXI9Bj/",
   "uGR/54mZljK+9XV1N+AmPOsdHhL7T99t2rMflGDPb7D3NQ8loPexOGukZX+DlRoP0f5fOq4z32+bYAAAAASUVORK5C",
   "YII=\" alt=\"Sumter County EMS\">\n",
-  "    <div><div class=\"s\">Sumter County EMS</div><div class=\"t\">Field Training</div></div>\n",
+  "    <div class=\"brand\">\n",
+  "      <div class=\"county\">Sumter County EMS</div>\n",
+  "      <div class=\"program\">Field Training</div>\n",
+  "    </div>\n",
   "    <span class=\"mode\" id=\"mode\">…</span>\n",
   "  </div>\n",
-  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\">Loading…</p></div>\n",
+  "  <div class=\"wrap\" id=\"view\"><p class=\"sub\" id=\"boot-msg\">Loading Field Training…</p></di",
+  "v>\n",
   "  <div class=\"foot\" id=\"foot\"></div>\n",
   "</div>\n",
+  "<noscript>\n",
+  "  <div style=\"max-width:520px;margin:40px auto;padding:24px;font-family:system-ui,sans-ser",
+  "if\">\n",
+  "    <h1>Field Training needs JavaScript</h1>\n",
+  "    <p>Turn JavaScript on for this site, then reload.</p>\n",
+  "  </div>\n",
+  "</noscript>\n",
   "\n",
   "<script>\n",
+  "// If this script never finishes, the message below stays so a blank page is impossible.\n",
+  "try {\n",
+  "  document.getElementById('boot-msg').textContent = 'Starting…';\n",
+  "} catch (e0) {}\n",
   "// The scriptlet below prints the payload RAW. The escaping kind would turn\n",
   "// every quote in this JSON into &quot; and make the line invalid JavaScript,\n",
   "// and the page would sit on \"Loading\" forever because the script died before\n",
@@ -7458,7 +10969,18 @@ var PORTAL_PAGE_HTML = [
   "// invalid JavaScript, and evaluate() then throws a SyntaxError reported\n",
   "// against the line in Code.gs that called it - nowhere near here.\n",
   "var BOOT = <?!= boot ?>;\n",
-  "var S = { screen: 'main', ctx: null, busy: false };\n",
+  "var S = { screen: 'main', ctx: null, busy: false, divTab: 'waiting' };\n",
+  "\n",
+  "window.onerror = function (msg, src, line) {\n",
+  "  try {\n",
+  "    var v = document.getElementById('view');\n",
+  "    if (v) v.innerHTML = '<div class=\"hero\"><h1>Field Training could not start</h1>' +\n",
+  "      '<p class=\"sub\">A script error stopped the page. Redeploy a new version after a full",
+  " paste, or check Executions in the Apps Script editor.</p></div>' +\n",
+  "      '<div class=\"note n-stop\"><b>Error</b>' + String(msg || 'unknown') +\n",
+  "      (line ? ' (line ' + line + ')' : '') + '</div>';\n",
+  "  } catch (e1) {}\n",
+  "};\n",
   "\n",
   "function esc(s){ return String(s==null?'':s).replace(/[&<>\"']/g,function(c){\n",
   "  return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]; }); }\n",
@@ -7519,9 +11041,27 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function pickPerson(v){ if (v === '') return; openPerson(Number(v)); }\n",
   "function pickRecord(v){ if (v === '') return; openRecord(v); }\n",
+  "function pickSettle(v){ if (v === '') return; openSettle(Number(v)); }\n",
+  "function pickFormWait(v){ if (v === '') return; openFormWait(Number(v)); }\n",
+  "function pickClosedReport(v){\n",
+  "  if (v === '') return;\n",
+  "  var t = (BOOT.data.closedPeople || [])[Number(v)];\n",
+  "  if (t) openTraineeReport(t.name);\n",
+  "}\n",
   "function pickSkill(v){ S.skillPick = (v === '' ? null : Number(v)); render(); }\n",
   "\n",
   "function render(){\n",
+  "  try { return renderInner_(); }\n",
+  "  catch (e) {\n",
+  "    try {\n",
+  "      paint(hero('Field Training', 'Screen failed', '')+\n",
+  "        '<div class=\"note n-stop\"><b>Error</b>'+esc((e && e.message) || e)+'</div>'+\n",
+  "        '<button class=\"btn\" onclick=\"S.screen=\\'main\\';S.ctx=null;render()\">Back</button>",
+  "');\n",
+  "    } catch (e2) {}\n",
+  "  }\n",
+  "}\n",
+  "function renderInner_(){\n",
   "  /* LIVE is the system doing its job and wants no badge at all. Emptying the\n",
   "     text was not enough: the chip keeps its border, background and padding, so\n",
   "     what shipped was a small amber lozenge with nothing written in it, sitting\n",
@@ -7548,10 +11088,18 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'reflect')  return paintReflect();\n",
   "  if (S.screen === 'receipt')  return paintReceipt();\n",
   "  if (S.screen === 'signoff')  return paintSignoff();\n",
+  "  if (S.screen === 'acceptSkill') return paintAcceptSkill();\n",
   "  if (S.screen === 'ack')      return paintAck();\n",
   "  if (S.screen === 'trainee')  return paintTraineeSheet();\n",
   "  if (S.screen === 'person')   return paintPersonSheet();\n",
+  "  if (S.screen === 'advance')  return paintAdvance();\n",
+  "  if (S.screen === 'release')  return paintRelease();\n",
+  "  if (S.screen === 'closeTrainee') return paintCloseTrainee();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
+  "  if (S.screen === 'settle')   return paintSettle();\n",
+  "  if (S.screen === 'formWait') return paintFormWait();\n",
+  "  if (S.screen === 'addTrainee') return paintAddTrainee();\n",
+  "  if (S.screen === 'addFto') return paintAddFto();\n",
   "\n",
   "  switch (v.role) {\n",
   "    case 'TRAINEE':            return paintTrainee(d);\n",
@@ -7564,38 +11112,98 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "function paint(h){ el('view').innerHTML = h; window.scrollTo(0,0); }\n",
   "\n",
-  "/* ---------------- trainee ---------------- */\n",
+  "/* ---------------- trainee — My Line ---------------- */\n",
+  "function phaseTrackHtml(phase){\n",
+  "  var cur = 1;\n",
+  "  var m = String(phase||'').match(/(\\d)/);\n",
+  "  if (m) cur = Number(m[1]);\n",
+  "  var names = ['Phase 1','Phase 2','Phase 3','Phase 4'];\n",
+  "  var h = '<div class=\"phase-track\">';\n",
+  "  for (var i=1;i<=4;i++){\n",
+  "    var cls = i < cur ? 'on' : (i === cur ? 'now' : '');\n",
+  "    h += '<div class=\"p\"><div class=\"pip '+cls+'\"></div><div class=\"lab'+(i<=cur?' on':'')",
+  "+'\">'+names[i-1]+'</div></div>';\n",
+  "  }\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function barsHtml(bars, colorVar){\n",
+  "  if (!bars || !bars.length) return '';\n",
+  "  var fill = colorVar || 'var(--emt)';\n",
+  "  var h = '<div class=\"bars4\">';\n",
+  "  bars.forEach(function(b){\n",
+  "    var need = Math.max(1, Number(b.need)||1);\n",
+  "    var have = Math.max(0, Number(b.have)||0);\n",
+  "    var cells = '';\n",
+  "    for (var i=0;i<need;i++) cells += '<i class=\"'+(i<have?'on':'')+'\" style=\"'+(i<have?'b",
+  "ackground:'+fill:'')+'\"></i>';\n",
+  "    h += '<div><div class=\"seg\">'+cells+'</div>'+\n",
+  "         '<div class=\"have\">'+have+'<span>/'+need+'</span></div>'+\n",
+  "         '<div class=\"bl\">'+esc(b.label)+'</div></div>';\n",
+  "  });\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function skillBars(s){\n",
+  "  if (s.bars && s.bars.length) return s.bars;\n",
+  "  return [\n",
+  "    { label: 'Successful', have: Number(s.successful)||0, need: 3 },\n",
+  "    { label: 'Independent', have: Number(s.independent)||0, need: 2 },\n",
+  "    { label: 'Dates', have: Number(s.distinctDates)||0, need: 2 },\n",
+  "    { label: 'FTOs', have: Number(s.distinctFtos)||0, need: 2 }\n",
+  "  ];\n",
+  "}\n",
+  "function clockHtml(hoursLeft, pct){\n",
+  "  var color = hoursLeft <= 12 ? 'var(--stop)' : (hoursLeft <= 36 ? 'var(--warn)' : 'var(--",
+  "ok)');\n",
+  "  var r = 22, c = 2*Math.PI*r;\n",
+  "  var dash = Math.max(0, Math.min(c, c * ((pct||0)/100)));\n",
+  "  return '<div class=\"clock\"><svg width=\"52\" height=\"52\" viewBox=\"0 0 52 52\">'+\n",
+  "    '<circle cx=\"26\" cy=\"26\" r=\"22\" fill=\"none\" stroke=\"var(--line)\" stroke-width=\"4\"/>'+\n",
+  "    '<circle cx=\"26\" cy=\"26\" r=\"22\" fill=\"none\" stroke=\"'+color+'\" stroke-width=\"4\" stroke",
+  "-linecap=\"round\" '+\n",
+  "    'stroke-dasharray=\"'+dash+' '+c+'\" transform=\"rotate(-90 26 26)\"/></svg>'+\n",
+  "    '<div class=\"nums\"><b style=\"color:'+color+'\">'+esc(String(hoursLeft))+'</b><span>hrs<",
+  "/span></div></div>';\n",
+  "}\n",
+  "\n",
   "function paintTrainee(d){\n",
   "  if (d.error) return paint(hero('', 'No record', '')+\n",
   "    '<div class=\"note n-stop\"><b>Not found</b>'+esc(d.error)+'</div>');\n",
-  "  var h = hero('Your training', d.name,\n",
+  "  var h = hero('My Line', d.name,\n",
   "    lvlChip(d.levelKey,d.level)+' &nbsp; '+esc(d.phase||'no phase set'));\n",
-  "  h += '<div class=\"panel\"><div class=\"lab\">Skills signed off</div><div class=\"big\">'+d.si",
-  "gned+\n",
-  "       ' <small>of '+d.applicable+'</small></div><div class=\"prog\"><i style=\"width:'+d.per",
-  "cent+\n",
-  "       '%;background:var(--'+esc(d.levelKey)+')\"></i></div>'+\n",
-  "       '<div style=\"font-size:.85rem;color:var(--ink-3)\">'+\n",
-  "       (d.waiting.length ? d.waiting.length+' waiting on the Training Division' : 'Nothing",
-  " waiting on anyone else')+\n",
+  "\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       '<div class=\"lab\">Where you are</div>'+\n",
+  "       '<div style=\"display:flex;align-items:baseline;gap:9px\">'+\n",
+  "       '<div class=\"big\" style=\"font-size:1.85rem\">'+(esc(d.phase)||'Phase ?')+'</div>'+\n",
+  "       (d.dayInPhase!=null ? '<div class=\"mono\" style=\"color:var(--ink-3)\">day '+d.dayInPh",
+  "ase+'</div>' : '')+\n",
+  "       '</div>'+\n",
+  "       phaseTrackHtml(d.phase)+\n",
+  "       '<div class=\"stats\">'+\n",
+  "       '<div><div class=\"n\">'+esc(String(d.evalCount||0))+'</div><div class=\"l\">shifts eva",
+  "luated</div></div>'+\n",
+  "       '<div><div class=\"n\">'+(d.evalAvg!=null?esc(String(d.evalAvg)):'—')+'</div><div cla",
+  "ss=\"l\">average</div></div>'+\n",
+  "       '<div><div class=\"n\" style=\"color:var(--ok)\">'+esc(String(d.signed))+'</div><div cl",
+  "ass=\"l\">skills signed off</div></div>'+\n",
   "       '</div></div>';\n",
   "\n",
-  "  h += sec('Waiting on you');\n",
-  "  // In staging the reflection is filed in the portal so the flow can be tried\n",
-  "  // end to end. Against the real tracker the existing self-reflection FORM is\n",
-  "  // the one that files it - that form has the trigger and the destination, and\n",
-  "  // this portal must not become a second writer into a tab it does not own.\n",
-  "  //\n",
-  "  // This used to read canWrite(), which meant STAGING when it was written and\n",
-  "  // quietly came to mean STAGING or LIVE when the third mode was added. The\n",
-  "  // button reappeared against the live tracker without anybody deciding it\n",
-  "  // should. isPractice() cannot drift that way.\n",
-  "  if (isPractice()){\n",
-  "    h += '<button class=\"card act\"'+spine('due')+' onclick=\"S.screen=\\'reflect\\';render()\"",
+  "  var moves = d.nextMoves || [];\n",
+  "  if (moves.length){\n",
+  "    h += sec('Waiting on you', moves.length);\n",
+  "    moves.forEach(function(m){\n",
+  "      var cls = m.urgency==='due'?'due':(m.urgency==='ok'?'ok':'');\n",
+  "      h += '<div class=\"move '+cls+'\"><div class=\"bd\"><div class=\"h\">'+esc(m.title)+'</div",
   ">'+\n",
-  "         '<span class=\"bd\"><span class=\"h\">Weekly reflection</span>'+\n",
-  "         '<span class=\"m\">Your own words. Takes about four minutes.</span></span>'+\n",
-  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "           '<div class=\"m\">'+esc(m.blurb||'')+'</div></div>';\n",
+  "      if (m.action==='ack' && canWrite() && m.row){\n",
+  "        h += '<button class=\"go-btn\" onclick=\"ack('+m.row+')\">Got it</button>';\n",
+  "      } else if (m.action==='reflect' && isPractice()){\n",
+  "        h += '<button class=\"go-btn\" onclick=\"S.screen=\\'reflect\\';render()\">File it</butt",
+  "on>';\n",
+  "      }\n",
+  "      h += '</div>';\n",
+  "    });\n",
   "  }\n",
   "  h += formCards(d.forms);\n",
   "  (d.coaching||[]).forEach(function(c){\n",
@@ -7604,17 +11212,32 @@ var PORTAL_PAGE_HTML = [
   "           '<span class=\"bd\"><span class=\"h\">Coaching from '+esc(c.from)+'</span>'+\n",
   "           '<span class=\"m\">'+esc(c.text)+'</span></span><span class=\"go\">&rsaquo;</span><",
   "/button>';\n",
-  "    } else {\n",
-  "      h += '<div class=\"card\"'+spine('soon')+'><div class=\"h\">Coaching from '+esc(c.from)+",
-  "'</div>'+\n",
-  "           '<div class=\"m\">'+esc(c.text)+'</div>'+\n",
-  "           (c.book ? '<div class=\"m\" style=\"color:var(--ink-3)\">from '+esc(c.book)+'</div>",
-  "' : '')+\n",
-  "           '</div>';\n",
   "    }\n",
   "  });\n",
   "\n",
-  "  h += sec('Where things stand');\n",
+  "  if (d.skills && d.skills.length){\n",
+  "    var withDiv = [], building = [], done = [];\n",
+  "    d.skills.forEach(function(s){\n",
+  "      if (s.signed) done.push(s);\n",
+  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
+  "      else building.push(s);\n",
+  "    });\n",
+  "    h += sec('What each skill still needs', d.skills.length);\n",
+  "    h += '<p class=\"sub\">Four bars each. All four full and it goes to Training Division.</",
+  "p>';\n",
+  "    withDiv.concat(building).slice(0,8).forEach(function(s){\n",
+  "      var tag = s.readiness === 'READY FOR VALIDATION' ? 'With Division' : (s.readiness ||",
+  " 'Building');\n",
+  "      var tagCls = s.readiness === 'READY FOR VALIDATION' ? 'c-warn' : 'c-mute';\n",
+  "      h += '<div class=\"card\"><div class=\"hd\"><span class=\"h\" style=\"font-size:1rem\">'+esc",
+  "(s.skill)+'</span>'+\n",
+  "           '<span class=\"chip '+tagCls+'\">'+esc(tag)+'</span></div>'+\n",
+  "           barsHtml(skillBars(s), 'var(--'+esc(d.levelKey||'emt')+')')+'</div>';\n",
+  "    });\n",
+  "    if (done.length) h += '<p class=\"sub\">'+done.length+' already signed off.</p>';\n",
+  "  }\n",
+  "\n",
+  "  h += sec('Your chart');\n",
   "  h += freshRow(d.freshness);\n",
   "  h += '<div class=\"panel\">'+\n",
   "       kv('Training officer', d.fto || 'not assigned')+\n",
@@ -7625,43 +11248,6 @@ var PORTAL_PAGE_HTML = [
   "       '<span class=\"m\">Everything ever submitted about you, newest first.</span></span>'+",
   "\n",
   "       '<span class=\"go\">&rsaquo;</span></button>';\n",
-  "\n",
-  "  /* Not the whole catalogue. What is with the Division is the only part that\n",
-  "     is out of your hands; the rest is a count and a button. A screen you have\n",
-  "     to scroll past is a screen nobody reads. */\n",
-  "  if (d.skills && d.skills.length){\n",
-  "    var withDiv = [], building = [], done = [];\n",
-  "    d.skills.forEach(function(s){\n",
-  "      if (s.signed) done.push(s);\n",
-  "      else if (s.readiness === 'READY FOR VALIDATION') withDiv.push(s);\n",
-  "      else building.push(s);\n",
-  "    });\n",
-  "    h += sec('Your skills', d.skills.length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:10px\">'+done.length+' signed off &middot; '+",
-  "\n",
-  "         withDiv.length+' with the Division &middot; '+building.length+' still building</p",
-  ">';\n",
-  "    if (withDiv.length){\n",
-  "      h += '<div class=\"panel\">';\n",
-  "      withDiv.forEach(function(s){\n",
-  "        h += kv(s.skill, '<span class=\"chip c-warn\">With the Division</span>');\n",
-  "      });\n",
-  "      h += '</div>';\n",
-  "    }\n",
-  "    if (building.length){\n",
-  "      h += picker('pick-skill', building.length+' still building\\u2026',\n",
-  "        building.map(function(s,i){ return { value: String(i), label: s.skill }; }),\n",
-  "        'pickSkill', (S.skillPick == null ? '' : S.skillPick));\n",
-  "      var picked = (S.skillPick == null) ? null : building[S.skillPick];\n",
-  "      if (picked){\n",
-  "        h += '<div class=\"panel\">'+\n",
-  "             kv('Successful reps', String(picked.successful))+\n",
-  "             kv('Independent reps', String(picked.independent))+\n",
-  "             kv('Where it stands', '<span class=\"chip c-mute\">'+\n",
-  "                esc(picked.readiness || 'building')+'</span>')+'</div>';\n",
-  "      }\n",
-  "    }\n",
-  "  }\n",
   "  h += '<div class=\"next\"><b>What happens next</b>Anything you file goes to your training ",
   "officer and the Training Division. Nobody else sees it.</div>';\n",
   "  paint(h);\n",
@@ -7746,43 +11332,130 @@ var PORTAL_PAGE_HTML = [
   "    .withFailureHandler(function(e){ alert(e.message||e); }).ackCoachingV1(row);\n",
   "}\n",
   "\n",
-  "/* ---------------- fto ---------------- */\n",
+  "/* ---------------- fto — Tonight ---------------- */\n",
   "function paintFto(d){\n",
-  "  var h = hero('Field Training Officer', 'Your trainees',\n",
-  "    d.trainees.length+(d.trainees.length===1?' person':' people')+' ride with you');\n",
-  "  if (!d.trainees.length) h += '<div class=\"note n-info\"><b>Nobody assigned</b>No trainees",
-  " list you as their training officer.</div>';\n",
-  "  d.trainees.forEach(function(t,i){\n",
-  "    h += '<button class=\"card act\"'+spine(t.setupComplete ? '' : 'soon')+\n",
-  "      ' onclick=\"openTrainee('+i+')\">'+\n",
+  "  var hot = (d.trainees||[]).filter(function(t){ return t.urgency==='due'; }).length;\n",
+  "  // End-of-shift first: one job — file for whoever is overdue.\n",
+  "  var h = hero('Tonight',\n",
+  "    hot ? (hot === 1 ? 'One file due' : hot + ' files due') : 'Shift quiet',\n",
+  "    (d.trainees||[]).length+(d.trainees.length===1?' person':' people')+' on your line'+\n",
+  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">start with the one below</span>' : '",
+  "'));\n",
+  "  if (!d.trainees.length){\n",
+  "    h += '<div class=\"note n-info\"><b>Nobody on your line</b>When Training assigns someone",
+  " to you, they land here after the shift.</div>';\n",
+  "    paint(h);\n",
+  "    return;\n",
+  "  }\n",
+  "\n",
+  "  var list = (d.trainees||[]).slice().sort(function(a,b){\n",
+  "    // due must be 1 not 0 — (0||fallback) would demote overdue to last.\n",
+  "    var rank = { due:1, soon:2 };\n",
+  "    var ra = rank[a.urgency] || 9, rb = rank[b.urgency] || 9;\n",
+  "    return ra - rb;\n",
+  "  });\n",
+  "  // Lead card: only when someone is actually overdue — not a decorative first row.\n",
+  "  var lead = list[0];\n",
+  "  var leadIdx = d.trainees.indexOf(lead);\n",
+  "  if (lead && lead.urgency === 'due'){\n",
+  "    h += '<button class=\"card act\" onclick=\"openTrainee('+leadIdx+')\"'+\n",
+  "         ' style=\"--accent:var(--stop);margin-bottom:14px\">'+\n",
+  "         '<span class=\"bd\"><span class=\"lab\" style=\"margin:0\">File tonight</span>'+\n",
+  "         '<span class=\"h\" style=\"font-size:1.35rem\">'+esc(lead.name)+'</span>'+\n",
+  "         '<span class=\"m\">'+esc(lead.phase||'')+\n",
+  "         (lead.daysSinceEval<0?' · never evaluated':' · '+lead.daysSinceEval+'d since last",
+  " eval')+\n",
+  "         '</span><span class=\"m\">Opens eval and skills with both names filled.</span></spa",
+  "n>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    list = list.slice(1);\n",
+  "    if (list.length) h += sec('Also on your line', list.length);\n",
+  "  } else if (!hot){\n",
+  "    h += '<div class=\"note n-ok\"><b>Nothing overdue</b>Tap a name if you rode with them to",
+  "night anyway.</div>';\n",
+  "  }\n",
+  "  list.forEach(function(t){\n",
+  "    var i = d.trainees.indexOf(t);\n",
+  "    var chip = t.urgency==='due'\n",
+  "      ? '<span class=\"chip c-stop\">'+(t.daysSinceEval<0?'Never evaluated':(t.daysSinceEval",
+  "+'d silent'))+'</span>'\n",
+  "      : (t.urgency==='soon' ? '<span class=\"chip c-warn\">Due soon</span>' : '');\n",
+  "    h += '<button class=\"card act\"'+spine(t.urgency||'')+' onclick=\"openTrainee('+i+')\">'+",
+  "\n",
   "      '<span class=\"bd\">'+\n",
   "      '<span class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.level",
-  ")+'</span>'+\n",
-  "      '<span class=\"m\">'+esc(t.phase||'no phase set')+' &middot; last evaluation '+esc(t.l",
-  "astEval)+'</span>'+\n",
-  "      (t.setupComplete ? '' : '<span class=\"flag\">Setup incomplete &mdash; tell the Divisi",
-  "on</span>')+\n",
+  ")+chip+'</span>'+\n",
+  "      '<span class=\"m\">'+esc(t.phase||'no phase')+\n",
+  "      (t.dayInPhase!=null?' &middot; day '+t.dayInPhase:'')+\n",
+  "      ' &middot; '+esc(String(t.evalCount||0))+' evals'+\n",
+  "      (t.evalAvg!=null?' &middot; avg '+t.evalAvg:'')+'</span>'+\n",
+  "      (t.setupComplete?'':'<span class=\"flag\">Setup incomplete — tell Training Division</s",
+  "pan>')+\n",
   "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "  });\n",
-  "  if (d.forms && d.forms.length){\n",
-  "    h += sec('Anything else')+formCards(d.forms);\n",
-  "  }\n",
-  "  h += '<div class=\"next\"><b>How this works</b>Pick the person, not the form. The skills l",
-  "og you get is already the one for their level, with both names filled in.</div>';\n",
+  "  if (d.forms && d.forms.length) h += sec('Blank forms')+formCards(d.forms);\n",
   "  paint(h);\n",
+  "}\n",
+  "function openPerson(i){\n",
+  "  var t = (BOOT.data.people||[])[i];\n",
+  "  if (!t) return;\n",
+  "  S.ctx = t; S.screen = 'person'; render();\n",
+  "  if (!t.detailLoaded) loadPersonDetail_(t.name, 'person');\n",
   "}\n",
   "function openTrainee(i){\n",
   "  var t = (BOOT.data.trainees||[])[i];\n",
   "  if (!t) return;\n",
   "  S.ctx = t; S.screen = 'trainee'; render();\n",
+  "  if (!t.detailLoaded) loadPersonDetail_(t.name, 'trainee');\n",
+  "}\n",
+  "function loadPersonDetail_(name, screen){\n",
+  "  if (S.detailBusy) return;\n",
+  "  S.detailBusy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(d){\n",
+  "      S.detailBusy = false;\n",
+  "      if (!d || !d.name) return;\n",
+  "      // Merge into the list entry and the open sheet context.\n",
+  "      var lists = [BOOT.data.people, BOOT.data.trainees];\n",
+  "      lists.forEach(function(list){\n",
+  "        if (!list) return;\n",
+  "        list.forEach(function(p){\n",
+  "          if (!normMatch(p.name, d.name)) return;\n",
+  "          p.skills = d.skills; p.forms = d.forms; p.freshness = d.freshness;\n",
+  "          if (d.clearance) p.clearance = d.clearance;\n",
+  "          if (d.releaseReady != null) p.releaseReady = d.releaseReady;\n",
+  "          if (d.phase4 != null) p.phase4 = d.phase4;\n",
+  "          p.detailLoaded = true;\n",
+  "        });\n",
+  "      });\n",
+  "      if (S.ctx && normMatch(S.ctx.name, d.name)){\n",
+  "        S.ctx.skills = d.skills; S.ctx.forms = d.forms; S.ctx.freshness = d.freshness;\n",
+  "        if (d.clearance) S.ctx.clearance = d.clearance;\n",
+  "        if (d.releaseReady != null) S.ctx.releaseReady = d.releaseReady;\n",
+  "        if (d.phase4 != null) S.ctx.phase4 = d.phase4;\n",
+  "        S.ctx.detailLoaded = true;\n",
+  "      }\n",
+  "      if (S.screen === screen || S.screen === 'person' || S.screen === 'trainee') render()",
+  ";\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.detailBusy = false;\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .personDetailV1(name);\n",
   "}\n",
   "function paintTraineeSheet(){\n",
   "  var t = S.ctx || {};\n",
-  "  var h = hero('Your trainee', t.name,\n",
+  "  var h = hero('Tonight', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
-  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back to Tonight</but",
+  "ton>';\n",
   "  h += freshRow(t.freshness);\n",
-  "  h += '<div class=\"panel\">'+kv('Last evaluation', esc(t.lastEval))+\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       kv('Last evaluation', esc(t.lastEval))+\n",
+  "       kv('Evals on file', esc(String(t.evalCount||0))+\n",
+  "          (t.evalAvg!=null?' &middot; avg '+esc(String(t.evalAvg)):''))+\n",
+  "       kv('Waiting on Division', esc(String(t.waitingCount||0)))+\n",
   "       kv('Setup', t.setupComplete ? '<span class=\"chip c-ok\">Complete</span>'\n",
   "                                   : '<span class=\"chip c-warn\">Incomplete</span>')+'</div",
   ">';\n",
@@ -7791,140 +11464,394 @@ var PORTAL_PAGE_HTML = [
   "       '<span class=\"m\">Every submission on file, most recent first.</span></span>'+\n",
   "       '<span class=\"go\">&rsaquo;</span></button>';\n",
   "  h += sec('File something for '+firstName(t.name));\n",
-  "  h += (t.forms && t.forms.length)\n",
-  "    ? formCards(t.forms)\n",
-  "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
-  "he registry could not reach them.</div>';\n",
-  "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker, the same way it a",
-  "lways has. Nothing about your forms changed.</div>';\n",
+  "  if (!t.detailLoaded){\n",
+  "    h += '<div class=\"note n-info\"><b>Loading forms…</b></div>';\n",
+  "  } else {\n",
+  "    h += (t.forms && t.forms.length)\n",
+  "      ? formCards(t.forms)\n",
+  "      : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or",
+  " the registry could not reach them.</div>';\n",
+  "  }\n",
+  "  if (canWrite() && (BOOT.viewer.role === 'FTO' || BOOT.viewer.role === 'TRAINING_DIVISION",
+  "')){\n",
+  "    h += sec('Coaching note');\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Note for '+esc(firstName(t.name))+'</div>'+\n",
+  "         '<textarea id=\"coach-note\" placeholder=\"What they need to hear. Goes on their rec",
+  "ord in your name.\" '+\n",
+  "         'oninput=\"syncCoachBtn()\"></textarea></div>'+\n",
+  "         '<button class=\"btn\" id=\"coach-go\" disabled onclick=\"submitCoaching('+jsStr(t.nam",
+  "e)+')\">File coaching</button>';\n",
+  "  }\n",
+  "  h += '<div class=\"next\"><b>Where it goes</b>Straight into the tracker vault — same forms",
+  ", same record. Field Training just opens the right door.</div>';\n",
   "  paint(h);\n",
+  "  syncCoachBtn();\n",
+  "}\n",
+  "function syncCoachBtn(){\n",
+  "  var why = (el('coach-note') && el('coach-note').value || '').trim();\n",
+  "  if (el('coach-go')) el('coach-go').disabled = why.length < 8 || S.busy;\n",
+  "}\n",
+  "function submitCoaching(name){\n",
+  "  if (S.busy) return;\n",
+  "  var note = (el('coach-note') && el('coach-note').value || '').trim();\n",
+  "  if (note.length < 8) { alert('Type the coaching note.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('coach-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Saving…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Coaching filed.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) b.textContent = 'File coaching';\n",
+  "      syncCoachBtn();\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .createCoachingV1(name, note);\n",
+  "}\n",
+  "function submitAssign(traineeName){\n",
+  "  if (S.busy) return;\n",
+  "  var sel = el('asg-fto');\n",
+  "  var fto = sel && sel.value ? String(sel.value).trim() : '';\n",
+  "  if (!fto) { alert('Pick a training officer.'); return; }\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Assigned.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .assignFtoV1(traineeName, fto);\n",
   "}\n",
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
   "\n",
   "/* ---------------- division ---------------- */\n",
-  "/* This screen answers one question before it does anything else: what needs a\n",
-  "   decision from me. Everything after that is a count with a disclosure behind\n",
-  "   it. Ten identical rows of names is not information, and a spreadsheet row\n",
-  "   number is my diagnostics on somebody else's phone - neither belongs here. */\n",
+  "/* Decide first. Tabs hold the rest so the phone is not one long scroll. */\n",
   "function paintDivision(d){\n",
   "  var q = d.queue || [];\n",
   "  var missingBy = {};\n",
   "  (d.incomplete||[]).forEach(function(t){ missingBy[t.name] = t.missing; });\n",
   "\n",
-  "  // Every active trainee is either asking something of you or is not. Only\n",
-  "  // the first kind gets a row; the rest get counted and hidden behind a\n",
-  "  // button, because a name with nothing next to it is just noise.\n",
-  "  /* Three lists, not two. Someone you have already looked at and said\n",
-  "     something about is not an alarm any more - and is not gone either. */\n",
   "  var flagged = [], seen = [], quiet = [];\n",
   "  (d.people||[]).forEach(function(t,i){\n",
   "    if (!(t.needs || missingBy[t.name])) { quiet.push({t:t,i:i}); return; }\n",
   "    if (t.ack) seen.push({t:t,i:i}); else flagged.push({t:t,i:i});\n",
   "  });\n",
   "\n",
-  "  var h = hero('Training Division',\n",
-  "    q.length ? q.length+(q.length===1?' decision':' decisions')+' waiting'\n",
-  "             : 'Nothing waiting on you',\n",
-  "    d.activeCount+' active '+(d.activeCount===1?'trainee':'trainees')+\n",
-  "    ' &middot; '+(flagged.length ? flagged.length+' needing a look' : 'none needing a look",
-  "')+\n",
-  "    (seen.length ? ' &middot; '+seen.length+' seen and holding' : ''));\n",
+  "  var ready = (d.releaseReady || []).filter(function(r){\n",
+  "    return (d.people||[]).some(function(p){ return p.name === r.name && p.releaseReady; })",
+  ";\n",
+  "  });\n",
+  "  var showReady = !!(ready.length && canWrite());\n",
+  "  var fw = d.formWaiting || {};\n",
+  "  var closed = d.closedPeople || [];\n",
+  "  var house = housekeeping(d);\n",
+  "  var inboxN = (fw.waiting || 0) + (house ? 1 : 0);\n",
+  "\n",
+  "  var tab = S.divTab || 'waiting';\n",
+  "  if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';\n",
+  "\n",
+  "  var sub = 'Queue clear';\n",
+  "  if (q.length === 1) sub = '1 sign-off waiting';\n",
+  "  else if (q.length > 1) sub = q.length + ' sign-offs waiting';\n",
+  "  else if (showReady) sub = 'Ready to clear for the truck';\n",
+  "\n",
+  "  var h = hero('Division desk',\n",
+  "    sub,\n",
+  "    d.activeCount+' in training'+\n",
+  "    (flagged.length ? ' &middot; '+flagged.length+' need a look' : '')+\n",
+  "    (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
   "    h += '<div class=\"note n-warn\"><b>Read only</b>This portal is in '+esc(d.mode)+\n",
-  "         ' mode, so sign-offs cannot be approved from here yet.</div>';\n",
+  "         ' mode, so sign-offs cannot be decided from here yet.</div>';\n",
   "\n",
   "  h += warnRow(d.warnings);\n",
   "\n",
-  "  /* Something wrong with the system rather than with a person. It belongs at\n",
-  "     the top with the other system-level alerts, not floating between two\n",
-  "     groups of people where it reads as a third sign-off. */\n",
-  "  (d.retiredForms||[]).forEach(function(f){\n",
-  "    h += '<div class=\"note n-stop\"><b>Retired form still open</b>'+esc(f.title)+\n",
-  "         ' is no longer offered anywhere in this portal. '+esc(f.why)+\n",
-  "         ' Anything already submitted to it is sitting in the form, not in the tracker.</d",
-  "iv>';\n",
-  "  });\n",
+  "  h += '<div class=\"tabs\" role=\"tablist\">'+\n",
+  "    tabBtn('waiting','Decide', q.length)+\n",
+  "    tabBtn('moves','Moves', flagged.length + seen.length)+\n",
+  "    tabBtn('people','People', (d.people||[]).length)+\n",
+  "    tabBtn('inbox','Inbox', inboxN)+\n",
+  "    tabBtn('menu','Menu')+\n",
+  "    '</div>';\n",
   "\n",
+  "  h += '<div class=\"pane\">';\n",
+  "  if (tab === 'waiting') h += paintDivWaiting_(d, q, ready, showReady);\n",
+  "  else if (tab === 'moves') h += paintDivMoves_(flagged, seen, missingBy);\n",
+  "  else if (tab === 'people') h += paintDivPeople_(d, quiet);\n",
+  "  else if (tab === 'inbox') h += paintDivInbox_(d, fw, house);\n",
+  "  else h += paintDivMenu_(d, closed);\n",
+  "  h += '</div>';\n",
   "\n",
+  "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function tabBtn(id, label, n){\n",
+  "  var on = (S.divTab || 'waiting') === id ? ' on' : '';\n",
+  "  return '<button type=\"button\" role=\"tab\" class=\"'+on+'\" onclick=\"setDivTab('+jsStr(id)+'",
+  ")\">'+\n",
+  "    esc(label)+(n ? '<span class=\"ct\">'+esc(String(n))+'</span>' : '')+'</button>';\n",
+  "}\n",
+  "\n",
+  "function setDivTab(id){\n",
+  "  S.divTab = id || 'waiting';\n",
+  "  S.screen = 'main';\n",
+  "  render();\n",
+  "  try { window.scrollTo(0, 0); } catch (e) {}\n",
+  "  if (S.divTab === 'inbox') ensureDivisionInbox_();\n",
+  "}\n",
+  "\n",
+  "function ensureDivisionInbox_(){\n",
+  "  if (!BOOT.data || BOOT.data.inboxLoaded || S.inboxBusy) return;\n",
+  "  S.inboxBusy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(inbox){\n",
+  "      S.inboxBusy = false;\n",
+  "      if (!inbox) return;\n",
+  "      BOOT.data.inboxLoaded = true;\n",
+  "      BOOT.data.duplicateSubs = inbox.duplicateSubs || [];\n",
+  "      BOOT.data.formWaiting = inbox.formWaiting || { waiting: 0, list: [] };\n",
+  "      BOOT.data.forms = inbox.forms || [];\n",
+  "      BOOT.data.retiredForms = inbox.retiredForms || [];\n",
+  "      if (inbox.settleWarn){\n",
+  "        BOOT.data.warnings = (BOOT.data.warnings || []).concat([inbox.settleWarn]);\n",
+  "      }\n",
+  "      if (S.screen === 'main') render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(){ S.inboxBusy = false; })\n",
+  "    .divisionInboxV1();\n",
+  "}\n",
+  "\n",
+  "function paintDivWaiting_(d, q, ready, showReady){\n",
+  "  var h = '';\n",
   "  if (!q.length){\n",
-  "    h += '<div class=\"note n-ok\"><b>Sign-offs clear</b>No skill is waiting on your decisio",
-  "n.</div>';\n",
+  "    h += '<div class=\"note n-ok\"><b>Nothing waiting</b>When a skill needs your call, it sh",
+  "ows here first.</div>';\n",
   "  } else {\n",
-  "    h += sec('Sign-offs', d.queueCount);\n",
-  "    q.forEach(function(x){ h += signoffCard(x); });\n",
+  "    var lead = q[0];\n",
+  "    h += decisionLeadHtml(lead);\n",
+  "    if (q.length > 1){\n",
+  "      h += sec('Behind it', q.length - 1);\n",
+  "      q.slice(1).forEach(function(x){ h += signoffCard(x); });\n",
+  "    }\n",
   "    if (d.queueCount > q.length)\n",
-  "      h += '<p class=\"sub\" style=\"margin-top:-2px\">Showing the oldest '+q.length+' of '+\n",
-  "           d.queueCount+'.</p>';\n",
+  "      h += '<p class=\"sub\">Showing the oldest '+q.length+' of '+d.queueCount+'.</p>';\n",
   "  }\n",
-  "\n",
-  "  /* Decisions already made here, waiting on the tracker to make them\n",
-  "     permanent. After the queue, because what you have already decided must\n",
-  "     never sit above what is still waiting on you - and not dropped either,\n",
-  "     which is what they would be if the count simply stopped mentioning them. */\n",
-  "  var staged = d.staged || [];\n",
-  "  if (staged.length){\n",
-  "    h += '<div class=\"note n-info\"><b>'+staged.length+' waiting on the tracker</b>'+\n",
-  "         'You have decided '+(staged.length===1?'this one':'these')+' already. '+\n",
-  "         'The tracker turns '+(staged.length===1?'it':'them')+' into permanent sign-offs: ",
-  "'+\n",
-  "         'tick RECORD on the row, or run &ldquo;Record pending decisions&rdquo; from its m",
-  "enu.</div>';\n",
-  "    h += picker('pick-staged', staged.length+' already decided\\u2026', staged.map(function",
-  "(x){\n",
-  "      return { value: x.trainee,\n",
-  "               label: x.trainee + ' \\u2014 ' + x.skill + ' \\u00b7 ' + x.decision };\n",
-  "    }), 'pickRecord');\n",
+  "  if (showReady){\n",
+  "    h += sec('Ready for the truck', ready.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Phase 4 and every skill signed off. Cle",
+  "ar them as an independent partner.</p>';\n",
+  "    ready.forEach(function(r){\n",
+  "      var idx = -1, person = null;\n",
+  "      (d.people||[]).forEach(function(p,i){ if (p.name === r.name) { idx = i; person = p; ",
+  "} });\n",
+  "      if (idx < 0) return;\n",
+  "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openPerson('+idx+')\">'+\n",
+  "           '<span class=\"bd\"><span class=\"hd\"><span class=\"h\">'+esc(r.name)+'</span>'+\n",
+  "           lvlChip((person&&person.levelKey), r.level)+'</span>'+\n",
+  "           '<span class=\"m\">'+esc(String(r.signed||0))+' / '+esc(String(r.total||0))+\n",
+  "           ' skills signed · clear for the truck</span></span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    });\n",
   "  }\n",
+  "  return h;\n",
+  "}\n",
   "\n",
+  "function paintDivMoves_(flagged, seen, missingBy){\n",
+  "  var h = '';\n",
+  "  if (!flagged.length && !seen.length){\n",
+  "    return '<div class=\"note n-ok\"><b>No open moves</b>Nobody needs a look right now.</div",
+  ">';\n",
+  "  }\n",
   "  if (flagged.length){\n",
-  "    h += sec('Needs a look', flagged.length);\n",
+  "    h += sec('Next moves', flagged.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Open each one — assign an FTO, fix the ",
+  "record, or hold it with your words.</p>';\n",
   "    flagged.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
-  "\n",
-  "  /* Looked at, and something said about it. Not an alarm any more, and not\n",
-  "     gone either - the finding is still on the card, with who holds it and\n",
-  "     until when. */\n",
   "  if (seen.length){\n",
   "    h += sec('Seen, and holding', seen.length);\n",
   "    seen.forEach(function(p){ h += personCard(p.t, p.i, missingBy[p.t.name]); });\n",
   "  }\n",
-  "\n",
-  "  if ((d.people||[]).length){\n",
-  "    h += sec('Anyone else', (d.people||[]).length);\n",
-  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+d.people.length+\n",
-  "         ' have nothing outstanding. Pick a name to open their record.</p>';\n",
-  "    h += picker('pick-person', 'Open a trainee\\u2026', (d.people||[]).map(function(t,i){\n",
-  "      return { value: String(i),\n",
-  "               label: t.name + ' \\u2014 ' + (t.phase || 'no phase set') +\n",
-  "                      (t.needs ? ' \\u00b7 needs a look' : '') };\n",
-  "    }), 'pickPerson');\n",
-  "  }\n",
-  "\n",
-  "  if (d.forms && d.forms.length) h += sec('Forms')+formCards(d.forms);\n",
-  "\n",
-  "  h += housekeeping(d);\n",
-  "\n",
-  "  h += sec('System')+'<div class=\"panel\">'+\n",
-  "    kv('Delivery mode','<span class=\"chip c-warn\">'+esc(d.mode)+'</span>')+\n",
-  "    kv('Active trainees', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' clos",
-  "ed, not counted</span>')+\n",
-  "    kv('Form links', d.formLinks ? '<span class=\"chip c-ok\">Live</span>'\n",
-  "                                 : '<span class=\"chip c-warn\">Off</span>')+\n",
-  "    '</div>';\n",
-  "  paint(h);\n",
+  "  return h;\n",
   "}\n",
   "\n",
-  "/* Approving writes a decision into the queue. Against a tracker this portal\n",
-  "   cannot write, the item is shown and the decision is recorded where it has\n",
-  "   always been recorded, rather than offered and then refused. */\n",
+  "function paintDivPeople_(d, quiet){\n",
+  "  var h = sec('Anyone in training', (d.people||[]).length);\n",
+  "  h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+quiet.length+' of '+(d.people||[]).leng",
+  "th+\n",
+  "       ' have nothing outstanding. Pick a name to open their record.</p>';\n",
+  "  h += picker('pick-person', 'Open a trainee\\u2026', (d.people||[]).map(function(t,i){\n",
+  "    return { value: String(i),\n",
+  "             label: t.name + ' \\u2014 ' + (t.phase || 'no phase set') +\n",
+  "                    (t.needs ? ' \\u00b7 needs a look' : '') };\n",
+  "  }), 'pickPerson');\n",
+  "  return h;\n",
+  "}\n",
+  "\n",
+  "function paintDivInbox_(d, fw, house){\n",
+  "  var h = '';\n",
+  "  if (!d.inboxLoaded){\n",
+  "    h += '<div class=\"note n-info\"><b>Loading inbox…</b>Form responses and Settle load aft",
+  "er the desk is open.</div>';\n",
+  "    ensureDivisionInbox_();\n",
+  "    return h;\n",
+  "  }\n",
+  "  if ((fw.waiting || 0) > 0){\n",
+  "    h += sec('Skills log & forms waiting', fw.waiting);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
+  "         (fw.skillsWaiting ? fw.skillsWaiting+' look like skills logs · ' : '')+\n",
+  "         'Open → clear from this desk (with a reason) or leave for tracker ingest.</p>';\n",
+  "    h += picker('pick-formwait', fw.waiting+' waiting\\u2026', (fw.list||[]).map(function(x",
+  ",i){\n",
+  "      return { value: String(i),\n",
+  "               label: (x.kind==='skills'?'Skills · ':'') + (x.trainee || 'unnamed') +\n",
+  "                      ' \\u2014 ' + (x.when || x.stamp || 'no date') +\n",
+  "                      (x.by ? ' \\u00b7 ' + x.by : '') };\n",
+  "    }), 'pickFormWait');\n",
+  "  } else {\n",
+  "    h += '<div class=\"note n-ok\"><b>Inbox clear</b>No form responses waiting on the desk.<",
+  "/div>';\n",
+  "  }\n",
+  "  if (house) h += sec('Settle')+house;\n",
+  "  if (d.forms && d.forms.length) h += sec('File something')+formCards(d.forms);\n",
+  "  return h;\n",
+  "}\n",
+  "\n",
+  "function paintDivMenu_(d, closed){\n",
+  "  var h = '<p class=\"sub\" style=\"margin-bottom:12px\">Roster, reports, and desk tools — off",
+  " the main Decide screen.</p>';\n",
+  "  var shareUrl = String((d && d.portalUrl) || BOOT.portalUrl || '').trim();\n",
+  "  if (shareUrl){\n",
+  "    h += sec('Portal link for the crew');\n",
+  "    h += '<div class=\"panel\" style=\"margin-bottom:14px\">'+\n",
+  "         '<div class=\"lab\">Hand them this address</div>'+\n",
+  "         '<div class=\"mono\" style=\"word-break:break-all;font-size:.92rem;margin:6px 0 10px",
+  "\">'+esc(shareUrl)+'</div>'+\n",
+  "         '<button type=\"button\" class=\"btn ghost\" onclick=\"copyPortalLink('+jsStr(shareUrl",
+  ")+')\">Copy link</button>'+\n",
+  "         '<p class=\"sub\" style=\"margin-top:10px\">Set or change the short address in the Ap",
+  "ps Script editor with '+\n",
+  "         '<span class=\"mono\">setPortalShortAddress(\"https://…\")</span>. '+\n",
+  "         'Suggested Sites Hub: sites.google.com/view/scemsfieldtraininghub</p>'+\n",
+  "         '</div>';\n",
+  "  } else {\n",
+  "    h += '<div class=\"note n-info\" style=\"margin-bottom:14px\"><b>No short portal address y",
+  "et</b>'+\n",
+  "         'Deploy the web app, embed it on the Sites Hub (or a county redirect), then run '",
+  "+\n",
+  "         '<span class=\"mono\">setPortalShortAddress(\"https://…\")</span> in the portal proje",
+  "ct. '+\n",
+  "         '<span class=\"mono\">portalAddress()</span> prints both links.</div>';\n",
+  "  }\n",
+  "  h += '<div class=\"menu-list\">';\n",
+  "  if (d.canAddTrainee){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"openAddTrainee()\">'+\n",
+  "         '<span><span class=\"h\">Bring someone on</span><span class=\"m\">New trainee on the ",
+  "master and forms</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  if (d.canAddFto !== false && canWrite()){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"openAddFto()\">'+\n",
+  "         '<span><span class=\"h\">Add an FTO</span><span class=\"m\">Writes the tracker roster",
+  " and form dropdowns</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"syncMatrixEvidence()\">'+\n",
+  "         '<span><span class=\"h\">Sync matrix from evidence</span><span class=\"m\">Logged ski",
+  "lls stuck IN PROGRESS</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    h += '<button type=\"button\" class=\"menu-row\" onclick=\"refreshQueue()\">'+\n",
+  "         '<span><span class=\"h\">Refresh sign-off queue</span><span class=\"m\">READY skills ",
+  "missing from OPEN</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "  h += '</div>';\n",
+  "  if (closed.length){\n",
+  "    h += sec('Released — prior reports', closed.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">Pull a printable report (Save as PDF fr",
+  "om the print dialog).</p>';\n",
+  "    h += picker('pick-closed', 'Report for a released trainee\\u2026', closed.map(function(",
+  "t,i){\n",
+  "      return { value: String(i),\n",
+  "               label: t.name + ' \\u2014 ' + (t.status || 'Closed') +\n",
+  "                      (t.level ? ' \\u00b7 ' + t.level : '') };\n",
+  "    }), 'pickClosedReport');\n",
+  "  }\n",
+  "  h += deskDetails(d);\n",
+  "  return h;\n",
+  "}\n",
+  "\n",
+  "/* Approving / returning writes a decision into the queue. Against a tracker\n",
+  "   this portal cannot write, the item is shown and the decision is recorded\n",
+  "   where it has always been recorded. */\n",
+  "function decisionLeadHtml(q){\n",
+  "  var left = (q.hoursLeft != null) ? q.hoursLeft : 72;\n",
+  "  var pct = (q.clockPct != null) ? q.clockPct : 100;\n",
+  "  var h = '<div class=\"decision\"><div class=\"top\">'+\n",
+  "    '<div style=\"width:5px;background:var(--'+esc((BOOT.data.people||[]).reduce(function(k",
+  ",p){\n",
+  "      return normMatch(p.name,q.trainee)?p.levelKey:k;},'gold'))+');flex:none;margin:-15px",
+  " 0 0 -16px;align-self:stretch;border-radius:11px 0 0 0\"></div>'+\n",
+  "    '<div class=\"body\" style=\"padding-left:12px;flex:1\">'+\n",
+  "    '<div style=\"display:flex;gap:12px;align-items:flex-start\">'+\n",
+  "    '<div style=\"flex:1;min-width:0\">'+\n",
+  "    '<div class=\"lab\" style=\"margin:0\">Ready for your sign-off</div>'+\n",
+  "    '<div class=\"h\" style=\"font-size:1.44rem;margin-top:2px\">'+esc(q.skill)+'</div>'+\n",
+  "    '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+\n",
+  "    clockHtml(left, pct)+\n",
+  "    '</div>';\n",
+  "  if (q.bars && q.bars.length){\n",
+  "    h += '<div style=\"margin-top:14px;padding-top:12px;border-top:1px solid var(--line)\">'",
+  "+\n",
+  "         '<div class=\"lab\">Against the catalog</div>'+barsHtml(q.bars)+'</div>';\n",
+  "  } else if (q.evidence){\n",
+  "    h += '<div style=\"margin-top:12px;font-size:.9rem;color:var(--ink-2)\">'+esc(q.evidence",
+  ")+'</div>';\n",
+  "  }\n",
+  "  if (q.recommend){\n",
+  "    h += '<div class=\"note n-info\" style=\"margin-top:12px\"><b>FTO recommendation</b>'+esc(",
+  "q.recommend)+'</div>';\n",
+  "  }\n",
+  "  h += '</div></div>';\n",
+  "  if (canWrite() && !q.from){\n",
+  "    h += '<div style=\"padding:0 16px 16px\">'+\n",
+  "         '<button class=\"btn\" onclick=\"openSignoff('+q.row+','+jsStr(q.trainee)+','+\n",
+  "         jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">Decide</butto",
+  "n>'+\n",
+  "         '<div class=\"next\" style=\"margin-top:10px\">Type your reason on the next screen to",
+  " approve or return.</div></div>';\n",
+  "  } else {\n",
+  "    h += '<div style=\"padding:0 16px 16px\"><div class=\"flag\" style=\"--accent:var(--warn)\">",
+  "'+\n",
+  "         (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'\n",
+  "                 : 'Read only — switch to LIVE to decide here.')+'</div></div>';\n",
+  "  }\n",
+  "  return h + '</div>';\n",
+  "}\n",
+  "function normMatch(a,b){\n",
+  "  return String(a||'').toLowerCase().replace(/\\s+/g,'')===String(b||'').toLowerCase().repl",
+  "ace(/\\s+/g,'');\n",
+  "}\n",
   "function signoffCard(q){\n",
   "  if (canWrite() && !q.from){\n",
   "    return '<button class=\"card act\"'+spine('gold')+' onclick=\"openSignoff('+q.row+','+jsS",
   "tr(q.trainee)+','+\n",
   "      jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">'+\n",
   "      '<span class=\"bd\"><span class=\"h\">'+esc(q.skill)+'</span>'+\n",
-  "      '<span class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</span>'+\n",
+  "      '<span class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+\n",
+  "      (q.hoursLeft!=null?' &middot; '+q.hoursLeft+'h left':'')+'</span>'+\n",
   "      (q.evidence ? '<span class=\"m\" style=\"color:var(--ink-2)\">'+esc(short(q.evidence, 64",
   "))+'</span>' : '')+\n",
   "      '</span><span class=\"go\">&rsaquo;</span></button>';\n",
@@ -7933,10 +11860,9 @@ var PORTAL_PAGE_HTML = [
   "    '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div>'+\n",
   "    '<div class=\"m\" style=\"margin-top:7px\">'+esc(q.evidence)+'</div>'+\n",
   "    '<div class=\"flag\" style=\"--accent:var(--warn)\">'+\n",
-  "    (q.from ? 'This row is in '+esc(q.from)+', not your tracker. Record the decision there",
-  ".'\n",
-  "            : 'Record the decision in the tracker. This portal is read only.')+'</div></di",
-  "v>';\n",
+  "    (q.from ? 'This row is in '+esc(q.from)+', not this book. Record the decision there.'\n",
+  "            : 'Read only — switch to LIVE to decide from Field Training.')+'</div></div>';",
+  "\n",
   "}\n",
   "\n",
   "/* One row per person, and the row says what it wants. The index is the one\n",
@@ -7953,9 +11879,12 @@ var PORTAL_PAGE_HTML = [
   "    '<span class=\"m\">'+esc(t.phase||'no phase set')+' &middot; '+esc(short(t.fto)||'no tra",
   "ining officer')+'</span>'+\n",
   "    (why ? '<span class=\"flag\"'+(held ? ' style=\"--accent:var(--ink-3)\"' : '')+'>'+\n",
-  "           esc(cap(why))+'</span>' : '')+\n",
+  "           esc(t.nextMove && t.nextMove.title ? t.nextMove.title : cap(why))+'</span>' : '",
+  "')+\n",
   "    (held ? '<span class=\"m\">Seen '+esc(t.ack.when)+' &middot; back on the list '+\n",
   "            esc(t.ack.until)+'</span>' : '')+\n",
+  "    (t.nextMove && t.nextMove.blurb && !held ? '<span class=\"m\">'+esc(t.nextMove.blurb)+'<",
+  "/span>' : '')+\n",
   "    '</span><span class=\"go\">&rsaquo;</span></button>';\n",
   "}\n",
   "function urgentNeedV(w){\n",
@@ -7966,45 +11895,138 @@ var PORTAL_PAGE_HTML = [
   "function short(s, n){ s = String(s==null?'':s).trim(); n = n || 44;\n",
   "  return s.length > n ? s.slice(0,n)+'…' : s; }\n",
   "\n",
-  "/* Data-quality work. Real, but it is not a decision about a person, so it\n",
-  "   sits under a count until you ask for it. */\n",
+  "/* Data-quality and vault chores. Real, but not the job of the first screen.\n",
+  "   Kept behind a quiet disclosure so Waiting on you stays human. */\n",
   "function housekeeping(d){\n",
   "  var subs = d.duplicateSubs || [], dupes = d.duplicates || [];\n",
   "  if (!subs.length && !dupes.length) return '';\n",
-  "  var h = sec('Housekeeping');\n",
+  "  var h = '';\n",
   "  if (subs.length){\n",
   "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+subs.length+' same-day '+\n",
-  "         (subs.length===1?'submission':'submissions')+', where two of a kind landed on one",
-  " '+\n",
-  "         'day and somebody has to say which stands. Both are kept. Pick one to read them '",
-  "+\n",
-  "         'side by side.</p>';\n",
-  "    h += picker('pick-sameday', subs.length+' to settle\\u2026', subs.map(function(x){\n",
-  "      return { value: x.trainee,\n",
+  "         (subs.length===1?'submission pair':'submission pairs')+\n",
+  "         ' to settle — both stay on file; open a pair and say how it stands.</p>';\n",
+  "    h += picker('pick-sameday', subs.length+' to settle\\u2026', subs.map(function(x,i){\n",
+  "      return { value: String(i),\n",
   "               label: x.trainee + ' \\u2014 ' + x.source + (x.group ? ' \\u00b7 ' + x.group ",
   ": '') +\n",
   "                      ' \\u00b7 ' + x.when + ' (' + x.count + ')' };\n",
-  "    }), 'pickRecord');\n",
+  "    }), 'pickSettle');\n",
   "  }\n",
   "  if (dupes.length){\n",
-  "    h += '<div class=\"note n-warn\"><b>Possible duplicate '+(dupes.length===1?'record':'rec",
-  "ords')+\n",
-  "         '</b>'+esc(dupes.join(', '))+' '+(dupes.length===1?'appears':'appear')+\n",
-  "         ' more than once in the trainee master.</div>';\n",
+  "    h += '<div class=\"note n-warn\"><b>Possible duplicate '+(dupes.length===1?'name':'names",
+  "')+\n",
+  "         '</b>'+esc(dupes.join(', '))+' on the trainee master.</div>';\n",
   "  }\n",
   "  return h;\n",
   "}\n",
   "\n",
-  "function openPerson(i){\n",
-  "  var t = (BOOT.data.people||[])[i];\n",
-  "  if (!t) return;\n",
-  "  S.ctx = t; S.screen = 'person'; render();\n",
+  "/** Folded machinery: staged decisions, retired forms, mode. Not in the hero. */\n",
+  "function deskDetails(d){\n",
+  "  var staged = d.staged || [];\n",
+  "  var retired = d.retiredForms || [];\n",
+  "  if (!staged.length && !retired.length && !d.mode) return '';\n",
+  "\n",
+  "  var open = !!S.showDesk;\n",
+  "  var bits = [];\n",
+  "  if (staged.length) bits.push(staged.length+' decided');\n",
+  "  if (retired.length) bits.push(retired.length+' form note'+(retired.length===1?'':'s'));\n",
+  "  var label = bits.length ? bits.join(' · ') : 'Desk details';\n",
+  "\n",
+  "  var h = '<button class=\"more\" style=\"margin-top:22px\" onclick=\"S.showDesk=!S.showDesk;re",
+  "nder()\">'+\n",
+  "          (open ? 'Hide' : 'Show')+' '+label+'</button>';\n",
+  "  if (!open) return h;\n",
+  "\n",
+  "  if (staged.length){\n",
+  "    h += '<p class=\"sub\">Open queue rows that already have a decision filled (legacy / hal",
+  "f-finished). '+\n",
+  "         'Finish or clear them from Field Training when you can write.</p>';\n",
+  "    h += picker('pick-staged', staged.length+' half-finished\\u2026', staged.map(function(x",
+  "){\n",
+  "      return { value: x.trainee,\n",
+  "               label: x.trainee + ' \\u2014 ' + x.skill + ' \\u00b7 ' + x.decision };\n",
+  "    }), 'pickRecord');\n",
+  "  }\n",
+  "  if (retired.length){\n",
+  "    h += '<p class=\"sub\">Old form links still accepting answers somewhere. Close them in D",
+  "rive when you can — '+\n",
+  "         'not urgent for today&rsquo;s decisions.</p>';\n",
+  "    retired.forEach(function(f){\n",
+  "      h += '<div class=\"note n-info\"><b>'+esc(f.title)+'</b>'+esc(f.why||'Retired; still o",
+  "pen somewhere.')+'</div>';\n",
+  "    });\n",
+  "  }\n",
+  "  h += '<div class=\"panel\" style=\"margin-top:10px\">'+\n",
+  "    kv('Mode','<span class=\"chip c-mute\">'+esc(d.mode)+'</span>')+\n",
+  "    kv('In training', d.activeCount+' <span class=\"chip c-mute\">'+d.closedCount+' cleared<",
+  "/span>')+\n",
+  "    kv('Form links', d.formLinks ? '<span class=\"chip c-ok\">On</span>'\n",
+  "                                 : '<span class=\"chip c-warn\">Off</span>')+\n",
+  "    '</div>';\n",
+  "  return h;\n",
   "}\n",
+  "\n",
   "function paintPersonSheet(){\n",
   "  var t = S.ctx || {};\n",
+  "  var clear = t.clearance || {};\n",
   "  var h = hero('Trainee record', t.name,\n",
   "    lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "\n",
+  "  if (!t.detailLoaded){\n",
+  "    h += '<div class=\"note n-info\"><b>Loading record…</b>Skills and forms are loading — th",
+  "e rest of the desk is already up.</div>';\n",
+  "  }\n",
+  "\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "       '<div class=\"lab\">Where they are</div>'+\n",
+  "       phaseTrackHtml(t.phase)+\n",
+  "       (t.dayInPhase!=null\n",
+  "         ? '<div class=\"m\" style=\"margin-top:8px\">Day '+esc(t.dayInPhase)+' in this phase<",
+  "/div>'\n",
+  "         : '')+\n",
+  "       '</div>';\n",
+  "\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "    h += sec('Lifecycle');\n",
+  "    if (t.canAdvance && t.nextPhase){\n",
+  "      h += '<button class=\"card act\"'+spine('gold')+' onclick=\"openAdvance()\">'+\n",
+  "           '<span class=\"bd\"><span class=\"h\">Advance to '+esc(t.nextPhase)+'</span>'+\n",
+  "           '<span class=\"m\">Type why. Phase and phase-start date update together.</span></",
+  "span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    }\n",
+  "\n",
+  "    if (t.releaseReady){\n",
+  "      h += '<div class=\"note n-ok\"><b>Ready for the truck</b>'+\n",
+  "           esc(String(clear.signed||0))+' / '+esc(String(clear.total||0))+\n",
+  "           ' skills signed off. Clear them as an independent partner.</div>';\n",
+  "      h += '<button class=\"card act\"'+spine('due')+' onclick=\"openRelease()\">'+\n",
+  "           '<span class=\"bd\"><span class=\"h\">Clear '+esc(firstName(t.name)||'trainee')+' f",
+  "or the truck</span>'+\n",
+  "           '<span class=\"m\">Successful completion — independent partner on a truck.</span>",
+  "</span>'+\n",
+  "           '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "    } else if (t.phase4){\n",
+  "      h += '<div class=\"note n-warn\"><b>Not ready for the truck yet</b>Phase 4, but skills",
+  " or sign-offs are still open:</div>';\n",
+  "      (clear.gaps||[]).slice(0,8).forEach(function(g){\n",
+  "        h += '<div class=\"m\" style=\"margin:0 0 6px 2px\">· '+esc(g)+'</div>';\n",
+  "      });\n",
+  "      h += '<div class=\"next\" style=\"margin-top:10px\">Finish those before clearing for the",
+  " truck.</div>';\n",
+  "    } else if (!t.canAdvance){\n",
+  "      h += '<div class=\"note n-info\"><b>Phase</b>Fix the phase on the master before advanc",
+  "ing or clearing.</div>';\n",
+  "    }\n",
+  "\n",
+  "    h += '<button class=\"card act\"'+spine('soon')+' onclick=\"openCloseTrainee()\">'+\n",
+  "         '<span class=\"bd\"><span class=\"h\">End training / close</span>'+\n",
+  "         '<span class=\"m\">Sets Closed / Released. Stops Monday status cards. Not a truck c",
+  "learance.</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
+  "  }\n",
+  "\n",
   "  /* The card you tapped said why. Losing the reason on the way in is how a\n",
   "     screen becomes a dead end: three problems named on one page and nothing\n",
   "     to do about any of them on the next. */\n",
@@ -8034,16 +12056,245 @@ var PORTAL_PAGE_HTML = [
   "  h += freshRow(t.freshness);\n",
   "  h += '<div class=\"panel\">'+kv('Training officer', esc(t.fto||'not assigned'))+\n",
   "       kv('Shift', esc(t.shift||'not set'))+'</div>';\n",
+  "\n",
+  "  h += '<button class=\"btn ghost\" style=\"margin-top:10px\" onclick=\"openTraineeReport('+jsS",
+  "tr(t.name)+')\">'+\n",
+  "       'Print / save PDF report</button>';\n",
+  "\n",
+  "  if (t.skills && t.skills.length){\n",
+  "    var withDiv = [], building = [], signed = [], acceptNow = [];\n",
+  "    function barsMetClient(s){\n",
+  "      var bars = s.bars || [];\n",
+  "      if (!bars.length) return false;\n",
+  "      for (var bi = 0; bi < bars.length; bi++){\n",
+  "        if (Number(bars[bi].have || 0) < Number(bars[bi].need || 0)) return false;\n",
+  "      }\n",
+  "      return true;\n",
+  "    }\n",
+  "    t.skills.forEach(function(s){\n",
+  "      if (s.signed) signed.push(s);\n",
+  "      else if (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s)) {\n",
+  "        withDiv.push(s);\n",
+  "        acceptNow.push(s);\n",
+  "      } else building.push(s);\n",
+  "    });\n",
+  "    h += sec('Skills on the matrix', t.skills.length);\n",
+  "    h += '<p class=\"sub\" style=\"margin-bottom:9px\">'+\n",
+  "         signed.length+' signed · '+withDiv.length+' ready to accept · '+\n",
+  "         building.length+' building</p>';\n",
+  "    function skillRow(s, canAccept){\n",
+  "      var tag = s.signed ? 'Signed' :\n",
+  "        (s.readiness === 'READY FOR VALIDATION' || barsMetClient(s) ? 'Ready to accept' : ",
+  "(s.readiness || 'Building'));\n",
+  "      var tagCls = s.signed ? 'c-ok' : (canAccept ? 'c-warn' : 'c-mute');\n",
+  "      var row = '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(s.skill)+'</span>",
+  "'+\n",
+  "        '<span class=\"chip '+tagCls+'\">'+esc(tag)+'</span></div>'+\n",
+  "        (s.bars && s.bars.length ? barsHtml(s.bars) : '');\n",
+  "      if (canAccept && canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION'){\n",
+  "        row += '<button class=\"btn\" style=\"margin-top:10px\" onclick=\"openAcceptSkill('+\n",
+  "          jsStr(t.name)+','+jsStr(s.skillId||'')+','+jsStr(s.skill)+')\">Accept on tracker<",
+  "/button>';\n",
+  "      }\n",
+  "      row += '</div>';\n",
+  "      return row;\n",
+  "    }\n",
+  "    withDiv.forEach(function(s){ h += skillRow(s, true); });\n",
+  "    building.slice(0, 8).forEach(function(s){ h += skillRow(s, false); });\n",
+  "    if (building.length > 8) h += '<p class=\"sub\">+ '+(building.length-8)+' more building<",
+  "/p>';\n",
+  "    if (signed.length && !withDiv.length && building.length <= 8){\n",
+  "      h += '<button class=\"more\" onclick=\"S.showSignedSkills=!S.showSignedSkills;render()\"",
+  ">'+\n",
+  "           (S.showSignedSkills?'Hide':'Show')+' '+signed.length+' signed</button>';\n",
+  "      if (S.showSignedSkills) signed.forEach(function(s){ h += skillRow(s, false); });\n",
+  "    }\n",
+  "    if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && acceptNow.length){\n",
+  "      h += '<div class=\"next\"><b>Accept writes the tracker</b>Queue closes, permanent sign",
+  "-off log gets a row, and the skills matrix shows SIGNED OFF.</div>';\n",
+  "    }\n",
+  "  }\n",
+  "\n",
+  "  if (canWrite() && BOOT.viewer.role === 'TRAINING_DIVISION' && (BOOT.data.canAssignFto !=",
+  "= false)){\n",
+  "    var officers = BOOT.data.officers || [];\n",
+  "    if (officers.length){\n",
+  "      h += sec('Who trains them');\n",
+  "      h += '<div class=\"panel\"><div class=\"lab\">Assigned FTO</div>'+\n",
+  "           '<select class=\"pick\" id=\"asg-fto\" aria-label=\"Assigned FTO\">'+\n",
+  "           '<option value=\"\">Pick a training officer\\u2026</option>';\n",
+  "      officers.forEach(function(o){\n",
+  "        h += '<option value=\"'+esc(o.name)+'\"'+(normMatch(o.name,t.fto)?' selected':'')+'>",
+  "'+\n",
+  "             esc(o.name)+'</option>';\n",
+  "      });\n",
+  "      h += '</select></div>'+\n",
+  "           '<button class=\"btn\" onclick=\"submitAssign('+jsStr(t.name)+')\">Save assignment<",
+  "/button>';\n",
+  "    }\n",
+  "  }\n",
   "  h += '<button class=\"card act\" onclick=\"openRecord('+jsStr(t.name)+')\">'+\n",
   "       '<span class=\"bd\"><span class=\"h\">Their whole record</span>'+\n",
   "       '<span class=\"m\">Every submission on file, most recent first.</span></span>'+\n",
   "       '<span class=\"go\">&rsaquo;</span></button>';\n",
   "  h += sec('File something for '+firstName(t.name));\n",
-  "  h += (t.forms && t.forms.length)\n",
-  "    ? formCards(t.forms)\n",
-  "    : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or t",
-  "he registry could not reach them.</div>';\n",
+  "  if (!t.detailLoaded){\n",
+  "    h += '<div class=\"note n-info\"><b>Loading forms…</b></div>';\n",
+  "  } else {\n",
+  "    h += (t.forms && t.forms.length)\n",
+  "      ? formCards(t.forms)\n",
+  "      : '<div class=\"note n-info\"><b>No forms available</b>Form links are switched off, or",
+  " the registry could not reach them.</div>';\n",
+  "  }\n",
   "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function openAdvance(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name || !t.nextPhase) return;\n",
+  "  S.screen = 'advance'; render();\n",
+  "}\n",
+  "function paintAdvance(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('Advance', t.name,\n",
+  "    esc(t.phase||'?')+' → '+esc(t.nextPhase||'?'))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-info\"><b>What this writes</b>CURRENT PHASE and PHASE START DATE on",
+  " the trainee master, '+\n",
+  "    'plus your reason on the audit trail. One step only — Phase 4 does not auto-clear them",
+  ".</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why you are advancing them</div>'+\n",
+  "    '<textarea id=\"adv-why\" placeholder=\"Goes on the permanent record in your name. No def",
+  "ault wording.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'adv\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"adv-go\" disabled onclick=\"submitAdvance()\">Advance to '+\n",
+  "    esc(t.nextPhase||'')+'</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('adv');\n",
+  "}\n",
+  "function submitAdvance(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('adv-why') && el('adv-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are advancing them.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('adv-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Saving…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Advanced.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'Advance to '+(S.ctx.nextPhase||''); }\n",
+  "      syncLifeBtns('adv');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .advanceTraineePhaseV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
+  "function openRelease(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name) return;\n",
+  "  S.screen = 'release'; render();\n",
+  "}\n",
+  "function paintRelease(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('Clear for the truck', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||",
+  "''))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-ok\"><b>Independent partner</b>They finished training. Status becom",
+  "es Cleared / Independent. '+\n",
+  "    'Open skill requests cancel. Form Trainee lists drop their name. Your reason is archiv",
+  "ed with who and when.</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why they are cleared</div>'+\n",
+  "    '<textarea id=\"rel-why\" placeholder=\"Completed all phases and required skills — cleare",
+  "d to ride as an independent partner.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'rel\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"rel-go\" disabled onclick=\"submitRelease()\">Clear for independ",
+  "ent partner duty</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('rel');\n",
+  "}\n",
+  "function submitRelease(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('rel-why') && el('rel-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why they are cleared for independent partner duty.'); ",
+  "return; }\n",
+  "  if (!confirm('Clear '+((S.ctx&&S.ctx.name)||'this trainee')+' for independent partner du",
+  "ty? This cannot be undone from Field Training.')) return;\n",
+  "  S.busy = true;\n",
+  "  var b = el('rel-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Clearing…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Cleared for independent partner duty.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'Clear for independent partner duty'; }\n",
+  "      syncLifeBtns('rel');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .releaseTraineeV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
+  "function openCloseTrainee(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name) return;\n",
+  "  S.screen = 'closeTrainee'; render();\n",
+  "}\n",
+  "function paintCloseTrainee(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('End training', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-warn\"><b>Closed / Released</b>They leave Active training. No Monda",
+  "y status cards. '+\n",
+  "    'Form Trainee lists drop their name. This is not clearance for the truck.</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why training is ending</div>'+\n",
+  "    '<textarea id=\"close-why\" placeholder=\"Goes on the permanent record in your name.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'close\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn ghost-danger\" id=\"close-go\" disabled onclick=\"submitCloseTrainee()",
+  "\">End training / close</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('close');\n",
+  "}\n",
+  "function submitCloseTrainee(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('close-why') && el('close-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why training is ending.'); return; }\n",
+  "  if (!confirm('Close '+((S.ctx&&S.ctx.name)||'this trainee')+' out of training? They will",
+  " stop getting Monday updates.')) return;\n",
+  "  S.busy = true;\n",
+  "  var b = el('close-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Closing…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Closed out of training.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'End training / close'; }\n",
+  "      syncLifeBtns('close');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .closeTraineeV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
+  "function syncLifeBtns(kind){\n",
+  "  var id = 'adv-why', btn = 'adv-go';\n",
+  "  if (kind === 'rel') { id = 'rel-why'; btn = 'rel-go'; }\n",
+  "  if (kind === 'close') { id = 'close-why'; btn = 'close-go'; }\n",
+  "  var why = (el(id) && el(id).value || '').trim();\n",
+  "  if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;\n",
   "}\n",
   "function openAck(name, finding){\n",
   "  S.ctx = { name:name, finding:finding, from:S.screen };\n",
@@ -8054,27 +12305,20 @@ var PORTAL_PAGE_HTML = [
   "  paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\''+(c.from||'main')+'\\';render()\">&larr; Back",
   "</button>'+\n",
-  "    '<div class=\"note n-info\"><b>This does not clear it</b>Nothing here changes the record",
-  " or '+\n",
-  "    'the finding. It records that you saw it, in your words, and holds it off the list for",
-  " as '+\n",
-  "    'long as you ask. When that runs out it is back exactly as it is now.</div>'+\n",
+  "    '<div class=\"note n-info\"><b>Does not clear the finding</b>Records that you saw it and",
+  " holds it off the list for the days you choose. When that ends, it returns unchanged.</div",
+  ">'+\n",
   "    '<div class=\"panel\"><div class=\"lab\">What are you doing about it</div>'+\n",
-  "    '<textarea id=\"ackwhy\" placeholder=\"Goes on the record in your name. An acknowledgment",
-  " with '+\n",
-  "    'nothing in it is how a problem gets buried.\"></textarea></div>'+\n",
+  "    '<textarea id=\"ackwhy\" placeholder=\"Goes on the record in your name.\"></textarea></div",
+  ">'+\n",
   "    '<div class=\"panel\"><div class=\"lab\">Hold it off the list for</div>'+\n",
   "    picker('ackdays', '', [\n",
   "      { value:'3',  label:'3 days'  },\n",
   "      { value:'7',  label:'7 days'  },\n",
   "      { value:'14', label:'14 days' },\n",
-  "      { value:'30', label:'30 days — the longest a hold can be' }\n",
+  "      { value:'30', label:'30 days (maximum)' }\n",
   "    ], 'pickDays', String(S.ackDays || 7))+'</div>'+\n",
-  "    '<button class=\"btn\" id=\"ackgo\" onclick=\"sendAck()\">Record it</button>'+\n",
-  "    '<div class=\"next\"><b>Why it comes back</b>A hold that never expires is a way to hide ",
-  "'+\n",
-  "    'something permanently. This one runs out, and the finding returns unchanged.</div>');",
-  "\n",
+  "    '<button class=\"btn\" id=\"ackgo\" onclick=\"sendAck()\">Record it</button>');\n",
   "}\n",
   "function pickDays(v){ S.ackDays = Number(v) || 7; }\n",
   "function sendAck(){\n",
@@ -8091,60 +12335,352 @@ var PORTAL_PAGE_HTML = [
   "}\n",
   "\n",
   "function openSignoff(row,trainee,skill,evidence,requestId){\n",
-  "  S.ctx = { row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId|",
-  "|'' };\n",
+  "  var q = (BOOT.data.queue||[]).filter(function(x){ return Number(x.row)===Number(row); })",
+  "[0] || {};\n",
+  "  S.ctx = {\n",
+  "    row:row, trainee:trainee, skill:skill, evidence:evidence, requestId:requestId||'',\n",
+  "    bars: q.bars || null, recommend: q.recommend || '', hoursLeft: q.hoursLeft, clockPct: ",
+  "q.clockPct\n",
+  "  };\n",
   "  S.screen = 'signoff'; render();\n",
   "}\n",
+  "\n",
+  "function openAcceptSkill(trainee, skillId, skill){\n",
+  "  var personBackup = (S.screen === 'person') ? S.ctx : null;\n",
+  "  S.ctx = {\n",
+  "    acceptTrainee: trainee,\n",
+  "    acceptSkillId: skillId || '',\n",
+  "    acceptSkill: skill || '',\n",
+  "    fromPerson: !!personBackup,\n",
+  "    personBackup: personBackup\n",
+  "  };\n",
+  "  S.screen = 'acceptSkill'; render();\n",
+  "}\n",
+  "\n",
+  "function paintAcceptSkill(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var back = c.fromPerson\n",
+  "    ? '<button class=\"back\" onclick=\"backFromAcceptSkill()\">&larr; Back</button>'\n",
+  "    : '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "  var h = hero('Accept skill', c.acceptSkill || 'Skill',\n",
+  "    esc(c.acceptTrainee || ''))+back;\n",
+  "  h += '<div class=\"note n-info\"><b>Writes the live tracker</b>Queue row, sign-off log, an",
+  "d matrix SIGNED OFF.</div>';\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
+  "    '<textarea id=\"acceptWhy\" placeholder=\"This goes on the permanent record in your name.",
+  "\" '+\n",
+  "    'oninput=\"syncAcceptBtn()\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"acceptGo\" disabled onclick=\"submitAcceptSkill()\">Accept on tr",
+  "acker</button>';\n",
+  "  paint(h);\n",
+  "  syncAcceptBtn();\n",
+  "}\n",
+  "\n",
+  "function backFromAcceptSkill(){\n",
+  "  var c = S.ctx || {};\n",
+  "  if (c.personBackup){ S.ctx = c.personBackup; S.screen = 'person'; render(); return; }\n",
+  "  S.screen = 'main'; render();\n",
+  "}\n",
+  "\n",
+  "function syncAcceptBtn(){\n",
+  "  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();\n",
+  "  if (el('acceptGo')) el('acceptGo').disabled = why.length < 8 || S.busy;\n",
+  "}\n",
+  "\n",
+  "function submitAcceptSkill(){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var why = (el('acceptWhy') && el('acceptWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are accepting this.'); return; }\n",
+  "  S.busy = true;\n",
+  "  var b = el('acceptGo');\n",
+  "  if (b){ b.disabled = true; b.textContent = 'Saving on tracker…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(msg){\n",
+  "      S.busy = false;\n",
+  "      alert(msg || 'Accepted on the tracker.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b){ b.textContent = 'Accept on tracker'; syncAcceptBtn(); }\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .acceptSkillV1(c.acceptTrainee, c.acceptSkillId || '', c.acceptSkill || '', why);\n",
+  "}\n",
+  "\n",
+  "/* ---------------- bring someone on ---------------- */\n",
+  "function openAddTrainee(){\n",
+  "  S.screen = 'addTrainee'; render();\n",
+  "}\n",
+  "function paintAddTrainee(){\n",
+  "  var d = BOOT.data || {};\n",
+  "  var officers = d.officers || [];\n",
+  "  var h = hero('Bring someone on', 'New trainee',\n",
+  "    'They land in training and on the forms already in service.')+\n",
+  "    '<button class=\"back\" onclick=\"S.divTab=\\'menu\\';S.screen=\\'main\\';render()\">&larr; Ba",
+  "ck</button>';\n",
+  "\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Full name</div>'+\n",
+  "    '<input id=\"at-name\" autocomplete=\"name\" placeholder=\"Casey Holt\" /></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Work email</div>'+\n",
+  "    '<input id=\"at-email\" type=\"email\" autocomplete=\"email\" placeholder=\"casey.holt@exampl",
+  "e.org\" />'+\n",
+  "    '<div class=\"hint\">How they sign into Field Training.</div></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Level</div>'+\n",
+  "    '<select id=\"at-level\">'+\n",
+  "    '<option value=\"\">Pick one…</option>'+\n",
+  "    '<option value=\"EMT\">EMT</option>'+\n",
+  "    '<option value=\"Advanced EMT\">Advanced EMT</option>'+\n",
+  "    '<option value=\"Paramedic\">Paramedic</option>'+\n",
+  "    '</select>'+\n",
+  "    '<div class=\"hint\">Chooses which skills log their FTO gets.</div></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Starting phase</div>'+\n",
+  "    '<select id=\"at-phase\">'+\n",
+  "    '<option value=\"Phase 1\">Phase 1</option>'+\n",
+  "    '<option value=\"Phase 2\">Phase 2</option>'+\n",
+  "    '<option value=\"Phase 3\">Phase 3</option>'+\n",
+  "    '<option value=\"Phase 4\">Phase 4</option>'+\n",
+  "    '</select></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Training officer</div>'+\n",
+  "    '<select id=\"at-fto\"><option value=\"\">Assign later…</option>';\n",
+  "  officers.forEach(function(o){\n",
+  "    h += '<option value=\"'+esc(o.name)+'\">'+esc(o.name)+'</option>';\n",
+  "  });\n",
+  "  h += '</select>'+\n",
+  "    (officers.length ? '' :\n",
+  "      '<div class=\"hint\">No active FTOs on the roster yet. Add an FTO first, or leave blan",
+  "k.</div>')+\n",
+  "    '</div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Entry profile (optional)</div>'+\n",
+  "    '<input id=\"at-entry\" maxlength=\"1\" placeholder=\"A\" style=\"max-width:4.5rem;text-trans",
+  "form:uppercase\" />'+\n",
+  "    '<div class=\"hint\">Letter from the ENTRY PROFILE KEY on the master.</div></div>'+\n",
+  "    '</div>';\n",
+  "\n",
+  "  h += '<button class=\"btn\" id=\"at-go\" onclick=\"submitAddTrainee()\">Add to Field Training<",
+  "/button>'+\n",
+  "    '<div class=\"next\"><b>What this does</b>Writes one row on the trainee master and refre",
+  "shes '+\n",
+  "    'Trainee dropdowns on the Google Forms you already use. No new form is created.</div>'",
+  "+\n",
+  "    '<div class=\"next\"><b>Afterward</b>Open the tracker once if their skill matrix rows ne",
+  "ed a rebuild. '+\n",
+  "    'Evaluations and skills logs work as soon as the form lists refresh.</div>';\n",
+  "  paint(h);\n",
+  "}\n",
+  "function submitAddTrainee(){\n",
+  "  if (S.busy) return;\n",
+  "  var name = (el('at-name') && el('at-name').value || '').trim();\n",
+  "  var email = (el('at-email') && el('at-email').value || '').trim();\n",
+  "  var level = (el('at-level') && el('at-level').value || '').trim();\n",
+  "  var phase = (el('at-phase') && el('at-phase').value || 'Phase 1').trim();\n",
+  "  var fto = (el('at-fto') && el('at-fto').value || '').trim();\n",
+  "  var entry = (el('at-entry') && el('at-entry').value || '').trim().toUpperCase();\n",
+  "  if (!name) { alert('Type their full name.'); return; }\n",
+  "  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }\n",
+  "  if (!level) { alert('Pick a level.'); return; }\n",
+  "\n",
+  "  S.busy = true;\n",
+  "  var b = el('at-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Adding…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || (name + ' is in training.'));\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.disabled = false; b.textContent = 'Add to Field Training'; }\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .addTraineeV1({ name: name, email: email, level: level, phase: phase,\n",
+  "                    fto: fto, entry: entry });\n",
+  "}\n",
+  "\n",
+  "function openAddFto(){\n",
+  "  S.divTab = 'menu';\n",
+  "  S.screen = 'addFto'; render();\n",
+  "}\n",
+  "function paintAddFto(){\n",
+  "  var h = hero('Add an FTO', 'New training officer',\n",
+  "    'They land on the tracker roster and on the FTO dropdowns already in service.')+\n",
+  "    '<button class=\"back\" onclick=\"S.divTab=\\'menu\\';S.screen=\\'main\\';render()\">&larr; Ba",
+  "ck</button>';\n",
+  "  h += '<div class=\"panel\">'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Full name</div>'+\n",
+  "    '<input id=\"af-name\" autocomplete=\"name\" placeholder=\"Chyna Gray\" /></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Work email</div>'+\n",
+  "    '<input id=\"af-email\" type=\"email\" autocomplete=\"email\" placeholder=\"chyna.gray@exampl",
+  "e.org\" />'+\n",
+  "    '<div class=\"hint\">How they sign into Field Training.</div></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Shift</div>'+\n",
+  "    '<select id=\"af-shift\">'+\n",
+  "    '<option value=\"\">Set later…</option>'+\n",
+  "    '<option value=\"A\">A</option><option value=\"B\">B</option>'+\n",
+  "    '<option value=\"C\">C</option><option value=\"D\">D</option>'+\n",
+  "    '</select></div>'+\n",
+  "    '<div class=\"field\"><div class=\"lab\">Cert level</div>'+\n",
+  "    '<select id=\"af-level\">'+\n",
+  "    '<option value=\"\">Set later…</option>'+\n",
+  "    '<option value=\"EMT\">EMT</option>'+\n",
+  "    '<option value=\"Advanced EMT\">Advanced EMT</option>'+\n",
+  "    '<option value=\"Paramedic\">Paramedic</option>'+\n",
+  "    '</select>'+\n",
+  "    '<div class=\"hint\">What they are signed off to train stays blank for a person to fill ",
+  "in on the roster.</div></div>'+\n",
+  "    '</div>'+\n",
+  "    '<button class=\"btn\" id=\"af-go\" onclick=\"submitAddFto()\">Add to roster</button>'+\n",
+  "    '<div class=\"next\"><b>What this does</b>Appends one row on '+\n",
+  "    '22 FTO ROSTER and refreshes FTO name lists on the Google Forms you already use.</div>",
+  "'+\n",
+  "    '<div class=\"next\"><b>Then</b>Assign them to a trainee from that trainee\\'s person she",
+  "et.</div>';\n",
+  "  paint(h);\n",
+  "}\n",
+  "function submitAddFto(){\n",
+  "  if (S.busy) return;\n",
+  "  var name = (el('af-name') && el('af-name').value || '').trim();\n",
+  "  var email = (el('af-email') && el('af-email').value || '').trim();\n",
+  "  var shift = (el('af-shift') && el('af-shift').value || '').trim();\n",
+  "  var level = (el('af-level') && el('af-level').value || '').trim();\n",
+  "  if (!name) { alert('Type their full name.'); return; }\n",
+  "  if (!email || email.indexOf('@') < 1) { alert('Type a work email.'); return; }\n",
+  "\n",
+  "  S.busy = true;\n",
+  "  var b = el('af-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Adding…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || (name + ' is on the roster.'));\n",
+  "      S.divTab = 'menu';\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.disabled = false; b.textContent = 'Add to roster'; }\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .addFtoV1({ name: name, email: email, shift: shift, level: level });\n",
+  "}\n",
+  "\n",
   "function paintSignoff(){\n",
   "  var c = S.ctx || {};\n",
-  "  paint(hero('The decision', c.skill, esc(c.trainee))+\n",
-  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>'+\n",
-  "    '<div class=\"panel\"><div class=\"lab\">Evidence on file</div>'+\n",
-  "    '<div style=\"font-size:.93rem\">'+esc(c.evidence)+'</div></div>'+\n",
-  "    '<div class=\"panel\"><div class=\"lab\">Why are you approving this</div>'+\n",
-  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name.\"></te",
-  "xtarea></div>'+\n",
-  "    '<button class=\"btn\" id=\"ap\" onclick=\"approve()\">Approve sign-off</button>'+\n",
-  "    '<div class=\"next\"><b>No pre-filled wording</b>The old system wrote \"Evidence threshol",
-  "ds met\" without checking anything. You type it, or nothing is written.</div>'+\n",
-  "    '<div class=\"next\"><b>Where this goes</b>Your decision, your name and your reason go o",
-  "nto the queue row. '+\n",
-  "    'The tracker turns it into a permanent sign-off - tick RECORD on that row, or run '+\n",
-  "    '&ldquo;Record pending decisions&rdquo; from its menu. That one function is the only t",
-  "hing '+\n",
-  "    'allowed to write the sign-off log, and it runs the authority and evidence checks on t",
-  "he way.</div>');\n",
+  "  var h = hero('The decision', c.skill, esc(c.trainee))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
+  "  if (c.hoursLeft != null){\n",
+  "    h += '<div style=\"display:flex;align-items:center;gap:12px;margin-bottom:12px\">'+\n",
+  "         clockHtml(c.hoursLeft, c.clockPct||0)+\n",
+  "         '<div class=\"m\">Hours left on the 72-hour clock before this goes stale on the des",
+  "k.</div></div>';\n",
+  "  }\n",
+  "  if (c.bars && c.bars.length){\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Evidence against the catalog</div>'+barsHtml",
+  "(c.bars)+'</div>';\n",
+  "  } else {\n",
+  "    h += '<div class=\"panel\"><div class=\"lab\">Evidence on file</div>'+\n",
+  "         '<div style=\"font-size:.93rem\">'+esc(c.evidence||'—')+'</div></div>';\n",
+  "  }\n",
+  "  if (c.recommend){\n",
+  "    h += '<div class=\"note n-info\"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';\n",
+  "  }\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
+  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name.\" '+\n",
+  "    'oninput=\"syncDecideBtns()\"></textarea></div>'+\n",
+  "    '<button class=\"btn\" id=\"ap\" disabled onclick=\"approve()\">Approve sign-off</button>'+\n",
+  "    '<button class=\"btn ghost-danger\" id=\"ret\" disabled onclick=\"returnSkill()\">Return for",
+  " more evidence</button>'+\n",
+  "    '<div class=\"next\">Both buttons need your reason (at least a sentence). Approve writes",
+  " the sign-off log and marks the skill SIGNED OFF on the matrix.</div>';\n",
+  "  paint(h);\n",
+  "  syncDecideBtns();\n",
+  "}\n",
+  "function syncDecideBtns(){\n",
+  "  var why = (el('why') && el('why').value || '').trim();\n",
+  "  var ok = why.length >= 8;\n",
+  "  if (el('ap')) el('ap').disabled = !ok || S.busy;\n",
+  "  if (el('ret')) el('ret').disabled = !ok || S.busy;\n",
   "}\n",
   "function approve(){\n",
   "  if (S.busy) return;\n",
   "  var why = el('why').value.trim();\n",
   "  if (why.length < 8) { alert('Type why you are approving this.'); return; }\n",
   "  S.busy = true; var b = el('ap'); b.disabled = true; b.textContent = 'Saving…';\n",
-  "  google.script.run.withSuccessHandler(function(){ S.busy=false; S.screen='main'; reload()",
-  "; })\n",
-  "    .withFailureHandler(function(e){ S.busy=false; b.disabled=false; b.textContent='Approv",
-  "e sign-off';\n",
+  "  if (el('ret')) el('ret').disabled = true;\n",
+  "  google.script.run.withSuccessHandler(function(msg){\n",
+  "      S.busy=false;\n",
+  "      if (msg) alert(msg);\n",
+  "      S.screen='main'; reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Approve sign-off'; syncD",
+  "ecideBtns();\n",
   "      alert(e.message||e); })\n",
   "    .approveSignoffV1(S.ctx.row, why, S.ctx.requestId||'');\n",
   "}\n",
+  "function returnSkill(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = el('why').value.trim();\n",
+  "  if (why.length < 8) { alert('Type why you are returning this.'); return; }\n",
+  "  S.busy = true; var b = el('ret'); b.disabled = true; b.textContent = 'Saving…';\n",
+  "  if (el('ap')) el('ap').disabled = true;\n",
+  "  google.script.run.withSuccessHandler(function(msg){\n",
+  "      S.busy=false;\n",
+  "      if (msg) alert(msg);\n",
+  "      S.screen='main'; reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy=false; b.textContent='Return for more evidence",
+  "'; syncDecideBtns();\n",
+  "      alert(e.message||e); })\n",
+  "    .returnSignoffV1(S.ctx.row, why, S.ctx.requestId||'');\n",
+  "}\n",
   "\n",
-  "/* ---------------- supervisor / medical ---------------- */\n",
+  "/* ---------------- supervisor — shift strip ---------------- */\n",
   "function paintSupervisor(d){\n",
-  "  var h = hero('Shift supervisor', d.shift,\n",
-  "    'Read only. Nothing here asks you to do anything.');\n",
-  "  if (!d.trainees.length) h += '<div class=\"note n-ok\"><b>Nobody on shift</b>No active tra",
-  "inees are assigned to this shift.</div>';\n",
-  "  d.trainees.forEach(function(t){\n",
-  "    h += '<div class=\"card\"><div class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+\n",
-  "      lvlChip(t.levelKey,t.level)+'</div>'+\n",
-  "      '<div class=\"m\">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+' &middot; last eva",
-  "luation '+esc(t.lastEval)+'</div></div>';\n",
-  "  });\n",
+  "  var hot = d.hotCount || 0;\n",
+  "  var h = hero('My shift', d.shift,\n",
+  "    (d.trainees||[]).length+' on the line'+\n",
+  "    (hot ? ' &middot; <span style=\"color:var(--gold)\">'+hot+' hot tonight</span>' : ' &mid",
+  "dot; all quiet'));\n",
+  "  if (!d.trainees.length){\n",
+  "    h += '<div class=\"note n-ok\"><b>Nobody on shift</b>No active trainees are assigned to ",
+  "this shift.</div>';\n",
+  "  } else {\n",
+  "    h += '<p class=\"sub\">Swipe the strip. Red wants a look tonight. Tap a name for the nex",
+  "t move.</p>';\n",
+  "    h += '<div class=\"strip\">';\n",
+  "    d.trainees.forEach(function(t){\n",
+  "      h += '<div class=\"tile '+(t.urgency||'')+'\">'+\n",
+  "           '<div class=\"h\">'+esc(t.name)+'</div>'+\n",
+  "           '<div class=\"m\">'+esc(t.phase||'')+' &middot; '+esc(short(t.fto,18)||'no FTO')+",
+  "'</div>'+\n",
+  "           (t.why ? '<div class=\"flag\">'+esc(t.nextMove && t.nextMove.title ? t.nextMove.t",
+  "itle : t.why)+'</div>'\n",
+  "                  : '<div class=\"m\" style=\"margin-top:8px;color:var(--ok)\">Clear</div>')+\n",
+  "           '</div>';\n",
+  "    });\n",
+  "    h += '</div>';\n",
+  "    h += sec('Everyone', d.trainees.length);\n",
+  "    d.trainees.forEach(function(t){\n",
+  "      h += '<div class=\"card\"'+spine(t.urgency||'')+'>'+\n",
+  "        '<div class=\"hd\"><span class=\"h\">'+esc(t.name)+'</span>'+lvlChip(t.levelKey,t.leve",
+  "l)+'</div>'+\n",
+  "        '<div class=\"m\">'+esc(t.phase)+' &middot; '+esc(t.fto||'no FTO')+\n",
+  "        ' &middot; last eval '+esc(t.lastEval)+'</div>'+\n",
+  "        (t.nextMove ? '<div class=\"flag\">'+esc(t.nextMove.title)+'</div>' : '')+\n",
+  "        '</div>';\n",
+  "    });\n",
+  "  }\n",
   "  if (d.forms && d.forms.length){\n",
   "    h += sec('If something cannot wait')+formCards(d.forms);\n",
   "  }\n",
-  "  h += '<div class=\"next\"><b>Deliberately thin</b>Supervisors get situational awareness, n",
-  "ot personnel-development detail.</div>';\n",
+  "  h += '<div class=\"next\"><b>Deliberately thin</b>You get situational awareness for tonigh",
+  "t — not a second Training desk.</div>';\n",
   "  paint(h);\n",
   "}\n",
   "function paintMedical(d){\n",
@@ -8154,15 +12690,6 @@ var PORTAL_PAGE_HTML = [
   "    total+(total===1?' open case':' open cases')+' for you. Nothing else.');\n",
   "  h += warnRow(d.warnings);\n",
   "\n",
-  "  /* Something wrong with the system rather than with a person. It belongs at\n",
-  "     the top with the other system-level alerts, not floating between two\n",
-  "     groups of people where it reads as a third sign-off. */\n",
-  "  (d.retiredForms||[]).forEach(function(f){\n",
-  "    h += '<div class=\"note n-stop\"><b>Retired form still open</b>'+esc(f.title)+\n",
-  "         ' is no longer offered anywhere in this portal. '+esc(f.why)+\n",
-  "         ' Anything already submitted to it is sitting in the form, not in the tracker.</d",
-  "iv>';\n",
-  "  });\n",
   "  if (!total) h += '<div class=\"note n-ok\"><b>Nothing pending</b>No open concern requires ",
   "your authority.</div>';\n",
   "  cases.forEach(function(c){\n",
@@ -8209,6 +12736,283 @@ var PORTAL_PAGE_HTML = [
   "an>';\n",
   "  });\n",
   "  return h + '</div>';\n",
+  "}\n",
+  "\n",
+  "function refreshQueue(){\n",
+  "  if (S.busy) return;\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Done.');\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })\n",
+  "    .refreshValidationQueueV1();\n",
+  "}\n",
+  "\n",
+  "function syncMatrixEvidence(){\n",
+  "  if (S.busy) return;\n",
+  "  if (!confirm('Recount the skills matrix from the evidence log, mark skills READY when th",
+  "e bars are met, then refresh the sign-off queue?')) return;\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Done.');\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })\n",
+  "    .syncMatrixFromEvidenceV1();\n",
+  "}\n",
+  "\n",
+  "function openFormWait(i){\n",
+  "  var list = (BOOT.data && BOOT.data.formWaiting && BOOT.data.formWaiting.list) || [];\n",
+  "  var item = list[i];\n",
+  "  if (!item) return;\n",
+  "  S.ctx = { formMeta: item, form: null, err: '', from: 'main' };\n",
+  "  S.screen = 'formWait';\n",
+  "  var req = (S.formWaitReq = (S.formWaitReq || 0) + 1);\n",
+  "  render();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      if (req !== S.formWaitReq || S.screen !== 'formWait') return;\n",
+  "      S.ctx.form = r; render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      if (req !== S.formWaitReq || S.screen !== 'formWait') return;\n",
+  "      S.ctx.err = e.message || String(e); render();\n",
+  "    })\n",
+  "    .formResponseDetailV1(item.tab, item.row);\n",
+  "}\n",
+  "\n",
+  "function paintFormWait(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var meta = c.formMeta || {};\n",
+  "  var back = '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</butto",
+  "n>';\n",
+  "  if (c.err) return paint(hero('Waiting response', meta.trainee || '', '')+back+\n",
+  "    '<div class=\"note n-stop\"><b>Cannot open</b>'+esc(c.err)+'</div>');\n",
+  "  if (!c.form) return paint(hero('Waiting response', meta.trainee || '', 'Reading the form",
+  " response&hellip;')+back);\n",
+  "\n",
+  "  var p = c.form;\n",
+  "  var h = hero(p.kind === 'skills' ? 'Skills log response' : 'Form response',\n",
+  "    p.trainee || 'Unnamed trainee',\n",
+  "    (p.when || p.stamp || 'no date')+(p.by ? ' · '+esc(p.by) : ''))+back;\n",
+  "  if (p.inLog){\n",
+  "    h += '<div class=\"note n-ok\"><b>Matched in the evidence log</b>This response id is alr",
+  "eady on file. You can still clear it from the desk.</div>';\n",
+  "  } else if (p.dayHint){\n",
+  "    h += '<div class=\"note n-warn\"><b>Same day has evidence</b>Something for this trainee ",
+  "is on the log that day, but this response id is not linked. Clear from the desk, or Sync m",
+  "atrix from evidence on Home if skills are stuck.</div>';\n",
+  "  } else {\n",
+  "    h += '<div class=\"note n-warn\"><b>Waiting on ingest</b>Still only on the form-response",
+  " tab. '+\n",
+  "         'Clear it here, or run <b>catchUpUnprocessed</b> in the tracker if ingest never f",
+  "ired.</div>';\n",
+  "  }\n",
+  "  h += '<div class=\"panel\"><div class=\"lab\">Tab</div><div style=\"font-size:.93rem\">'+esc(p",
+  ".tab)+\n",
+  "       ' · row '+esc(String(p.row))+'</div></div>';\n",
+  "  (p.fields||[]).forEach(function(f){\n",
+  "    h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
+  "         '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
+  "  });\n",
+  "  if (p.trainee){\n",
+  "    h += '<button class=\"btn\" style=\"margin-top:16px\" onclick=\"openRecord('+jsStr(p.traine",
+  "e)+')\">'+\n",
+  "         'Open personnel record</button>';\n",
+  "  }\n",
+  "  if (canWrite() && !p.deskCleared){\n",
+  "    h += '<div class=\"panel\" style=\"margin-top:14px\"><div class=\"lab\">Clear from this desk",
+  " (required)</div>'+\n",
+  "         '<textarea id=\"formReviewWhy\" placeholder=\"Why this can leave Waiting on you. Doe",
+  "s not ingest or delete the form response.\"></textarea></div>'+\n",
+  "         '<button class=\"btn\" onclick=\"clearFormWait()\">Clear from Waiting on you</button>",
+  "';\n",
+  "  }\n",
+  "  h += '<div class=\"next\"><b>What this is</b>'+esc(p.note||'')+'</div>';\n",
+  "  paint(h);\n",
+  "}\n",
+  "\n",
+  "function clearFormWait(){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var p = c.form || c.formMeta;\n",
+  "  if (!p) return;\n",
+  "  var why = (el('formReviewWhy') && el('formReviewWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why you are clearing this from the desk.'); return; }\n",
+  "  S.busy = true;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Cleared.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ S.busy = false; alert(e.message || e); })\n",
+  "    .reviewFormResponseV1(p.tab, p.row, why);\n",
+  "}\n",
+  "\n",
+  "function openTraineeReport(name){\n",
+  "  if (!name) return;\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(html){\n",
+  "      var w = window.open('', '_blank');\n",
+  "      if (!w){ alert('Allow pop-ups to open the report, then Print → Save as PDF.'); retur",
+  "n; }\n",
+  "      w.document.open();\n",
+  "      w.document.write(html);\n",
+  "      w.document.close();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){ alert(e.message || e); })\n",
+  "    .traineeReportHtmlV1(name);\n",
+  "}\n",
+  "\n",
+  "function copyPortalLink(url){\n",
+  "  var u = String(url || '').trim();\n",
+  "  if (!u) return;\n",
+  "  function ok(){ alert('Copied.\\n\\n' + u); }\n",
+  "  if (navigator.clipboard && navigator.clipboard.writeText){\n",
+  "    navigator.clipboard.writeText(u).then(ok).catch(function(){\n",
+  "      window.prompt('Copy this portal link:', u);\n",
+  "    });\n",
+  "  } else {\n",
+  "    window.prompt('Copy this portal link:', u);\n",
+  "  }\n",
+  "}\n",
+  "\n",
+  "function openSettle(i){\n",
+  "  var list = (BOOT.data && BOOT.data.duplicateSubs) || [];\n",
+  "  var item = list[i];\n",
+  "  if (!item) return;\n",
+  "  S.ctx = { settleMeta: item, settle: null, err: '', keepRow: '', from: 'main' };\n",
+  "  S.screen = 'settle';\n",
+  "  var req = (S.settleReq = (S.settleReq || 0) + 1);\n",
+  "  render();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      if (req !== S.settleReq || S.screen !== 'settle') return;\n",
+  "      S.ctx.settle = r; render();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      if (req !== S.settleReq || S.screen !== 'settle') return;\n",
+  "      S.ctx.err = e.message || String(e); render();\n",
+  "    })\n",
+  "    .duplicatePairDetailV1(item.trainee, item.tab, item.dupKey);\n",
+  "}\n",
+  "\n",
+  "function paintSettle(){\n",
+  "  var c = S.ctx || {};\n",
+  "  var meta = c.settleMeta || {};\n",
+  "  var back = '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</butto",
+  "n>';\n",
+  "  if (c.err) return paint(hero('Settle', meta.trainee || '', '')+back+\n",
+  "    '<div class=\"note n-stop\"><b>Cannot open</b>'+esc(c.err)+'</div>');\n",
+  "  if (!c.settle) return paint(hero('Settle', meta.trainee || '', 'Reading both sides&helli",
+  "p;')+back);\n",
+  "\n",
+  "  var p = c.settle;\n",
+  "  var hasLocal = (p.sides || []).some(function(s){ return Number(s.row) > 0; });\n",
+  "  var h = hero('Settle', p.trainee,\n",
+  "    esc(p.source)+(p.sides && p.sides[0] && p.sides[0].group ? ' · '+esc(p.sides[0].group)",
+  " : ''))+back;\n",
+  "  h += '<div class=\"note n-info\"><b>Both stay on file</b>'+esc(p.why)+\n",
+  "       '. Your call is who stands for the record — nothing is deleted.</div>';\n",
+  "\n",
+  "  (p.sides || []).forEach(function(s){\n",
+  "    var local = Number(s.row) > 0;\n",
+  "    var picked = local && String(c.keepRow) === String(s.row);\n",
+  "    h += '<div class=\"rec'+(picked?' cur':'')+'\" style=\"margin-top:10px\">'+\n",
+  "         '<div class=\"when\"><span>'+(local ? 'Row '+esc(String(s.row)) : 'Other book')+\n",
+  "         ' · '+esc(s.when)+\n",
+  "         (s.by ? ' · '+esc(s.by) : '')+\n",
+  "         (s.book ? ' · in '+esc(s.book) : '')+'</span>'+\n",
+  "         (picked ? '<b>Stands</b>' : '')+'</div>';\n",
+  "    if (s.group) h += '<div class=\"h\" style=\"margin-top:5px\">'+esc(s.group)+'</div>';\n",
+  "    (s.fields||[]).forEach(function(f){\n",
+  "      h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
+  "           '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
+  "    });\n",
+  "    if (canWrite() && local){\n",
+  "      h += '<button class=\"btn '+(picked?'':'ghost')+'\" style=\"margin-top:10px\" '+\n",
+  "           'onclick=\"S.ctx.keepRow='+jsStr(String(s.row))+';render()\">'+\n",
+  "           (picked ? 'This row stands' : 'Mark this row as the one that stands')+'</button",
+  ">';\n",
+  "    }\n",
+  "    h += '</div>';\n",
+  "  });\n",
+  "\n",
+  "  if (!canWrite()){\n",
+  "    h += '<div class=\"flag\" style=\"--accent:var(--warn);margin-top:14px\">Read only — switc",
+  "h to LIVE to settle from Field Training.</div>';\n",
+  "    return paint(h);\n",
+  "  }\n",
+  "\n",
+  "  if (!hasLocal){\n",
+  "    h += '<div class=\"note n-warn\" style=\"margin-top:14px\"><b>No row on this book</b>'+\n",
+  "         'Both sides live elsewhere. You can still mark Both stand or Not a conflict.</div",
+  ">';\n",
+  "  }\n",
+  "\n",
+  "  h += '<div class=\"panel\" style=\"margin-top:14px\"><div class=\"lab\">Your reason (required)",
+  "</div>'+\n",
+  "       '<textarea id=\"settleWhy\" placeholder=\"Why both stand, why this row, or why this is",
+  " not a conflict.\" '+\n",
+  "       'oninput=\"syncSettleBtns()\">'+esc(c.whyText||'')+'</textarea></div>';\n",
+  "  h += '<button class=\"btn\" id=\"sbBoth\" disabled onclick=\"doSettle(\\'BOTH_STAND\\')\">Both s",
+  "tand</button>';\n",
+  "  if (hasLocal){\n",
+  "    h += '<button class=\"btn\" id=\"sbKeep\" disabled onclick=\"doSettle(\\'KEEP_ROW\\')\">This o",
+  "ne stands</button>';\n",
+  "  }\n",
+  "  h += '<button class=\"btn ghost\" id=\"sbNot\" disabled onclick=\"doSettle(\\'NOT_A_CONFLICT\\'",
+  ")\">Not a conflict</button>';\n",
+  "  h += '<div class=\"next\"><b>What this does</b>Writes your judgment to PORTAL SETTLEMENTS.",
+  " '+\n",
+  "       'Raw rows stay. Settle stops raising this pair.</div>';\n",
+  "  paint(h);\n",
+  "  syncSettleBtns();\n",
+  "}\n",
+  "\n",
+  "function syncSettleBtns(){\n",
+  "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
+  "  if (S.ctx) S.ctx.whyText = why;\n",
+  "  var ok = why.length >= 8 && !S.busy;\n",
+  "  var keepOk = ok && S.ctx && Number(S.ctx.keepRow) > 0;\n",
+  "  if (el('sbBoth')) el('sbBoth').disabled = !ok;\n",
+  "  if (el('sbNot')) el('sbNot').disabled = !ok;\n",
+  "  if (el('sbKeep')) el('sbKeep').disabled = !keepOk;\n",
+  "}\n",
+  "\n",
+  "function doSettle(decision){\n",
+  "  if (S.busy) return;\n",
+  "  var c = S.ctx || {};\n",
+  "  var p = c.settle || c.settleMeta;\n",
+  "  if (!p) return;\n",
+  "  var why = (el('settleWhy') && el('settleWhy').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why. It goes on the permanent record in your name.'); ",
+  "return; }\n",
+  "  if (decision === 'KEEP_ROW' && !(Number(c.keepRow) > 0)) {\n",
+  "    alert('Pick which row stands first.'); return;\n",
+  "  }\n",
+  "  S.busy = true; syncSettleBtns();\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Settled.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false; syncSettleBtns();\n",
+  "      alert(e.message || e);\n",
+  "    })\n",
+  "    .settleDuplicateV1(p.trainee, p.tab, p.dupKey, decision, why,\n",
+  "                       c.keepRow || '', p.source || (c.settleMeta && c.settleMeta.source) ",
+  "|| '');\n",
   "}\n",
   "\n",
   "function openRecord(name){\n",
@@ -8281,6 +13085,9 @@ var PORTAL_PAGE_HTML = [
   "  if (s.possibleDuplicate) h += '<div class=\"m\" style=\"color:var(--stop);margin-top:5px\">'",
   "+\n",
   "    'Possible duplicate - another submission of this kind on the same day.</div>';\n",
+  "  else if (s.settledDuplicate) h += '<div class=\"m\" style=\"color:var(--ink-3);margin-top:5",
+  "px\">'+\n",
+  "    'Settled — Division already recorded how this pair stands.</div>';\n",
   "  (s.fields||[]).forEach(function(f){\n",
   "    h += '<div class=\"fld\"><div class=\"l\">'+esc(f.label)+'</div>'+\n",
   "         '<div class=\"v\">'+esc(f.value)+'</div></div>';\n",
@@ -8291,11 +13098,62 @@ var PORTAL_PAGE_HTML = [
   "function reload(){\n",
   "  google.script.run.withSuccessHandler(function(r){\n",
   "    BOOT.viewer = r.viewer; BOOT.data = r.data; BOOT.mode = r.mode;\n",
+  "    if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;\n",
+  "    BOOT.error = r.error || ''; BOOT.deferred = false;\n",
   "    S.screen = 'main'; render();\n",
   "  }).withFailureHandler(function(e){ alert(e.message||e); }).refreshV1();\n",
   "}\n",
   "\n",
-  "render();\n",
+  "function startLine(){\n",
+  "  paint(hero('Field Training', 'Opening…',\n",
+  "    'Loading your desk. If Google asks for permission, allow it — then this page continues",
+  ".'));\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      BOOT.viewer = r.viewer || BOOT.viewer;\n",
+  "      BOOT.data = r.data || {};\n",
+  "      BOOT.mode = r.mode || BOOT.mode;\n",
+  "      if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;\n",
+  "      BOOT.error = r.error || '';\n",
+  "      BOOT.deferred = false;\n",
+  "      S.screen = 'main';\n",
+  "      render();\n",
+  "      // Inbox is heavy (FormApp / response tabs) — fill it in the background.\n",
+  "      if (BOOT.viewer && BOOT.viewer.role === 'TRAINING_DIVISION') ensureDivisionInbox_();",
+  "\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      var msg = String((e && e.message) || e || 'unknown');\n",
+  "      paint(hero('Field Training', 'Could not open', '')+\n",
+  "        '<div class=\"note n-stop\"><b>Blocked</b>'+esc(msg)+'</div>'+\n",
+  "        '<div class=\"note n-info\"><b>Do this in order</b>'+\n",
+  "        '1. Open the <b>SCEMS Portal</b> Apps Script editor.<br>'+\n",
+  "        '2. Run <b>authorizePortalNow</b> — finish every Google permission screen '+\n",
+  "        '(Advanced → Go to SCEMS Portal if shown).<br>'+\n",
+  "        '3. Deploy → Manage deployments → Edit → <b>New version</b> → Deploy.<br>'+\n",
+  "        '4. Settings must be: Execute as <b>Me</b>, Who has access: '+\n",
+  "        '<b>Anyone with a Google account</b> (not Anyone).<br>'+\n",
+  "        '5. Open the /exec link in an Incognito window signed into one account only.'+\n",
+  "        '</div>'+\n",
+  "        '<button class=\"btn\" onclick=\"startLine()\">Try again</button>');\n",
+  "    })\n",
+  "    .refreshV1();\n",
+  "}\n",
+  "\n",
+  "try {\n",
+  "  if (BOOT.deferred) startLine();\n",
+  "  else render();\n",
+  "} catch (bootErr) {\n",
+  "  try {\n",
+  "    document.getElementById('view').innerHTML =\n",
+  "      '<div class=\"hero\"><h1>Field Training could not start</h1>' +\n",
+  "      '<p class=\"sub\">The page loaded but the script crashed while starting. ' +\n",
+  "      'In the Apps Script editor run authorizePortalNow, then Deploy → New version.</p></d",
+  "iv>' +\n",
+  "      '<div class=\"note n-stop\"><b>Error</b>' + String((bootErr && bootErr.message) || boo",
+  "tErr) + '</div>';\n",
+  "  } catch (e2) {}\n",
+  "}\n",
   "</script>\n",
   "</body>\n",
   "</html>\n"
@@ -8311,7 +13169,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '003164f5';
+var PORTAL_BUILD = 'def8f587';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

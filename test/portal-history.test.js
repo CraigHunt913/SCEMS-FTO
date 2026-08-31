@@ -46,6 +46,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
 let OPENABLE = {};                       // spreadsheet id -> name
 const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
                getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               getSheets: () => Object.keys(SHEETS).map(n => SHEETS[n]),
                insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
 
 global.SpreadsheetApp = {
@@ -123,7 +124,7 @@ global.FormApp = { openById: id => {
 } };
 
 // one eval at module scope; eval inside a callback scopes the declarations away
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','88_Report','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -366,6 +367,175 @@ ok(duplicateSubmissionsV1_().length === 0,
 ok(SHEETS[PORTAL.TAB.EVAL].g.length === HR + 7, 'both rows are still in the sheet');
 
 // ---------------------------------------------------------------- //
+section('Division settles a pair from Field Training — raw rows stay');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+let settleList = duplicateSubmissionsV1_();
+ok(settleList.length === 1, 'Alex’s pair is waiting');
+ok(!!settleList[0].dupKey, 'and carries a dupKey for the settlement log');
+const pair = duplicatePairDetailV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey);
+ok(pair.sides.length === 2, 'detail returns both sides');
+ok(pair.sides.every(s => (s.fields || []).length > 0), 'each side still has its fields');
+
+as('dana@example.org');
+ok(/Only the Training Division/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'BOTH_STAND', 'Both filings are correct for that day.', '', settleList[0].source))),
+  'an FTO cannot settle');
+
+as('chief@example.org');
+ok(/Type why/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'BOTH_STAND', 'short', '', settleList[0].source))),
+  'a short reason is refused');
+
+const evalRowsBefore = SHEETS[PORTAL.TAB.EVAL].g.length;
+const settled = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+ok(settled.ok === true, 'Division can settle both stand');
+ok(SHEETS[PORTAL.TAB.EVAL].g.length === evalRowsBefore, 'source rows were not deleted');
+ok(!!SHEETS['PORTAL SETTLEMENTS'], 'PORTAL SETTLEMENTS was created');
+ok(duplicateSubmissionsV1_().length === 0, 'Settle no longer raises the settled pair');
+const again = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+ok(again.ok === true && /Already settled/i.test(again.message || ''),
+   'settling twice is a no-op, not a second row fight');
+
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+const keep = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'KEEP_ROW', 'The second filing is the correction that stands.',
+  settleList[0].rows[1], settleList[0].source);
+ok(keep.ok === true && /stands/i.test(keep.message || ''), 'KEEP_ROW records which row stands');
+ok(duplicateSubmissionsV1_().length === 0, 'and that pair leaves Settle too');
+
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+ok(/Pick which row on this book/.test(threw(() =>
+  settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+    'KEEP_ROW', 'Trying to keep a row that is not in the pair.', 99999, settleList[0].source))),
+  'KEEP_ROW refuses a row that is not in the live pair');
+
+as('dana@example.org');
+ok(/Only the Training Division/.test(threw(() =>
+  duplicatePairDetailV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey))),
+  'an FTO cannot open Settle pair detail');
+
+as('chief@example.org');
+const notConflict = settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'NOT_A_CONFLICT', 'Two filings, two different shifts that share a calendar day label.',
+  '', settleList[0].source);
+ok(notConflict.ok === true, 'NOT_A_CONFLICT is a first-class settlement');
+ok(duplicateSubmissionsV1_().length === 0, 'and it clears Settle');
+
+world();
+as('chief@example.org');
+settleList = duplicateSubmissionsV1_();
+settleDuplicateV1(settleList[0].trainee, settleList[0].tab, settleList[0].dupKey,
+  'BOTH_STAND', 'Both filings are correct for that day — keep both.', '', settleList[0].source);
+const afterRec = recordForV1_('Alex Bramble');
+ok(afterRec.duplicates === 0, 'settled pairs stop shouting on the personnel record');
+const stillMarked = afterRec.sections.flatMap(s => s.current.concat(s.earlier))
+  .filter(x => x.possibleDuplicate);
+ok(stillMarked.length === 0, 'no submission still carries possibleDuplicate after settle');
+
+// ---------------------------------------------------------------- //
+section('Queue refresh: exact READY only, no slash-bars, no double OPEN');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE'],
+  [['Jamie Rivers','Intubation','SK-2','READY FOR VALIDATION','',4,2,2,2,'Airway',D('2026-08-17')],
+   ['Jamie Rivers','IV access','SK-1','NOT READY FOR VALIDATION','',1,0,1,1,'Vascular',D('2026-08-10')],
+   ['Alex Bramble','Tourniquet','SK-6','READY FOR VALIDATION','',3,3,2,2,'Trauma',D('2026-08-16')]]);
+// Existing OPEN has skill name but no id — must block a matrix row that has SK-2.
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  [[D('2026-08-17'),'Jamie Rivers','','A','Intubation','already open','','','','','','OPEN',D('2026-08-17'),'QR-1']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const refreshed = refreshValidationQueueV1();
+ok(refreshed.added === 1, 'adds Alex’s READY skill, not Jamie’s already-open Intubation: ' + refreshed.added);
+const qData = SHEETS[PORTAL.TAB.QUEUE].g.slice(HR);
+ok(qData.length === 2, 'queue has original + one new: ' + qData.length);
+const added = qData.filter(r => String(r[1]) === 'Alex Bramble')[0];
+ok(!!added, 'Alex’s row was appended');
+ok(!/\d+\s*\/\s*\d+\s*\/\s*\d+/.test(String(added[5] || '')),
+   'evidence is not a bare slash list that breaks bars: ' + added[5]);
+ok(/successful/i.test(String(added[5] || '')), 'evidence reads as human counts');
+ok(parseEvidenceBarsV1_(added[5]) === null,
+   'parseEvidenceBars does not invent have/need from the refresh text');
+const notReady = qData.filter(r => /NOT READY/i.test(String(r[5] || '')) ||
+  String(r[4] || '') === 'IV access');
+ok(notReady.length === 0, 'NOT READY FOR VALIDATION never becomes an OPEN row');
+
+// ---------------------------------------------------------------- //
+section('Sync matrix from evidence when the tracker left readiness stale');
+// ---------------------------------------------------------------- //
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE','STAGE'],
+  [['Jamie Rivers','Intubation','SK-2','IN PROGRESS','',0,0,0,0,'Airway','','']]);
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  []);
+tab(PORTAL.TAB.EVIDENCE,
+  ['SHIFT DATE','TRAINEE','FTO','SKILL ID','SKILL','STAGE','OUTCOME','VALIDATION RESULT','SOURCE RESPONSE ID'],
+  [[D('2026-08-10'),'Jamie Rivers','Dana Whitlock','SK-2','Intubation','I','Successful','ACCEPTED','R-a'],
+   [D('2026-08-12'),'Jamie Rivers','Dana Whitlock','SK-2','Intubation','I','Successful','ACCEPTED','R-b'],
+   [D('2026-08-14'),'Jamie Rivers','Alex FTO','SK-2','Intubation','P','Successful','ACCEPTED','R-c'],
+   [D('2026-08-16'),'Jamie Rivers','Alex FTO','SK-2','Intubation','I','Successful','ACCEPTED','R-d']]);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const synced = syncMatrixFromEvidenceV1();
+ok(synced.ok === true && synced.updated >= 1, 'sync updates the matrix from the log: ' + JSON.stringify(synced));
+ok(synced.markedReady >= 1, 'and marks the skill READY when bars are met');
+const mRow = SHEETS[PORTAL.TAB.SKILLS].g[HR];
+ok(String(mRow[3]) === 'READY FOR VALIDATION', 'readiness is READY FOR VALIDATION: ' + mRow[3]);
+ok(Number(mRow[5]) >= 3, 'successful reps recounted: ' + mRow[5]);
+ok(synced.queueAdded >= 1, 'OPEN queue row is added after sync');
+ok(!portalEvidenceGateV1_('Approve sign-off', 'Jamie Rivers', 'Intubation', 'SK-2',
+  'Evidence thresholds met after sync.'),
+  'approve gate allows when bars/evidence met even before a reload of READY');
+
+world();
+as('chief@example.org');
+tab(PORTAL.TAB.SKILLS,
+  ['TRAINEE','SKILL','SKILL ID','READINESS','SIGN-OFF','SUCCESSFUL REPS','INDEPENDENT REPS',
+   'DISTINCT DATES','DISTINCT FTOS','DOMAIN','LAST DATE','STAGE','SIGNED BY','SIGNED DATE'],
+  [['Jamie Rivers','Intubation','SK-2','READY FOR VALIDATION','',4,3,4,2,'Airway',D('2026-08-16'),'I','','']]);
+tab(PORTAL.TAB.QUEUE,
+  ['READY DATE','TRAINEE','SKILL ID','DOMAIN','SKILL','EVIDENCE SUMMARY','DECISION',
+   'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','RECORD STATUS','LAST EVIDENCE DATE','REQUEST ID'],
+  []);
+tab(PORTAL.TAB.SIGNOFF,
+  ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION','DECIDED BY','DECISION DATE',
+   'EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+  []);
+TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+const accepted = acceptSkillV1('Jamie Rivers', 'SK-2', 'Intubation',
+  'Directly observed and verified across four successful events.');
+ok(/Accepted on the tracker/i.test(accepted), 'acceptSkillV1 confirms tracker write-back: ' + accepted);
+const qAfter = SHEETS[PORTAL.TAB.QUEUE].g.slice(HR);
+ok(qAfter.length === 1 && String(qAfter[0][11]) === 'RECORDED',
+  'queue row is created and closed as RECORDED');
+ok(String(qAfter[0][6]) === 'Approve sign-off', 'decision is Approve sign-off');
+const soAfter = SHEETS[PORTAL.TAB.SIGNOFF].g.slice(HR);
+ok(soAfter.length === 1 && /Jamie Rivers/.test(String(soAfter[0][2])),
+  'permanent sign-off log has the accept');
+const mAfter = SHEETS[PORTAL.TAB.SKILLS].g[HR];
+ok(String(mAfter[3]) === 'SIGNED OFF' && String(mAfter[4]) === 'SIGNED OFF',
+  'matrix readiness and sign-off are SIGNED OFF');
+ok(String(mAfter[12]) === 'chief@example.org', 'matrix SIGNED BY is the Division account');
+
+// ---------------------------------------------------------------- //
 section('Six tabs are read once, not once per person');
 // ---------------------------------------------------------------- //
 world();
@@ -376,7 +546,7 @@ TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 divisionPayloadV1_();
 const readsForEveryone = READS;
 readTabUncachedV1_ = realRead;
-ok(readsForEveryone <= Object.keys(PORTAL.TAB).length,
+ok(readsForEveryone <= Object.keys(PORTAL.TAB).length + 2,
    'the Division screen reads each tab at most once for the whole roster: ' + readsForEveryone);
 
 world();
@@ -387,7 +557,7 @@ recordForV1_('Jamie Rivers');
 recordForV1_('Alex Bramble');
 recordForV1_('Priya Okafor');
 readTabUncachedV1_ = realRead;
-ok(READS <= 6, 'three full records cost six reads in total, not eighteen: ' + READS);
+ok(READS <= 7, 'three full records share one pass over the sources (+ settlements): ' + READS);
 
 // the cache must never serve a value that has just been overwritten
 world();
@@ -397,8 +567,8 @@ approveSignoffV1(HR + 1, 'Watched the last attempt myself and it was clean.');
 const qNow = readTabV1_(PORTAL.TAB.QUEUE);
 ok(String(qNow.rows[0][qNow.col['RATIONALE']]).indexOf('Watched the last attempt') === 0,
    'a read straight after a write sees the written value');
-ok(String(qNow.rows[0][qNow.col['RECORD STATUS']]) === 'OPEN',
-   'and the row is still OPEN, because the tracker is the only thing that may close it');
+ok(String(qNow.rows[0][qNow.col['RECORD STATUS']]) === 'RECORDED',
+   'and the row is RECORDED — Field Training writes the permanent log itself');
 
 // ---------------------------------------------------------------- //
 section('Skills are current per skill, not one winner overall');

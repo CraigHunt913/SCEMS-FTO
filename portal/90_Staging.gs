@@ -1,12 +1,83 @@
 /**
  * Staging.
  *
- * setUpStaging() creates a NEW spreadsheet, fills it with invented people,
- * and points the portal at it. It never opens, reads, copies or references
- * the live tracker. Run it once; run it again for a fresh sandbox.
+ * setUpStaging() points the portal at a sandbox of invented people. It never
+ * opens, reads, copies or references the live tracker.
+ *
+ * v20.6 estate rule: one sandbox at a time. Re-running reuses the remembered
+ * staging spreadsheet when it still exists. A brand-new sandbox is created
+ * only when none is remembered, the old one is gone, or you pass
+ * setUpStaging('NEW'). Old sandboxes are moved into an archive folder — never
+ * deleted — so Drive does not fill with STG_SCEMS_Portal_Sandbox_* clutter.
  */
 
-function setUpStaging() {
+var PORTAL_STAGING_ARCHIVE_FOLDER = 'SCEMS Portal Staging — ARCHIVE';
+
+function stagingBookStillExistsV1_(id) {
+  if (!id) return false;
+  try {
+    DriveApp.getFileById(id);
+    SpreadsheetApp.openById(id);
+    return true;
+  } catch (e) { return false; }
+}
+
+function archiveStagingBookV1_(id, reason) {
+  if (!id) return '';
+  try {
+    var file = DriveApp.getFileById(id);
+    var parent = DriveApp.getFoldersByName(PORTAL_STAGING_ARCHIVE_FOLDER);
+    var folder = parent.hasNext() ? parent.next() : DriveApp.createFolder(PORTAL_STAGING_ARCHIVE_FOLDER);
+    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
+    var dest = folder.createFolder(stamp + (reason ? ' — ' + reason : ''));
+    dest.addFile(file);
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      var p = parents.next();
+      if (p.getId() !== dest.getId()) {
+        try { p.removeFile(file); } catch (eR) {}
+      }
+    }
+    try { file.setName(file.getName() + ' [ARCHIVED ' + stamp + ']'); } catch (eN) {}
+    return dest.getUrl();
+  } catch (e) {
+    return '';
+  }
+}
+
+function setUpStaging(forceNew) {
+  var wantNew = String(forceNew || '').trim().toUpperCase() === 'NEW';
+  var props = PropertiesService.getScriptProperties();
+  var existingId = spreadsheetIdFromV1_(props.getProperty('PORTAL_STAGING_SPREADSHEET_ID'));
+
+  if (!wantNew && stagingBookStillExistsV1_(existingId)) {
+    forgetTabsV1_();
+    props.setProperty(PORTAL.PROPERTY_TARGET, existingId);
+    props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
+    props.setProperty('PORTAL_FORM_LINKS', 'OFF');
+    var meReuse = whoIsAskingV1_();
+    if (meReuse) {
+      props.setProperty('PORTAL_DIVISION_EMAILS', meReuse);
+      props.setProperty('PORTAL_SUPERVISORS', JSON.stringify({}));
+    }
+    var existing = SpreadsheetApp.openById(existingId);
+    var msgReuse = 'STAGING REUSED\n\n' +
+      'Spreadsheet : ' + existing.getName() + '\n' +
+      'Link        : ' + existing.getUrl() + '\n\n' +
+      'A sandbox already existed, so nothing new was created. Drive stays\n' +
+      'at one staging book. To force a brand-new sandbox (the old one is\n' +
+      'archived, not deleted):\n' +
+      '  setUpStaging("NEW")';
+    Logger.log(msgReuse);
+    try { SpreadsheetApp.getUi().alert(msgReuse); } catch (e) {}
+    return msgReuse;
+  }
+
+  var archivedUrl = '';
+  if (existingId && stagingBookStillExistsV1_(existingId)) {
+    archivedUrl = archiveStagingBookV1_(existingId, 'replaced by setUpStaging NEW');
+  }
+
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HHmm');
   var book = SpreadsheetApp.create('STG_SCEMS_Portal_Sandbox_' + stamp);
 
@@ -34,7 +105,7 @@ function setUpStaging() {
       ['Alex Bramble','STG-02','EMT','A','Dana Whitlock', d('2026-05-04'),'Phase 3','Active','alex.bramble@example.org', d('2026-07-01'),'A'],
       ['Priya Okafor','STG-03','Advanced EMT','B','Marcus Vane', d('2026-04-12'),'Phase 4','Active','priya.okafor@example.org', d('2026-08-01'),'B'],
       ['Sam Ledger','STG-04','EMT','A','', '', '','Active','sam.ledger@example.org','','A'],
-      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Closed / Released','rosa.quill@example.org', d('2026-03-01'),'B']
+      ['Rosa Quill','STG-05','Paramedic','C','Marcus Vane', d('2026-01-06'),'Phase 4','Cleared / Independent','rosa.quill@example.org', d('2026-03-01'),'B']
     ]);
 
   tab(PORTAL.TAB.ROSTER, ['FTO','EMAIL','LEVEL','ACTIVE'],
@@ -114,7 +185,12 @@ function setUpStaging() {
 
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 
-  var props = PropertiesService.getScriptProperties();
+  // Drop the default "Sheet1" Google creates with every new spreadsheet.
+  try {
+    var sheet1 = book.getSheetByName('Sheet1');
+    if (sheet1 && book.getSheets().length > 1) book.deleteSheet(sheet1);
+  } catch (eSheet1) {}
+
   forgetTabsV1_();
   props.setProperty(PORTAL.PROPERTY_TARGET, book.getId());
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_STAGING);
@@ -134,6 +210,7 @@ function setUpStaging() {
   var msg = 'STAGING READY\n\n' +
     'Spreadsheet : ' + book.getName() + '\n' +
     'Link        : ' + book.getUrl() + '\n\n' +
+    (archivedUrl ? 'Previous sandbox archived (not deleted):\n  ' + archivedUrl + '\n\n' : '') +
     'The portal now points at this sandbox. Five invented trainees, two\n' +
     'invented FTOs. Nothing here is a personnel record and nothing of yours\n' +
     'was opened to build it.\n\n' +
@@ -142,6 +219,8 @@ function setUpStaging() {
           'viewAsSupervisor or viewAsMedical.\n\n' : '') +
     'Form links are OFF here, so the cards show without opening the real\n' +
     'production forms. Run enableFormLinks() if you want them live.\n\n' +
+    'Re-run setUpStaging() to reuse this sandbox. Pass "NEW" only when you\n' +
+    'truly want another book.\n\n' +
     'Next: Deploy > New deployment > Web app, then open the URL.';
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}

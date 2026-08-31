@@ -170,7 +170,10 @@ function dupKeyV1_(s, oncePerDay) {
   // one shift is a correction and worth raising whatever they say. Skill
   // evidence is the opposite: three reps across one shift is three events.
   if (oncePerDay) {
-    return 'DAY:' + (s.group || '') + '|' + dayKeyV1_(s.when);
+    var day = dayKeyV1_(s.when);
+    // Undated once-a-day rows must not all collapse onto DAY:| and flag each other.
+    if (!day) return 'DAY:UNDATED:' + String(s.row);
+    return 'DAY:' + (s.group || '') + '|' + day;
   }
   var id = '';
   (s.fields || []).forEach(function (f) {
@@ -213,12 +216,21 @@ function whenTextV1_(d) {
 function recordForV1_(name, only) {
   var norm = normNameV1_(name);
   var sections = [], timeline = [], total = 0, duplicates = 0;
+  var settled = settledDuplicateKeysV1_();
 
   PORTAL_SOURCES.forEach(function (src) {
     if (only && only.indexOf(src.key) < 0) return;
     var list = markCurrentV1_(submissionsFromV1_(src, norm), !!src.groupBy, !!src.oncePerDay);
     if (!list.length) return;
     total += list.length;
+
+    list.forEach(function (s) {
+      if (!s.possibleDuplicate) return;
+      if (settled[settlementIdV1_(name, src.tab, s.dupKey)]) {
+        s.possibleDuplicate = false;
+        s.settledDuplicate = true;
+      }
+    });
 
     var current = list.filter(function (s) { return s.current; });
     var earlier = list.filter(function (s) { return !s.current; });
@@ -262,6 +274,7 @@ function shapeV1_(s) {
     at: s.when instanceof Date && !isNaN(s.when.getTime()) ? s.when.getTime() : 0,
     by: s.by, group: s.group,
     current: !!s.current, possibleDuplicate: !!s.possibleDuplicate,
+    settledDuplicate: !!s.settledDuplicate,
     fields: s.fields
   };
 }
@@ -312,6 +325,7 @@ function recordScopeV1_(viewer, name) {
  *
  *  Read only in every mode. */
 function duplicateSubmissionsV1_() {
+  var settled = settledDuplicateKeysV1_();
   var out = [];
   traineesV1_().filter(function (t) { return !t.closed; }).forEach(function (t) {
     PORTAL_SOURCES.forEach(function (src) {
@@ -323,9 +337,10 @@ function duplicateSubmissionsV1_() {
         (byDay[k] = byDay[k] || []).push(s);
       });
       Object.keys(byDay).forEach(function (k) {
+        if (settled[settlementIdV1_(t.name, src.tab, k)]) return;
         var pair = byDay[k];
         out.push({
-          trainee: t.name, source: src.title, tab: src.tab,
+          trainee: t.name, source: src.title, tab: src.tab, dupKey: k,
           group: pair[0].group || '', when: whenTextV1_(pair[0].when),
           why: String(k).indexOf('ID:') === 0
             ? 'the SAME form response, written twice'

@@ -168,7 +168,12 @@ function goLive() {
       'Nothing was changed.');
   }
 
-  var canCoach = readTabV1_(PORTAL.TAB.COACHING).ok;
+  // Coaching notes need a home before FTOs can file them from Tonight.
+  if (!ensureCoachingLogV1_()) {
+    throw new Error('Not going live. The tab ' + PORTAL.TAB.COACHING + ' is not in ' +
+      'this spreadsheet and could not be created, so coaching filed from Field Training ' +
+      'would have nowhere to live. Nothing was changed.');
+  }
 
   props.setProperty(PORTAL.PROPERTY_MODE, PORTAL.MODE_LIVE);
   PEOPLE_CACHE_V1 = null;
@@ -187,13 +192,11 @@ function goLive() {
     canSignIn + ' training officer(s) and ' + trainees + ' active trainee(s) can be recognised.',
     '',
     'WHAT JUST BECAME POSSIBLE',
-    '  A trainee can file their own reflection.',
-    '  The Training Division can approve a sign-off, with a typed reason.',
-    (canCoach
-      ? '  A trainee can acknowledge their own coaching note.'
-      : '  Acknowledging a coaching note stays unavailable: there is no tab\n' +
-        '  called ' + PORTAL.TAB.COACHING + ' for those notes to live in. Nothing\n' +
-        '  else depends on it.'),
+    '  Training Division can record a sign-off (permanent log + queue closed).',
+    '  Training Division can advance phase, clear for the truck, close training, and enroll a trainee.',
+    '  Training Division can assign who trains whom.',
+    '  An FTO can file a coaching note; the trainee can acknowledge it.',
+    '  Self-reflection still uses the Self-reflection form in LIVE (not the practice screen).',
     '',
     (auditState === 'created'
       ? 'A tab called ' + PORTAL.TAB.AUDIT + ' has been added to record who does\n' +
@@ -202,10 +205,14 @@ function goLive() {
       : 'Each of those is written to ' + PORTAL.TAB.AUDIT + ' under the name of\n' +
         'whoever did it. PRODUCTION mode was discarding those entries.'),
     '',
-    'WHAT DID NOT',
-    '  Importing, merging and switching role. Those only ever run against the',
+    'WHAT THIS DID NOT DO',
+    '  Monday status cards, weekly roll-up, and supervisor digests.',
+    '  Those are sent by the TRACKER Apps Script project, not this portal.',
+    '  In the tracker project: whichMode(), then goLive(), then installTriggers().',
+    '  Portal goLive only opens this desk for writing.',
+    '',
+    '  Importing, merging and switching role still only run against the',
     '  practice spreadsheet, whatever mode this is in.',
-    '  Nothing bulk. Nothing structural. No row in another spreadsheet.',
     '',
     'NOW DEPLOY',
     '  Deploy > Manage deployments > pencil > Version: New version > Deploy',
@@ -472,6 +479,118 @@ function showSettings() {
   var live = false;
   try { live = formLinksLiveV1_(); } catch (e) {}
   lines.push('Form links        : ' + (live ? 'LIVE' : 'OFF'));
+  lines.push('');
+  lines.push('--- PORTAL ADDRESS ---');
+  lines.push('');
+  var shortAddr = String(get(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  var deployAddr = '';
+  try { deployAddr = String(ScriptApp.getService().getUrl() || '').trim(); } catch (eU) {}
+  lines.push(PORTAL.PROPERTY_PUBLIC_URL);
+  lines.push('  ' + (shortAddr || '(not set — people get the long deployment URL)'));
+  lines.push('  Short link for the crew (Sites Hub or county vanity).');
+  lines.push('  Run setPortalShortAddress("https://…") to save one.');
+  lines.push('  Suggested: ' + PORTAL.DEFAULT_HUB_URL);
+  lines.push('');
+  lines.push('Deployment URL');
+  lines.push('  ' + (deployAddr || '(not deployed yet, or ScriptApp cannot see it)'));
+  lines.push('  Embed this behind the Sites page. Do not hand it out if a short address is set.');
 
+  return noteV1_(lines.join('\n'));
+}
+
+/* ---------------------------------------------------------------- *
+ *  Short portal address
+ *
+ *  The Apps Script web-app URL is a long /macros/s/… string. Staff should
+ *  open a short Sites (or county) link that embeds that deployment. These
+ *  runners store and report that short address.
+ * ---------------------------------------------------------------- */
+
+/** URL people should open. Short property first, else the live deployment. */
+function portalPublicUrlV1_() {
+  var set = '';
+  try {
+    set = String(PropertiesService.getScriptProperties()
+      .getProperty(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  } catch (e) {}
+  if (set) return set;
+  try {
+    var live = String(ScriptApp.getService().getUrl() || '').trim();
+    if (live) return live;
+  } catch (e2) {}
+  return '';
+}
+
+/**
+ * Save the short address people should use (Sites Hub or county redirect).
+ * Example: setPortalShortAddress('https://sites.google.com/view/scemsfieldtraininghub/home')
+ */
+function setPortalShortAddress(url) {
+  var u = String(url == null ? '' : url).trim();
+  if (!u) {
+    throw new Error('Paste the short https address (Sites page or county link). ' +
+      'Nothing was saved.\n\nSuggested: ' + PORTAL.DEFAULT_HUB_URL);
+  }
+  if (!/^https:\/\//i.test(u)) {
+    throw new Error('The short address must start with https://. Nothing was saved.');
+  }
+  if (/\s/.test(u)) {
+    throw new Error('That does not look like one address. Nothing was saved.');
+  }
+  PropertiesService.getScriptProperties().setProperty(PORTAL.PROPERTY_PUBLIC_URL, u);
+  try { auditV1_('PORTAL SHORT URL', whoIsAskingV1_() || '', u); } catch (eA) {}
+  return noteV1_('Short portal address saved.\n\n' + u +
+    '\n\nHand this link to the crew. Embed the long deployment URL behind your ' +
+    'Sites page (or county redirect), then Redeploy → New version when the ' +
+    'deployment URL changes.\n\nRun portalAddress() any time to see both.');
+}
+
+/** Forget the short address; portalAddress() falls back to the deployment URL. */
+function clearPortalShortAddress() {
+  PropertiesService.getScriptProperties().deleteProperty(PORTAL.PROPERTY_PUBLIC_URL);
+  return noteV1_('Short portal address cleared.\n\n' +
+    'People will see the long deployment URL until you set another with ' +
+    'setPortalShortAddress("https://…").');
+}
+
+/**
+ * What to give people, and how to shorten it.
+ * Safe to run any time. Writes nothing.
+ */
+function portalAddress() {
+  var shortAddr = '';
+  try {
+    shortAddr = String(PropertiesService.getScriptProperties()
+      .getProperty(PORTAL.PROPERTY_PUBLIC_URL) || '').trim();
+  } catch (e) {}
+  var deployAddr = '';
+  try { deployAddr = String(ScriptApp.getService().getUrl() || '').trim(); } catch (e2) {}
+
+  var lines = ['PORTAL ADDRESS', '',
+    'Give the crew this link:',
+    '  ' + (shortAddr || deployAddr || '(none yet — deploy the web app, then set a short address)'),
+    ''];
+
+  if (shortAddr) {
+    lines.push('Short address is set (' + PORTAL.PROPERTY_PUBLIC_URL + ').');
+    lines.push('Deployment URL (embed behind Sites, do not hand out):');
+    lines.push('  ' + (deployAddr || '(not visible from this project yet)'));
+  } else {
+    lines.push('No short address is set yet. The long Apps Script URL is what people get.');
+    lines.push('');
+    lines.push('TO SHORTEN IT');
+    lines.push('  1. Deploy → Manage deployments → copy the Web app URL.');
+    lines.push('  2. Put that URL in a Google Sites page (Insert → Embed), or a county redirect.');
+    lines.push('  3. Run:');
+    lines.push('       setPortalShortAddress("' + PORTAL.DEFAULT_HUB_URL + '")');
+    lines.push('     or paste your own https Sites / vanity address.');
+    if (deployAddr) {
+      lines.push('');
+      lines.push('Current deployment URL:');
+      lines.push('  ' + deployAddr);
+    }
+  }
+  lines.push('');
+  lines.push('Also: clearPortalShortAddress()  ·  showSettings()');
   return noteV1_(lines.join('\n'));
 }

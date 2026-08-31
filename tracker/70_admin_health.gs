@@ -239,6 +239,18 @@ function seedTraineeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
 function organizeSkills() { try { rebuildSkillMatrixV19_(); } catch (e) {} }
 
+/** Public name for the skill-matrix rebuild. The underscore form is easy to
+ *  miss in the Apps Script Run dropdown; this is the one to pick. */
+function rebuildSkillMatrix() {
+  if (!gateV20_2_('WORK QUEUE')) return;
+  rebuildSkillMatrixV19_();
+  var msg = 'Skill matrix rebuilt from the evidence and sign-off logs.';
+  systemLog_('INFO', 'SKILL MATRIX REBUILT', 'rebuildSkillMatrix');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
 function skillsKey() { try { applySkillsLayoutV19_(); } catch (e) {} }
 
 function parseSkills(v) {
@@ -508,7 +520,12 @@ function runtimeHealthCheckV20_1() {
  *  schemas/IDs/URLs/destinations/access, deployment URL, config version).
  *  The Apps Script SOURCE cannot copy itself from here; the manifest
  *  states this and the runbook's export step covers it. A workbook-only
- *  export is never called a full backup anywhere in v20.1. */
+ *  export is never called a full backup anywhere in v20.1.
+ *
+ *  v20.6: DriveApp.makeCopy clones every linked form as "Copy of …". Three
+ *  earlier backups left ~25 clones in Drive. After the copy, every clone
+ *  linked to the backup is closed, unlinked, and moved into the form-copy
+ *  archive. Live forms are never touched. */
 function fullBackupV20_1() {
   var denyV20_2 = denyV20_2_('RUN BACKUP');
   if (denyV20_2) return denyV20_2;
@@ -517,6 +534,14 @@ function fullBackupV20_1() {
   var it = DriveApp.getFoldersByName(folderName);
   var folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
   var wb = DriveApp.getFileById(ss().getId()).makeCopy('SCEMS_Backup_' + stamp, folder);
+
+  var cloneReport = { moved: [], failed: [] };
+  try {
+    cloneReport = neutralizeBackupFormClonesV20_6_(wb.getId(), stamp) || cloneReport;
+  } catch (eClone) {
+    cloneReport.failed = ['neutralize failed: ' + (eClone && eClone.message ? eClone.message : eClone)];
+    systemLog_('ERROR', 'BACKUP FORM CLONE CLEANUP FAILED', String(eClone));
+  }
 
   var props = PropertiesService.getScriptProperties().getProperties();
   var triggers = ScriptApp.getProjectTriggers().map(function (t) {
@@ -543,23 +568,31 @@ function fullBackupV20_1() {
     sourceVersion: SCEMS_VERSION,
     spreadsheetId: ss().getId(),
     workbookCopyId: wb.getId(),
+    formClonesArchived: cloneReport.moved || [],
+    formCloneFailures: cloneReport.failed || [],
     scriptProperties: props,
     triggers: triggers,
     forms: forms,
     webAppUrl: webAppUrl,
     note: 'This package restores DATA, PROPERTIES, TRIGGER INVENTORY, FORM SCHEMAS, and ' +
           'DEPLOYMENT INFO. The Apps Script SOURCE must be exported from the editor per the ' +
-          'recovery runbook — a workbook copy alone is NOT a full system backup.'
+          'recovery runbook — a workbook copy alone is NOT a full system backup. Form clones ' +
+          'created by makeCopy were archived so the live form estate stays at nine forms.'
   };
   folder.createFile('SCEMS_Manifest_' + stamp + '.json', JSON.stringify(manifest, null, 2),
     'application/json');
   PropertiesService.getScriptProperties().setProperty('LAST_FULL_BACKUP', stamp);
-  systemLog_('INFO', 'FULL BACKUP PACKAGE', 'workbook copy + manifest ' + stamp);
+  systemLog_('INFO', 'FULL BACKUP PACKAGE',
+    'workbook copy + manifest ' + stamp + '; form clones archived: ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0));
   sendMail(CONFIG.SUPERVISOR_EMAILS, 'SCEMS full backup package created : ' + stamp,
     'Workbook copy and estate manifest were written to the Drive folder "' + folderName + '".\n' +
+    'Form clones created by the copy: ' + ((cloneReport.moved && cloneReport.moved.length) || 0) +
+    ' archived (live forms untouched).\n' +
     'Remember: script source is exported from the editor per the recovery runbook.\n' +
     'Quarterly restore test due? Check the runbook schedule.');
-  return 'Backup package ' + stamp + ' created in "' + folderName + '".';
+  return 'Backup package ' + stamp + ' created in "' + folderName + '". ' +
+    ((cloneReport.moved && cloneReport.moved.length) || 0) + ' form clone(s) archived.';
 }
 
 function reviewSectionV20_1_(R, title, fn) {

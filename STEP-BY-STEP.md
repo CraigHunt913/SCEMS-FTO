@@ -39,11 +39,15 @@ Open the file and check it is full of code before moving on.
 
 ## 4. Get the new code
 
-https://github.com/CraigHunt913/SCEMS-FTO/blob/claude/multi-agent-code-review-1zeb1j/Code.gs
+https://github.com/CraigHunt913/SCEMS-FTO/blob/cursor/elite-tracker-estate-adde/Code.gs
 
 In the grey bar above the code, on the right, find the **copy icon** (two
 overlapping squares — hovering says *Copy raw file*). Click it once.
 
+**Use that branch.** The older `claude/multi-agent-code-review-…` copy does
+not have **Make the estate elite**. If Admin jumps from Deployment status
+straight to “Set the whole spreadsheet up properly”, you still have the old
+file.
 If you cannot find it: click in the code, `Ctrl` + `A`, `Ctrl` + `C`.
 
 ## 5. Paste it in
@@ -110,24 +114,26 @@ Everything after it says SKIPPED; that is the design working.
 Underneath, a health check lists anything still needing attention and names
 the exact function to run for each. That is a to-do list, not an error.
 
-## 10. Get your menu back
+## 10. Make the spreadsheet feel simple
 
 1. Switch to the spreadsheet tab.
 2. Press `F5` (Mac: `⌘` + `R`).
-3. Wait for it to load. A **SCEMS** menu appears next to Help.
+3. Wait for **SCEMS** to appear next to Help.
+4. Click **SCEMS → Make this spreadsheet simple**.
+
+That hides Form Responses and the other machinery tabs (nothing is deleted)
+and leaves you on **TRAINEES**.
+
+Day to day from here:
 
 ```
+Trainees — start here
 Work my queue
-Record a skill I witnessed
-Advance a trainee
-Close / release a trainee
-Health check
+What needs attention?
 Backup now
-  Admin ▸
 ```
 
-If the menu is missing, reload once more and wait ten seconds. If it is still
-missing, the file did not save — go back to step 5.
+Everything else is under **More**. See HOW-TO-RUN.md.
 
 ## 11. Recover the 16 lost skill logs
 
@@ -135,6 +141,13 @@ Your **SCEMS Skills Quick Log** form has 16 submissions that never reached
 your records. It had no trigger connected, so the system discarded them while
 writing "handled" in its own log. Step 7 reconnected it. Now find what was
 missed.
+
+**Fastest path:** SCEMS → Admin → **Make the estate elite (safe repairs)**.
+That one command archives backup form clones, repairs the phase engine,
+fixes the decision-queue header, recovers lost submissions (blank cutoff),
+and prints the health check.
+
+Or do it by hand:
 
 1. **SCEMS → Admin → Ingestion reconciliation (read-only)**. Changes nothing.
    It should list responses as `NOT IN LEDGER`.
@@ -151,6 +164,16 @@ it came from, so a second run finds and skips them. You cannot create
 duplicates.
 
 Then run **SCEMS → Health check** once more and work down the list.
+
+## 12. Clean the Drive estate (too many sheets / form copies)
+
+Backups used to leave "Copy of SCEMS …" forms in Drive. Orphan
+"Form Responses N" tabs accumulate when forms are relinked.
+
+- Form copies: already handled by `ELITE_ESTATE`, or
+  **Admin → Archive backup form copies**.
+- Orphan response tabs: never delete them on the live book. Follow the
+  tracker handover — copy first, then clean the copy.
 
 ---
 

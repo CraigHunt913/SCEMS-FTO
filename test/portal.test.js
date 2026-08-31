@@ -39,6 +39,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
 
 const BOOK = { getSheetByName: n => SHEETS[n] || null, getId: () => 'STG-BOOK',
                getName: () => 'STG_Sandbox', getUrl: () => 'https://example/stg',
+               getSheets: () => Object.keys(SHEETS).map(n => SHEETS[n]),
                insertSheet: n => (SHEETS[n] = new FakeSheet(n, [])) };
 
 global.SpreadsheetApp = { openById: () => BOOK, create: () => BOOK,
@@ -71,7 +72,7 @@ global.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({
 // with the registry in the picture. portal-forms.test.js proves the registry.
 global.FormApp = { openById: () => { throw new Error('Forms scope not granted'); } };
 
-eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','90_Staging','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto']
+eval(['00_Config','01_Start','10_Identity','20_Data','30_WebApp','40_Forms','50_Production','60_History','70_Backfill','80_Import','85_Merge','87_Settle','88_Report','90_Staging','91_Record','92_Lifecycle','93_Acknowledge','94_Assign','95_Unprocessed','96_Roster','97_Rename','98_Retire','99_AddFto','99_AddTrainee']
   .map(f => fs.readFileSync('/home/user/SCEMS-FTO/portal/' + f + '.gs', 'utf8'))
   .join('\n'));
 
@@ -134,6 +135,10 @@ function world() {
   tab(PORTAL.TAB.COACHING, ['DATE','TRAINEE','FROM','NOTE','ACKNOWLEDGED'],
     [[new Date(),'Jamie Rivers','Dana Whitlock','Radio reports still rushed.',''],
      [new Date(),'Alex Bramble','Dana Whitlock','Slow the primary survey down.','']]);
+  tab(PORTAL.TAB.SIGNOFF,
+    ['DECISION ID','TIMESTAMP','TRAINEE','SKILL ID','SKILL','DECISION',
+     'DECIDED BY','DECISION DATE','EXPIRATION','RATIONALE','SOURCE QUEUE ROW','REQUEST ID'],
+    []);
   tab(PORTAL.TAB.AUDIT, ['WHEN','WHAT','WHO','DETAIL','VERSION'], []);
 }
 function as(email) { ACTIVE = email; EFFECTIVE = email; PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {}; }
@@ -175,6 +180,30 @@ PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
 ok(resolveViewerV1_('dana@example.org').role === PORTAL.ROLE.NONE,
    'and an FTO with no address cannot be signed in as - which is the whole '
    + 'reason the live roster needs its EMAIL column filled');
+
+// ---------------------------------------------------------------- //
+section('Live master header renames still carry the email');
+// ---------------------------------------------------------------- //
+// Tracker presentation renames TRAINEE EMAIL → "Email address" (and SET STATUS
+// → "Program status", etc.). Without aliases the portal reported every trainee
+// as having no email even when the cells were full.
+world();
+tab(PORTAL.TAB.MASTER,
+  ['TRAINEE','LEVEL','Training officer','Started','CURRENT PHASE','Program status',
+   'Email address','Phase started','SHIFT'],
+  [['Elizabeth McInville','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 2','Active',
+    'elizabeth@example.com',new Date('2026-01-05'),'A'],
+   ['Latavia Cole','EMT','Dana Whitlock',new Date('2026-01-05'),'Phase 1','Active',
+    'latavia@example.com',new Date('2026-01-05'),'A']]);
+PEOPLE_CACHE_V1 = null; TAB_CACHE_V1 = {}; ALL_CACHE_V1 = {};
+ok(resolveViewerV1_('elizabeth@example.com').role === PORTAL.ROLE.TRAINEE,
+   'Email address column signs Elizabeth in as a trainee');
+ok(resolveViewerV1_('latavia@example.com').name === 'Latavia Cole',
+   'and Latavia resolves from the same renamed header');
+ok(traineesV1_().filter(t => !t.closed).every(t => !!t.email),
+   'traineeRowsV1_ sees those emails too, not only portalPeopleV1_');
+ok(traineesV1_().filter(t => t.name === 'Elizabeth McInville')[0].fto === 'Dana Whitlock',
+   'Training officer rename still fills ASSIGNED FTO');
 
 // ---------------------------------------------------------------- //
 section('Roles resolve from the data, not from what the browser claims');
@@ -293,20 +322,31 @@ approveSignoffV1(HR + 1, 'Directly observed on two separate shifts and verified.
 let q = readTabV1_(PORTAL.TAB.QUEUE);
 ok(q.rows[0][q.col['DECISION']] === 'Approve sign-off', 'a proper approval records the decision');
 ok(q.rows[0][q.col['DECIDED BY']] === 'chief@example.org', 'against the real signed-in account');
-// The portal STAGES the decision and stops. recordDecisionForRowV20_1_ in the
-// tracker is the only writer to 21 SKILL SIGN-OFF LOG, and it refuses any row
-// that is not OPEN - so closing the row here would have meant the approval
-// never reached the permanent log AND could never be recorded afterwards.
-ok(q.rows[0][q.col['RECORD STATUS']] === 'OPEN',
-   'and leaves the row OPEN, so the tracker can still record it');
+ok(q.rows[0][q.col['RECORD STATUS']] === 'RECORDED',
+   'and closes the queue row as RECORDED');
+const so = readTabV1_(PORTAL.TAB.SIGNOFF);
+ok(so.ok && so.rows.some(r => /Jamie Rivers/.test(String(r[so.col['TRAINEE']]||'')) &&
+   /Approve sign-off|Intubation/.test(JSON.stringify(r))),
+   'and appends a permanent row on the sign-off log');
 threw = false;
 try { approveSignoffV1(HR + 1, 'Watched it again and it was clean.'); }
-catch (e) { threw = /already staged/.test(e.message); }
+catch (e) { threw = /not OPEN|already/.test(e.message); }
 ok(threw, 'and a second approval on the same row is refused rather than doubled');
 threw = false;
-try { approveSignoffV1(HR + 1, 'A perfectly good reason.', 'SOME-OTHER-REQUEST'); }
+try {
+  // fresh OPEN row 2
+  approveSignoffV1(HR + 2, 'A perfectly good reason.', 'SOME-OTHER-REQUEST');
+}
 catch (e) { threw = /not the row you were looking at/.test(e.message); }
 ok(threw, 'and a stale screen whose row has moved is refused, not written');
+
+world(); as('chief@example.org');
+ok(typeof returnSignoffV1 === 'function', 'returnSignoffV1 exists in Field Training');
+returnSignoffV1(HR + 1, 'Needs two more independent reps on different dates.');
+q = readTabV1_(PORTAL.TAB.QUEUE);
+ok(q.rows[0][q.col['DECISION']] === 'Return for more evidence', 'a return records the honest decision');
+ok(q.rows[0][q.col['RECORD STATUS']] === 'RETURNED', 'and closes the row as RETURNED');
+ok(PORTAL.PRODUCT === 'Field Training' || /Field Training/.test(PORTAL.TITLE), 'product branding is Field Training');
 
 world(); as('jamie@example.org');
 threw = false;
@@ -628,15 +668,14 @@ ok(!vis.ok, 'so nothing is authorised');
 ok(vis.role !== PORTAL.ROLE.DIVISION,
    'NOT the Training Division, which is what the owner fallback made them');
 
-// the page itself
+// the page itself — doGet is a shell only (no spreadsheet). Identity loads via refreshV1.
 let page = doGet({});
 let bootJson = JSON.parse(page._t.boot);
-ok(bootJson.viewer.role === PORTAL.ROLE.NONE, 'doGet hands the browser no role');
+ok(bootJson.deferred === true, 'doGet serves a deferred shell so OAuth cannot blank the page');
+ok(bootJson.viewer.role === PORTAL.ROLE.NONE, 'doGet hands the browser no role yet');
 ok(JSON.stringify(bootJson.data) === '{}', 'and an empty payload');
 ok(!/Jamie Rivers|Alex Bramble|Priya Okafor/.test(page._t.boot),
-   'no trainee name reaches the browser');
-ok(/signed in with/.test(bootJson.viewer.why) || /which account/.test(bootJson.viewer.why),
-   'the page says why, in terms of what to change');
+   'no trainee name reaches the browser on first paint');
 
 // and every action a browser can reach
 PROPS[PORTAL.PROPERTY_MODE] = PORTAL.MODE_STAGING;
@@ -655,6 +694,8 @@ deployedAsOwner('chief@example.org');
 const refreshed = refreshV1();
 ok(refreshed.viewer.role === PORTAL.ROLE.NONE, 'refreshV1 gives them nothing either');
 ok(JSON.stringify(refreshed.data) === '{}', 'with no data attached');
+ok(/signed in with/.test(refreshed.viewer.why) || /which account/.test(refreshed.viewer.why),
+   'refresh explains why, in terms of what to change');
 
 // the same owner, actually signed in, is still the Division. The fix must not
 // lock the person the portal is for out of it.

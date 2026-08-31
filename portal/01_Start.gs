@@ -199,7 +199,8 @@ function START() {
         run: 'addFto',
         why: 'Those trainees are on nobody\'s list. If that officer is new, set ' +
              PORTAL_ADD_FTO_PROPERTY + ' to their name and address and run addFto. ' +
-             'If it is a name that changed, use PORTAL_RENAME and applyRename instead.' });
+             'If it is a name that changed, use PORTAL_RENAME and applyRename instead. ' +
+             'To enroll a new trainee from Field Training, use Bring someone on (or addTrainee).' });
     }
   } catch (e) {}
 
@@ -391,6 +392,9 @@ function START() {
 
 /** What is set, what it is pointed at, whether it can write. */
 function WHERE_AM_I() { return showSettings(); }
+
+/** Short portal link for the crew (and how to set one). */
+function PORTAL_ADDRESS() { return portalAddress(); }
 
 /** Everything that is wrong, in one report. */
 function CHECK_EVERYTHING() { return productionReadinessCheck(); }

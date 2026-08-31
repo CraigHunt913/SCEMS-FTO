@@ -1,9 +1,10 @@
-# Deploying SCEMS v20.2
+# Deploying SCEMS v20.6
 
-One function. Paste the code, then run **`START_HERE`**.
+One function to install. One function to make the estate elite.
 
 ```
-START_HERE()                                   // does everything, in order
+START_HERE()                                   // install / upgrade, in order
+ELITE_ESTATE()                                 // safe repairs: forms, engine, recovery
 deploymentStatusV20_2()                        // read-only, safe any time
 ```
 
@@ -11,14 +12,20 @@ deploymentStatusV20_2()                        // read-only, safe any time
 pass any. It works out who you are from the session, so there is nothing to
 type. See STEP-BY-STEP.md for click-by-click instructions.
 
-Both are in the script editor. `deploymentStatusV20_2` is also on the menu
-under **SCEMS ▸ Admin ▸ Deployment status**.
+Both are in the script editor. `deploymentStatusV20_2` and `ELITE_ESTATE`
+are also on the menu under **SCEMS ▸ Admin**.
 
 ---
 
 ## First time
 
-1. **Paste `Code.gs`** over the existing script project and save.
+1. **Paste `Code.gs` from branch `cursor/elite-tracker-estate-adde`** over the
+   existing script project and save.
+
+   https://github.com/CraigHunt913/SCEMS-FTO/blob/cursor/elite-tracker-estate-adde/Code.gs
+
+   If Admin still has no **Make the estate elite** item, the old file is still
+   installed — paste again from that link, save, reload the sheet.
 
 2. **Reload the spreadsheet.** The `SCEMS` menu rebuilds itself on open. If
    it does not appear, the file did not save — check for a red error marker
@@ -41,10 +48,17 @@ under **SCEMS ▸ Admin ▸ Deployment status**.
 
    Every step is re-runnable. If it stops, fix that step and run it again.
 
-4. **Work the health check** until it reports `CLEAR` or only `INFO` lines.
-   It names the exact function to run for each finding.
+4. **Run `ELITE_ESTATE`** (or **SCEMS ▸ Admin ▸ Make the estate elite**).
+   Archives backup form clones, repairs the phase-engine `#REF!`, fixes the
+   decision-queue header, recovers lost skills submissions, protects record
+   tabs. Deletes nothing. Orphan Form Responses tabs are reported only —
+   clean those on a Drive copy per the handover doc.
 
-5. **Stay in TEST mode** until step 4 is clean. `goLive()` is the switch, and
+5. **Work the health check** until it reports `CLEAR` or only `INFO` lines.
+   It names the exact function to run for each finding — including Drive
+   sprawl, the orphan twin spreadsheet, and engine damage.
+
+6. **Stay in TEST mode** until step 5 is clean. `goLive()` is the switch, and
    the health check reports a `BLOCKER` for as long as you are in TEST,
    because in TEST mode every alert — including unsafe outcomes and 72-hour
    breaches — goes to the test inbox and reaches nobody else.

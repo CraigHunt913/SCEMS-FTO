@@ -4,8 +4,14 @@
  * The nine Google Forms already in service stay exactly as they are. They are
  * the WRITE surface of this system: a submission goes where it has always
  * gone, through the triggers that already exist. This portal is the READ
- * surface and the router. It never edits a form, never changes a trigger,
- * and never submits on anyone's behalf.
+ * surface and the router. It never changes a trigger, never rewrites form
+ * structure, and never submits on anyone's behalf.
+ *
+ * One exception, on purpose: when a trainee or FTO is added here,
+ * syncRegisteredFormChoicesV1_ refreshes Trainee / FTO LIST choices on those
+ * same registered forms so the dropdowns already in service offer the new
+ * name. That is how Field Training links a new person to the forms you already have
+ * — without creating a tenth form.
  *
  * What this file adds is the part that was missing: one authoritative list of
  * which form is which, who it belongs to, and what it is for, so that a person
@@ -313,6 +319,105 @@ function allFormsForV1_(role, values) {
 function retiredFormsV1_() {
   return PORTAL_FORMS.filter(function (f) { return f.retired; })
     .map(function (f) { return { key: f.key, title: f.title, why: f.retiredWhy || '' }; });
+}
+
+/**
+ * Keep the existing forms' Trainee / FTO dropdowns in step with the master
+ * and roster. Called after addTrainee / addFto / undo.
+ *
+ * Only touches LIST items whose titles match the names the tracker already
+ * syncs. Never adds questions, never changes destinations, never submits.
+ */
+function syncRegisteredFormChoicesV1_() {
+  var out = { ok: false, forms: 0, notes: [], why: '' };
+  var active;
+  try {
+    active = traineesV1_().filter(function (t) { return !t.closed; });
+  } catch (e) {
+    out.why = String(e.message || e);
+    return out;
+  }
+  var allNames = active.map(function (t) { return t.name; }).sort();
+  var byLevel = { emt: [], aemt: [], pmd: [] };
+  active.forEach(function (t) {
+    var k = t.levelKey || levelKeyV1_(t.level);
+    if (byLevel[k]) byLevel[k].push(t.name);
+  });
+  Object.keys(byLevel).forEach(function (k) { byLevel[k].sort(); });
+
+  var ftos = [];
+  try {
+    rosterActivePeopleV1_().forEach(function (p) {
+      if (p.name && ftos.indexOf(p.name) < 0) ftos.push(p.name);
+    });
+  } catch (e2) {}
+  ftos.sort();
+
+  if (typeof FormApp === 'undefined' || !FormApp.openById) {
+    out.why = 'FormApp is not available in this runtime';
+    return out;
+  }
+
+  var touched = 0;
+  PORTAL_FORMS.forEach(function (entry) {
+    if (entry.retired) return;
+    var form;
+    try { form = FormApp.openById(entry.id); }
+    catch (eOpen) {
+      out.notes.push((entry.title || entry.key) + ' unreadable');
+      return;
+    }
+    var traineeList = entry.level
+      ? (byLevel[entry.level] || []).slice()
+      : allNames.slice();
+    var items;
+    try {
+      items = FormApp.ItemType && FormApp.ItemType.LIST
+        ? form.getItems(FormApp.ItemType.LIST)
+        : form.getItems().filter(function (it) {
+            try { return it.getType && String(it.getType()) === 'LIST'; }
+            catch (eT) { return false; }
+          });
+    } catch (eItems) {
+      try { items = form.getItems(); } catch (e2) { items = []; }
+    }
+    var changed = false;
+    (items || []).forEach(function (it) {
+      var title = '';
+      try { title = String(it.getTitle() || '').trim(); } catch (eTitle) { return; }
+      var li;
+      try { li = it.asListItem(); } catch (eLi) { return; }
+      if (!li || !li.setChoiceValues) return;
+
+      if (title === 'Trainee' || title === 'Trainee involved') {
+        var list = traineeList.length ? traineeList
+                 : (entry.level ? ['none at this level'] : ['none']);
+        try { li.setChoiceValues(list); changed = true; } catch (eSet) {}
+      } else if (title === 'Trainee you are covering') {
+        try {
+          li.setChoiceValues(allNames.length ? allNames : ['none']);
+          changed = true;
+        } catch (eSet2) {}
+      } else if (title === 'FTO name') {
+        try {
+          li.setChoiceValues(ftos.length ? ftos : ['none in scope']);
+          changed = true;
+        } catch (eSet3) {}
+      }
+    });
+    if (changed) {
+      touched++;
+      out.notes.push((entry.title || entry.key) + ' refreshed');
+    }
+  });
+
+  out.ok = touched > 0 || allNames.length === 0;
+  out.forms = touched;
+  if (!touched && allNames.length) {
+    out.why = 'no LIST items matched on the registered forms';
+    out.ok = false;
+  }
+  return out;
 }
 
 /* ---------------- one-click operator functions ---------------- */
