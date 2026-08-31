@@ -2,7 +2,7 @@
 
 **File:** [`portal/SCEMS_PORTAL_ONE_FILE.gs`](./SCEMS_PORTAL_ONE_FILE.gs)
 
-**Current version:** look for `VERSION: 'portal-2.9.0'` near the top (or run `portalPasteCheck` after paste).
+**Current version:** look for `VERSION: 'portal-2.10.0'` near the top (or run `portalPasteCheck` after paste).
 
 ## GitHub (easiest)
 
@@ -14,7 +14,11 @@ Raw: https://raw.githubusercontent.com/CraigHunt913/SCEMS-FTO/cursor/the-line-pr
 
 ## After paste
 
-`portalPasteCheck` → **portal-2.9.0**
+`portalPasteCheck` → **portal-2.10.0**
+
+## Faster load (2.10.0)
+
+Division **Decide / Moves / People** open from master + queue only. Inbox (forms waiting, Settle) and a trainee’s skills/forms load **after** the desk is up — that is intentional so first paint is not stuck on FormApp.
 
 ## Monday emails (tracker — not portal)
 
@@ -31,7 +35,7 @@ Only **Active** trainees get status cards. Use **End training / close** on a tra
 - **Decide** — sign-off queue + ready for the truck  
 - **Moves** — need a look / holding  
 - **People** — open any trainee  
-- **Inbox** — forms waiting + Settle + file something  
+- **Inbox** — forms waiting + Settle + file something (loads after first paint)  
 - **Menu** — add trainee, add FTO, sync matrix, refresh queue, released reports  
 
 On a trainee record: **Clear for the truck** (graduation) or **End training / close** (stops weekly mail; not truck clearance).

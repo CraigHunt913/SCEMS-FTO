@@ -463,6 +463,7 @@ function traineePayloadV1_(viewer) {
 function ftoPayloadV1_(viewer) {
   var mine = traineesV1_().filter(function (t) {
     return !t.closed && normNameV1_(t.fto) === normNameV1_(viewer.name); });
+  // Forms + freshness open FormApp / every source tab — load on openTrainee via personDetailV1.
   return {
     product: PORTAL.PRODUCT,
     name: viewer.name,
@@ -483,11 +484,9 @@ function ftoPayloadV1_(viewer) {
         waitingCount: waiting.length,
         urgency: urgency,
         setupComplete: t.setupComplete,
-        forms: safeFormsV1_(function () {
-          return traineeFormsForV1_(PORTAL.ROLE.FTO, t,
-            { fto: viewer.name, trainee: t.name });
-        }),
-        freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); })
+        forms: null,
+        freshness: null,
+        detailLoaded: false
       };
     }),
     forms: safeFormsV1_(function () {
@@ -533,14 +532,15 @@ function strandedTraineesV1_() {
 function divisionPayloadV1_() {
   var all = traineesV1_();
   var active = all.filter(function (t) { return !t.closed; });
-  var open = openQueueV1_().filter(function (q) { return !q.decision; });
+  var queueAll = openQueueV1_();
+  var open = queueAll.filter(function (q) { return !q.decision; });
   // Oldest OPEN first — the desk works the backlog, not sheet order.
   open.sort(function (a, b) {
     var ha = (a.hours < 0 ? 0 : a.hours);
     var hb = (b.hours < 0 ? 0 : b.hours);
     return hb - ha;
   });
-  var staged = openQueueV1_().filter(function (q) { return !!q.decision; });
+  var staged = queueAll.filter(function (q) { return !!q.decision; });
 
   // A trainee whose officer does not resolve is not "set up", whatever else
   // is filled in. Counting them as complete is how they went missing.
@@ -558,15 +558,42 @@ function divisionPayloadV1_() {
     if (seen[t.norm]) dupes.push(t.name); else seen[t.norm] = true;
   });
 
-  var settleWarn = '';
-  var duplicateSubs = [];
-  try {
-    duplicateSubs = duplicateSubmissionsV1_() || [];
-  } catch (eDup) {
-    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
-      '. The rest of Waiting on you is still live.';
-    duplicateSubs = [];
-  }
+  // Home load stays sheet-only. FormApp, form-response scans, freshness, and
+  // per-trainee skills used to run here for every active person — that is why
+  // Division felt frozen on open. Inbox + person sheet load those on demand.
+  var releaseReady = [];
+  var people = active.map(function (t) {
+    var last = lastEvalForV1_(t.norm);
+    var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
+    var why = '';
+    if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
+    else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
+    else if (days < 0) why = 'never evaluated';
+    else if (days > 14) why = days + ' days since an evaluation';
+    else if (!t.setupComplete) why = 'record incomplete';
+    var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
+    var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
+    var next = nextPhaseV1_(t.phase);
+    var phase4 = phaseIndexV1_(t.phase) === 3;
+    // Clearance only when Phase 4 — skips skills matrix for everyone earlier.
+    var clear = phase4 ? clearanceAssessmentV1_(t)
+                       : { phase4: false, canClear: false, signed: 0, total: 0, gaps: [] };
+    if (clear.canClear) {
+      releaseReady.push({ name: t.name, level: t.level, signed: clear.signed, total: clear.total });
+    }
+    return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
+             fto: t.fto || '', shift: t.shift || '',
+             dayInPhase: dayInPhaseV1_(t),
+             nextPhase: next,
+             canAdvance: !!next,
+             releaseReady: !!clear.canClear,
+             phase4: phase4,
+             clearance: clear,
+             days: days, status: t.status || '', needs: why, ack: ack,
+             nextMove: move,
+             // Filled by personDetailV1 when the record opens.
+             skills: null, forms: null, freshness: null, detailLoaded: false };
+  });
 
   return {
     activeCount: active.length,
@@ -585,16 +612,12 @@ function divisionPayloadV1_() {
       };
     }),
     queueCount: open.length,
-    // Legacy half-staged rows (OPEN + decision filled) — rare after portal
-    // records permanently. Still listed so Division can finish orphans.
     staged: staged.map(function (q) {
       return { trainee: q.trainee, skill: q.skill, decision: q.decision,
                by: q.decidedBy, since: daysAgoTextV1_(q.since) };
     }),
     canAssignFto: mayWriteV1_(),
-    // A column this screen leans on that is not there. Doctrine: report it,
-    // never read the one beside it and hope.
-    warnings: [evalHeaderProblemV1_(), settleWarn].filter(function (w) { return !!w; }),
+    warnings: [evalHeaderProblemV1_()].filter(function (w) { return !!w; }),
     incomplete: incomplete.map(function (t) {
       var missing = [];
       if (!t.level) missing.push('level');
@@ -604,57 +627,16 @@ function divisionPayloadV1_() {
       if (f) missing.push(f);
       return { name: t.name, missing: missing.join(', ') };
     }),
-    // Whatever the tracker says, nobody active is invisible. This is the list
-    // of people no officer's screen will show, with the reason for each.
     stranded: stranded,
     duplicates: dupes,
-    releaseReady: active.filter(function (t) {
-      return clearanceAssessmentV1_(t).canClear;
-    }).map(function (t) {
-      var a = clearanceAssessmentV1_(t);
-      return { name: t.name, level: t.level, signed: a.signed, total: a.total };
-    }),
-    // Every active trainee, each carrying enough for the screen to decide
-    // whether it needs to say anything about them at all. A list of ten
-    // identical rows of names is not information; it is my internals on somebody's
-    // phone. The screen shows the exceptions and counts the rest.
-    people: active.map(function (t) {
-      var last = lastEvalForV1_(t.norm);
-      var days = last ? Math.floor((new Date() - last) / 86400000) : -1;
-      var why = '';
-      if (ftoProblemV1_(t)) why = ftoProblemV1_(t);
-      else if (/not responding|remediation|concern/i.test(t.status)) why = t.status;
-      else if (days < 0) why = 'never evaluated';
-      else if (days > 14) why = days + ' days since an evaluation';
-      else if (!t.setupComplete) why = 'record incomplete';
-      // Seen, by a named person, in their own words, for a stated time. The
-      // finding is not cleared and never can be - it moves out of the alarm
-      // list until the hold runs out, and comes straight back after.
-      var ack = why ? liveAckForV1_(t.norm, why, acks) : null;
-      var move = why ? nextMoveFromFindingV1_(why, t.name) : null;
-      var next = nextPhaseV1_(t.phase);
-      var clear = clearanceAssessmentV1_(t);
-      return { name: t.name, level: t.level, levelKey: t.levelKey, phase: t.phase,
-               fto: t.fto || '', shift: t.shift || '',
-               dayInPhase: dayInPhaseV1_(t),
-               nextPhase: next,
-               canAdvance: !!next,
-               releaseReady: clear.canClear,
-               phase4: clear.phase4,
-               clearance: clear,
-               days: days, status: t.status || '', needs: why, ack: ack,
-               nextMove: move,
-               skills: safeFormsV1_(function () { return skillsForV1_(t.norm); }) || [],
-               forms: safeFormsV1_(function () {
-                 return traineeFormsForV1_(PORTAL.ROLE.DIVISION, t, { trainee: t.name });
-               }),
-               freshness: safeFormsV1_(function () { return freshnessForV1_(t.name); }) };
-    }),
-    forms: safeFormsV1_(function () {
-      return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
-    }),
-    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }),
-    // Officers the Bring-someone-on form can assign. Exact roster spellings.
+    releaseReady: releaseReady,
+    people: people,
+    // Inbox extras — filled by divisionInboxV1 after first paint.
+    forms: [],
+    retiredForms: [],
+    duplicateSubs: [],
+    formWaiting: { waiting: 0, skillsWaiting: 0, total: 0, list: [], pending: true },
+    inboxLoaded: false,
     officers: (function () {
       try {
         return rosterActivePeopleV1_().map(function (p) {
@@ -666,22 +648,6 @@ function divisionPayloadV1_() {
     })(),
     canAddTrainee: mayWriteV1_(),
     canAddFto: mayWriteV1_(),
-    // Where two submissions of the same kind landed on the same day. Both are
-    // kept; this is the list of calls to make, not a list of rows to remove.
-    duplicateSubs: duplicateSubs,
-    // Raw Form Responses tabs (esp. skills logs) waiting for tracker ingest.
-    formWaiting: (function () {
-      try {
-        var w = waitingFormResponsesV1_();
-        return {
-          waiting: w.waiting,
-          skillsWaiting: w.skillsWaiting,
-          total: w.total,
-          list: (w.waitingList || []).slice(0, 25)
-        };
-      } catch (eW) { return { waiting: 0, skillsWaiting: 0, total: 0, list: [] }; }
-    })(),
-    // Released / closed — prior reports (print / PDF) without the tracker.
     closedPeople: all.filter(function (t) { return t.closed; }).map(function (t) {
       return { name: t.name, level: t.level, levelKey: t.levelKey,
                status: t.status || 'Closed', fto: t.fto || '', phase: t.phase || '' };
@@ -689,6 +655,84 @@ function divisionPayloadV1_() {
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
     product: PORTAL.PRODUCT
+  };
+}
+
+/**
+ * Heavy Inbox pieces — form waiting, Settle duplicates, file-something links.
+ * Called after Division home paints so the desk is usable first.
+ */
+function divisionInboxV1() {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok || viewer.role !== PORTAL.ROLE.DIVISION) {
+    throw new Error(viewer.why || 'Only the Training Division may open the inbox.');
+  }
+  var settleWarn = '';
+  var duplicateSubs = [];
+  try {
+    duplicateSubs = duplicateSubmissionsV1_() || [];
+  } catch (eDup) {
+    settleWarn = 'Settle list could not be built — ' + String((eDup && eDup.message) || eDup) +
+      '. The rest of the desk is still live.';
+    duplicateSubs = [];
+  }
+  var formWaiting = { waiting: 0, skillsWaiting: 0, total: 0, list: [] };
+  try {
+    var w = waitingFormResponsesV1_();
+    formWaiting = {
+      waiting: w.waiting,
+      skillsWaiting: w.skillsWaiting,
+      total: w.total,
+      list: (w.waitingList || []).slice(0, 25)
+    };
+  } catch (eW) {}
+  return {
+    inboxLoaded: true,
+    settleWarn: settleWarn,
+    duplicateSubs: duplicateSubs,
+    formWaiting: formWaiting,
+    forms: safeFormsV1_(function () {
+      return generalFormsForV1_(PORTAL.ROLE.DIVISION, {});
+    }) || [],
+    retiredForms: safeFormsV1_(function () { return retiredFormsV1_(); }) || []
+  };
+}
+
+/**
+ * Skills / forms / freshness for one trainee — loaded when Division opens
+ * their record, not when the desk first paints.
+ */
+function personDetailV1(traineeName) {
+  var viewer = resolveViewerV1_(whoIsVisitingV1_());
+  if (!viewer.ok) throw new Error(viewer.why || 'This account is not recognised.');
+  if (viewer.role !== PORTAL.ROLE.DIVISION && viewer.role !== PORTAL.ROLE.FTO) {
+    throw new Error('Only Division or an FTO may open that detail.');
+  }
+  var who = String(traineeName || '').trim();
+  var want = normNameV1_(who);
+  var rec = null;
+  traineesV1_().forEach(function (t) { if (t.norm === want) rec = t; });
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (viewer.role === PORTAL.ROLE.FTO &&
+      normNameV1_(rec.fto) !== normNameV1_(viewer.name)) {
+    throw new Error('That trainee is not assigned to you.');
+  }
+  var clear = clearanceAssessmentV1_(rec);
+  return {
+    name: rec.name,
+    skills: safeFormsV1_(function () { return skillsForV1_(rec.norm); }) || [],
+    forms: safeFormsV1_(function () {
+      if (viewer.role === PORTAL.ROLE.FTO) {
+        return traineeFormsForV1_(PORTAL.ROLE.FTO, rec,
+          { fto: viewer.name, trainee: rec.name });
+      }
+      return traineeFormsForV1_(PORTAL.ROLE.DIVISION, rec, { trainee: rec.name });
+    }) || [],
+    freshness: safeFormsV1_(function () { return freshnessForV1_(rec.name); }) || [],
+    clearance: clear,
+    releaseReady: !!clear.canClear,
+    phase4: !!clear.phase4,
+    detailLoaded: true
   };
 }
 

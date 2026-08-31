@@ -365,14 +365,16 @@ Object.keys(FORMS).forEach(k => { FORM_FAILS[k] = 'Forms scope not granted'; });
 clearFormCache();
 const stillWorks = payloadFor('dana@example.org');
 ok(stillWorks.trainees.length === 3, 'an FTO still sees every trainee assigned to them');
-ok(stillWorks.trainees[0].forms.length > 0, 'the cards are still built from the fallback URL');
+ok(stillWorks.trainees[0].forms === null,
+   'Tonight lists people first — per-trainee form cards load when a name is opened');
 
 world();
 global.FormApp = undefined;                          // the scope was never granted at all
 clearFormCache();
 const noFormApp = payloadFor('dana@example.org');
 ok(noFormApp.trainees.length === 3, 'with no FormApp at all the FTO still gets their people');
-ok(Array.isArray(noFormApp.trainees[0].forms), 'and an empty form list rather than an exception');
+ok(noFormApp.trainees[0].forms === null,
+   'and home does not throw trying to build form cards');
 global.FormApp = { openById: id2 => { FORM_READS++;
   if (FORM_FAILS[id2]) throw new Error(FORM_FAILS[id2]);
   if (!FORMS[id2]) throw new Error('No item with the given ID could be found');
@@ -392,7 +394,8 @@ const dana = payloadFor('dana@example.org');
 const danaNames = dana.trainees.map(t => t.name);
 ok(danaNames.indexOf('Priya Okafor') < 0, 'Marcus’s trainee is not in Dana’s list');
 dana.trainees.forEach(t => {
-  const own = (t.forms || []).map(f => f.url).join(' ');
+  const detail = personDetailV1(t.name);
+  const own = (detail.forms || []).map(f => f.url).join(' ');
   ok(own.indexOf(encodeURIComponent(t.name).replace(/%20/g, '')) >= 0 ||
      own.indexOf(t.name.split(' ')[0]) >= 0,
      t.name + '’s cards carry ' + t.name.split(' ')[0] + '’s name');
@@ -760,7 +763,13 @@ if (api) {
   ok(!/Priya Okafor/.test(html), 'and nobody else’s');
   ok(api.canWrite() === false, 'canWrite() is false against the live tracker');
 
-  api.S.screen = 'trainee'; api.S.ctx = bootObj.data.trainees[0]; api.render();
+  api.S.screen = 'trainee';
+  api.S.ctx = Object.assign({}, bootObj.data.trainees[0], {
+    detailLoaded: true,
+    forms: traineeFormsForV1_(PORTAL.ROLE.FTO, bootObj.data.trainees[0],
+      { fto: 'Dana Whitlock', trainee: bootObj.data.trainees[0].name })
+  });
+  api.render();
   const sheet = nodes['view'].innerHTML;
   ok(/End-of-shift evaluation/.test(sheet), 'opening a trainee offers the evaluation');
   ok(/Log a skill/.test(sheet), 'and the skills log');
@@ -816,6 +825,8 @@ const divBoot = { version: PORTAL.VERSION, mode: 'LIVE',
           people: divPeople,
           incomplete: [], stranded: [], duplicates: [],
           forms: [], retiredForms: [], formLinks: true,
+          inboxLoaded: true,
+          formWaiting: { waiting: 0, skillsWaiting: 0, total: 0, list: [] },
           duplicateSubs: [
             { trainee: 'Elizabeth McInville', source: 'Skill logged',
               group: 'ePCR documentation', when: 'Mon Aug 17 2026', count: 9,

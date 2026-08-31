@@ -735,10 +735,52 @@ function paintFto(d){
   if (d.forms && d.forms.length) h += sec('Blank forms')+formCards(d.forms);
   paint(h);
 }
+function openPerson(i){
+  var t = (BOOT.data.people||[])[i];
+  if (!t) return;
+  S.ctx = t; S.screen = 'person'; render();
+  if (!t.detailLoaded) loadPersonDetail_(t.name, 'person');
+}
 function openTrainee(i){
   var t = (BOOT.data.trainees||[])[i];
   if (!t) return;
   S.ctx = t; S.screen = 'trainee'; render();
+  if (!t.detailLoaded) loadPersonDetail_(t.name, 'trainee');
+}
+function loadPersonDetail_(name, screen){
+  if (S.detailBusy) return;
+  S.detailBusy = true;
+  google.script.run
+    .withSuccessHandler(function(d){
+      S.detailBusy = false;
+      if (!d || !d.name) return;
+      // Merge into the list entry and the open sheet context.
+      var lists = [BOOT.data.people, BOOT.data.trainees];
+      lists.forEach(function(list){
+        if (!list) return;
+        list.forEach(function(p){
+          if (!normMatch(p.name, d.name)) return;
+          p.skills = d.skills; p.forms = d.forms; p.freshness = d.freshness;
+          if (d.clearance) p.clearance = d.clearance;
+          if (d.releaseReady != null) p.releaseReady = d.releaseReady;
+          if (d.phase4 != null) p.phase4 = d.phase4;
+          p.detailLoaded = true;
+        });
+      });
+      if (S.ctx && normMatch(S.ctx.name, d.name)){
+        S.ctx.skills = d.skills; S.ctx.forms = d.forms; S.ctx.freshness = d.freshness;
+        if (d.clearance) S.ctx.clearance = d.clearance;
+        if (d.releaseReady != null) S.ctx.releaseReady = d.releaseReady;
+        if (d.phase4 != null) S.ctx.phase4 = d.phase4;
+        S.ctx.detailLoaded = true;
+      }
+      if (S.screen === screen || S.screen === 'person' || S.screen === 'trainee') render();
+    })
+    .withFailureHandler(function(e){
+      S.detailBusy = false;
+      alert(e.message || e);
+    })
+    .personDetailV1(name);
 }
 function paintTraineeSheet(){
   var t = S.ctx || {};
@@ -758,9 +800,13 @@ function paintTraineeSheet(){
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
   h += sec('File something for '+firstName(t.name));
-  h += (t.forms && t.forms.length)
-    ? formCards(t.forms)
-    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading forms…</b></div>';
+  } else {
+    h += (t.forms && t.forms.length)
+      ? formCards(t.forms)
+      : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  }
   if (canWrite() && (BOOT.viewer.role === 'FTO' || BOOT.viewer.role === 'TRAINING_DIVISION')){
     h += sec('Coaching note');
     h += '<div class="panel"><div class="lab">Note for '+esc(firstName(t.name))+'</div>'+
@@ -891,6 +937,28 @@ function setDivTab(id){
   S.screen = 'main';
   render();
   try { window.scrollTo(0, 0); } catch (e) {}
+  if (S.divTab === 'inbox') ensureDivisionInbox_();
+}
+
+function ensureDivisionInbox_(){
+  if (!BOOT.data || BOOT.data.inboxLoaded || S.inboxBusy) return;
+  S.inboxBusy = true;
+  google.script.run
+    .withSuccessHandler(function(inbox){
+      S.inboxBusy = false;
+      if (!inbox) return;
+      BOOT.data.inboxLoaded = true;
+      BOOT.data.duplicateSubs = inbox.duplicateSubs || [];
+      BOOT.data.formWaiting = inbox.formWaiting || { waiting: 0, list: [] };
+      BOOT.data.forms = inbox.forms || [];
+      BOOT.data.retiredForms = inbox.retiredForms || [];
+      if (inbox.settleWarn){
+        BOOT.data.warnings = (BOOT.data.warnings || []).concat([inbox.settleWarn]);
+      }
+      if (S.screen === 'main') render();
+    })
+    .withFailureHandler(function(){ S.inboxBusy = false; })
+    .divisionInboxV1();
 }
 
 function paintDivWaiting_(d, q, ready, showReady){
@@ -956,6 +1024,11 @@ function paintDivPeople_(d, quiet){
 
 function paintDivInbox_(d, fw, house){
   var h = '';
+  if (!d.inboxLoaded){
+    h += '<div class="note n-info"><b>Loading inbox…</b>Form responses and Settle load after the desk is open.</div>';
+    ensureDivisionInbox_();
+    return h;
+  }
   if ((fw.waiting || 0) > 0){
     h += sec('Skills log & forms waiting', fw.waiting);
     h += '<p class="sub" style="margin-bottom:9px">'+
@@ -1158,17 +1231,16 @@ function deskDetails(d){
   return h;
 }
 
-function openPerson(i){
-  var t = (BOOT.data.people||[])[i];
-  if (!t) return;
-  S.ctx = t; S.screen = 'person'; render();
-}
 function paintPersonSheet(){
   var t = S.ctx || {};
   var clear = t.clearance || {};
   var h = hero('Trainee record', t.name,
     lvlChip(t.levelKey,t.level)+' &nbsp; '+esc(t.phase||'no phase set'))+
     '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
+
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading record…</b>Skills and forms are loading — the rest of the desk is already up.</div>';
+  }
 
   h += '<div class="panel">'+
        '<div class="lab">Where they are</div>'+
@@ -1307,9 +1379,13 @@ function paintPersonSheet(){
        '<span class="m">Every submission on file, most recent first.</span></span>'+
        '<span class="go">&rsaquo;</span></button>';
   h += sec('File something for '+firstName(t.name));
-  h += (t.forms && t.forms.length)
-    ? formCards(t.forms)
-    : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  if (!t.detailLoaded){
+    h += '<div class="note n-info"><b>Loading forms…</b></div>';
+  } else {
+    h += (t.forms && t.forms.length)
+      ? formCards(t.forms)
+      : '<div class="note n-info"><b>No forms available</b>Form links are switched off, or the registry could not reach them.</div>';
+  }
   paint(h);
 }
 
@@ -2172,6 +2248,8 @@ function startLine(){
       BOOT.deferred = false;
       S.screen = 'main';
       render();
+      // Inbox is heavy (FormApp / response tabs) — fill it in the background.
+      if (BOOT.viewer && BOOT.viewer.role === 'TRAINING_DIVISION') ensureDivisionInbox_();
     })
     .withFailureHandler(function(e){
       var msg = String((e && e.message) || e || 'unknown');
