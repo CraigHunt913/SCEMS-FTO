@@ -13,9 +13,11 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.10.1',
+  VERSION: 'portal-2.11.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
+  /** Short link people should open (Sites page or county vanity). */
+  PROPERTY_PUBLIC_URL: 'PORTAL_PUBLIC_URL',
 
   /** STAGING writes freely. PRODUCTION refuses every write. */
   MODE_STAGING: 'STAGING',
@@ -26,6 +28,13 @@ var PORTAL = Object.freeze({
   TITLE: 'Field Training — Sumter County EMS',
   PRODUCT: 'Field Training',
   COUNTY: 'Sumter County EMS',
+
+  /**
+   * Suggested short address: Google Sites Hub that embeds the web app.
+   * Operators set PORTAL_PUBLIC_URL to this (or a county redirect) so nobody
+   * has to paste the long /macros/s/… deployment URL.
+   */
+  DEFAULT_HUB_URL: 'https://sites.google.com/view/scemsfieldtraininghub/home',
 
   /** Tabs this portal reads. Names match the live tracker so the same code
    *  works against either, but it only ever opens the configured target. */

@@ -393,6 +393,9 @@ function START() {
 /** What is set, what it is pointed at, whether it can write. */
 function WHERE_AM_I() { return showSettings(); }
 
+/** Short portal link for the crew (and how to set one). */
+function PORTAL_ADDRESS() { return portalAddress(); }
+
 /** Everything that is wrong, in one report. */
 function CHECK_EVERYTHING() { return productionReadinessCheck(); }
 

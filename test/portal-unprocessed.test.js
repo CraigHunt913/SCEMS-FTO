@@ -528,9 +528,25 @@ ok(waitingFormResponsesV1_().waiting === wait2.waiting - 1,
 world();
 as('chief@example.org');
 const html = traineeReportHtmlV1('Annika Skye');
-ok(/Field Training report/.test(html) && /Annika Skye/.test(html),
+ok(/Training record summary/.test(html) && /Annika Skye/.test(html),
    'Division can pull a printable report');
 ok(/Print \/ Save as PDF/.test(html), 'report offers print-to-PDF');
+ok(/Sumter County EMS/.test(html) && /status-strip/.test(html),
+   'report uses county letterhead and a status strip');
+ok(/Oswald/.test(html) && /IBM Plex Sans/.test(html),
+   'report uses Field Training typefaces');
+
+section('Short portal address');
+ok(typeof setPortalShortAddress === 'function' && typeof portalAddress === 'function',
+   'short-address runners exist');
+const saved = setPortalShortAddress('https://sites.google.com/view/scemsfieldtraininghub/home');
+ok(/saved/i.test(saved), 'setPortalShortAddress confirms');
+ok(portalPublicUrlV1_() === 'https://sites.google.com/view/scemsfieldtraininghub/home',
+   'public URL prefers the short address');
+ok(/Give the crew this link/i.test(portalAddress()), 'portalAddress explains what to hand out');
+clearPortalShortAddress();
+ok(!PropertiesService.getScriptProperties().getProperty('PORTAL_PUBLIC_URL'),
+   'clearPortalShortAddress removes it');
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
 process.exit(FAIL ? 1 : 0);

@@ -297,6 +297,7 @@ function refreshV1() {
               ok: viewer.ok, why: viewer.why },
     data: payload,
     mode: safeModeV1_(),
+    portalUrl: portalPublicUrlV1_(),
     error: err
   };
 }

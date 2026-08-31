@@ -2,7 +2,7 @@
 
 **File:** [`portal/SCEMS_PORTAL_ONE_FILE.gs`](./SCEMS_PORTAL_ONE_FILE.gs)
 
-**Current version:** look for `VERSION: 'portal-2.10.1'` near the top (or run `portalPasteCheck` after paste).
+**Current version:** look for `VERSION: 'portal-2.11.0'` near the top (or run `portalPasteCheck` after paste).
 
 ## GitHub (easiest)
 
@@ -14,11 +14,26 @@ Raw: https://raw.githubusercontent.com/CraigHunt913/SCEMS-FTO/cursor/the-line-pr
 
 ## After paste
 
-`portalPasteCheck` → **portal-2.10.1**
+`portalPasteCheck` → **portal-2.11.0**
 
-## Sign-off headers (2.10.1)
+## PDF reports (2.11.0)
 
-Tracker plain-English queue header **Reason for the decision** maps back to `RATIONALE`, so Division Approve / Needs work writes again. No need to rename the spreadsheet header row.
+Trainee **Print / save PDF** uses county letterhead, a status strip, and Field Training type. Same print dialog → Save as PDF.
+
+## Short portal address (2.11.0)
+
+Hand the crew a short link, not the long `/macros/s/…` URL:
+
+1. Deploy the web app; copy the deployment URL.
+2. Embed that URL on the Sites Hub (or a county redirect):  
+   `https://sites.google.com/view/scemsfieldtraininghub/home`
+3. In the portal editor, run:
+
+```
+setPortalShortAddress("https://sites.google.com/view/scemsfieldtraininghub/home")
+```
+
+4. `portalAddress()` shows what to give people. Division **Menu** can copy the same link.
 
 ## Faster load (2.10.0)
 
@@ -40,6 +55,4 @@ Only **Active** trainees get status cards. Use **End training / close** on a tra
 - **Moves** — need a look / holding  
 - **People** — open any trainee  
 - **Inbox** — forms waiting + Settle + file something (loads after first paint)  
-- **Menu** — add trainee, add FTO, sync matrix, refresh queue, released reports  
-
-On a trainee record: **Clear for the truck** (graduation) or **End training / close** (stops weekly mail; not truck clearance).
+- **Menu** — portal link, add trainee, add FTO, sync matrix, refresh queue, released reports  

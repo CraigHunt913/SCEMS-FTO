@@ -11,7 +11,7 @@ const identity = fs.readFileSync(path.join(root, "portal/10_Identity.gs"), "utf8
 const config = fs.readFileSync(path.join(root, "portal/00_Config.gs"), "utf8");
 const record = fs.readFileSync(path.join(root, "portal/91_Record.gs"), "utf8");
 
-assert.match(config, /portal-2\.10\.1/);
+assert.match(config, /portal-2\.11\.0/);
 assert.match(
   record,
   /need = \['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'\]/

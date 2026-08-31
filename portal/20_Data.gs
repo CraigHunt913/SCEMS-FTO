@@ -654,7 +654,8 @@ function divisionPayloadV1_() {
     }),
     formLinks: safeBoolV1_(function () { return formLinksLiveV1_(); }),
     mode: modeV1_(),
-    product: PORTAL.PRODUCT
+    product: PORTAL.PRODUCT,
+    portalUrl: portalPublicUrlV1_()
   };
 }
 

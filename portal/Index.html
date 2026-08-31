@@ -1050,6 +1050,23 @@ function paintDivInbox_(d, fw, house){
 
 function paintDivMenu_(d, closed){
   var h = '<p class="sub" style="margin-bottom:12px">Roster, reports, and desk tools — off the main Decide screen.</p>';
+  var shareUrl = String((d && d.portalUrl) || BOOT.portalUrl || '').trim();
+  if (shareUrl){
+    h += sec('Portal link for the crew');
+    h += '<div class="panel" style="margin-bottom:14px">'+
+         '<div class="lab">Hand them this address</div>'+
+         '<div class="mono" style="word-break:break-all;font-size:.92rem;margin:6px 0 10px">'+esc(shareUrl)+'</div>'+
+         '<button type="button" class="btn ghost" onclick="copyPortalLink('+jsStr(shareUrl)+')">Copy link</button>'+
+         '<p class="sub" style="margin-top:10px">Set or change the short address in the Apps Script editor with '+
+         '<span class="mono">setPortalShortAddress("https://…")</span>. '+
+         'Suggested Sites Hub: sites.google.com/view/scemsfieldtraininghub</p>'+
+         '</div>';
+  } else {
+    h += '<div class="note n-info" style="margin-bottom:14px"><b>No short portal address yet</b>'+
+         'Deploy the web app, embed it on the Sites Hub (or a county redirect), then run '+
+         '<span class="mono">setPortalShortAddress("https://…")</span> in the portal project. '+
+         '<span class="mono">portalAddress()</span> prints both links.</div>';
+  }
   h += '<div class="menu-list">';
   if (d.canAddTrainee){
     h += '<button type="button" class="menu-row" onclick="openAddTrainee()">'+
@@ -2041,6 +2058,19 @@ function openTraineeReport(name){
     .traineeReportHtmlV1(name);
 }
 
+function copyPortalLink(url){
+  var u = String(url || '').trim();
+  if (!u) return;
+  function ok(){ alert('Copied.\n\n' + u); }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(u).then(ok).catch(function(){
+      window.prompt('Copy this portal link:', u);
+    });
+  } else {
+    window.prompt('Copy this portal link:', u);
+  }
+}
+
 function openSettle(i){
   var list = (BOOT.data && BOOT.data.duplicateSubs) || [];
   var item = list[i];
@@ -2231,6 +2261,7 @@ function recCard(s, isCurrent){
 function reload(){
   google.script.run.withSuccessHandler(function(r){
     BOOT.viewer = r.viewer; BOOT.data = r.data; BOOT.mode = r.mode;
+    if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;
     BOOT.error = r.error || ''; BOOT.deferred = false;
     S.screen = 'main'; render();
   }).withFailureHandler(function(e){ alert(e.message||e); }).refreshV1();
@@ -2244,6 +2275,7 @@ function startLine(){
       BOOT.viewer = r.viewer || BOOT.viewer;
       BOOT.data = r.data || {};
       BOOT.mode = r.mode || BOOT.mode;
+      if (r.portalUrl !== undefined) BOOT.portalUrl = r.portalUrl;
       BOOT.error = r.error || '';
       BOOT.deferred = false;
       S.screen = 'main';
