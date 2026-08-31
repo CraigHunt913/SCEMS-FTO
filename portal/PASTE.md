@@ -2,7 +2,7 @@
 
 **File:** [`portal/SCEMS_PORTAL_ONE_FILE.gs`](./SCEMS_PORTAL_ONE_FILE.gs)
 
-**Current version:** look for `VERSION: 'portal-2.10.0'` near the top (or run `portalPasteCheck` after paste).
+**Current version:** look for `VERSION: 'portal-2.10.1'` near the top (or run `portalPasteCheck` after paste).
 
 ## GitHub (easiest)
 
@@ -14,7 +14,11 @@ Raw: https://raw.githubusercontent.com/CraigHunt913/SCEMS-FTO/cursor/the-line-pr
 
 ## After paste
 
-`portalPasteCheck` → **portal-2.10.0**
+`portalPasteCheck` → **portal-2.10.1**
+
+## Sign-off headers (2.10.1)
+
+Tracker plain-English queue header **Reason for the decision** maps back to `RATIONALE`, so Division Approve / Needs work writes again. No need to rename the spreadsheet header row.
 
 ## Faster load (2.10.0)
 

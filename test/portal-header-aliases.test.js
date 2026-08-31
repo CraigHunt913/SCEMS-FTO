@@ -9,53 +9,76 @@ const path = require("path");
 const root = path.join(__dirname, "..");
 const identity = fs.readFileSync(path.join(root, "portal/10_Identity.gs"), "utf8");
 const config = fs.readFileSync(path.join(root, "portal/00_Config.gs"), "utf8");
+const record = fs.readFileSync(path.join(root, "portal/91_Record.gs"), "utf8");
 
 assert.match(config, /portal-2\.10\.1/);
+assert.match(
+  record,
+  /need = \['DECISION', 'DECIDED BY', 'DECISION DATE', 'RATIONALE', 'RECORD STATUS'\]/
+);
 
 assert.match(
   identity,
-  /"20 SKILL VALIDATION QUEUE"[\s\S]*?"REASON FOR THE DECISION":\s*"RATIONALE"/,
+  /'20 SKILL VALIDATION QUEUE'[\s\S]*?'REASON FOR THE DECISION':\s*'RATIONALE'/,
   "queue must alias Reason for the decision → RATIONALE"
 );
 assert.match(
   identity,
-  /"21 SKILL SIGN-OFF LOG"[\s\S]*?"REASON GIVEN":\s*"RATIONALE"/,
+  /'21 SKILL SIGN-OFF LOG'[\s\S]*?'REASON GIVEN':\s*'RATIONALE'/,
   "sign-off log must alias Reason given → RATIONALE"
 );
 
-// Simulate applyHeaderAliasesV1_ map building for a renamed queue header row
-const prettyHeaders = [
-  "Queue ID",
-  "Trainee Email",
-  "Skill ID",
-  "Status",
-  "Reason for the decision",
-  "Decided by (email)",
-  "When decided"
-];
-const aliases = {
-  "QUEUE ID": "QUEUE_ID",
-  "TRAINEE EMAIL": "TRAINEE_EMAIL",
-  "SKILL ID": "SKILL_ID",
-  STATUS: "STATUS",
-  "REASON FOR THE DECISION": "RATIONALE",
-  "DECIDED BY (EMAIL)": "DECIDED_BY_EMAIL",
-  "WHEN DECIDED": "DECIDED_AT"
+// Mirror readTabUncachedV1_ + applyHeaderAliasesV1_ for a renamed queue header row
+const aliasesByTab = {
+  "20 SKILL VALIDATION QUEUE": {
+    "REASON FOR THE DECISION": "RATIONALE",
+    "EVIDENCE SO FAR": "EVIDENCE SUMMARY",
+    "READY SINCE": "READY DATE",
+    "LAST EVIDENCE": "LAST EVIDENCE DATE"
+  }
 };
-const col = {};
-prettyHeaders.forEach(function (h, i) {
-  const raw = String(h || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-  const canon = aliases[raw] || raw.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  if (canon && col[canon] == null) col[canon] = i;
-});
 
-assert.strictEqual(col.RATIONALE, 4, "RATIONALE must resolve from Reason for the decision");
-assert.strictEqual(col.QUEUE_ID, 0);
-assert.strictEqual(col.STATUS, 3);
-assert.ok(col.DECIDED_BY_EMAIL != null);
-assert.ok(col.DECIDED_AT != null);
+function applyHeaderAliases(tabName, col) {
+  const plan = aliasesByTab[tabName];
+  if (!plan || !col) return col;
+  Object.keys(plan).forEach(function (pretty) {
+    if (col[pretty] === undefined) return;
+    const canon = plan[pretty];
+    if (col[canon] === undefined) col[canon] = col[pretty];
+  });
+  return col;
+}
+
+function colFromHeaders(tabName, prettyHeaders) {
+  const col = {};
+  prettyHeaders.forEach(function (h, i) {
+    if (!h) return;
+    col[h.toUpperCase()] = i;
+    col[h.toUpperCase().replace(/\s+/g, " ")] = i;
+  });
+  return applyHeaderAliases(tabName, col);
+}
+
+const col = colFromHeaders("20 SKILL VALIDATION QUEUE", [
+  "READY DATE",
+  "TRAINEE",
+  "SKILL",
+  "SKILL ID",
+  "EVIDENCE SUMMARY",
+  "DECISION",
+  "DECIDED BY",
+  "DECISION DATE",
+  "Reason for the decision",
+  "RECORD STATUS",
+  "REQUEST ID"
+]);
+
+const need = ["DECISION", "DECIDED BY", "DECISION DATE", "RATIONALE", "RECORD STATUS"];
+const missing = need.filter(function (h) {
+  return col[h] === undefined;
+});
+assert.deepStrictEqual(missing, [], "sign-off need list must resolve after rename: " + missing.join(", "));
+assert.strictEqual(col.RATIONALE, 8, "RATIONALE must resolve from Reason for the decision");
+assert.ok(col["REASON FOR THE DECISION"] != null);
 
 console.log("portal-header-aliases.test.js: ok");
