@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.10.0
- * Build d9f08bbb
+ * SCEMS FIELD TRAINING PORTAL — portal-2.10.1
+ * Build f5eb483c
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.10.0',
+  VERSION: 'portal-2.10.1',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -904,6 +904,39 @@ HEADER_ALIASES_BY_TAB_V1['01 TRAINEE MASTER'] = {
   'HOW THEY CAME IN': 'ENTRY PROFILE',
   'CLEARED DATE': 'CLEARANCE DATE',
   'NOT-RESPONDING-TO-TRAINING DATE': 'NRT DATE'
+};
+/** 20 SKILL VALIDATION QUEUE — renameHeadersV20_4 plain English. */
+HEADER_ALIASES_BY_TAB_V1['20 SKILL VALIDATION QUEUE'] = {
+  'REASON FOR THE DECISION': 'RATIONALE',
+  'EVIDENCE SO FAR': 'EVIDENCE SUMMARY',
+  'READY SINCE': 'READY DATE',
+  'LAST EVIDENCE': 'LAST EVIDENCE DATE'
+};
+/** 21 SKILL SIGN-OFF LOG. */
+HEADER_ALIASES_BY_TAB_V1['21 SKILL SIGN-OFF LOG'] = {
+  'REASON GIVEN': 'RATIONALE',
+  'STANDARD USED': 'STANDARD / CATALOG VERSION'
+};
+/** 05 SKILLS PROGRESS. */
+HEADER_ALIASES_BY_TAB_V1['05 SKILLS PROGRESS'] = {
+  'WHERE THIS SKILL STANDS': 'READINESS',
+  'SIGNED OFF?': 'SIGN-OFF',
+  'SUCCESSFUL': 'SUCCESSFUL REPS',
+  'INDEPENDENT': 'INDEPENDENT REPS',
+  'SEPARATE DAYS': 'DISTINCT DATES',
+  'DIFFERENT FTOS': 'DISTINCT FTOS',
+  'NOTE': 'DECISION / EVIDENCE NOTE',
+  'LAST LOGGED': 'LAST DATE',
+  'HOW IT WENT': 'LAST OUTCOME',
+  'WHERE IT HAPPENED': 'LAST CONTEXT'
+};
+/** 19 SKILL EVIDENCE LOG. */
+HEADER_ALIASES_BY_TAB_V1['19 SKILL EVIDENCE LOG'] = {
+  'ACCEPTED?': 'VALIDATION RESULT',
+  'WHAT THE FTO WROTE': 'EVIDENCE NOTE',
+  'CALL NUMBER': 'CALL / SCENARIO REF',
+  'PROMPTING NEEDED': 'PROMPTING',
+  'LEVEL THEN': 'LEVEL AT EVENT'
 };
 
 function applyHeaderAliasesV1_(tabName, col) {
@@ -12848,7 +12881,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = 'd9f08bbb';
+var PORTAL_BUILD = 'f5eb483c';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)
