@@ -597,6 +597,8 @@ ok(/Deploy/.test(liveMsg),
    'and says to deploy, because a deployment serves the code as it was when deployed');
 ok(/goReadOnly/.test(liveMsg), 'and how to step back');
 ok(/acknowledge|reflection|sign-off/i.test(liveMsg), 'naming what just became possible');
+ok(/TRACKER|installTriggers|Monday/i.test(liveMsg),
+   'and says Monday mail is the tracker, not this portal switch');
 
 ok(/Already live/.test(goLive()), 'running it again is a no-op that says so');
 
@@ -910,7 +912,8 @@ ok(!!api4, 'it renders with a decision waiting');
 
 if (api4) {
   const html = nodes['view'].innerHTML;
-  ok(/One decision|1 decisions/.test(html), 'the headline is the decision, not the roster');
+  ok(/1 sign-off waiting|sign-offs waiting|Ready for your sign-off/i.test(html),
+     'the headline names the waiting sign-off, not marketing copy');
   ok(/openSignoff\(12,/.test(html), 'the card goes straight to the sign-off screen');
   ok(/QR-77/.test(html),
      'carrying the request id, so a queue that re-sorted cannot be approved blind');
@@ -1033,7 +1036,7 @@ let heroed = 0;
 ['paintDivision','paintTrainee','paintFto','paintMedical','paintSupervisor',
  'paintRecord','paintSignoff'].forEach(function (fn) {
   const body2 = pageSrc.slice(pageSrc.indexOf('function ' + fn + '('));
-  if (/hero\(/.test(body2.slice(0, 900))) heroed++;
+  if (/hero\(/.test(body2.slice(0, 1600))) heroed++;
 });
 ok(heroed === 7, 'all seven role and detail screens open with a hero, not with body text: ' + heroed);
 
@@ -1047,13 +1050,13 @@ const divHtml = (function () {
 })();
 
 ok(/<div class="hero">/.test(divHtml), 'the Division screen renders one');
-ok(/class="eyebrow">Waiting on you</.test(divHtml), 'which names the product beat');
+ok(/class="eyebrow">Division desk</.test(divHtml), 'which names the desk, not marketing copy');
 ok(divHtml.indexOf('class="hero"') < divHtml.indexOf('IV access'),
    'above everything else on the page');
 ok(/Show 1 decided|deskDetails|Show .*decided/.test(pageSrc) && /deskDetails/.test(pageSrc),
    'machinery is folded behind desk details, not the hero');
 ok(!/note n-stop.*Retired form|Retired form still open/.test(divHtml),
-   'retired forms are not a stop banner on Waiting on you');
+   'retired forms are not a stop banner on the Division desk');
 ok(/returnSignoffV1|Return for more evidence/.test(pageSrc),
    'Return is a first-class decision path in Field Training');
 ok(/Field Training/.test(pageSrc) && !/THE LINE/.test(pageSrc), 'product name is Field Training, not THE LINE');

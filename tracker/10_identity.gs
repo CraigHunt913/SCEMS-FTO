@@ -91,13 +91,15 @@ function masterTraineeRowsV20_1_() {
       setStatus: String(r[t.col['SET STATUS']] || '').trim(),
       email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
       phaseStart: parseDateSafeV20_1_(r[t.col['PHASE START DATE']]),
-      closed: /closed|released/i.test(String(r[t.col['SET STATUS']] || ''))
+      // Match portal: Cleared / Independent, Closed / Released, withdrawn, archived.
+      closed: /closed|released|cleared|independent|withdraw|archiv/i
+        .test(String(r[t.col['SET STATUS']] || ''))
     });
   });
   return out;
 }
 
-/** Active (not closed/released) trainees. ZZ TEST rows appear only in
+/** Active (not closed/cleared/released) trainees. ZZ TEST rows appear only in
  *  test mode so drills never pollute live dropdowns. */
 function activeTraineesV20_1_() {
   var testOk = isTestMode_();

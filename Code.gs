@@ -1520,13 +1520,15 @@ function masterTraineeRowsV20_1_() {
       setStatus: String(r[t.col['SET STATUS']] || '').trim(),
       email: String(r[t.col['TRAINEE EMAIL']] || '').trim().toLowerCase(),
       phaseStart: parseDateSafeV20_1_(r[t.col['PHASE START DATE']]),
-      closed: /closed|released/i.test(String(r[t.col['SET STATUS']] || ''))
+      // Match portal: Cleared / Independent, Closed / Released, withdrawn, archived.
+      closed: /closed|released|cleared|independent|withdraw|archiv/i
+        .test(String(r[t.col['SET STATUS']] || ''))
     });
   });
   return out;
 }
 
-/** Active (not closed/released) trainees. ZZ TEST rows appear only in
+/** Active (not closed/cleared/released) trainees. ZZ TEST rows appear only in
  *  test mode so drills never pollute live dropdowns. */
 function activeTraineesV20_1_() {
   var testOk = isTestMode_();
@@ -2962,16 +2964,14 @@ function decisionAlerts(v) {
 }
 
 /* ---- ported from zz (effective winner) ---- */
-/** Override. The weekly roll-up, in the house style. */
+/** Override. The weekly roll-up, in the house style.
+ *  Only Active trainees (not Cleared / Closed / withdrawn). */
 function weeklyRollup() {
   var master = ss().getSheetByName(TAB.MASTER);
   if (!master) return 'Trainee Master not found.';
 
-  var names = [];
-  master.getRange(5, 1, 40, 10).getValues().forEach(function (r) {
-    var n = String(r[0] || '').trim();
-    if (n && n.indexOf('EXAMPLE') !== 0) names.push(n);
-  });
+  var names = activeTraineesV20_1_().map(function (r) { return r.name; })
+    .filter(function (n) { return n && String(n).indexOf('EXAMPLE') !== 0; });
 
   var GOLD = '#c9a227', MUTE = '#847d6d';
   var week = Utilities.formatDate(new Date(), 'America/New_York', 'MMMM d, yyyy');
@@ -6750,7 +6750,9 @@ function applyAdvancementV20_1(traineeName, decidedBy, effectiveDate, rationale)
 function closeTraineeV20_1() {
   if (!gateV20_2_('CLOSE TRAINEE')) return;
   var ui = SpreadsheetApp.getUi();
-  var resp = ui.prompt('Close / release trainee',
+  var resp = ui.prompt('Archive / remove trainee from the program',
+    'This archives the full master row and clears it (program exit — not graduation).\n' +
+    'For successful completion / independent partner, use Field Training → Clear for the truck.\n\n' +
     'Exact trainee name as shown on 01 TRAINEE MASTER:', ui.ButtonSet.OK_CANCEL);
   if (resp.getSelectedButton() !== ui.Button.OK) return;
   var name = cleanNameV20_1_(resp.getResponseText());
@@ -7384,14 +7386,15 @@ function handoverCardBodyV19_(traineeName) {
   return L.join('\n');
 }
 
+/** Monday status cards — Active trainees only (Cleared / Closed do not get mail). */
 function traineeStatusCards() {
   var S = ss();
-  var master = S.getSheetByName(TAB.MASTER).getRange(5, 1, 40, 9).getValues();
   var emailByTrainee = {};
-  master.forEach(function (r) { if (r[0] && r[8]) emailByTrainee[r[0]] = r[8]; });
   var skipped = [];
-  master.forEach(function (r) {
-    if (r[0] && !r[8] && String(r[0]).indexOf('EXAMPLE') !== 0) skipped.push(r[0]);
+  activeTraineesV20_1_().forEach(function (r) {
+    if (String(r.name).indexOf('EXAMPLE') === 0) return;
+    if (r.email) emailByTrainee[r.name] = r.email;
+    else skipped.push(r.name);
   });
   var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 12).getValues();
   var sentN = 0, unsent = [];
@@ -7418,7 +7421,7 @@ function traineeStatusCards() {
   if (skipped.length) {
     sendMail(CONFIG.TCO_EMAIL,
       'Trainee Cards : ' + skipped.length + ' Trainee(s) Have No Email on File',
-      'These trainees received no status card because column I on 01 TRAINEE MASTER is blank:\n\n' +
+      'These Active trainees received no status card because TRAINEE EMAIL on 01 TRAINEE MASTER is blank:\n\n' +
       skipped.join('\n') + '\n\nAdd their email addresses so they get their Monday card.');
   }
 }
@@ -7452,10 +7455,14 @@ function supervisorDigest() {
     });
   }
 
+  var activeNames = {};
+  activeTraineesV20_1_().forEach(function (t) { activeNames[t.name] = true; });
+
   var byShift = {};
   engineRows().forEach(function (r) {
     var name = r[0];
     if (!name || String(name).indexOf(TEST_PREFIX) === 0) return;
+    if (!activeNames[name]) return; // Cleared / Closed stay off the Monday digest
     var shift = shiftByFto[String(r[3] || '')] || 'UNASSIGNED';
     (byShift[shift] = byShift[shift] || []).push(r);
   });
@@ -14045,6 +14052,9 @@ function engineRows() {
   return sh.getRange(5, 1, 40, 19).getValues().filter(function (r) { return r[0]; });
 }
 
+/** Alias — same as repairAllTriggersNow. Portal docs say installTriggers. */
+function installTriggers() { return repairAllTriggersNow(); }
+
 /** Rebuilds every SCEMS trigger from scratch. Run after any trigger loss. */
 function repairAllTriggersNow() {
   var managed = MANAGED_TRIGGER_HANDLERS.concat(['onSkillsGridSubmitV20', 'onHandoverSubmitV19']);
@@ -14158,10 +14168,12 @@ function FINISH_TRACKER() {
   L.push('');
   L.push('Look at that inbox. If what arrived is what you would want a real');
   L.push('person to get, then:');
-  L.push('  whichMode()   reads out exactly who starts receiving');
-  L.push('  goLive()      stops the rerouting');
+  L.push('  whichMode()        reads out exactly who starts receiving');
+  L.push('  goLive()           stops the rerouting (tracker project — not the portal)');
+  L.push('  installTriggers()  Monday cards / roll-up / digests (safe to re-run)');
   L.push('');
-  L.push('backToTestMode() reverses it at any time.');
+  L.push('Portal goLive() only opens the desk for writing. It does not send Monday mail.');
+  L.push('backToTestMode() reverses delivery at any time.');
 
   var msg = L.join('\n');
   Logger.log(msg);

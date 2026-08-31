@@ -717,6 +717,9 @@ function engineRows() {
   return sh.getRange(5, 1, 40, 19).getValues().filter(function (r) { return r[0]; });
 }
 
+/** Alias — same as repairAllTriggersNow. Portal docs say installTriggers. */
+function installTriggers() { return repairAllTriggersNow(); }
+
 /** Rebuilds every SCEMS trigger from scratch. Run after any trigger loss. */
 function repairAllTriggersNow() {
   var managed = MANAGED_TRIGGER_HANDLERS.concat(['onSkillsGridSubmitV20', 'onHandoverSubmitV19']);
@@ -830,10 +833,12 @@ function FINISH_TRACKER() {
   L.push('');
   L.push('Look at that inbox. If what arrived is what you would want a real');
   L.push('person to get, then:');
-  L.push('  whichMode()   reads out exactly who starts receiving');
-  L.push('  goLive()      stops the rerouting');
+  L.push('  whichMode()        reads out exactly who starts receiving');
+  L.push('  goLive()           stops the rerouting (tracker project — not the portal)');
+  L.push('  installTriggers()  Monday cards / roll-up / digests (safe to re-run)');
   L.push('');
-  L.push('backToTestMode() reverses it at any time.');
+  L.push('Portal goLive() only opens the desk for writing. It does not send Monday mail.');
+  L.push('backToTestMode() reverses delivery at any time.');
 
   var msg = L.join('\n');
   Logger.log(msg);

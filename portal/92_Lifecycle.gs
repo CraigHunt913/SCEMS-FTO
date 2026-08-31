@@ -12,7 +12,10 @@
  *   SET STATUS → Cleared / Independent · archive snapshot · cancel OPEN
  *   skill-queue rows · refresh form Trainee lists · PORTAL AUDIT.
  *
- * "Released from training" means they completed every phase and the required
+ * End training / close (stops weekly mail; not a truck clearance):
+ *   SET STATUS → Closed / Released · same archive / queue cancel / form refresh.
+ *
+ * "Cleared / Independent" means they completed every phase and the required
  * skills and may ride as a partner. It is a graduation, not leaving the job.
  */
 
@@ -22,6 +25,8 @@ var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
 var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
 /** Vault status for someone cleared to ride as an independent partner. */
 var PORTAL_CLEARED_STATUS = 'Cleared / Independent';
+/** Vault status when training ends without truck clearance (leaves digests). */
+var PORTAL_CLOSED_STATUS = 'Closed / Released';
 
 function phaseIndexV1_(phase) {
   var p = String(phase || '').trim();
@@ -155,7 +160,8 @@ function releaseTraineeV1(traineeName, reason) {
     throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
   }
 
-  writeReleaseArchiveV1_(rec, viewer.email, why);
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLEARED_STATUS,
+    'Cleared for independent partner duty by ' + viewer.email + ': ' + why);
 
   t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLEARED_STATUS);
 
@@ -177,6 +183,64 @@ function releaseTraineeV1(traineeName, reason) {
     ok: true,
     name: rec.name,
     phase: rec.phase,
+    cancelled: cancelled,
+    message: msg
+  };
+}
+
+/**
+ * End training without truck clearance. Sets Closed / Released so they leave
+ * Active digests and form Trainee lists. Typed reason required. No Phase 4 gate.
+ */
+function closeTraineeV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('close a trainee out of training');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why training is ending. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before closing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+
+  var statusHeader = t.col['SET STATUS'] !== undefined ? 'SET STATUS'
+                   : (t.col['PROGRAM STATUS'] !== undefined ? 'PROGRAM STATUS' : '');
+  if (!statusHeader) {
+    throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
+  }
+
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLOSED_STATUS,
+    'Training closed by ' + viewer.email + ': ' + why);
+
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLOSED_STATUS);
+
+  var cancelled = cancelOpenSkillQueueForV1_(rec.name);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var sync = null;
+  try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  auditV1_('TRAINEE CLOSED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | closed / released | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
+
+  var msg = rec.name + ' is closed out of training (Closed / Released). ' +
+    'They will not get Monday status cards. Your reason is on the record.';
+  if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
+  if (sync && sync.ok) msg += ' Form Trainee lists updated.';
+  return {
+    ok: true,
+    name: rec.name,
+    phase: rec.phase,
+    status: PORTAL_CLOSED_STATUS,
     cancelled: cancelled,
     message: msg
   };
@@ -205,17 +269,18 @@ function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
 }
 
-function writeReleaseArchiveV1_(rec, by, why) {
+function writeReleaseArchiveV1_(rec, by, why, finalStatus, notes) {
   var book = targetBookV1_();
   var stamp = new Date();
+  var status = finalStatus || PORTAL_CLEARED_STATUS;
   var payload = {
     'DATE ARCHIVED': stamp,
     'TRAINEE': rec.name,
     'LEVEL': rec.level || '',
     'FTO': rec.fto || '',
     'PHASE AT EXIT': rec.phase || '',
-    'FINAL STATUS': PORTAL_CLEARED_STATUS,
-    'NOTES': 'Cleared for independent partner duty by ' + by + ': ' + why,
+    'FINAL STATUS': status,
+    'NOTES': notes || ('Status set to ' + status + ' by ' + by + ': ' + why),
     'RELEASED BY': by,
     'EMAIL': rec.email || ''
   };
@@ -229,7 +294,6 @@ function writeReleaseArchiveV1_(rec, by, why) {
       Object.keys(payload).forEach(function (h) {
         if (t.col[h] !== undefined) row[t.col[h]] = payload[h];
       });
-      // If NOTES exists under another name, still try NOTES.
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
       return;
     }
@@ -240,7 +304,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   if (!sh) {
     sh = book.insertSheet(PORTAL_RELEASE_LOG);
     sh.getRange(1, 1).setValue(
-      'Clearances captured from Field Training. Do not edit or sort.')
+      'Clearances and closes captured from Field Training. Do not edit or sort.')
       .setFontWeight('bold');
     sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
       .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
@@ -250,7 +314,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   }
   sh.appendRow([
     stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
-    PORTAL_CLEARED_STATUS, by, why
+    status, by, why
   ]);
 }
 

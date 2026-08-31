@@ -130,14 +130,15 @@ function handoverCardBodyV19_(traineeName) {
   return L.join('\n');
 }
 
+/** Monday status cards — Active trainees only (Cleared / Closed do not get mail). */
 function traineeStatusCards() {
   var S = ss();
-  var master = S.getSheetByName(TAB.MASTER).getRange(5, 1, 40, 9).getValues();
   var emailByTrainee = {};
-  master.forEach(function (r) { if (r[0] && r[8]) emailByTrainee[r[0]] = r[8]; });
   var skipped = [];
-  master.forEach(function (r) {
-    if (r[0] && !r[8] && String(r[0]).indexOf('EXAMPLE') !== 0) skipped.push(r[0]);
+  activeTraineesV20_1_().forEach(function (r) {
+    if (String(r.name).indexOf('EXAMPLE') === 0) return;
+    if (r.email) emailByTrainee[r.name] = r.email;
+    else skipped.push(r.name);
   });
   var view = S.getSheetByName('09 TRAINEE VIEW').getRange(5, 1, 40, 12).getValues();
   var sentN = 0, unsent = [];
@@ -164,7 +165,7 @@ function traineeStatusCards() {
   if (skipped.length) {
     sendMail(CONFIG.TCO_EMAIL,
       'Trainee Cards : ' + skipped.length + ' Trainee(s) Have No Email on File',
-      'These trainees received no status card because column I on 01 TRAINEE MASTER is blank:\n\n' +
+      'These Active trainees received no status card because TRAINEE EMAIL on 01 TRAINEE MASTER is blank:\n\n' +
       skipped.join('\n') + '\n\nAdd their email addresses so they get their Monday card.');
   }
 }
@@ -198,10 +199,14 @@ function supervisorDigest() {
     });
   }
 
+  var activeNames = {};
+  activeTraineesV20_1_().forEach(function (t) { activeNames[t.name] = true; });
+
   var byShift = {};
   engineRows().forEach(function (r) {
     var name = r[0];
     if (!name || String(name).indexOf(TEST_PREFIX) === 0) return;
+    if (!activeNames[name]) return; // Cleared / Closed stay off the Monday digest
     var shift = shiftByFto[String(r[3] || '')] || 'UNASSIGNED';
     (byShift[shift] = byShift[shift] || []).push(r);
   });

@@ -1,6 +1,6 @@
 /**
- * SCEMS FIELD TRAINING PORTAL — portal-2.8.0
- * Build 70e29b14
+ * SCEMS FIELD TRAINING PORTAL — portal-2.9.0
+ * Build 4d0b5d9e
  *
  * The whole portal in one file. Paste it into a new Apps Script project
  * and there is nothing else to add: the page is in here too, as a string
@@ -34,7 +34,7 @@
  */
 
 var PORTAL = Object.freeze({
-  VERSION: 'portal-2.8.0',
+  VERSION: 'portal-2.9.0',
   PROPERTY_TARGET: 'PORTAL_TARGET_SPREADSHEET_ID',
   PROPERTY_MODE: 'PORTAL_MODE',
 
@@ -3125,7 +3125,7 @@ function goLive() {
     '',
     'WHAT JUST BECAME POSSIBLE',
     '  Training Division can record a sign-off (permanent log + queue closed).',
-    '  Training Division can advance phase, clear for the truck, and enroll a trainee.',
+    '  Training Division can advance phase, clear for the truck, close training, and enroll a trainee.',
     '  Training Division can assign who trains whom.',
     '  An FTO can file a coaching note; the trainee can acknowledge it.',
     '  Self-reflection still uses the Self-reflection form in LIVE (not the practice screen).',
@@ -3137,10 +3137,14 @@ function goLive() {
       : 'Each of those is written to ' + PORTAL.TAB.AUDIT + ' under the name of\n' +
         'whoever did it. PRODUCTION mode was discarding those entries.'),
     '',
-    'WHAT DID NOT',
-    '  Importing, merging and switching role. Those only ever run against the',
+    'WHAT THIS DID NOT DO',
+    '  Monday status cards, weekly roll-up, and supervisor digests.',
+    '  Those are sent by the TRACKER Apps Script project, not this portal.',
+    '  In the tracker project: whichMode(), then goLive(), then installTriggers().',
+    '  Portal goLive only opens this desk for writing.',
+    '',
+    '  Importing, merging and switching role still only run against the',
     '  practice spreadsheet, whatever mode this is in.',
-    '  Nothing bulk. Nothing structural. No row in another spreadsheet.',
     '',
     'NOW DEPLOY',
     '  Deploy > Manage deployments > pencil > Version: New version > Deploy',
@@ -6432,7 +6436,10 @@ function syncMatrixFromEvidenceV1() {
  *   SET STATUS → Cleared / Independent · archive snapshot · cancel OPEN
  *   skill-queue rows · refresh form Trainee lists · PORTAL AUDIT.
  *
- * "Released from training" means they completed every phase and the required
+ * End training / close (stops weekly mail; not a truck clearance):
+ *   SET STATUS → Closed / Released · same archive / queue cancel / form refresh.
+ *
+ * "Cleared / Independent" means they completed every phase and the required
  * skills and may ride as a partner. It is a graduation, not leaving the job.
  */
 
@@ -6442,6 +6449,8 @@ var PORTAL_ARCHIVE_TAB = '17 TRAINEE ARCHIVE';
 var PORTAL_ASSIGNMENTS_TAB = '92 ASSIGNMENT HISTORY';
 /** Vault status for someone cleared to ride as an independent partner. */
 var PORTAL_CLEARED_STATUS = 'Cleared / Independent';
+/** Vault status when training ends without truck clearance (leaves digests). */
+var PORTAL_CLOSED_STATUS = 'Closed / Released';
 
 function phaseIndexV1_(phase) {
   var p = String(phase || '').trim();
@@ -6575,7 +6584,8 @@ function releaseTraineeV1(traineeName, reason) {
     throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
   }
 
-  writeReleaseArchiveV1_(rec, viewer.email, why);
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLEARED_STATUS,
+    'Cleared for independent partner duty by ' + viewer.email + ': ' + why);
 
   t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLEARED_STATUS);
 
@@ -6597,6 +6607,64 @@ function releaseTraineeV1(traineeName, reason) {
     ok: true,
     name: rec.name,
     phase: rec.phase,
+    cancelled: cancelled,
+    message: msg
+  };
+}
+
+/**
+ * End training without truck clearance. Sets Closed / Released so they leave
+ * Active digests and form Trainee lists. Typed reason required. No Phase 4 gate.
+ */
+function closeTraineeV1(traineeName, reason) {
+  var viewer = requireDivisionWritableV1_('close a trainee out of training');
+  var why = String(reason || '').trim();
+  if (why.length < 8) {
+    throw new Error('Type why training is ending. It goes on the permanent record in your name.');
+  }
+  var who = String(traineeName || '').trim();
+  var rec = findTraineeOnMasterV1_(who);
+  if (!rec) throw new Error('No trainee named "' + who + '" on the master.');
+  if (rec.from) {
+    throw new Error(rec.name + ' was read from another book. Bring them onto this tracker before closing.');
+  }
+  if (rec.closed) throw new Error(rec.name + ' is already cleared / closed.');
+  if (!rec.row) throw new Error('Cannot find a writable row for ' + rec.name + '.');
+
+  var t = readTabV1_(PORTAL.TAB.MASTER);
+  if (!t.ok) throw new Error(PORTAL.TAB.MASTER + ' is missing.');
+
+  var statusHeader = t.col['SET STATUS'] !== undefined ? 'SET STATUS'
+                   : (t.col['PROGRAM STATUS'] !== undefined ? 'PROGRAM STATUS' : '');
+  if (!statusHeader) {
+    throw new Error('No SET STATUS / PROGRAM STATUS column on the master. Nothing was written.');
+  }
+
+  writeReleaseArchiveV1_(rec, viewer.email, why, PORTAL_CLOSED_STATUS,
+    'Training closed by ' + viewer.email + ': ' + why);
+
+  t.sheet.getRange(rec.row, t.col[statusHeader] + 1).setValue(PORTAL_CLOSED_STATUS);
+
+  var cancelled = cancelOpenSkillQueueForV1_(rec.name);
+  forgetTabsV1_();
+  PEOPLE_CACHE_V1 = null;
+
+  var sync = null;
+  try { sync = syncRegisteredFormChoicesV1_(); } catch (eSync) {}
+
+  auditV1_('TRAINEE CLOSED', viewer.email,
+    rec.name + ' | phase ' + (rec.phase || '?') + ' | closed / released | cancelled ' +
+    cancelled + ' | ' + why.slice(0, 160));
+
+  var msg = rec.name + ' is closed out of training (Closed / Released). ' +
+    'They will not get Monday status cards. Your reason is on the record.';
+  if (cancelled) msg += ' ' + cancelled + ' open skill request(s) cancelled.';
+  if (sync && sync.ok) msg += ' Form Trainee lists updated.';
+  return {
+    ok: true,
+    name: rec.name,
+    phase: rec.phase,
+    status: PORTAL_CLOSED_STATUS,
     cancelled: cancelled,
     message: msg
   };
@@ -6625,17 +6693,18 @@ function appendAssignmentHistoryV1_(rec, newPhase, eff, by, why) {
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
 }
 
-function writeReleaseArchiveV1_(rec, by, why) {
+function writeReleaseArchiveV1_(rec, by, why, finalStatus, notes) {
   var book = targetBookV1_();
   var stamp = new Date();
+  var status = finalStatus || PORTAL_CLEARED_STATUS;
   var payload = {
     'DATE ARCHIVED': stamp,
     'TRAINEE': rec.name,
     'LEVEL': rec.level || '',
     'FTO': rec.fto || '',
     'PHASE AT EXIT': rec.phase || '',
-    'FINAL STATUS': PORTAL_CLEARED_STATUS,
-    'NOTES': 'Cleared for independent partner duty by ' + by + ': ' + why,
+    'FINAL STATUS': status,
+    'NOTES': notes || ('Status set to ' + status + ' by ' + by + ': ' + why),
     'RELEASED BY': by,
     'EMAIL': rec.email || ''
   };
@@ -6649,7 +6718,6 @@ function writeReleaseArchiveV1_(rec, by, why) {
       Object.keys(payload).forEach(function (h) {
         if (t.col[h] !== undefined) row[t.col[h]] = payload[h];
       });
-      // If NOTES exists under another name, still try NOTES.
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
       return;
     }
@@ -6660,7 +6728,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   if (!sh) {
     sh = book.insertSheet(PORTAL_RELEASE_LOG);
     sh.getRange(1, 1).setValue(
-      'Clearances captured from Field Training. Do not edit or sort.')
+      'Clearances and closes captured from Field Training. Do not edit or sort.')
       .setFontWeight('bold');
     sh.getRange(PORTAL.HEADER_ROW, 1, 1, 8)
       .setValues([['DATE ARCHIVED', 'TRAINEE', 'LEVEL', 'FTO', 'PHASE AT EXIT',
@@ -6670,7 +6738,7 @@ function writeReleaseArchiveV1_(rec, by, why) {
   }
   sh.appendRow([
     stamp, rec.name, rec.level || '', rec.fto || '', rec.phase || '',
-    PORTAL_CLEARED_STATUS, by, why
+    status, by, why
   ]);
 }
 
@@ -10699,6 +10767,7 @@ var PORTAL_PAGE_HTML = [
   "  if (S.screen === 'person')   return paintPersonSheet();\n",
   "  if (S.screen === 'advance')  return paintAdvance();\n",
   "  if (S.screen === 'release')  return paintRelease();\n",
+  "  if (S.screen === 'closeTrainee') return paintCloseTrainee();\n",
   "  if (S.screen === 'record')   return paintRecord();\n",
   "  if (S.screen === 'settle')   return paintSettle();\n",
   "  if (S.screen === 'formWait') return paintFormWait();\n",
@@ -11092,8 +11161,7 @@ var PORTAL_PAGE_HTML = [
   "function firstName(n){ return String(n||'').split(/\\s+/)[0] || 'them'; }\n",
   "\n",
   "/* ---------------- division ---------------- */\n",
-  "/* Waiting on you answers one question first. Tabs hold the rest so the\n",
-  "   phone is not one endless scroll of every roster and tool at once. */\n",
+  "/* Decide first. Tabs hold the rest so the phone is not one long scroll. */\n",
   "function paintDivision(d){\n",
   "  var q = d.queue || [];\n",
   "  var missingBy = {};\n",
@@ -11118,12 +11186,15 @@ var PORTAL_PAGE_HTML = [
   "  var tab = S.divTab || 'waiting';\n",
   "  if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';\n",
   "\n",
-  "  var h = hero('Waiting on you',\n",
-  "    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')\n",
-  "             : (showReady ? 'Clearance ready' : 'Queue clear'),\n",
+  "  var sub = 'Queue clear';\n",
+  "  if (q.length === 1) sub = '1 sign-off waiting';\n",
+  "  else if (q.length > 1) sub = q.length + ' sign-offs waiting';\n",
+  "  else if (showReady) sub = 'Ready to clear for the truck';\n",
+  "\n",
+  "  var h = hero('Division desk',\n",
+  "    sub,\n",
   "    d.activeCount+' in training'+\n",
-  "    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves",
-  "')+\n",
+  "    (flagged.length ? ' &middot; '+flagged.length+' need a look' : '')+\n",
   "    (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));\n",
   "\n",
   "  if (d.mode !== 'STAGING' && d.mode !== 'LIVE')\n",
@@ -11311,7 +11382,7 @@ var PORTAL_PAGE_HTML = [
   "    '<div class=\"body\" style=\"padding-left:12px;flex:1\">'+\n",
   "    '<div style=\"display:flex;gap:12px;align-items:flex-start\">'+\n",
   "    '<div style=\"flex:1;min-width:0\">'+\n",
-  "    '<div class=\"lab\" style=\"margin:0\">Evidence met the bar. The call is yours.</div>'+\n",
+  "    '<div class=\"lab\" style=\"margin:0\">Ready for your sign-off</div>'+\n",
   "    '<div class=\"h\" style=\"font-size:1.44rem;margin-top:2px\">'+esc(q.skill)+'</div>'+\n",
   "    '<div class=\"m\">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+\n",
   "    clockHtml(left, pct)+\n",
@@ -11319,7 +11390,7 @@ var PORTAL_PAGE_HTML = [
   "  if (q.bars && q.bars.length){\n",
   "    h += '<div style=\"margin-top:14px;padding-top:12px;border-top:1px solid var(--line)\">'",
   "+\n",
-  "         '<div class=\"lab\">Evidence against the catalog</div>'+barsHtml(q.bars)+'</div>';\n",
+  "         '<div class=\"lab\">Against the catalog</div>'+barsHtml(q.bars)+'</div>';\n",
   "  } else if (q.evidence){\n",
   "    h += '<div style=\"margin-top:12px;font-size:.9rem;color:var(--ink-2)\">'+esc(q.evidence",
   ")+'</div>';\n",
@@ -11334,10 +11405,8 @@ var PORTAL_PAGE_HTML = [
   "         '<button class=\"btn\" onclick=\"openSignoff('+q.row+','+jsStr(q.trainee)+','+\n",
   "         jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')\">Decide</butto",
   "n>'+\n",
-  "         '<div class=\"next\" style=\"margin-top:10px\"><b>You see the record before you write",
-  " it</b>'+\n",
-  "         'Approve or return — both require your words. Field Training writes the permanent",
-  " log.</div></div>';\n",
+  "         '<div class=\"next\" style=\"margin-top:10px\">Type your reason on the next screen to",
+  " approve or return.</div></div>';\n",
   "  } else {\n",
   "    h += '<div style=\"padding:0 16px 16px\"><div class=\"flag\" style=\"--accent:var(--warn)\">",
   "'+\n",
@@ -11519,12 +11588,18 @@ var PORTAL_PAGE_HTML = [
   "      (clear.gaps||[]).slice(0,8).forEach(function(g){\n",
   "        h += '<div class=\"m\" style=\"margin:0 0 6px 2px\">· '+esc(g)+'</div>';\n",
   "      });\n",
-  "      h += '<div class=\"next\" style=\"margin-top:10px\"><b>Clearance stays closed</b>Finish ",
-  "those first. Field Training will not clear someone who still has open skills.</div>';\n",
+  "      h += '<div class=\"next\" style=\"margin-top:10px\">Finish those before clearing for the",
+  " truck.</div>';\n",
   "    } else if (!t.canAdvance){\n",
   "      h += '<div class=\"note n-info\"><b>Phase</b>Fix the phase on the master before advanc",
   "ing or clearing.</div>';\n",
   "    }\n",
+  "\n",
+  "    h += '<button class=\"card act\"'+spine('soon')+' onclick=\"openCloseTrainee()\">'+\n",
+  "         '<span class=\"bd\"><span class=\"h\">End training / close</span>'+\n",
+  "         '<span class=\"m\">Sets Closed / Released. Stops Monday status cards. Not a truck c",
+  "learance.</span></span>'+\n",
+  "         '<span class=\"go\">&rsaquo;</span></button>';\n",
   "  }\n",
   "\n",
   "  /* The card you tapped said why. Losing the reason on the way in is how a\n",
@@ -11740,9 +11815,55 @@ var PORTAL_PAGE_HTML = [
   "    .releaseTraineeV1(S.ctx.name, why);\n",
   "}\n",
   "\n",
+  "function openCloseTrainee(){\n",
+  "  var t = S.ctx || {};\n",
+  "  if (!t.name) return;\n",
+  "  S.screen = 'closeTrainee'; render();\n",
+  "}\n",
+  "function paintCloseTrainee(){\n",
+  "  var t = S.ctx || {};\n",
+  "  var h = hero('End training', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+\n",
+  "    '<button class=\"back\" onclick=\"S.screen=\\'person\\';render()\">&larr; Back</button>'+\n",
+  "    '<div class=\"note n-warn\"><b>Closed / Released</b>They leave Active training. No Monda",
+  "y status cards. '+\n",
+  "    'Form Trainee lists drop their name. This is not clearance for the truck.</div>'+\n",
+  "    '<div class=\"panel\"><div class=\"lab\">Why training is ending</div>'+\n",
+  "    '<textarea id=\"close-why\" placeholder=\"Goes on the permanent record in your name.\" '+\n",
+  "    'oninput=\"syncLifeBtns(\\'close\\')\"></textarea></div>'+\n",
+  "    '<button class=\"btn ghost-danger\" id=\"close-go\" disabled onclick=\"submitCloseTrainee()",
+  "\">End training / close</button>';\n",
+  "  paint(h);\n",
+  "  syncLifeBtns('close');\n",
+  "}\n",
+  "function submitCloseTrainee(){\n",
+  "  if (S.busy) return;\n",
+  "  var why = (el('close-why') && el('close-why').value || '').trim();\n",
+  "  if (why.length < 8) { alert('Type why training is ending.'); return; }\n",
+  "  if (!confirm('Close '+((S.ctx&&S.ctx.name)||'this trainee')+' out of training? They will",
+  " stop getting Monday updates.')) return;\n",
+  "  S.busy = true;\n",
+  "  var b = el('close-go');\n",
+  "  if (b) { b.disabled = true; b.textContent = 'Closing…'; }\n",
+  "  google.script.run\n",
+  "    .withSuccessHandler(function(r){\n",
+  "      S.busy = false;\n",
+  "      alert((r && r.message) || 'Closed out of training.');\n",
+  "      S.screen = 'main';\n",
+  "      reload();\n",
+  "    })\n",
+  "    .withFailureHandler(function(e){\n",
+  "      S.busy = false;\n",
+  "      if (b) { b.textContent = 'End training / close'; }\n",
+  "      syncLifeBtns('close');\n",
+  "      alert(e.message||e);\n",
+  "    })\n",
+  "    .closeTraineeV1(S.ctx.name, why);\n",
+  "}\n",
+  "\n",
   "function syncLifeBtns(kind){\n",
-  "  var id = kind === 'rel' ? 'rel-why' : 'adv-why';\n",
-  "  var btn = kind === 'rel' ? 'rel-go' : 'adv-go';\n",
+  "  var id = 'adv-why', btn = 'adv-go';\n",
+  "  if (kind === 'rel') { id = 'rel-why'; btn = 'rel-go'; }\n",
+  "  if (kind === 'close') { id = 'close-why'; btn = 'close-go'; }\n",
   "  var why = (el(id) && el(id).value || '').trim();\n",
   "  if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;\n",
   "}\n",
@@ -11755,27 +11876,20 @@ var PORTAL_PAGE_HTML = [
   "  paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+\n",
   "    '<button class=\"back\" onclick=\"S.screen=\\''+(c.from||'main')+'\\';render()\">&larr; Back",
   "</button>'+\n",
-  "    '<div class=\"note n-info\"><b>This does not clear it</b>Nothing here changes the record",
-  " or '+\n",
-  "    'the finding. It records that you saw it, in your words, and holds it off the list for",
-  " as '+\n",
-  "    'long as you ask. When that runs out it is back exactly as it is now.</div>'+\n",
+  "    '<div class=\"note n-info\"><b>Does not clear the finding</b>Records that you saw it and",
+  " holds it off the list for the days you choose. When that ends, it returns unchanged.</div",
+  ">'+\n",
   "    '<div class=\"panel\"><div class=\"lab\">What are you doing about it</div>'+\n",
-  "    '<textarea id=\"ackwhy\" placeholder=\"Goes on the record in your name. An acknowledgment",
-  " with '+\n",
-  "    'nothing in it is how a problem gets buried.\"></textarea></div>'+\n",
+  "    '<textarea id=\"ackwhy\" placeholder=\"Goes on the record in your name.\"></textarea></div",
+  ">'+\n",
   "    '<div class=\"panel\"><div class=\"lab\">Hold it off the list for</div>'+\n",
   "    picker('ackdays', '', [\n",
   "      { value:'3',  label:'3 days'  },\n",
   "      { value:'7',  label:'7 days'  },\n",
   "      { value:'14', label:'14 days' },\n",
-  "      { value:'30', label:'30 days — the longest a hold can be' }\n",
+  "      { value:'30', label:'30 days (maximum)' }\n",
   "    ], 'pickDays', String(S.ackDays || 7))+'</div>'+\n",
-  "    '<button class=\"btn\" id=\"ackgo\" onclick=\"sendAck()\">Record it</button>'+\n",
-  "    '<div class=\"next\"><b>Why it comes back</b>A hold that never expires is a way to hide ",
-  "'+\n",
-  "    'something permanently. This one runs out, and the finding returns unchanged.</div>');",
-  "\n",
+  "    '<button class=\"btn\" id=\"ackgo\" onclick=\"sendAck()\">Record it</button>');\n",
   "}\n",
   "function pickDays(v){ S.ackDays = Number(v) || 7; }\n",
   "function sendAck(){\n",
@@ -11821,17 +11935,14 @@ var PORTAL_PAGE_HTML = [
   "    : '<button class=\"back\" onclick=\"S.screen=\\'main\\';render()\">&larr; Back</button>';\n",
   "  var h = hero('Accept skill', c.acceptSkill || 'Skill',\n",
   "    esc(c.acceptTrainee || ''))+back;\n",
-  "  h += '<div class=\"note n-info\"><b>Writes the live tracker</b>Creates or closes the valid",
-  "ation-queue row, appends the permanent sign-off log, and marks the skills matrix SIGNED OF",
-  "F.</div>';\n",
+  "  h += '<div class=\"note n-info\"><b>Writes the live tracker</b>Queue row, sign-off log, an",
+  "d matrix SIGNED OFF.</div>';\n",
   "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
   "    '<textarea id=\"acceptWhy\" placeholder=\"This goes on the permanent record in your name.",
   "\" '+\n",
   "    'oninput=\"syncAcceptBtn()\"></textarea></div>'+\n",
   "    '<button class=\"btn\" id=\"acceptGo\" disabled onclick=\"submitAcceptSkill()\">Accept on tr",
-  "acker</button>'+\n",
-  "    '<div class=\"next\"><b>Same as Decide on Home</b>One typed reason. No silent accept.</d",
-  "iv>';\n",
+  "acker</button>';\n",
   "  paint(h);\n",
   "  syncAcceptBtn();\n",
   "}\n",
@@ -12051,17 +12162,13 @@ var PORTAL_PAGE_HTML = [
   "    h += '<div class=\"note n-info\"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';\n",
   "  }\n",
   "  h += '<div class=\"panel\"><div class=\"lab\">Your reason (required)</div>'+\n",
-  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name. No de",
-  "fault wording.\" '+\n",
+  "    '<textarea id=\"why\" placeholder=\"This goes on the permanent record in your name.\" '+\n",
   "    'oninput=\"syncDecideBtns()\"></textarea></div>'+\n",
   "    '<button class=\"btn\" id=\"ap\" disabled onclick=\"approve()\">Approve sign-off</button>'+\n",
   "    '<button class=\"btn ghost-danger\" id=\"ret\" disabled onclick=\"returnSkill()\">Return for",
   " more evidence</button>'+\n",
-  "    '<div class=\"next\"><b>Friction belongs here</b>Approve is one clear act with your word",
-  "s. Return stays dead until you type why — never invent an FTO\\'s words.</div>'+\n",
-  "    '<div class=\"next\"><b>Where this goes</b>Live tracker: permanent sign-off log, validat",
-  "ion queue closed, skills matrix set to SIGNED OFF (including Signed by / Signed date when ",
-  "those columns exist).</div>';\n",
+  "    '<div class=\"next\">Both buttons need your reason (at least a sentence). Approve writes",
+  " the sign-off log and marks the skill SIGNED OFF on the matrix.</div>';\n",
   "  paint(h);\n",
   "  syncDecideBtns();\n",
   "}\n",
@@ -12615,7 +12722,7 @@ var PORTAL_PAGE_HTML = [
  * Or run portalPasteCheck from the Run dropdown; it says so either way.
  * ====================================================================== */
 
-var PORTAL_BUILD = '70e29b14';
+var PORTAL_BUILD = '4d0b5d9e';
 
 function portalPasteCheck() {
   var msg = (typeof PORTAL_PAGE_HTML === 'string' && PORTAL_PAGE_HTML.length > 1000)

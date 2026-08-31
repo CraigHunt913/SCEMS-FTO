@@ -472,6 +472,7 @@ function renderInner_(){
   if (S.screen === 'person')   return paintPersonSheet();
   if (S.screen === 'advance')  return paintAdvance();
   if (S.screen === 'release')  return paintRelease();
+  if (S.screen === 'closeTrainee') return paintCloseTrainee();
   if (S.screen === 'record')   return paintRecord();
   if (S.screen === 'settle')   return paintSettle();
   if (S.screen === 'formWait') return paintFormWait();
@@ -819,8 +820,7 @@ function submitAssign(traineeName){
 function firstName(n){ return String(n||'').split(/\s+/)[0] || 'them'; }
 
 /* ---------------- division ---------------- */
-/* Waiting on you answers one question first. Tabs hold the rest so the
-   phone is not one endless scroll of every roster and tool at once. */
+/* Decide first. Tabs hold the rest so the phone is not one long scroll. */
 function paintDivision(d){
   var q = d.queue || [];
   var missingBy = {};
@@ -844,11 +844,15 @@ function paintDivision(d){
   var tab = S.divTab || 'waiting';
   if (['waiting','moves','people','inbox','menu'].indexOf(tab) < 0) tab = 'waiting';
 
-  var h = hero('Waiting on you',
-    q.length ? (q.length===1 ? 'One decision' : q.length+' decisions')
-             : (showReady ? 'Clearance ready' : 'Queue clear'),
+  var sub = 'Queue clear';
+  if (q.length === 1) sub = '1 sign-off waiting';
+  else if (q.length > 1) sub = q.length + ' sign-offs waiting';
+  else if (showReady) sub = 'Ready to clear for the truck';
+
+  var h = hero('Division desk',
+    sub,
     d.activeCount+' in training'+
-    (flagged.length ? ' &middot; '+flagged.length+' next moves' : ' &middot; no open moves')+
+    (flagged.length ? ' &middot; '+flagged.length+' need a look' : '')+
     (showReady ? ' &middot; '+ready.length+' ready for the truck' : ''));
 
   if (d.mode !== 'STAGING' && d.mode !== 'LIVE')
@@ -1018,14 +1022,14 @@ function decisionLeadHtml(q){
     '<div class="body" style="padding-left:12px;flex:1">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
     '<div style="flex:1;min-width:0">'+
-    '<div class="lab" style="margin:0">Evidence met the bar. The call is yours.</div>'+
+    '<div class="lab" style="margin:0">Ready for your sign-off</div>'+
     '<div class="h" style="font-size:1.44rem;margin-top:2px">'+esc(q.skill)+'</div>'+
     '<div class="m">'+esc(q.trainee)+' &middot; ready '+esc(q.since)+'</div></div>'+
     clockHtml(left, pct)+
     '</div>';
   if (q.bars && q.bars.length){
     h += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'+
-         '<div class="lab">Evidence against the catalog</div>'+barsHtml(q.bars)+'</div>';
+         '<div class="lab">Against the catalog</div>'+barsHtml(q.bars)+'</div>';
   } else if (q.evidence){
     h += '<div style="margin-top:12px;font-size:.9rem;color:var(--ink-2)">'+esc(q.evidence)+'</div>';
   }
@@ -1037,8 +1041,7 @@ function decisionLeadHtml(q){
     h += '<div style="padding:0 16px 16px">'+
          '<button class="btn" onclick="openSignoff('+q.row+','+jsStr(q.trainee)+','+
          jsStr(q.skill)+','+jsStr(q.evidence)+','+jsStr(q.requestId||'')+')">Decide</button>'+
-         '<div class="next" style="margin-top:10px"><b>You see the record before you write it</b>'+
-         'Approve or return — both require your words. Field Training writes the permanent log.</div></div>';
+         '<div class="next" style="margin-top:10px">Type your reason on the next screen to approve or return.</div></div>';
   } else {
     h += '<div style="padding:0 16px 16px"><div class="flag" style="--accent:var(--warn)">'+
          (q.from ? 'This row lives in '+esc(q.from)+'. Decide there.'
@@ -1197,10 +1200,15 @@ function paintPersonSheet(){
       (clear.gaps||[]).slice(0,8).forEach(function(g){
         h += '<div class="m" style="margin:0 0 6px 2px">· '+esc(g)+'</div>';
       });
-      h += '<div class="next" style="margin-top:10px"><b>Clearance stays closed</b>Finish those first. Field Training will not clear someone who still has open skills.</div>';
+      h += '<div class="next" style="margin-top:10px">Finish those before clearing for the truck.</div>';
     } else if (!t.canAdvance){
       h += '<div class="note n-info"><b>Phase</b>Fix the phase on the master before advancing or clearing.</div>';
     }
+
+    h += '<button class="card act"'+spine('soon')+' onclick="openCloseTrainee()">'+
+         '<span class="bd"><span class="h">End training / close</span>'+
+         '<span class="m">Sets Closed / Released. Stops Monday status cards. Not a truck clearance.</span></span>'+
+         '<span class="go">&rsaquo;</span></button>';
   }
 
   /* The card you tapped said why. Losing the reason on the way in is how a
@@ -1390,9 +1398,52 @@ function submitRelease(){
     .releaseTraineeV1(S.ctx.name, why);
 }
 
+function openCloseTrainee(){
+  var t = S.ctx || {};
+  if (!t.name) return;
+  S.screen = 'closeTrainee'; render();
+}
+function paintCloseTrainee(){
+  var t = S.ctx || {};
+  var h = hero('End training', t.name, esc(t.phase||'no phase')+' · '+esc(t.level||''))+
+    '<button class="back" onclick="S.screen=\'person\';render()">&larr; Back</button>'+
+    '<div class="note n-warn"><b>Closed / Released</b>They leave Active training. No Monday status cards. '+
+    'Form Trainee lists drop their name. This is not clearance for the truck.</div>'+
+    '<div class="panel"><div class="lab">Why training is ending</div>'+
+    '<textarea id="close-why" placeholder="Goes on the permanent record in your name." '+
+    'oninput="syncLifeBtns(\'close\')"></textarea></div>'+
+    '<button class="btn ghost-danger" id="close-go" disabled onclick="submitCloseTrainee()">End training / close</button>';
+  paint(h);
+  syncLifeBtns('close');
+}
+function submitCloseTrainee(){
+  if (S.busy) return;
+  var why = (el('close-why') && el('close-why').value || '').trim();
+  if (why.length < 8) { alert('Type why training is ending.'); return; }
+  if (!confirm('Close '+((S.ctx&&S.ctx.name)||'this trainee')+' out of training? They will stop getting Monday updates.')) return;
+  S.busy = true;
+  var b = el('close-go');
+  if (b) { b.disabled = true; b.textContent = 'Closing…'; }
+  google.script.run
+    .withSuccessHandler(function(r){
+      S.busy = false;
+      alert((r && r.message) || 'Closed out of training.');
+      S.screen = 'main';
+      reload();
+    })
+    .withFailureHandler(function(e){
+      S.busy = false;
+      if (b) { b.textContent = 'End training / close'; }
+      syncLifeBtns('close');
+      alert(e.message||e);
+    })
+    .closeTraineeV1(S.ctx.name, why);
+}
+
 function syncLifeBtns(kind){
-  var id = kind === 'rel' ? 'rel-why' : 'adv-why';
-  var btn = kind === 'rel' ? 'rel-go' : 'adv-go';
+  var id = 'adv-why', btn = 'adv-go';
+  if (kind === 'rel') { id = 'rel-why'; btn = 'rel-go'; }
+  if (kind === 'close') { id = 'close-why'; btn = 'close-go'; }
   var why = (el(id) && el(id).value || '').trim();
   if (el(btn)) el(btn).disabled = why.length < 8 || S.busy;
 }
@@ -1404,22 +1455,17 @@ function paintAck(){
   var c = S.ctx || {};
   paint(hero('Seen by you', c.name, esc(cap(c.finding||'')))+
     '<button class="back" onclick="S.screen=\''+(c.from||'main')+'\';render()">&larr; Back</button>'+
-    '<div class="note n-info"><b>This does not clear it</b>Nothing here changes the record or '+
-    'the finding. It records that you saw it, in your words, and holds it off the list for as '+
-    'long as you ask. When that runs out it is back exactly as it is now.</div>'+
+    '<div class="note n-info"><b>Does not clear the finding</b>Records that you saw it and holds it off the list for the days you choose. When that ends, it returns unchanged.</div>'+
     '<div class="panel"><div class="lab">What are you doing about it</div>'+
-    '<textarea id="ackwhy" placeholder="Goes on the record in your name. An acknowledgment with '+
-    'nothing in it is how a problem gets buried."></textarea></div>'+
+    '<textarea id="ackwhy" placeholder="Goes on the record in your name."></textarea></div>'+
     '<div class="panel"><div class="lab">Hold it off the list for</div>'+
     picker('ackdays', '', [
       { value:'3',  label:'3 days'  },
       { value:'7',  label:'7 days'  },
       { value:'14', label:'14 days' },
-      { value:'30', label:'30 days — the longest a hold can be' }
+      { value:'30', label:'30 days (maximum)' }
     ], 'pickDays', String(S.ackDays || 7))+'</div>'+
-    '<button class="btn" id="ackgo" onclick="sendAck()">Record it</button>'+
-    '<div class="next"><b>Why it comes back</b>A hold that never expires is a way to hide '+
-    'something permanently. This one runs out, and the finding returns unchanged.</div>');
+    '<button class="btn" id="ackgo" onclick="sendAck()">Record it</button>');
 }
 function pickDays(v){ S.ackDays = Number(v) || 7; }
 function sendAck(){
@@ -1461,12 +1507,11 @@ function paintAcceptSkill(){
     : '<button class="back" onclick="S.screen=\'main\';render()">&larr; Back</button>';
   var h = hero('Accept skill', c.acceptSkill || 'Skill',
     esc(c.acceptTrainee || ''))+back;
-  h += '<div class="note n-info"><b>Writes the live tracker</b>Creates or closes the validation-queue row, appends the permanent sign-off log, and marks the skills matrix SIGNED OFF.</div>';
+  h += '<div class="note n-info"><b>Writes the live tracker</b>Queue row, sign-off log, and matrix SIGNED OFF.</div>';
   h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
     '<textarea id="acceptWhy" placeholder="This goes on the permanent record in your name." '+
     'oninput="syncAcceptBtn()"></textarea></div>'+
-    '<button class="btn" id="acceptGo" disabled onclick="submitAcceptSkill()">Accept on tracker</button>'+
-    '<div class="next"><b>Same as Decide on Home</b>One typed reason. No silent accept.</div>';
+    '<button class="btn" id="acceptGo" disabled onclick="submitAcceptSkill()">Accept on tracker</button>';
   paint(h);
   syncAcceptBtn();
 }
@@ -1671,12 +1716,11 @@ function paintSignoff(){
     h += '<div class="note n-info"><b>FTO recommendation</b>'+esc(c.recommend)+'</div>';
   }
   h += '<div class="panel"><div class="lab">Your reason (required)</div>'+
-    '<textarea id="why" placeholder="This goes on the permanent record in your name. No default wording." '+
+    '<textarea id="why" placeholder="This goes on the permanent record in your name." '+
     'oninput="syncDecideBtns()"></textarea></div>'+
     '<button class="btn" id="ap" disabled onclick="approve()">Approve sign-off</button>'+
     '<button class="btn ghost-danger" id="ret" disabled onclick="returnSkill()">Return for more evidence</button>'+
-    '<div class="next"><b>Friction belongs here</b>Approve is one clear act with your words. Return stays dead until you type why — never invent an FTO\'s words.</div>'+
-    '<div class="next"><b>Where this goes</b>Live tracker: permanent sign-off log, validation queue closed, skills matrix set to SIGNED OFF (including Signed by / Signed date when those columns exist).</div>';
+    '<div class="next">Both buttons need your reason (at least a sentence). Approve writes the sign-off log and marks the skill SIGNED OFF on the matrix.</div>';
   paint(h);
   syncDecideBtns();
 }

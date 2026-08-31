@@ -271,6 +271,23 @@ section('Release captures who when why');
   ok(choices.indexOf('Jamie Rivers') >= 0, 'still lists active trainees');
 }
 
+section('Close training (no truck clearance)');
+{
+  seed();
+  const before = traineesV1_().filter(t => !t.closed).length;
+  const r = closeTraineeV1('Jamie Rivers',
+    'Left the program — stop Monday cards and form lists.');
+  ok(r.ok, 'close succeeds without Phase 4 gate');
+  const jamie = traineesV1_().filter(t => t.name === 'Jamie Rivers')[0];
+  ok(jamie && jamie.closed, 'marked closed on the master');
+  ok(/Closed \/ Released/i.test(jamie.status), 'status is Closed / Released');
+  ok(traineesV1_().filter(t => !t.closed).length === before - 1,
+     'active count drops by one');
+  ok(/already cleared|already closed/i.test(
+    threw(() => closeTraineeV1('Jamie Rivers', 'Enough characters here again.'))),
+     'second close refuses');
+}
+
 section('Gates');
 {
   seed();
@@ -294,7 +311,9 @@ section('UI surface');
      'person sheet can advance');
   ok(/not ready for the truck|Clear .+ for the truck|independent partner/i.test(page) && /releaseTraineeV1/.test(page),
      'person sheet can release');
-  ok(/Ready for the truck/.test(page), 'Waiting on you surfaces truck clearance');
+  ok(/End training|closeTraineeV1|Closed \/ Released/i.test(page),
+     'person sheet can end training / close');
+  ok(/Ready for the truck/.test(page), 'Decide surfaces truck clearance');
   ok(/clearance|\.gaps|Not ready for the truck yet/i.test(page),
      'person sheet names clearance gaps when Phase 4 is incomplete');
   ok(/File tonight/.test(page) && /rank\[a\.urgency\]|urgency === 'due'|urgency==='due'/.test(page),
@@ -307,10 +326,12 @@ section('UI surface');
      'Tonight can file a coaching note');
   ok(/assignFtoV1/.test(page) && /Save assignment/.test(page),
      'Division person sheet can assign who trains whom');
-  ok(/permanent sign-off log|Recorded\. Permanent/i.test(page) ||
+  ok(/permanent sign-off log|Recorded\. Permanent|Approve writes the sign-off log/i.test(page) ||
      /Straight onto the permanent sign-off log/.test(page),
      'sign-off copy says the decision is permanent');
   ok(/Lifecycle/.test(page), 'lifecycle section is named');
+  ok(!/One decision|Friction belongs here|Evidence met the bar/i.test(page),
+     'Division desk avoids AI-sounding marketing lines');
 }
 
 console.log('\n' + PASS + ' passed, ' + FAIL + ' failed');
