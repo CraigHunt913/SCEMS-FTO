@@ -15,7 +15,7 @@ message).
 3. Paste all of `MCIBoard.swift`. It defines `ContentView` at the bottom.
 4. Leave **MyApp** as it is. Tap **▶ Run**.
 5. In the app, go to **Home → Settings, Directories and Built-in Checks → Run
-   Built-in Checks**. About 45 checks run on made-up data. All should be green.
+   Built-in Checks**. 42 checks run on made-up data. All should be green.
 
 If you see "Main actor-isolated" or "Sendable" errors, set the app's Swift
 language version to 5 in the app settings, if your version of Playgrounds offers
