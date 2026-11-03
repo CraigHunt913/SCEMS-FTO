@@ -15,7 +15,7 @@ message).
 3. Paste all of `MCIBoard.swift`. It defines `ContentView` at the bottom.
 4. Leave **MyApp** as it is. Tap **▶ Run**.
 5. In the app, go to **Home → Settings, Directories and Built-in Checks → Run
-   Built-in Checks**. 45 checks run on made-up data. All should be green.
+   Built-in Checks**. 46 checks run on made-up data. All should be green.
 
 If you see "Main actor-isolated" or "Sendable" errors, set the app's Swift
 language version to 5 in the app settings, if your version of Playgrounds offers
@@ -168,6 +168,14 @@ Transport, Staging, Sketch and Activity.
   area.
 - The triage snapshot is a dated copy from a source you choose. It is never a
   live tally.
+
+**Tap-to-pick (no keyboard needed):** boxes with a **Pick** button fill from saved lists.
+- **Roles:** person or call sign (from your staff list, plus anyone already assigned), agency and reports-to.
+- **Transport:** Record Departure and Correct Transport Unit list the saved units (Medic 101–106, 201, 202, 401, ALS 1, ALS 2) as well as staged resources.
+- **Staging:** tap a unit to add it with Time In now. A unit already in staging opens instead of being added twice. Unit, type, agency, assignment and contact all have Pick.
+- **Mutual aid and air:** units sent, ETA source, assignment / status, and air destination have Pick.
+- **Settings → Pick lists:** edit the staff, units, assignments and resource types lists. You can also import the staff list from a text file in Files, one name per line or comma-separated, with no typing.
+- Typing is still available in every pick screen but is never required.
 
 **Activity:** every change, with the time it took effect and the time it was
 recorded.

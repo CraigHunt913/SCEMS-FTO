@@ -604,6 +604,37 @@ struct MCISettings: Codable {
     var pollReminderMinutes: Int? = nil
     var references: [MCIReferenceDoc] = []
     var sketchPDFName: String? = nil
+    // Tap-to-pick lists. Optional so files saved before these existed still open.
+    var pickStaff: [String]? = nil
+    var pickUnits: [String]? = nil
+    var pickAssignments: [String]? = nil
+    var pickResourceTypes: [String]? = nil
+}
+
+extension MCISettings {
+    static let defaultUnits: [String] = [
+        "Medic 101", "Medic 102", "Medic 103", "Medic 104", "Medic 105", "Medic 106",
+        "Medic 201", "Medic 202", "Medic 401", "ALS 1", "ALS 2",
+    ]
+    static let defaultAssignments: [String] = [
+        "Triage", "Treatment", "Transport", "Staging", "Rehab", "Medical Communications",
+        "Safety", "Standby", "Returned to service", "Released",
+    ]
+    static let defaultResourceTypes: [String] = [
+        "ALS ambulance", "BLS ambulance", "Supervisor", "Bus / mass transport", "Fire apparatus",
+        "Rescue", "Air medical", "Law enforcement", "Other",
+    ]
+    static let etaSources: [String] = ["Agency estimate", "Dispatch", "Unit by radio", "Phone"]
+
+    var staffList: [String] { pickStaff ?? [] }
+    var unitList: [String] { pickUnits ?? MCISettings.defaultUnits }
+    var assignmentList: [String] { pickAssignments ?? MCISettings.defaultAssignments }
+    var resourceTypeList: [String] { pickResourceTypes ?? MCISettings.defaultResourceTypes }
+    var agencyList: [String] {
+        var out: [String] = ["Sumter County EMS"]
+        out.append(contentsOf: groundAgencies)
+        return out
+    }
 }
 
 struct MCIAppData: Codable {
@@ -1716,6 +1747,112 @@ struct MCIField: View {
                 .submitLabel(.done)
         }
         .onChange(of: focused) { f in if !f { store.flush() } }
+    }
+}
+
+/// A box filled by tapping a saved choice. Typing stays available but is never required.
+struct MCIPickField: View {
+    @EnvironmentObject var store: MCIStore
+    let label: String
+    @Binding var text: String
+    let choices: [String]
+    var readOnly = false
+    @State private var picking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.headline)
+            HStack(spacing: 10) {
+                Text(text.mciTrimmed.isEmpty ? "Not recorded" : text)
+                    .font(.title3)
+                    .foregroundStyle(text.mciTrimmed.isEmpty ? Color.secondary : Color.primary)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .background(MCIStyle.rowFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel("\(label): \(text.mciNR)")
+                if !readOnly {
+                    Button { picking = true } label: {
+                        Label("Pick", systemImage: "list.bullet").font(.headline).frame(minWidth: 96, minHeight: 56)
+                    }
+                    .buttonStyle(.borderedProminent).tint(MCIStyle.navy)
+                    .accessibilityLabel("Pick \(label)")
+                }
+            }
+        }
+        .sheet(isPresented: $picking) {
+            MCIPickSheet(title: label, choices: choices, current: text) { v in
+                text = v
+                store.flush()
+            }
+        }
+    }
+}
+
+struct MCIPickSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let choices: [String]
+    let current: String
+    let onPick: (String) -> Void
+    @State private var typed = ""
+
+    var unique: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for c in choices {
+            let t = c.mciTrimmed
+            if !t.isEmpty && seen.insert(t).inserted { out.append(t) }
+        }
+        return out
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if unique.isEmpty {
+                        Text("No saved choices yet. Add them in Settings → Pick Lists, or type one below.")
+                            .foregroundStyle(.secondary)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
+                        ForEach(unique, id: \.self) { c in
+                            let isOn = c == current
+                            Button { onPick(c); dismiss() } label: {
+                                Text(c)
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                    .padding(8)
+                                    .frame(maxWidth: .infinity, minHeight: 60)
+                                    .foregroundStyle(isOn ? Color.white : Color.primary)
+                                    .background(isOn ? MCIStyle.navy : MCIStyle.rowFill)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(isOn ? .isSelected : [])
+                        }
+                    }
+                    if !current.mciTrimmed.isEmpty {
+                        Button(role: .destructive) { onPick(""); dismiss() } label: {
+                            MCIBigLabel(title: "Clear (Not recorded)", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Divider()
+                    Text("Not in the list? Type it (optional):").font(.subheadline)
+                    HStack {
+                        TextField("Type here", text: $typed).textFieldStyle(.roundedBorder).frame(minHeight: 48)
+                        Button("Use") { onPick(typed.mciTrimmed); dismiss() }
+                            .buttonStyle(.borderedProminent).tint(MCIStyle.navy)
+                            .disabled(typed.mciTrimmed.isEmpty)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
     }
 }
 
@@ -3021,13 +3158,25 @@ struct MCIRoleSheet: View {
     @State private var at = Date()
     @State private var saving = false
 
+    /// Saved staff list first, then anyone already assigned in this incident.
+    var staffChoices: [String] {
+        var out: [String] = store.data.settings.staffList
+        if let inc = store.incident(incidentID) {
+            for r in inc.roles where !r.person.mciTrimmed.isEmpty { out.append(r.person) }
+        }
+        out.append(contentsOf: store.data.settings.unitList)
+        return out
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section("Person / call sign") { TextField("Name or call sign", text: $person).frame(minHeight: 44) }
+                Section("Person / call sign") {
+                    MCIPickField(label: "Person / call sign", text: $person, choices: staffChoices)
+                }
                 Section("Optional") {
-                    TextField("Agency / channel", text: $agency).frame(minHeight: 44)
-                    TextField("Reports to (local)", text: $reportsTo).frame(minHeight: 44)
+                    MCIPickField(label: "Agency / channel", text: $agency, choices: store.data.settings.agencyList)
+                    MCIPickField(label: "Reports to (local)", text: $reportsTo, choices: store.incident(incidentID)?.roleNames ?? [])
                     TextField("Notes", text: $notes).frame(minHeight: 44)
                 }
                 Section("Assigned at") {
@@ -3548,12 +3697,15 @@ struct MCIAidEditor: View {
                         MCITimeRow(label: "Contacted", value: a.contactedAt, tz: inc.timeZone, ref: inc.refDate, readOnly: ro) { v, _ in
                             store.update(incidentID) { i in if let k = i.aid.firstIndex(where: { $0.id == aidID }) { i.aid[k].contactedAt = v } }
                         }
-                        MCIField(label: "Units / Resources Sent", text: store.record(incidentID, \.aid, aidID, \.unitsSent, fallback: ""), readOnly: ro)
+                        MCIPickField(label: "Units / Resources Sent", text: store.record(incidentID, \.aid, aidID, \.unitsSent, fallback: ""),
+                                     choices: store.data.settings.unitList, readOnly: ro)
                         MCITimeRow(label: "ETA (estimate)", value: a.eta, tz: inc.timeZone, ref: inc.refDate, readOnly: ro) { v, _ in
                             store.update(incidentID) { i in if let k = i.aid.firstIndex(where: { $0.id == aidID }) { i.aid[k].eta = v } }
                         }
-                        MCIField(label: "ETA source", text: store.record(incidentID, \.aid, aidID, \.etaSource, fallback: ""), readOnly: ro)
-                        MCIField(label: "Assignment / Status", text: store.record(incidentID, \.aid, aidID, \.assignment, fallback: ""), readOnly: ro)
+                        MCIPickField(label: "ETA source", text: store.record(incidentID, \.aid, aidID, \.etaSource, fallback: ""),
+                                     choices: MCISettings.etaSources, readOnly: ro)
+                        MCIPickField(label: "Assignment / Status", text: store.record(incidentID, \.aid, aidID, \.assignment, fallback: ""),
+                                     choices: store.data.settings.assignmentList, readOnly: ro)
                         MCILongText(label: "Notes", text: store.record(incidentID, \.aid, aidID, \.notes, fallback: ""), minHeight: 120, readOnly: ro)
                         Group {
                             if let r = inc.resources.first(where: { $0.aidRequestID == aidID }) {
@@ -3627,7 +3779,8 @@ struct MCIAirEditor: View {
                             .buttonStyle(.plain).disabled(ro)
                         }
                         Group {
-                            MCIField(label: "Destination", text: store.record(incidentID, \.air, airID, \.destination, fallback: ""), readOnly: ro)
+                            MCIPickField(label: "Destination", text: store.record(incidentID, \.air, airID, \.destination, fallback: ""),
+                                         choices: inc.hospitals.map { $0.name }, readOnly: ro)
                             MCILongText(label: "Notes", text: store.record(incidentID, \.air, airID, \.notes, fallback: ""), minHeight: 120, readOnly: ro)
                             Text("Linking a patient here does not record a departure. Use Record Departure in Transport.")
                                 .font(.footnote).foregroundStyle(.secondary)
@@ -4046,8 +4199,9 @@ enum MCIDestinationName {
         return "Unknown destination"
     }
 
-    static func unitOptions(_ inc: MCIIncident) -> [MCIIDString] {
+    static func unitOptions(_ inc: MCIIncident, saved: [String] = []) -> [MCIIDString] {
         var out: [MCIIDString] = inc.resources.map { MCIIDString($0.id.uuidString) }
+        for name in saved { out.append(MCIIDString("pick:\(name)")) }
         out.append(MCIIDString("typed"))
         out.append(MCIIDString("unknown"))
         return out
@@ -4055,6 +4209,7 @@ enum MCIDestinationName {
 
     static func unit(_ id: String, in inc: MCIIncident) -> String {
         if let r = inc.resources.first(where: { $0.id.uuidString == id }) { return r.identifier.mciDash }
+        if id.hasPrefix("pick:") { return String(id.dropFirst(5)) }
         return id == "typed" ? "Other / type below" : "Unknown unit"
     }
 }
@@ -4111,6 +4266,10 @@ struct MCIDepartureSheet: View {
         var units: [MCIUnitChoice] = []
         for r in inc.resources where r.status != .released {
             units.append(MCIUnitChoice(id: r.id.uuidString, resourceID: r.id, label: "\(r.identifier.mciDash) (\(r.status.label))"))
+        }
+        let staged = Set(inc.resources.map { $0.identifier.mciTrimmed.lowercased() })
+        for name in store.data.settings.unitList where !staged.contains(name.lowercased()) {
+            units.append(MCIUnitChoice(id: "pick:\(name)", resourceID: nil, label: name))
         }
         units.append(MCIUnitChoice(id: "typed", resourceID: nil, label: "Other / type below"))
         units.append(MCIUnitChoice(id: "unknown", resourceID: nil, label: "Unknown unit"))
@@ -4171,7 +4330,10 @@ struct MCIDepartureSheet: View {
         let did = departureID
         let hid = destinationChosen ? hospitalID : nil
         let rid = unitChoice?.resourceID
-        let ut = unitChoice?.id == "typed" ? unitText : ""
+        var ut = ""
+        if let c = unitChoice {
+            if c.id == "typed" { ut = unitText } else if c.id.hasPrefix("pick:") { ut = c.label }
+        }
         let cat = category
         let dep: Date? = timeKnown ? departedAt : nil
         let retro = (store.incident(incidentID)?.patient(patientID)?.sceneLocation ?? .onScene) == .unknown
@@ -4254,7 +4416,7 @@ struct MCIDepartureFixSheet: View {
             MCIOptionGrid(options: MCIDestinationName.options(inc), selected: hospitalChoice,
                           title: { o in MCIDestinationName.of(o.id, in: inc) }, minWidth: 200) { hospitalChoice = $0 }
         case .unit:
-            MCIOptionGrid(options: MCIDestinationName.unitOptions(inc), selected: unitChoice,
+            MCIOptionGrid(options: MCIDestinationName.unitOptions(inc, saved: store.data.settings.unitList), selected: unitChoice,
                           title: { o in MCIDestinationName.unit(o.id, in: inc) }, minWidth: 200) { unitChoice = $0 }
             if unitChoice?.id == "typed" {
                 TextField("Unit / call sign", text: $unitText).textFieldStyle(.roundedBorder).frame(minHeight: 48)
@@ -4284,7 +4446,10 @@ struct MCIDepartureFixSheet: View {
             store.update(incidentID) { $0.correctDepartureHospital(did, h, reason: r, now: t, initials: ini) }
         case .unit:
             let rid = unitChoice.flatMap { UUID(uuidString: $0.id) }
-            let text = unitChoice?.id == "typed" ? unitText : ""
+            var text = ""
+            if let c = unitChoice {
+                if c.id == "typed" { text = unitText } else if c.id.hasPrefix("pick:") { text = String(c.id.dropFirst(5)) }
+            }
             store.update(incidentID) { $0.correctDepartureUnit(did, resourceID: rid, unitText: text, reason: r, now: t, initials: ini) }
         case .category:
             let c = category
@@ -4317,8 +4482,12 @@ struct MCIStagingSection: View {
                 Text("Derived from recorded statuses").font(.footnote).foregroundStyle(.secondary)
             }
             if !inc.isClosed {
-                MCISectionBox(title: "Add Resource") {
-                    TextField("Unit / resource identifier (e.g. Lee 12)", text: $newIdentifier)
+                MCISectionBox(title: "Add Resource — tap a unit") {
+                    MCIOptionGrid(options: store.data.settings.unitList.map { MCIIDString($0) }, selected: nil,
+                                  title: { $0.id }, minWidth: 150) { u in addOrOpen(u.id, inc) }
+                    Text("A unit already in staging opens instead of being added twice. Agencies and other units: type below or set up Pick Lists in Settings.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    TextField("Other unit / resource (optional typing)", text: $newIdentifier)
                         .textFieldStyle(.roundedBorder).frame(minHeight: 48)
                     if !dups.isEmpty {
                         Label("Possible duplicate of \(dups.map { $0.identifier }.joined(separator: ", ")). Open the existing one instead, or add anyway if it is a different resource.",
@@ -4363,6 +4532,19 @@ struct MCIStagingSection: View {
         }
         .sheet(item: $editing) { box in MCIResourceEditor(incidentID: inc.id, resourceID: box.id).environmentObject(store) }
     }
+
+    /// Tapping a saved unit adds it with Time In now, or opens the existing record so it is never duplicated.
+    func addOrOpen(_ name: String, _ inc: MCIIncident) {
+        if let existing = inc.duplicateResources(identifier: name, excluding: nil).first {
+            editing = MCIIDBox(id: existing.id)
+            return
+        }
+        var newID: UUID?
+        let t = store.now()
+        let ini = store.initials
+        store.update(inc.id) { newID = $0.addResource(identifier: name, agency: "Sumter County EMS", aidRequestID: nil, timeIn: t, now: t, initials: ini) }
+        if let newID { editing = MCIIDBox(id: newID) }
+    }
 }
 
 struct MCIResourceEditor: View {
@@ -4378,7 +4560,8 @@ struct MCIResourceEditor: View {
                     let ro = inc.isClosed
                     let dups = inc.duplicateResources(identifier: r.identifier, excluding: r.id)
                     VStack(alignment: .leading, spacing: 14) {
-                        MCIField(label: "Unit / Resource", text: store.record(incidentID, \.resources, resourceID, \.identifier, fallback: ""), readOnly: ro)
+                        MCIPickField(label: "Unit / Resource", text: store.record(incidentID, \.resources, resourceID, \.identifier, fallback: ""),
+                                     choices: store.data.settings.unitList, readOnly: ro)
                         if !dups.isEmpty {
                             Label("Same identifier as another resource. Check it is not the same vehicle recorded twice.", systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(MCIStyle.brick)
@@ -4400,11 +4583,15 @@ struct MCIResourceEditor: View {
                                 i.log(resourceID, "resource", "edit", field: "Time In", before: old.map(MCIFmt.iso), after: v.map(MCIFmt.iso), now: t, initials: ini, note: reason)
                             }
                         }
-                        MCIField(label: "Assignment", text: store.record(incidentID, \.resources, resourceID, \.assignment, fallback: ""), readOnly: ro)
+                        MCIPickField(label: "Assignment", text: store.record(incidentID, \.resources, resourceID, \.assignment, fallback: ""),
+                                     choices: store.data.settings.assignmentList, readOnly: ro)
                         Group {
-                            MCIField(label: "Type", text: store.record(incidentID, \.resources, resourceID, \.type, fallback: ""), readOnly: ro)
-                            MCIField(label: "Agency", text: store.record(incidentID, \.resources, resourceID, \.agency, fallback: ""), readOnly: ro)
-                            MCIField(label: "Call sign / contact", text: store.record(incidentID, \.resources, resourceID, \.contact, fallback: ""), readOnly: ro)
+                            MCIPickField(label: "Type", text: store.record(incidentID, \.resources, resourceID, \.type, fallback: ""),
+                                         choices: store.data.settings.resourceTypeList, readOnly: ro)
+                            MCIPickField(label: "Agency", text: store.record(incidentID, \.resources, resourceID, \.agency, fallback: ""),
+                                         choices: store.data.settings.agencyList, readOnly: ro)
+                            MCIPickField(label: "Call sign / contact", text: store.record(incidentID, \.resources, resourceID, \.contact, fallback: ""),
+                                         choices: store.data.settings.staffList, readOnly: ro)
                             MCIField(label: "Quantity / capacity notes", text: store.record(incidentID, \.resources, resourceID, \.capacityNotes, fallback: ""), readOnly: ro)
                             MCILongText(label: "Notes", text: store.record(incidentID, \.resources, resourceID, \.notes, fallback: ""), minHeight: 120, readOnly: ro)
                             if let aid = inc.aid.first(where: { $0.id == r.aidRequestID }) {
@@ -5283,8 +5470,25 @@ struct MCISettingsView: View {
     @State private var refMeta = MCIReferenceDoc(id: UUID(), title: "", revision: "", effectiveDate: "", source: "", approvalRecord: "", fileName: "", addedAt: Date())
     @State private var results: [MCICheckResult] = []
     @State private var loaded = false
+    @State private var staffText = ""
+    @State private var unitText = ""
+    @State private var assignmentText = ""
+    @State private var typeText = ""
+    @State private var showStaffImporter = false
 
     func lines(_ s: String) -> [String] { s.split(separator: "\n").map { String($0).mciTrimmed }.filter { !$0.isEmpty } }
+
+    func importStaff(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { message = "The file could not be opened."; return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else { message = "The file could not be read as text."; return }
+        let names: [String] = raw.split(whereSeparator: { $0.isNewline || $0 == "," })
+            .map { String($0).mciTrimmed }.filter { !$0.isEmpty }
+        store.updateSettings { $0.pickStaff = names }
+        staffText = names.joined(separator: "\n")
+        message = "Imported \(names.count) names into the staff list."
+    }
 
     var body: some View {
         NavigationStack {
@@ -5353,6 +5557,22 @@ struct MCISettingsView: View {
                     Section("Mutual aid agencies (one per line)") {
                         TextField("Agencies", text: $groundText, axis: .vertical).lineLimit(4...12)
                         Button("Save Agencies") { store.updateSettings { $0.groundAgencies = lines(groundText) }; message = "Agencies saved." }
+                    }
+                    Section {
+                        TextField("Staff names / call signs, one per line", text: $staffText, axis: .vertical).lineLimit(3...12)
+                        Button("Save Staff List") { store.updateSettings { $0.pickStaff = lines(staffText) }; message = "Staff list saved." }
+                        Button("Import Staff List from a Text File…") { showStaffImporter = true }
+                            .fileImporter(isPresented: $showStaffImporter, allowedContentTypes: [.plainText, .commaSeparatedText]) { result in
+                                importStaff(result)
+                            }
+                        TextField("Units, one per line", text: $unitText, axis: .vertical).lineLimit(3...12)
+                        Button("Save Units") { store.updateSettings { $0.pickUnits = lines(unitText) }; message = "Units saved." }
+                        TextField("Assignments, one per line", text: $assignmentText, axis: .vertical).lineLimit(3...12)
+                        Button("Save Assignments") { store.updateSettings { $0.pickAssignments = lines(assignmentText) }; message = "Assignments saved." }
+                        TextField("Resource types, one per line", text: $typeText, axis: .vertical).lineLimit(3...12)
+                        Button("Save Resource Types") { store.updateSettings { $0.pickResourceTypes = lines(typeText) }; message = "Resource types saved." }
+                    } header: { Text("Pick lists (tap-to-fill choices)") } footer: {
+                        Text("These fill the Pick buttons for roles, transport units and staging. A text file with one name per line (or commas) can be imported from Files, so no typing is needed.")
                     }
                     Section("Air services (one per line)") {
                         TextField("Services", text: $airText, axis: .vertical).lineLimit(2...6)
@@ -5431,6 +5651,10 @@ struct MCISettingsView: View {
             groundText = s.groundAgencies.joined(separator: "\n")
             airText = s.airServices.joined(separator: "\n")
             reminderText = s.pollReminderMinutes.map(String.init) ?? ""
+            staffText = s.staffList.joined(separator: "\n")
+            unitText = s.unitList.joined(separator: "\n")
+            assignmentText = s.assignmentList.joined(separator: "\n")
+            typeText = s.resourceTypeList.joined(separator: "\n")
         }
     }
 }
@@ -5587,6 +5811,12 @@ enum MCIChecks {
               structureKeys.isSuperset(of: ["sideAFaces", "roofDiv", "floor2Div", "floor1Div", "exposureB", "exposureD"]),
               facilityKeys.isSuperset(of: ["facility", "residents", "staff", "ambulatory", "nonAmbulatory", "bariatric",
                                           "wingLeft", "wingRight", "muster1", "muster2"]))
+
+        let settingsData: Data? = try? JSONEncoder().encode(MCISettings())
+        let reloaded: MCISettings? = settingsData.flatMap { try? JSONDecoder().decode(MCISettings.self, from: $0) }
+        check("Pick lists have defaults and saved settings without them still load",
+              MCISettings().unitList.count == 11, MCISettings().assignmentList.contains("Transport"),
+              reloaded != nil, reloaded?.unitList.count == 11, reloaded?.staffList.isEmpty == true)
 
         // Overflow content for the packet
         let long = String(repeating: "Long complaint text for pagination checks. ", count: 24) + "MARKER-END"
