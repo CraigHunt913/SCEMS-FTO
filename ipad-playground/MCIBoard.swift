@@ -403,18 +403,48 @@ enum MCISketchTemplate: String, Codable, CaseIterable, Identifiable {
         case .facility: return 2
         }
     }
+    /// Boxes and labelled blanks printed on each card (Sumter_EMS_Scene_Sketch_Cards.pdf), in card order.
+    /// Entries marked "added" are not printed on that card; they keep the incident identity with the sketch.
     var fields: [(key: String, label: String)] {
-        let common: [(key: String, label: String)] = [("incidentNumber", "Incident Number"), ("dateTime", "Date/Time"),
-                      ("location", "Location / Address"), ("sketchedBy", "Sketched By")]
         switch self {
         case .roadway:
-            return common + [("mainRoad", "Main Road"), ("crossStreet", "Cross Street")]
+            let f: [(key: String, label: String)] = [
+                ("incidentNumber", "Incident #"), ("dateTime", "Date / Time"),
+                ("location", "Location / Address"), ("sketchedBy", "Sketched By"),
+                ("mainRoad", "Main Rd / Hwy"), ("crossStreet", "Cross St"),
+                ("directionOfTravel", "Direction of travel"),
+                ("lanesBlocked", "Lanes blocked (card note)"), ("accessEgress", "Access / egress (card note)"),
+            ]
+            return f
         case .structure:
-            return common + [("sideAFaces", "Side A Faces"), ("wings", "Wing / Hall Labels")]
+            let f: [(key: String, label: String)] = [
+                ("incidentNumber", "Incident #"), ("dateTime", "Date / Time"),
+                ("location", "Location / Address"), ("sketchedBy", "Sketched By"),
+                ("sideAFaces", "Side A faces (confirm address side)"),
+                ("roofDiv", "Roof · Div"), ("floor2Div", "2nd Flr · Div"), ("floor1Div", "1st Flr · Div"),
+                ("exposureB", "Exposure B"), ("exposureD", "Exposure D"),
+            ]
+            return f
         case .facility:
-            return common + [("facility", "Facility"), ("residents", "Residents Number"), ("staff", "Staff Number"),
-                             ("ambulatory", "Ambulatory"), ("nonAmbulatory", "Non-ambulatory"),
-                             ("bariatric", "Bariatric"), ("wings", "Wing / Hall Labels")]
+            let f: [(key: String, label: String)] = [
+                ("facility", "Facility"), ("residents", "Residents #"), ("staff", "Staff #"),
+                ("ambulatory", "Ambulatory"), ("nonAmbulatory", "Non-Amb"), ("bariatric", "Bariatric"),
+                ("wingLeft", "Wing / Hall (left)"), ("wingRight", "Wing / Hall (right)"),
+                ("muster1", "M1 Muster"), ("muster2", "M2 Muster"),
+                ("roomsCleared", "Rooms cleared (card note)"), ("evacRoutes", "Evacuation routes (card note)"),
+                ("incidentNumber", "Incident # (added)"), ("dateTime", "Date / Time (added)"),
+                ("location", "Location / Address (added)"), ("sketchedBy", "Sketched By (added)"),
+            ]
+            return f
+        }
+    }
+
+    /// The card's own footer instruction, shown with the sketch.
+    var cardNote: String {
+        switch self {
+        case .roadway: return "Mark vehicles, patients, apparatus, hazards, LZ · note lanes blocked and access / egress"
+        case .structure: return "Side A is the address / front; B, C, D run clockwise · interior floors are divisions"
+        case .facility: return "Mark rooms cleared, patient counts by triage color, muster points, and evacuation routes"
         }
     }
 }
@@ -4532,7 +4562,8 @@ struct MCISketchDetails: View {
                         MCIField(label: "Sketch title", text: store.record(incidentID, \.sketches, sketchID, \.title, fallback: ""), readOnly: ro)
                         MCIField(label: "Author", text: store.record(incidentID, \.sketches, sketchID, \.author, fallback: ""), readOnly: ro)
                         Text("Card fields (\(s.template.title))").font(.mciHeading(.title3))
-                        Text("Facility descriptors (ambulatory, non-ambulatory, bariatric) can overlap; they are not added up. Orientation labels are entered by hand and do not imply a verified compass direction.")
+                        Text("Card: \(s.template.cardNote)").font(.callout)
+                        Text("Facility descriptors (ambulatory, non-ambulatory, bariatric) can overlap; they are not added up. Orientation labels are entered by hand and do not imply a verified compass direction. Typed values here never change patient counts or locations.")
                             .font(.footnote).foregroundStyle(.secondary)
                         ForEach(s.template.fields, id: \.key) { f in MCIField(label: f.label, text: field(f.key), readOnly: ro) }
                         MCISectionBox(title: "Triage Snapshot on this Card") {
@@ -5021,8 +5052,11 @@ final class MCIPDFComposer {
             let rect = MCISketchBackground.fit(CGSize(width: w, height: h), in: area)
             UIColor.white.setFill()
             UIRectFill(rect)
+            var cardRect: CGRect? = nil
             if let bg = backgrounds[s.template] {
-                bg.draw(in: MCISketchBackground.fit(bg.size, in: rect))
+                let r = MCISketchBackground.fit(bg.size, in: rect)
+                bg.draw(in: r)
+                cardRect = r
             } else {
                 drawText("Sketch card PDF not on this iPad — blank page", smallFont, .gray, CGRect(x: rect.minX + 4, y: rect.minY + 4, width: rect.width, height: 12))
             }
@@ -5033,10 +5067,55 @@ final class MCIPDFComposer {
                 }
                 img.draw(in: rect)
             }
+            if let cardRect { drawCardValues(s, on: cardRect) }
             UIColor.gray.setStroke()
             UIBezierPath(rect: rect).stroke()
             y = rect.maxY + 6
         }
+    }
+
+    /// Writes typed card values into the card's own header boxes, and the rest into a labelled
+    /// companion block in the card's blank lower area. Positions are the card PDF's (792 × 612 pt).
+    func drawCardValues(_ s: MCISketch, on r: CGRect) {
+        let sx = r.width / 792
+        let sy = r.height / 612
+        let boxX: [CGFloat] = [30.7, 216.1, 401.6, 587.1]
+        let keys: [String] = s.template == .facility
+            ? ["facility", "residents", "staff", "descriptors"]
+            : ["incidentNumber", "dateTime", "location", "sketchedBy"]
+        let headerFont = UIFont.systemFont(ofSize: max(6, 8 * sy), weight: .semibold)
+        for (i, k) in keys.enumerated() {
+            let value: String = k == "descriptors" ? facilityDescriptors(s) : (s.fields[k] ?? "").mciTrimmed
+            if value.isEmpty { continue }
+            let box = CGRect(x: r.minX + boxX[i] * sx, y: r.minY + 76 * sy, width: 178 * sx, height: 11 * sy)
+            drawText(value, headerFont, MCIStyle.uiNavy, box)
+        }
+        var lines: [String] = []
+        for f in s.template.fields {
+            let v = (s.fields[f.key] ?? "").mciTrimmed
+            if !v.isEmpty { lines.append("\(f.label): \(v)") }
+        }
+        if !s.triageSnapshot.isEmpty { lines.append("Triage snapshot (copied, not live): \(s.triageSnapshot)") }
+        if lines.isEmpty { return }
+        let top: CGFloat = s.template == .facility ? 480 : 462
+        let block = CGRect(x: r.minX + 24 * sx, y: r.minY + top * sy, width: 744 * sx, height: (604 - top) * sy)
+        let labelFont = UIFont.systemFont(ofSize: max(6, 7 * sy), weight: .bold)
+        let bodyFontSmall = UIFont.systemFont(ofSize: max(6, 7 * sy))
+        drawText("ENTERED IN THE APP — companion to this card (typed values; ink is never read)", labelFont, MCIStyle.uiBrick,
+                 CGRect(x: block.minX, y: block.minY, width: block.width, height: 10 * sy))
+        let body = lines.joined(separator: "   ·   ")
+        drawText(body, bodyFontSmall, .black, CGRect(x: block.minX, y: block.minY + 11 * sy, width: block.width, height: block.height - 11 * sy))
+    }
+
+    func facilityDescriptors(_ s: MCISketch) -> String {
+        var parts: [String] = []
+        let a = (s.fields["ambulatory"] ?? "").mciTrimmed
+        let n = (s.fields["nonAmbulatory"] ?? "").mciTrimmed
+        let b = (s.fields["bariatric"] ?? "").mciTrimmed
+        if !a.isEmpty { parts.append("Amb \(a)") }
+        if !n.isEmpty { parts.append("Non-amb \(n)") }
+        if !b.isEmpty { parts.append("Bariatric \(b)") }
+        return parts.joined(separator: " / ")
     }
 
     func activityPart() {
@@ -5494,6 +5573,15 @@ enum MCIChecks {
         inc.inks.append(MCIInk(id: UUID(), recordID: sk, fieldID: "sketch", drawing: PKDrawing(strokes: [stroke]).dataRepresentation(),
                                pageCount: 1, width: 1024, pageHeight: 792, updatedAt: at(43)))
         check("Sketch stores template, page and fixed canvas size", inc.sketches.first { $0.id == sk }.map { $0.template == .roadway && $0.canvasWidth == 1024 && $0.canvasHeight == 792 } ?? false)
+
+        let structureKeys = Set(MCISketchTemplate.structure.fields.map { $0.key })
+        let facilityKeys = Set(MCISketchTemplate.facility.fields.map { $0.key })
+        let roadKeys = Set(MCISketchTemplate.roadway.fields.map { $0.key })
+        check("Sketch fields match the three cards",
+              roadKeys.isSuperset(of: ["incidentNumber", "dateTime", "location", "sketchedBy", "mainRoad", "crossStreet"]),
+              structureKeys.isSuperset(of: ["sideAFaces", "roofDiv", "floor2Div", "floor1Div", "exposureB", "exposureD"]),
+              facilityKeys.isSuperset(of: ["facility", "residents", "staff", "ambulatory", "nonAmbulatory", "bariatric",
+                                          "wingLeft", "wingRight", "muster1", "muster2"]))
 
         // Overflow content for the packet
         let long = String(repeating: "Long complaint text for pagination checks. ", count: 24) + "MARKER-END"

@@ -15,7 +15,7 @@ message).
 3. Paste all of `MCIBoard.swift`. It defines `ContentView` at the bottom.
 4. Leave **MyApp** as it is. Tap **▶ Run**.
 5. In the app, go to **Home → Settings, Directories and Built-in Checks → Run
-   Built-in Checks**. 44 checks run on made-up data. All should be green.
+   Built-in Checks**. 45 checks run on made-up data. All should be green.
 
 If you see "Main actor-isolated" or "Sendable" errors, set the app's Swift
 language version to 5 in the app settings, if your version of Playgrounds offers
@@ -41,7 +41,10 @@ The app follows `References/Sumter_EMS_MCI_Command_Board_11x17.pdf` (4 pages):
 Still optional, from inside the app:
 
 - **Sketch backgrounds:** Settings → **Add Scene Sketch Cards PDF**. Pick
-  `Sumter_EMS_Scene_Sketch_Cards.pdf`, which hasn't been uploaded yet.
+  `Sumter_EMS_Scene_Sketch_Cards.pdf` (a copy is in `References/`). Its pages
+  are Roadway / MVC, Structure A/B/C/D and Large Facility, in the order the
+  app expects. The pages are shown unaltered behind the ink. The PDF isn't
+  built into the code because it would add about half a megabyte to the paste.
 - **Agency references:** Settings → **Approved references**.
 
 ### Intentional differences from the paper board
@@ -153,7 +156,16 @@ Transport, Staging, Sketch and Activity.
   Sketch Page.
 - A full-screen PencilKit canvas over the locked card background, with zoom
   in/out and reset, page navigation, eraser, lasso, undo/redo and Finger Draw.
-- **Card Details** is a large editor for every small box on the card.
+- **Card Details** is a large editor for every box on the card:
+  - Roadway: Incident #, Date / Time, Location, Sketched By, Main Rd / Hwy and
+    Cross St.
+  - Structure: Side A faces, Roof / 2nd / 1st floor divisions, and Exposure B
+    and D.
+  - Facility: Facility, Residents #, Staff #, Ambulatory / Non-amb /
+    Bariatric, both Wing / Hall blanks, and the M1 / M2 muster points.
+- In the packet, typed values are printed into the card's own header boxes.
+  Everything else goes in a labeled companion block in the card's blank lower
+  area.
 - The triage snapshot is a dated copy from a source you choose. It is never a
   live tally.
 
