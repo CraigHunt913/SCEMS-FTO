@@ -15,24 +15,48 @@ message).
 3. Paste all of `MCIBoard.swift`. It defines `ContentView` at the bottom.
 4. Leave **MyApp** as it is. Tap **▶ Run**.
 5. In the app, go to **Home → Settings, Directories and Built-in Checks → Run
-   Built-in Checks**. 42 checks run on made-up data. All should be green.
+   Built-in Checks**. 44 checks run on made-up data. All should be green.
 
 If you see "Main actor-isolated" or "Sendable" errors, set the app's Swift
 language version to 5 in the app settings, if your version of Playgrounds offers
 it.
 
-### Optional: the original PDFs
+### Built from the source board
 
-None of the source PDFs were uploaded, so none are built in. You can add them
-from inside the app:
+The app follows `References/Sumter_EMS_MCI_Command_Board_11x17.pdf` (4 pages):
+
+- **Shield:** the original shield is built into the code. It was taken out of
+  the PDF with its transparency restored and is only scaled, not redrawn.
+- **How to Triage:** the START / JumpSTART / SALT text from page 2 is included
+  word for word. In Triage, tap **Show How to Triage**. It is labeled
+  "Reference only — verify against agency protocol" and is never used to pick a
+  category. It is also printed in the packet.
+- **Command roles** are grouped the way the page 1 chart lays them out: Command,
+  Command Staff, Operations, Medical Branch, then Groups / Units.
+- **Incident Packet PDF** is 11 × 17 landscape by default, like the board (Letter
+  is an option). Each part has the board's header: the shield, the red "SUMTER
+  COUNTY EMS" line, the navy page title and a red rule. Each part also keeps its
+  footer note from the board, and page numbers read "PAGE n OF N · section".
+
+Still optional, from inside the app:
 
 - **Sketch backgrounds:** Settings → **Add Scene Sketch Cards PDF**. Pick
-  `Sumter_EMS_Scene_Sketch_Cards.pdf`. Pages 1–3 then appear, unaltered and
-  locked, behind sketches.
-- **Triage reference:** Settings → **Approved references**. Add the START /
-  JumpSTART / SALT page, or an agency PDF, with its revision and approval
-  details. It opens offline from the Triage section, labeled "Reference only".
-- **Shield:** add an image named `SumterShield` and it shows in the header.
+  `Sumter_EMS_Scene_Sketch_Cards.pdf`, which hasn't been uploaded yet.
+- **Agency references:** Settings → **Approved references**.
+
+### Intentional differences from the paper board
+
+- **No "NIMS / ICS COMPLIANT" badge.** The software makes no compliance claim.
+- **Transport categories.** Page 4 circles R Y G B. The app uses R, Y, G, EXP
+  (Expectant) and DEC (Deceased), plus UNK (not classified), so Expectant and
+  Black are never merged into one "B".
+- **Hospital board.** It shows Patients Sent for every category, not just
+  R / Y / G, and unknown destinations get their own row.
+- **Triage count.** The single count row becomes dated snapshots: the Running
+  Count by time. The tracked Patient Register is shown beside it and never
+  added in.
+- **No row limits.** The paper's fixed rows (14 transports, 6 staging, 8
+  agencies, 3 air) become lists you can extend.
 
 ## What's in it
 
