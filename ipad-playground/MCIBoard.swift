@@ -3683,8 +3683,11 @@ struct MCITransportSection: View {
             if categoryFilter != "all" && (p.category?.rawValue ?? MCIUnclassified.key) != categoryFilter { return false }
             if q.isEmpty { return true }
             let d = inc.validDeparture(for: p.id)
-            let hay: [String] = [p.number, p.tag, p.complaint, inc.hospital(d?.hospitalID)?.name ?? "",
-                       inc.resource(d?.resourceID)?.identifier ?? "", d?.unitText ?? ""].joined(separator: " ").lowercased()
+            let destination: String = inc.hospital(d?.hospitalID)?.name ?? ""
+            let unit: String = inc.resource(d?.resourceID)?.identifier ?? ""
+            let unitText: String = d?.unitText ?? ""
+            let parts: [String] = [p.number, p.tag, p.complaint, destination, unit, unitText]
+            let hay: String = parts.joined(separator: " ").lowercased()
             return hay.contains(q)
         }
     }
