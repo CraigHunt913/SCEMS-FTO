@@ -557,9 +557,9 @@ struct MCIReferenceDoc: Codable, Identifiable, Hashable {
 }
 
 enum MCISeeds {
-    static let incidentTypes = ["MCI", "MVC", "HazMat", "Fire", "Threat", "Other"]
-    static let levels = ["1", "2", "3", "4", "5"]
-    static let checklist = [
+    static let incidentTypes: [String] = ["MCI", "MVC", "HazMat", "Fire", "Threat", "Other"]
+    static let levels: [String] = ["1", "2", "3", "4", "5"]
+    static let checklist: [String] = [
         "Establish and announce Command.",
         "Declare MCI and level to dispatch.",
         "Size-up: scene safety, hazards, number of patients.",
@@ -573,21 +573,21 @@ enum MCISeeds {
         "Consider Rehab, CISD, Mutual Aid.",
         "Appoint Safety Officer.",
     ]
-    static let roles = [
+    static let roles: [String] = [
         "Incident Commander", "Safety Officer", "Public Information Officer", "Liaison Officer",
         "Operations Section Chief", "Medical Branch Director", "Triage Group Supervisor",
         "Treatment Group Supervisor", "Transport Group Supervisor", "Staging Area Manager",
         "Medical Communications Coordinator",
     ]
-    static let hospitals = [
+    static let hospitals: [String] = [
         "Prisma Health Tuomey, Sumter", "McLeod Regional, Florence", "MUSC Health, Florence",
         "Prisma Health Richland, Columbia", "McLeod Health Clarendon, Manning", "MUSC Health Kershaw, Camden",
     ]
-    static let ground = [
+    static let ground: [String] = [
         "Lee County EMS", "Kershaw County EMS", "Clarendon Fire / Rescue", "Timmonsville Rescue",
         "Florence County EMS", "Richland County EMS", "Guardian Ambulance", "Prisma Health Ambulance",
     ]
-    static let air = ["Meducare 2", "AirReach", "LifeNet 2"]
+    static let air: [String] = ["Meducare 2", "AirReach", "LifeNet 2"]
 }
 
 struct MCISettings: Codable {
@@ -1084,7 +1084,7 @@ extension MCIIncident {
             guard let d = MCIFmt.parseISO(s) else { return s }
             return MCIFmt.clock(d, tz: tz, ref: ref)
         }
-        let names = ["patientAdded": "Patient added", "patientAddedRetrospective": "Patient added (already departed)",
+        let names: [String: String] = ["patientAdded": "Patient added", "patientAddedRetrospective": "Patient added (already departed)",
                      "categoryChanged": "Category changed", "enteredInError": "Marked Entered in Error",
                      "restored": "Restored", "departureRecorded": "Departure recorded",
                      "departureVoided": "Departure voided", "arrivalConfirmed": "Arrival confirmed",
@@ -1215,9 +1215,11 @@ enum MCIBackupCodec {
         let resourceIDs = Set(i.resources.map(\.id))
         let aidIDs = Set(i.aid.map(\.id))
         var all: [UUID] = [i.id]
-        all += i.patients.map(\.id) + i.departures.map(\.id) + i.hospitals.map(\.id) + i.polls.map(\.id)
-        all += i.aid.map(\.id) + i.air.map(\.id) + i.resources.map(\.id) + i.sketches.map(\.id)
-        all += i.snapshots.map(\.id) + i.checklist.map(\.id) + i.roles.map(\.id) + i.events.map(\.id) + i.inks.map(\.id)
+        let groups: [[UUID]] = [i.patients.map(\.id), i.departures.map(\.id), i.hospitals.map(\.id), i.polls.map(\.id),
+                                i.aid.map(\.id), i.air.map(\.id), i.resources.map(\.id), i.sketches.map(\.id),
+                                i.snapshots.map(\.id), i.checklist.map(\.id), i.roles.map(\.id), i.events.map(\.id),
+                                i.inks.map(\.id)]
+        for g in groups { all.append(contentsOf: g) }
         if Set(all).count != all.count { p.append("Duplicate record identifiers.") }
         for d in i.departures {
             if !patientIDs.contains(d.patientID) { p.append("A departure refers to a missing patient.") }
@@ -3681,7 +3683,7 @@ struct MCITransportSection: View {
             if categoryFilter != "all" && (p.category?.rawValue ?? MCIUnclassified.key) != categoryFilter { return false }
             if q.isEmpty { return true }
             let d = inc.validDeparture(for: p.id)
-            let hay = [p.number, p.tag, p.complaint, inc.hospital(d?.hospitalID)?.name ?? "",
+            let hay: [String] = [p.number, p.tag, p.complaint, inc.hospital(d?.hospitalID)?.name ?? "",
                        inc.resource(d?.resourceID)?.identifier ?? "", d?.unitText ?? ""].joined(separator: " ").lowercased()
             return hay.contains(q)
         }
@@ -5139,7 +5141,7 @@ final class MCIPDFComposer {
     }
 
     func inkTitle(_ k: MCIInk) -> String {
-        let names = ["commandNotes": "Command Notes", "patientNotes": "Notes"]
+        let names: [String: String] = ["commandNotes": "Command Notes", "patientNotes": "Notes"]
         return "\(inc.recordLabel(k.recordID)) — \(names[k.fieldID] ?? k.fieldID)"
     }
 

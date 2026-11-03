@@ -924,7 +924,7 @@ extension ShiftRecord {
         }
         func st(_ s: String?) -> String { s.flatMap(UnitStatus.init(rawValue:))?.abbr ?? (s ?? "—") }
         let field = Milestone(rawValue: e.field)?.label ?? e.field
-        let names = ["runStarted": "Run started", "runClosed": "Run closed", "assigned": "Assigned",
+        let names: [String: String] = ["runStarted": "Run started", "runClosed": "Run closed", "assigned": "Assigned",
                      "pendingCreated": "Holding call added", "cancelled": "Call cancelled",
                      "archived": "Shift archived", "reopened": "Shift reopened",
                      "restored": "Restored copy created", "runTransferredIn": "Run transferred in",
@@ -1006,8 +1006,13 @@ enum Backup {
         let unitIDs = Set(s.units.map(\.id))
         let callIDs = Set(s.calls.map(\.id))
         let pendingIDs = Set(s.pending.map(\.id))
-        let all = [s.id] + s.stations.map(\.id) + s.units.map(\.id) + s.calls.map(\.id) + s.pending.map(\.id)
-            + s.events.map(\.id) + s.inks.map(\.id)
+        var all: [UUID] = [s.id]
+        all.append(contentsOf: s.stations.map(\.id))
+        all.append(contentsOf: s.units.map(\.id))
+        all.append(contentsOf: s.calls.map(\.id))
+        all.append(contentsOf: s.pending.map(\.id))
+        all.append(contentsOf: s.events.map(\.id))
+        all.append(contentsOf: s.inks.map(\.id))
         if Set(all).count != all.count { p.append("Duplicate record identifiers.") }
         for u in s.units where !stationIDs.contains(u.stationID) { p.append("Unit \(u.name) refers to a missing station.") }
         for u in s.units {
@@ -3917,7 +3922,7 @@ final class PDFComposer {
         var rows: [[String]] = []
         for u in s.orderedUnits {
             guard let run = s.activeCall(for: u.id) else { continue }
-            var r = ["Unit \(u.name)", run.runNumber.orDash]
+            var r: [String] = ["Unit \(u.name)", run.runNumber.orDash]
             r += Milestone.allCases.map { clock(run.time($0)) }
             r.append(cell(run.notes, "Unit \(u.name) run \(run.runNumber.orDash) notes"))
             rows.append(r)
@@ -3952,7 +3957,7 @@ final class PDFComposer {
         var rows: [[String]] = []
         for u in s.orderedUnits + s.units.filter({ $0.retired }) {
             for r in s.runs(for: u.id) {
-                var row = [u.name, r.runNumber.orDash, r.priority.short, r.determinant.short,
+                var row: [String] = [u.name, r.runNumber.orDash, r.priority.short, r.determinant.short,
                            cell(r.nature, "Unit \(u.name) run \(r.runNumber.orDash) nature"),
                            cell(r.location, "Unit \(u.name) run \(r.runNumber.orDash) location"),
                            cell(r.destination, "Unit \(u.name) run \(r.runNumber.orDash) destination")]
@@ -3992,7 +3997,7 @@ final class PDFComposer {
     }
 
     func inkTitle(_ ink: InkAttachment) -> String {
-        let fields = ["crew": "Crew", "unitNotes": "Unit Notes", "runNotes": "Run Notes",
+        let fields: [String: String] = ["crew": "Crew", "unitNotes": "Unit Notes", "runNotes": "Run Notes",
                       "pendingNotes": "Status / Notes", "onDutyNotes": "On-Duty Notes"]
         let field = fields[ink.fieldID] ?? ink.fieldID
         if ink.recordID == s.id { return "System — \(field)" }
