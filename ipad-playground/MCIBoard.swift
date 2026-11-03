@@ -154,6 +154,8 @@ enum MCIUnclassified {
 }
 
 func mciCategoryLabel(_ c: TriageCategory?) -> String { c?.full ?? MCIUnclassified.label }
+/// "" when the text is empty, otherwise the prefix followed by the text.
+func mciSuffix(_ text: String, _ prefix: String) -> String { text.isEmpty ? "" : "\(prefix)\(text)" }
 func mciCategoryShort(_ c: TriageCategory?) -> String { c.map { "\($0.abbr) \($0.name)" } ?? "UNK" }
 
 // MARK: - Records
@@ -255,7 +257,9 @@ struct MCIPatient: Codable, Identifiable, Hashable {
 
     var ageText: String {
         guard let a = ageValue else { return "Age unknown" }
-        return "\(ageApprox ? "~" : "")\(a) \(ageUnit == .years ? "y" : "mo")"
+        let approx: String = ageApprox ? "~" : ""
+        let unit: String = ageUnit == .years ? "y" : "mo"
+        return "\(approx)\(a) \(unit)"
     }
 }
 
@@ -619,20 +623,24 @@ extension MCIIncident {
     static func new(now: Date, settings: MCISettings, training: Bool) -> MCIIncident {
         let tz = TimeZone(identifier: settings.defaultTimeZoneID) ?? .current
         let stamp = MCIFmt.formatter("yyyyMMdd-HHmm", tz).string(from: now)
+        let prefix: String = training ? "TRN-" : ""
+        let number = "\(prefix)MCI-\(stamp)"
+        let checklist: [MCIChecklistItem] = settings.checklist.map { text -> MCIChecklistItem in
+            MCIChecklistItem(id: UUID(), text: text, state: .pending, completedAt: nil, initials: "", notes: "")
+        }
+        let hospitals: [MCIHospital] = settings.hospitals.filter { $0.active }.map { entry -> MCIHospital in
+            MCIHospital(id: UUID(), directoryID: entry.id, name: entry.name, capabilityNotes: "")
+        }
         return MCIIncident(
-            id: UUID(), localNumber: "\(training ? "TRN-" : "")MCI-\(stamp)", name: "", occurrenceAt: nil, createdAt: now,
+            id: UUID(), localNumber: number, name: "", occurrenceAt: nil, createdAt: now,
             location: "", types: [], otherType: "", level: "Unknown", commandEstablishedAt: nil,
             timeZoneID: tz.identifier, isTraining: training, state: .open, closedAt: nil,
             commandChannel: "", tacticalChannel: "", medicalChannel: "", airAidChannel: "", commandPost: "",
             accessEgress: "", hazards: "", commandNotes: "",
             checklistTemplateVersion: settings.checklistVersion,
-            checklist: settings.checklist.map {
-                MCIChecklistItem(id: UUID(), text: $0, state: .pending, completedAt: nil, initials: "", notes: "")
-            },
+            checklist: checklist,
             roleNames: settings.roles, roles: [], snapshots: [], patients: [], departures: [],
-            hospitals: settings.hospitals.filter(\.active).map {
-                MCIHospital(id: UUID(), directoryID: $0.id, name: $0.name, capabilityNotes: "")
-            },
+            hospitals: hospitals,
             polls: [], aid: [], air: [], resources: [], sketches: [], events: [], inks: [],
             provenance: nil, sourceID: nil, sourceExportedAt: nil)
     }
@@ -1080,9 +1088,9 @@ extension MCIIncident {
             var who = "Unassigned"
             if let a = currentAssignment(r) {
                 who = a.person.mciNR
-                if !a.agencyChannel.mciTrimmed.isEmpty { who += " (" + a.agencyChannel + ")" }
+                if !a.agencyChannel.mciTrimmed.isEmpty { who = "\(who) (\(a.agencyChannel))" }
             }
-            lines.append("  " + r + ": " + who)
+            lines.append("  \(r): \(who)")
         }
         lines.append("")
         lines.append("CHANNELS: Command \(commandChannel.mciNR) · Tac/Ops \(tacticalChannel.mciNR) · Med/Hosp \(medicalChannel.mciNR) · Air/Aid \(airAidChannel.mciNR) · CP \(commandPost.mciNR)")
@@ -1451,7 +1459,8 @@ final class MCIStore: ObservableObject {
         }
         let problems = MCIBackupCodec.validate(b.incident)
         if !problems.isEmpty {
-            return .invalid("The backup failed validation. Nothing was changed.\n" + problems.prefix(8).joined(separator: "\n"))
+            let list = problems.prefix(8).joined(separator: "\n")
+            return .invalid("The backup failed validation. Nothing was changed.\n\(list)")
         }
         if !allowDuplicate && data.incidents.contains(where: { $0.sourceID == b.incident.id && $0.sourceExportedAt == b.exportedAt }) {
             return .duplicate
@@ -1943,7 +1952,7 @@ struct MCIHistoryList: View {
             ForEach(shown) { e in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(incident.describe(e))
-                    Text("\(incident.recordLabel(e.recordID)) · recorded \(MCIFmt.full(e.recordedAt, tz: incident.timeZone))\(e.initials.isEmpty ? "" : " · " + e.initials)")
+                    Text("\(incident.recordLabel(e.recordID)) · recorded \(MCIFmt.full(e.recordedAt, tz: incident.timeZone))\(mciSuffix(e.initials, " · "))")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Divider()
@@ -2790,7 +2799,7 @@ struct MCIRegisterTable: View {
         VStack(spacing: 0) {
             row("Category", "Tracked", "On scene", "Departed", "Location unknown", header: true)
             ForEach(MCIRegister.keys, id: \.self) { k in
-                row(MCIRegister.label(k), "\(r.all[k] ?? 0)", "\(r.onScene[k] ?? 0)", "\(r.departed[k] ?? 0)", "\(r.unknownLocation[k] ?? 0)")
+                row(MCIRegister.label(k), String(r.all[k] ?? 0), String(r.onScene[k] ?? 0), String(r.departed[k] ?? 0), String(r.unknownLocation[k] ?? 0))
             }
             row("Total", "\(r.allTotal)", "\(r.onSceneTotal)", "\(r.departedTotal)", "\(r.unknownTotal)", header: true)
         }
@@ -2824,7 +2833,13 @@ struct MCICommandSection: View {
 
     var body: some View {
         let inc = incident
-        VStack(alignment: .leading, spacing: 16) {
+        let typeOptions: [MCIIDString] = MCISeeds.incidentTypes.map { MCIIDString($0) }
+        let typeTitle: (MCIIDString) -> String = { t in inc.types.contains(t.id) ? "✓ \(t.id)" : t.id }
+        var levelNames: [String] = ["Unknown"]
+        levelNames.append(contentsOf: store.data.settings.levels)
+        let levelOptions: [MCIIDString] = levelNames.map { MCIIDString($0) }
+        let levelSelected: MCIIDString? = MCIIDString(inc.level)
+        return VStack(alignment: .leading, spacing: 16) {
             MCISectionBox(title: "Incident") {
                 MCIField(label: "Incident Name", text: store.text(id, \.name), readOnly: ro)
                 MCITimeRow(label: "Date/Time (occurrence / start)", value: inc.occurrenceAt, tz: inc.timeZone, ref: inc.refDate,
@@ -2834,8 +2849,7 @@ struct MCICommandSection: View {
                 MCILongText(label: "Location / Address", text: store.text(id, \.location), minHeight: 80, readOnly: ro)
                 Group {
                 Text("Incident Type (select all that apply)").font(.headline)
-                MCIOptionGrid(options: MCISeeds.incidentTypes.map { MCIIDString($0) },
-                              selected: nil, title: { t in (inc.types.contains(t.id) ? "✓ " : "") + t.id }, disabled: ro) { t in
+                MCIOptionGrid(options: typeOptions, selected: nil, title: typeTitle, disabled: ro) { t in
                     store.update(id) { i in
                         if let k = i.types.firstIndex(of: t.id) { i.types.remove(at: k) } else { i.types.append(t.id) }
                     }
@@ -2844,8 +2858,7 @@ struct MCICommandSection: View {
                     MCIField(label: "Other type", text: store.text(id, \.otherType), readOnly: ro)
                 }
                 Text("MCI Level").font(.headline)
-                MCIOptionGrid(options: (["Unknown"] + store.data.settings.levels).map { MCIIDString($0) },
-                              selected: MCIIDString(inc.level), title: { $0.id }, minWidth: 110, disabled: ro) { v in
+                MCIOptionGrid(options: levelOptions, selected: levelSelected, title: { $0.id }, minWidth: 110, disabled: ro) { v in
                     let t = store.now()
                     let ini = store.initials
                     store.update(id) { i in
@@ -2916,13 +2929,21 @@ struct MCICommandSection: View {
     func roleRow(_ inc: MCIIncident, _ role: String) -> some View {
         let cur = inc.currentAssignment(role)
         let past = inc.roles.filter { $0.role == role && $0.relievedAt != nil }
+        let tz = inc.timeZone
+        let ref = inc.refDate
+        let earlierParts: [String] = past.map { a -> String in
+            let from: String = MCIFmt.clock(a.assignedAt, tz: tz, ref: ref)
+            let to: String = MCIFmt.clock(a.relievedAt, tz: tz, ref: ref)
+            return "\(a.person.mciDash) (\(from)–\(to))"
+        }
+        let earlierText: String = earlierParts.joined(separator: "; ")
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(role).font(.headline)
                     if let cur {
-                        Text("\(cur.person.mciNR)\(cur.agencyChannel.isEmpty ? "" : " · " + cur.agencyChannel)").font(.title3)
-                        Text("Assigned \(MCIFmt.clock(cur.assignedAt, tz: inc.timeZone, ref: inc.refDate))\(cur.reportsTo.isEmpty ? "" : " · reports to " + cur.reportsTo)")
+                        Text("\(cur.person.mciNR)\(mciSuffix(cur.agencyChannel, " · "))").font(.title3)
+                        Text("Assigned \(MCIFmt.clock(cur.assignedAt, tz: inc.timeZone, ref: inc.refDate))\(mciSuffix(cur.reportsTo, " · reports to "))")
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
                         Text("Unassigned").font(.title3).foregroundStyle(.secondary)
@@ -2943,7 +2964,7 @@ struct MCICommandSection: View {
                 }
             }
             if !past.isEmpty {
-                Text("Earlier: " + past.map { "\($0.person.mciDash) (\(MCIFmt.clock($0.assignedAt, tz: inc.timeZone, ref: inc.refDate))–\(MCIFmt.clock($0.relievedAt, tz: inc.timeZone, ref: inc.refDate)))" }.joined(separator: "; "))
+                Text("Earlier: \(earlierText)")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Divider()
@@ -3027,7 +3048,7 @@ struct MCIChecklistBox: View {
                         store.update(inc.id) { $0.setChecklist(item.id, s, at: t, now: t, initials: ini) }
                     }
                     if let at = item.completedAt {
-                        Text("Completed \(MCIFmt.clock(at, tz: inc.timeZone, ref: inc.refDate))\(item.initials.isEmpty ? "" : " · " + item.initials)")
+                        Text("Completed \(MCIFmt.clock(at, tz: inc.timeZone, ref: inc.refDate))\(mciSuffix(item.initials, " · "))")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     TextField("Notes (optional)", text: store.record(inc.id, \.checklist, item.id, \.notes, fallback: ""))
@@ -3093,7 +3114,7 @@ struct MCITriageSection: View {
                         }
                         Text(TriageCategory.allCases.map { "\($0.abbr) \(s.value($0).map(String.init) ?? "Unknown")" }.joined(separator: " · "))
                             .font(.body.monospacedDigit())
-                        Text("Source \(s.reporter.mciNR) · recorded \(MCIFmt.full(s.recordedAt, tz: inc.timeZone))\(s.notes.isEmpty ? "" : " · " + s.notes)")
+                        Text("Source \(s.reporter.mciNR) · recorded \(MCIFmt.full(s.recordedAt, tz: inc.timeZone))\(mciSuffix(s.notes, " · "))")
                             .font(.footnote).foregroundStyle(.secondary)
                         if !inc.isClosed {
                             Button("Record a Correction of This Snapshot…") { correcting = MCIIDBox(id: s.id) }
@@ -3254,7 +3275,13 @@ struct MCIHospitalsSection: View {
 
     var body: some View {
         let inc = incident
-        VStack(alignment: .leading, spacing: 16) {
+        var agencyNames: [String] = store.data.settings.groundAgencies
+        agencyNames.append("Other agency")
+        let agencyOptions: [MCIIDString] = agencyNames.map { MCIIDString($0) }
+        var airNames: [String] = store.data.settings.airServices
+        airNames.append("Other service")
+        let airOptions: [MCIIDString] = airNames.map { MCIIDString($0) }
+        return VStack(alignment: .leading, spacing: 16) {
             MCISectionBox(title: "Hospitals") {
                 Text("Names imported from the supplied PDF; not independently verified as current facilities or capabilities. Capacity is what was last reported by phone/radio — this is not a live feed and is never reduced by transports.")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -3299,8 +3326,7 @@ struct MCIHospitalsSection: View {
                 }
                 if !inc.isClosed {
                     Text("New request").font(.headline)
-                    MCIOptionGrid(options: (store.data.settings.groundAgencies + ["Other agency"]).map { MCIIDString($0) },
-                                  selected: nil, title: { $0.id }, minWidth: 180) { a in
+                    MCIOptionGrid(options: agencyOptions, selected: nil, title: { $0.id }, minWidth: 180) { a in
                         var newID: UUID?
                         let t = store.now()
                         let ini = store.initials
@@ -3329,8 +3355,7 @@ struct MCIHospitalsSection: View {
                     Divider()
                 }
                 if !inc.isClosed {
-                    MCIOptionGrid(options: (store.data.settings.airServices + ["Other service"]).map { MCIIDString($0) },
-                                  selected: nil, title: { "Request " + $0.id }, minWidth: 180) { a in
+                    MCIOptionGrid(options: airOptions, selected: nil, title: { "Request \($0.id)" }, minWidth: 180) { a in
                         var newID: UUID?
                         let t = store.now()
                         let ini = store.initials
@@ -3357,6 +3382,11 @@ struct MCIHospitalCard: View {
         let poll = inc.latestPoll(hospital.id)
         let sent = inc.patientsSent()[hospital.id] ?? [:]
         let reminder = store.data.settings.pollReminderMinutes
+        let sentParts: [String] = sent.sorted { $0.key < $1.key }.map { pair -> String in
+            let abbr: String = TriageCategory(rawValue: pair.key)?.abbr ?? "UNK"
+            return "\(abbr) \(pair.value)"
+        }
+        let sentText: String = sentParts.isEmpty ? "none" : sentParts.joined(separator: " · ")
         let stale: Bool = {
             guard let reminder, let at = poll?.observedAt else { return false }
             return Date().timeIntervalSince(at) > Double(reminder * 60)
@@ -3387,8 +3417,7 @@ struct MCIHospitalCard: View {
             } else {
                 Text("No bed poll recorded. Capacity and divert: Unknown.").foregroundStyle(.secondary)
             }
-            Text("PATIENTS SENT (valid departures, by category at departure): " +
-                 (sent.isEmpty ? "none" : sent.sorted { $0.key < $1.key }.map { "\(TriageCategory(rawValue: $0.key)?.abbr ?? "UNK") \($0.value)" }.joined(separator: " · ")))
+            Text("PATIENTS SENT (valid departures, by category at departure): \(sentText)")
                 .font(.subheadline.bold())
             TextField("Capability notes (manual)", text: store.record(inc.id, \.hospitals, hospital.id, \.capabilityNotes, fallback: ""))
                 .textFieldStyle(.roundedBorder).frame(minHeight: 44).disabled(inc.isClosed)
@@ -3969,6 +3998,32 @@ struct MCIPatientEditor: View {
     }
 }
 
+/// Labels for destination and unit choices, kept out of view code so it type-checks quickly.
+enum MCIDestinationName {
+    static func options(_ inc: MCIIncident) -> [MCIIDString] {
+        var out: [MCIIDString] = inc.hospitals.map { MCIIDString($0.id.uuidString) }
+        out.append(MCIIDString("unknown"))
+        return out
+    }
+
+    static func of(_ id: String, in inc: MCIIncident) -> String {
+        if let h = inc.hospitals.first(where: { $0.id.uuidString == id }) { return h.name }
+        return "Unknown destination"
+    }
+
+    static func unitOptions(_ inc: MCIIncident) -> [MCIIDString] {
+        var out: [MCIIDString] = inc.resources.map { MCIIDString($0.id.uuidString) }
+        out.append(MCIIDString("typed"))
+        out.append(MCIIDString("unknown"))
+        return out
+    }
+
+    static func unit(_ id: String, in inc: MCIIncident) -> String {
+        if let r = inc.resources.first(where: { $0.id.uuidString == id }) { return r.identifier.mciDash }
+        return id == "typed" ? "Other / type below" : "Unknown unit"
+    }
+}
+
 struct MCIUnitChoice: Identifiable, Hashable {
     let id: String
     let resourceID: UUID?
@@ -4018,21 +4073,23 @@ struct MCIDepartureSheet: View {
     }
 
     func content(_ inc: MCIIncident, _ p: MCIPatient) -> some View {
-        let units: [MCIUnitChoice] = inc.resources.filter { $0.status != .released }
-            .map { MCIUnitChoice(id: $0.id.uuidString, resourceID: $0.id, label: "\($0.identifier.mciDash) (\($0.status.label))") }
-            + [MCIUnitChoice(id: "typed", resourceID: nil, label: "Other / type below"),
-               MCIUnitChoice(id: "unknown", resourceID: nil, label: "Unknown unit")]
+        var units: [MCIUnitChoice] = []
+        for r in inc.resources where r.status != .released {
+            units.append(MCIUnitChoice(id: r.id.uuidString, resourceID: r.id, label: "\(r.identifier.mciDash) (\(r.status.label))"))
+        }
+        units.append(MCIUnitChoice(id: "typed", resourceID: nil, label: "Other / type below"))
+        units.append(MCIUnitChoice(id: "unknown", resourceID: nil, label: "Unknown unit"))
         let poll = hospitalID.flatMap { inc.latestPoll($0) }
+        let destOptions: [MCIIDString] = MCIDestinationName.options(inc)
+        let destSelected: MCIIDString? = destinationChosen ? MCIIDString(hospitalID?.uuidString ?? "unknown") : nil
+        let destTitle: (MCIIDString) -> String = { o in MCIDestinationName.of(o.id, in: inc) }
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("PATIENT \(p.number) · TAG \(p.tag.mciDash)").font(.mciHeading(.title2))
                 MCICategoryBadge(category: p.category)
             }
             Text("Destination").font(.headline)
-            MCIOptionGrid(options: inc.hospitals.map { MCIIDString($0.id.uuidString) } + [MCIIDString("unknown")],
-                          selected: destinationChosen ? MCIIDString(hospitalID?.uuidString ?? "unknown") : nil,
-                          title: { o in inc.hospitals.first { $0.id.uuidString == o.id }?.name ?? "Unknown destination" },
-                          minWidth: 200) { o in
+            MCIOptionGrid(options: destOptions, selected: destSelected, title: destTitle, minWidth: 200) { o in
                 hospitalID = UUID(uuidString: o.id)
                 destinationChosen = true
             }
@@ -4159,14 +4216,11 @@ struct MCIDepartureFixSheet: View {
     func fields(_ inc: MCIIncident, _ d: MCIDeparture) -> some View {
         switch fix {
         case .destination:
-            MCIOptionGrid(options: inc.hospitals.map { MCIIDString($0.id.uuidString) } + [MCIIDString("unknown")],
-                          selected: hospitalChoice, title: { o in inc.hospitals.first { $0.id.uuidString == o.id }?.name ?? "Unknown destination" },
-                          minWidth: 200) { hospitalChoice = $0 }
+            MCIOptionGrid(options: MCIDestinationName.options(inc), selected: hospitalChoice,
+                          title: { o in MCIDestinationName.of(o.id, in: inc) }, minWidth: 200) { hospitalChoice = $0 }
         case .unit:
-            MCIOptionGrid(options: inc.resources.map { MCIIDString($0.id.uuidString) } + [MCIIDString("typed"), MCIIDString("unknown")],
-                          selected: unitChoice,
-                          title: { o in inc.resources.first { $0.id.uuidString == o.id }?.identifier.mciDash ?? (o.id == "typed" ? "Other / type below" : "Unknown unit") },
-                          minWidth: 200) { unitChoice = $0 }
+            MCIOptionGrid(options: MCIDestinationName.unitOptions(inc), selected: unitChoice,
+                          title: { o in MCIDestinationName.unit(o.id, in: inc) }, minWidth: 200) { unitChoice = $0 }
             if unitChoice?.id == "typed" {
                 TextField("Unit / call sign", text: $unitText).textFieldStyle(.roundedBorder).frame(minHeight: 48)
             }
@@ -4323,7 +4377,8 @@ struct MCIResourceEditor: View {
                             }
                             let transports = inc.departures.filter { $0.resourceID == resourceID && !$0.voided }
                             if !transports.isEmpty {
-                                Text("Transports: " + transports.compactMap { inc.patient($0.patientID)?.number }.joined(separator: ", ")).font(.callout)
+                                let numbers: [String] = transports.compactMap { inc.patient($0.patientID)?.number }
+                                Text("Transports: \(numbers.joined(separator: ", "))").font(.callout)
                             }
                             MCIHistoryList(incident: inc, recordIDs: [resourceID])
                         }
@@ -4396,7 +4451,7 @@ struct MCISketchSection: View {
             }
             if !inc.isClosed {
                 MCISectionBox(title: "New Sketch") {
-                    MCIOptionGrid(options: MCISketchTemplate.allCases, selected: nil, title: { "Add " + $0.title }, minWidth: 220) { t in
+                    MCIOptionGrid(options: MCISketchTemplate.allCases, selected: nil, title: { "Add \($0.title)" }, minWidth: 220) { t in
                         let aspect = MCISketchBackground.page(store, t).map { MCISketchBackground.aspect($0) } ?? 0.773
                         let ini = store.initials
                         let tm = store.now()
@@ -4634,20 +4689,28 @@ final class MCIPDFComposer {
         let title = UIFont.systemFont(ofSize: 22, weight: .heavy, width: .condensed)
         drawText("SUMTER COUNTY EMS", kicker, MCIStyle.uiBrick, CGRect(x: textX, y: margin - 12, width: contentWidth, height: 13))
         drawText(partTitle, title, MCIStyle.uiNavy, CGRect(x: textX, y: margin - 1, width: contentWidth * 0.6, height: 28))
-        let rightLines = (inc.isTraining ? "TRAINING — FICTITIOUS\n" : "") + inc.displayName + "\nStarted " + MCIFmt.full(inc.createdAt, tz: tz)
+        let trainingLine: String = inc.isTraining ? "TRAINING — FICTITIOUS\n" : ""
+        let started: String = MCIFmt.full(inc.createdAt, tz: tz)
+        let rightLines = "\(trainingLine)\(inc.displayName)\nStarted \(started)"
         drawText(String(rightLines.prefix(200)), boldFont, MCIStyle.uiNavy,
                  CGRect(x: margin + contentWidth * 0.55, y: margin - 12, width: contentWidth * 0.45, height: 40), align: .right)
         MCIStyle.uiBrick.setFill()
         UIRectFill(CGRect(x: margin, y: margin + 31, width: contentWidth, height: 2))
-        let loc = "Location: " + inc.location.mciDash + " · MCI Level " + inc.level + " · " + (inc.isTraining ? "Training record" : "Operational record")
+        let recordKind: String = inc.isTraining ? "Training record" : "Operational record"
+        let loc = "Location: \(inc.location.mciDash) · MCI Level \(inc.level) · \(recordKind)"
         drawText(String(loc.prefix(220)), smallFont, .darkGray, CGRect(x: margin, y: margin + 37, width: contentWidth, height: 12))
         // Footer: the source's footer note on the left, page number on the right.
         let footY = pageRect.height - margin - 16
         drawText(partFooter, UIFont.systemFont(ofSize: 8, weight: .bold, width: .condensed), .darkGray,
                  CGRect(x: margin, y: footY, width: contentWidth * 0.6, height: 12))
-        drawText("PAGE \(pageNumber)\(totalPages > 0 ? " OF \(totalPages)" : "") · \(part.uppercased())", UIFont.systemFont(ofSize: 8, weight: .bold, width: .condensed),
-                 .darkGray, CGRect(x: margin + contentWidth * 0.6, y: footY, width: contentWidth * 0.4, height: 12), align: .right)
-        let gen = "\(inc.isTraining ? "TRAINING — FICTITIOUS DATA · " : "")Generated \(MCIFmt.full(generatedAt, tz: tz)) · Times in \(inc.timeZoneID), 24-hour · — = not recorded · Coordination record, not an ePCR"
+        let footFont = UIFont.systemFont(ofSize: 8, weight: .bold, width: .condensed)
+        let ofTotal: String = totalPages > 0 ? " OF \(totalPages)" : ""
+        let pageLabel = "PAGE \(pageNumber)\(ofTotal) · \(part.uppercased())"
+        let pageRectRight = CGRect(x: margin + contentWidth * 0.6, y: footY, width: contentWidth * 0.4, height: 12)
+        drawText(pageLabel, footFont, .darkGray, pageRectRight, align: .right)
+        let trainingPrefix: String = inc.isTraining ? "TRAINING — FICTITIOUS DATA · " : ""
+        let generated: String = MCIFmt.full(generatedAt, tz: tz)
+        let gen = "\(trainingPrefix)Generated \(generated) · Times in \(inc.timeZoneID), 24-hour · — = not recorded · Coordination record, not an ePCR"
         drawText(gen, smallFont, .gray, CGRect(x: margin, y: footY + 11, width: contentWidth, height: 11))
         y = contentTop
         continuedHeader?()
@@ -4655,7 +4718,7 @@ final class MCIPDFComposer {
 
     func startPart(_ name: String, title: String? = nil, footer: String = "SUMTER COUNTY EMS : MCI INCIDENT PACKET") {
         part = name
-        partTitle = title ?? "MCI " + name.uppercased()
+        partTitle = title ?? "MCI \(name.uppercased())"
         partFooter = footer
         newPage()
     }
@@ -4810,7 +4873,7 @@ final class MCIPDFComposer {
             ["Command Notes", cell(inc.commandNotes, "Command Notes")],
         ])
         table("Initial Actions Checklist (template v\(inc.checklistTemplateVersion))", [("Action", 0.5), ("State", 0.14), ("Time", 0.12), ("Initials", 0.08), ("Notes", 0.16)],
-              inc.checklist.map { c -> [String] in [c.text, c.state.label, clock(c.completedAt), c.initials.mciDash, cell(c.notes, "Checklist note: " + c.text)] })
+              inc.checklist.map { c -> [String] in [c.text, c.state.label, clock(c.completedAt), c.initials.mciDash, cell(c.notes, "Checklist note: \(c.text)")] })
         var roleRows: [[String]] = []
         for r in inc.roleNames {
             let list = inc.roles.filter { $0.role == r }.sorted { ($0.assignedAt ?? .distantPast) < ($1.assignedAt ?? .distantPast) }
@@ -4833,11 +4896,11 @@ final class MCIPDFComposer {
               snaps.map { s -> [String] in
                   var row: [String] = [clock(s.observedAt)]
                   for c in TriageCategory.allCases { row.append(n(s.value(c))) }
-                  let total: String = s.totalText + (s.correctsID == nil ? "" : " (correction)")
+                  let total: String = s.correctsID == nil ? s.totalText : "\(s.totalText) (correction)"
                   row.append(total)
                   row.append(s.reporter.mciDash)
                   row.append(clock(s.recordedAt))
-                  row.append(cell(s.notes, "Snapshot note " + clock(s.recordedAt)))
+                  row.append(cell(s.notes, "Snapshot note \(clock(s.recordedAt))"))
                   return row
               })
         let r = inc.register()
@@ -4851,7 +4914,7 @@ final class MCIPDFComposer {
         sectionBar("How to Triage · source reference (not entered data) — REFERENCE ONLY, verify against agency protocol")
         for sys in MCISourceReference.systems {
             if y + 40 > bottom { newPage() }
-            drawText(sys.title + " · " + sys.subtitle, boldFont, MCIStyle.uiNavy, CGRect(x: margin, y: y, width: contentWidth, height: 14))
+            drawText("\(sys.title) · \(sys.subtitle)", boldFont, MCIStyle.uiNavy, CGRect(x: margin, y: y, width: contentWidth, height: 14))
             y += 16
             flowing(([sys.lead] + sys.steps).joined(separator: "\n"), title: sys.title)
         }
@@ -4882,20 +4945,21 @@ final class MCIPDFComposer {
               [("Destination", 0.3), ("R", 0.08), ("Y", 0.08), ("G", 0.08), ("EXP", 0.08), ("DEC", 0.08), ("UNK", 0.1), ("Total", 0.2)],
               sentRows, empty: "No departures.")
         table("Capability Notes (manual)", [("Facility", 0.3), ("Notes", 0.7)],
-              inc.hospitals.filter { !$0.capabilityNotes.isEmpty }.map { h -> [String] in [h.name, cell(h.capabilityNotes, h.name + " capability")] })
+              inc.hospitals.filter { !$0.capabilityNotes.isEmpty }.map { h -> [String] in [h.name, cell(h.capabilityNotes, "\(h.name) capability")] })
         table("Mutual Aid — Ground", [("Agency", 0.16), ("Status", 0.1), ("Contacted", 0.09), ("Units sent", 0.15), ("ETA (estimate)", 0.12),
                                       ("Assignment", 0.16), ("Notes", 0.22)],
               inc.aid.sorted { $0.createdAt < $1.createdAt }.map { a -> [String] in
-                  let eta: String = a.etaSource.isEmpty ? clock(a.eta) : clock(a.eta) + " (" + a.etaSource + ")"
-                  return [a.agency, a.status.label, clock(a.contactedAt), cell(a.unitsSent, a.agency + " units"), eta,
-                          cell(a.assignment, a.agency + " assignment"), cell(a.notes, a.agency + " notes")]
+                  let etaClock: String = clock(a.eta)
+                  let eta: String = a.etaSource.isEmpty ? etaClock : "\(etaClock) (\(a.etaSource))"
+                  return [a.agency, a.status.label, clock(a.contactedAt), cell(a.unitsSent, "\(a.agency) units"), eta,
+                          cell(a.assignment, "\(a.agency) assignment"), cell(a.notes, "\(a.agency) notes")]
               })
         table("Air Medical", [("Service", 0.13), ("Status", 0.1), ("Requested", 0.09), ("LZ / Frequency", 0.16), ("ETA", 0.08),
                               ("Patients", 0.12), ("Destination", 0.14), ("Notes", 0.18)],
               inc.air.sorted { $0.createdAt < $1.createdAt }.map { a -> [String] in
                   let pts: String = a.patientIDs.compactMap { inc.patient($0)?.number }.joined(separator: ", ").mciDash
-                  return [a.service, a.status.label, clock(a.requestedAt), cell(a.lzFrequency, a.service + " LZ"), clock(a.eta),
-                          pts, cell(a.destination, a.service + " destination"), cell(a.notes, a.service + " notes")]
+                  return [a.service, a.status.label, clock(a.requestedAt), cell(a.lzFrequency, "\(a.service) LZ"), clock(a.eta),
+                          pts, cell(a.destination, "\(a.service) destination"), cell(a.notes, "\(a.service) notes")]
               })
     }
 
@@ -4913,8 +4977,11 @@ final class MCIPDFComposer {
             }
             var loc = inc.location(of: p).label
             if d?.needsCompletion == true { loc += " (incomplete)" }
-            let row: [String] = [p.number, p.tag.mciDash, mciCategoryShort(p.category), catOut, p.ageText + " / " + p.sex.label,
-                                 cell(p.complaint, p.number + " complaint"), unit, dest, out, loc, cell(p.notes, p.number + " notes")]
+            let ageSex = "\(p.ageText) / \(p.sex.label)"
+            let complaint = cell(p.complaint, "\(p.number) complaint")
+            let notes = cell(p.notes, "\(p.number) notes")
+            let row: [String] = [p.number, p.tag.mciDash, mciCategoryShort(p.category), catOut, ageSex,
+                                 complaint, unit, dest, out, loc, notes]
             rows.append(row)
         }
         table("Transport Log", [("Pt #", 0.06), ("Tag", 0.07), ("Current cat.", 0.09), ("Cat. at departure", 0.09), ("Age / Sex", 0.08),
@@ -4922,16 +4989,17 @@ final class MCIPDFComposer {
                                 ("Location", 0.08), ("Notes", 0.10)], rows, empty: "No patients.")
         let voided = inc.departures.filter(\.voided)
         table("Voided Departures (kept for history, excluded from counts)", [("Patient", 0.12), ("Destination", 0.25), ("Time Out", 0.12), ("Voided", 0.12), ("Reason", 0.39)],
-              voided.map { d -> [String] in [inc.patient(d.patientID)?.number ?? "?", inc.hospital(d.hospitalID)?.name ?? "Unknown", clock(d.departedAt), clock(d.voidedAt), cell(d.voidReason, "Void reason " + String(d.id.uuidString.prefix(6)))] },
+              voided.map { d -> [String] in [inc.patient(d.patientID)?.number ?? "?", inc.hospital(d.hospitalID)?.name ?? "Unknown", clock(d.departedAt), clock(d.voidedAt), cell(d.voidReason, "Void reason \(d.id.uuidString.prefix(6))")] },
               empty: "None.")
         table("Entered in Error (excluded from counts)", [("Patient", 0.15), ("Tag", 0.15), ("Reason", 0.7)],
-              inc.patients.filter(\.enteredInError).map { p -> [String] in [p.number, p.tag.mciDash, cell(p.errorReason, p.number + " error reason")] }, empty: "None.")
+              inc.patients.filter(\.enteredInError).map { p -> [String] in [p.number, p.tag.mciDash, cell(p.errorReason, "\(p.number) error reason")] }, empty: "None.")
         table("Staging", [("Unit / Resource", 0.14), ("Type", 0.09), ("Agency", 0.11), ("Time In", 0.08), ("Assignment", 0.15),
                           ("Status / Released", 0.15), ("Contact", 0.1), ("Notes", 0.18)],
               inc.resources.sorted { $0.createdAt < $1.createdAt }.map { r -> [String] in
-                  let status: String = r.releasedAt == nil ? r.status.label : r.status.label + " " + clock(r.releasedAt)
-                  return [r.identifier.mciDash, r.type.mciDash, r.agency.mciDash, clock(r.timeIn), cell(r.assignment, r.identifier + " assignment"),
-                          status, r.contact.mciDash, cell(r.notes, r.identifier + " notes")]
+                  let releasedClock: String = clock(r.releasedAt)
+                  let status: String = r.releasedAt == nil ? r.status.label : "\(r.status.label) \(releasedClock)"
+                  return [r.identifier.mciDash, r.type.mciDash, r.agency.mciDash, clock(r.timeIn), cell(r.assignment, "\(r.identifier) assignment"),
+                          status, r.contact.mciDash, cell(r.notes, "\(r.identifier) notes")]
               })
         note("Available in staging (derived from recorded statuses): \(inc.availableResourceCount).")
     }
@@ -4976,7 +5044,7 @@ final class MCIPDFComposer {
         table("Activity Log", [("Recorded", 0.15), ("Effective", 0.15), ("Record", 0.16), ("Change", 0.46), ("Initials", 0.08)],
               inc.events.sorted { $0.recordedAt < $1.recordedAt }.map { e -> [String] in
                   [MCIFmt.full(e.recordedAt, tz: tz), MCIFmt.full(e.effectiveAt, tz: tz), inc.recordLabel(e.recordID),
-                   cell(inc.describe(e), "Activity " + String(e.id.uuidString.prefix(8))), e.initials.mciDash]
+                   cell(inc.describe(e), "Activity \(e.id.uuidString.prefix(8))"), e.initials.mciDash]
               }, empty: "No activity.")
     }
 
@@ -5295,7 +5363,8 @@ struct MCICheckResult: Identifiable {
 enum MCIChecks {
     static func run() -> [MCICheckResult] {
         var out: [MCICheckResult] = []
-        func check(_ name: String, _ ok: Bool, _ detail: String = "") {
+        func check(_ name: String, _ conditions: Bool..., detail: String = "") {
+            let ok = conditions.allSatisfy { $0 }
             out.append(MCICheckResult(name: name, passed: ok, detail: ok ? "" : detail))
         }
         let base = Date(timeIntervalSince1970: 1_793_700_000)
@@ -5303,11 +5372,8 @@ enum MCIChecks {
         let settings = MCISettings()
 
         var inc = MCIIncident.new(now: base, settings: settings, training: true)
-        check("New incident works immediately with a local ID and no details",
-              !inc.localNumber.isEmpty && inc.name.isEmpty && inc.occurrenceAt == nil && inc.level == "Unknown")
-        check("Checklist, roles and hospitals are seeded from the source",
-              inc.checklist.count == 12 && inc.roleNames.count == 11 && inc.hospitals.count == 6
-                && inc.checklist.allSatisfy { $0.state == .pending } && inc.roles.isEmpty)
+        check("New incident works immediately with a local ID and no details", !inc.localNumber.isEmpty, inc.name.isEmpty, inc.occurrenceAt == nil, inc.level == "Unknown")
+        check("Checklist, roles and hospitals are seeded from the source", inc.checklist.count == 12, inc.roleNames.count == 11, inc.hospitals.count == 6, inc.checklist.allSatisfy { $0.state == .pending }, inc.roles.isEmpty)
 
         // Reported count vs register
         var twelve: [TriageCategory: Int?] = [:]
@@ -5316,32 +5382,25 @@ enum MCIChecks {
         let snapID = UUID()
         inc.recordSnapshot(id: snapID, values: twelve, observedAt: at(1), reporter: "Triage", notes: "", correcting: nil, now: at(1), initials: "")
         let again = inc.recordSnapshot(id: snapID, values: twelve, observedAt: at(1), reporter: "Triage", notes: "", correcting: nil, now: at(1), initials: "")
-        check("Double Save of a snapshot records it once", !again && inc.snapshots.count == 1)
+        check("Double Save of a snapshot records it once", !again, inc.snapshots.count == 1)
         var ids: [UUID] = []
         for k in 0..<5 { ids.append(inc.addPatient(now: at(2 + Double(k)), initials: "")) }
         let reg = inc.register()
-        check("Reported 12 and register 5 stay separate (never 17)",
-              reg.allTotal == 5 && reg.onSceneTotal == 5 && inc.latestSnapshot?.knownSubtotal == 12,
-              "register \(reg.allTotal), snapshot \(inc.latestSnapshot?.knownSubtotal ?? -1)")
-        check("New patients are Not classified, never Minor by default",
-              reg.all[MCIUnclassified.key] == 5 && reg.all[TriageCategory.minor.rawValue] == nil)
+        check("Reported 12 and register 5 stay separate (never 17)", reg.allTotal == 5, reg.onSceneTotal == 5, inc.latestSnapshot?.knownSubtotal == 12, detail: "register \(reg.allTotal), snapshot \(inc.latestSnapshot?.knownSubtotal ?? -1)")
+        check("New patients are Not classified, never Minor by default", reg.all[MCIUnclassified.key] == 5, reg.all[TriageCategory.minor.rawValue] == nil)
 
         var partial: [TriageCategory: Int?] = [:]
         partial[.immediate] = .some(2); partial[.delayed] = .some(1); partial[.minor] = .some(0)
         partial[.expectant] = .some(nil); partial[.deceased] = .some(nil)
         inc.recordSnapshot(id: UUID(), values: partial, observedAt: at(8), reporter: "", notes: "", correcting: snapID, now: at(8), initials: "")
         let snap = inc.latestSnapshot
-        check("Incomplete snapshot shows known subtotal and Incomplete; Unknown is not zero",
-              snap?.isComplete == false && snap?.knownSubtotal == 3 && snap?.value(.expectant) == nil
-                && snap?.value(.minor) == 0 && (snap?.totalText.contains("Incomplete") ?? false))
-        check("Correction is a new snapshot linked to the earlier one",
-              inc.snapshots.count == 2 && snap?.correctsID == snapID && inc.snapshots.first { $0.id == snapID }?.knownSubtotal == 12)
+        check("Incomplete snapshot shows known subtotal and Incomplete; Unknown is not zero", snap?.isComplete == false, snap?.knownSubtotal == 3, snap?.value(.expectant) == nil, snap?.value(.minor) == 0, (snap?.totalText.contains("Incomplete") ?? false))
+        check("Correction is a new snapshot linked to the earlier one", inc.snapshots.count == 2, snap?.correctsID == snapID, inc.snapshots.first { $0.id == snapID }?.knownSubtotal == 12)
 
         let cats: [TriageCategory] = [.immediate, .delayed, .minor, .expectant, .deceased]
         for (k, c) in cats.enumerated() { inc.setCategory(ids[k], c, reason: "", now: at(10), initials: "") }
         let reg2 = inc.register()
-        check("Expectant and Deceased are counted separately",
-              reg2.all[TriageCategory.expectant.rawValue] == 1 && reg2.all[TriageCategory.deceased.rawValue] == 1)
+        check("Expectant and Deceased are counted separately", reg2.all[TriageCategory.expectant.rawValue] == 1, reg2.all[TriageCategory.deceased.rawValue] == 1)
 
         // Departure
         let h1 = inc.hospitals[0].id
@@ -5355,31 +5414,22 @@ enum MCIChecks {
                                      category: .immediate, departedAt: at(13), retrospective: false, notes: "", now: at(13), initials: "")
         let reg3 = inc.register()
         let sent = inc.patientsSent()
-        check("One departure: 4 on scene, 1 departed, 1 sent to that hospital",
-              r1 == .recorded && reg3.onSceneTotal == 4 && reg3.departedTotal == 1 && sent[h1]?[TriageCategory.immediate.rawValue] == 1
-                && inc.sentTotal(to: h1) == 1)
-        check("Double tap / retry cannot add a second departure",
-              r2 == .alreadyRecorded && r3 == .patientAlreadyDeparted && inc.departures.count == 1 && inc.register().departedTotal == 1)
+        check("One departure: 4 on scene, 1 departed, 1 sent to that hospital", r1 == .recorded, reg3.onSceneTotal == 4, reg3.departedTotal == 1, sent[h1]?[TriageCategory.immediate.rawValue] == 1, inc.sentTotal(to: h1) == 1)
+        check("Double tap / retry cannot add a second departure", r2 == .alreadyRecorded, r3 == .patientAlreadyDeparted, inc.departures.count == 1, inc.register().departedTotal == 1)
         check("A departure never rewrites the reported snapshot", inc.snapshots.first { $0.id == snapID }?.knownSubtotal == 12)
 
         inc.setCategory(ids[0], .delayed, reason: "Re-triage", now: at(14), initials: "")
-        check("Re-triage does not change category at departure",
-              inc.departures[0].categoryAtDeparture == .immediate && inc.patientsSent()[h1]?[TriageCategory.immediate.rawValue] == 1)
+        check("Re-triage does not change category at departure", inc.departures[0].categoryAtDeparture == .immediate, inc.patientsSent()[h1]?[TriageCategory.immediate.rawValue] == 1)
 
         inc.correctDepartureHospital(dep, h2, reason: "Wrong facility tapped", now: at(15), initials: "")
-        check("Correcting destination moves the count without adding a patient",
-              inc.sentTotal(to: h1) == 0 && inc.sentTotal(to: h2) == 1 && inc.register().allTotal == 5 && inc.register().departedTotal == 1)
+        check("Correcting destination moves the count without adding a patient", inc.sentTotal(to: h1) == 0, inc.sentTotal(to: h2) == 1, inc.register().allTotal == 5, inc.register().departedTotal == 1)
 
         let voided = inc.voidDeparture(dep, reason: "Recorded on wrong patient", now: at(16), initials: "")
-        check("Voiding reverses derived counts and keeps history",
-              voided && inc.register().onSceneTotal == 5 && inc.sentTotal(to: h2) == 0 && inc.departures.count == 1
-                && inc.events.contains { $0.action == "departureVoided" })
+        check("Voiding reverses derived counts and keeps history", voided, inc.register().onSceneTotal == 5, inc.sentTotal(to: h2) == 0, inc.departures.count == 1, inc.events.contains { $0.action == "departureVoided" })
 
         let retro = inc.recordDeparture(id: UUID(), patientID: ids[1], hospitalID: nil, resourceID: nil, unitText: "",
                                         category: nil, departedAt: nil, retrospective: true, notes: "", now: at(17), initials: "")
-        check("Urgent departure with unknowns is allowed and flagged; unknown destination kept separate",
-              retro == .recorded && inc.validDeparture(for: ids[1])?.needsCompletion == true && inc.sentTotal(to: nil) == 1
-                && !inc.reconciliationIssues.isEmpty)
+        check("Urgent departure with unknowns is allowed and flagged; unknown destination kept separate", retro == .recorded, inc.validDeparture(for: ids[1])?.needsCompletion == true, inc.sentTotal(to: nil) == 1, !inc.reconciliationIssues.isEmpty)
 
         // Duplicate tags and entered in error
         if let a = inc.patientIndex(ids[2]), let b = inc.patientIndex(ids[3]) {
@@ -5387,14 +5437,12 @@ enum MCIChecks {
             inc.patients[b].tag = "a 12"
         }
         let dupList = inc.patient(ids[2]).map { inc.duplicateTags(of: $0) } ?? []
-        check("Duplicate tags warn (normalised) without merging", dupList.map(\.id) == [ids[3]] && inc.patients.count == 5)
+        check("Duplicate tags warn (normalised) without merging", dupList.map(\.id) == [ids[3]], inc.patients.count == 5)
         let blocked = inc.markEnteredInError(ids[1], reason: "Duplicate", now: at(18), initials: "")
         let noReason = inc.markEnteredInError(ids[3], reason: " ", now: at(18), initials: "")
         let marked = inc.markEnteredInError(ids[3], reason: "Duplicate of P-003", now: at(18), initials: "")
-        check("Entered in Error needs a reason and is blocked by a valid departure",
-              blocked == .blockedByDeparture && noReason == .needsReason && marked == .marked)
-        check("Entered in Error is excluded from counts but kept",
-              inc.register().allTotal == 4 && inc.patients.count == 5 && inc.duplicateTags(of: inc.patient(ids[2])!).isEmpty)
+        check("Entered in Error needs a reason and is blocked by a valid departure", blocked == .blockedByDeparture, noReason == .needsReason, marked == .marked)
+        check("Entered in Error is excluded from counts but kept", inc.register().allTotal == 4, inc.patients.count == 5, inc.duplicateTags(of: inc.patient(ids[2])!).isEmpty)
         inc.restoreFromError(ids[3], now: at(19), initials: "")
         check("Entered in Error can be undone", inc.register().allTotal == 5)
 
@@ -5407,22 +5455,18 @@ enum MCIChecks {
         _ = inc.recordDeparture(id: UUID(), patientID: ids[4], hospitalID: h1, resourceID: nil, unitText: "Medic 102",
                                 category: .deceased, departedAt: at(21), retrospective: false, notes: "", now: at(21), initials: "")
         let lp = inc.latestPoll(h1)
-        check("Blank capacity is Unknown, explicit 0 is 0, and transports never change a poll",
-              lp?.immediate == nil && lp?.delayed == 0 && lp?.minor == 4 && !dupPoll && inc.polls.count == 1)
+        check("Blank capacity is Unknown, explicit 0 is 0, and transports never change a poll", lp?.immediate == nil, lp?.delayed == 0, lp?.minor == 4, !dupPoll, inc.polls.count == 1)
         check("Poll with no time has unknown age", MCIFmt.age(of: nil, now: at(30)) == "age unknown")
 
         // Mutual aid → staging → transport
         let aidID = inc.addAid(agency: "Lee County EMS", now: at(22), initials: "")
         let res1 = inc.stageAidArrival(aidID, now: at(30), initials: "")
         let res2 = inc.stageAidArrival(aidID, now: at(31), initials: "")
-        check("Aid arrival links one staging resource, never a copy",
-              res1 != nil && res1 == res2 && inc.resources.count == 1 && inc.availableResourceCount == 1
-                && inc.aid[0].status == .arrived && inc.resources[0].aidRequestID == aidID)
+        check("Aid arrival links one staging resource, never a copy", res1 != nil, res1 == res2, inc.resources.count == 1, inc.availableResourceCount == 1, inc.aid[0].status == .arrived, inc.resources[0].aidRequestID == aidID)
         let p6 = inc.addPatient(now: at(32), initials: "")
         _ = inc.recordDeparture(id: UUID(), patientID: p6, hospitalID: h2, resourceID: res1, unitText: "", category: .minor,
                                 departedAt: at(33), retrospective: false, notes: "", now: at(33), initials: "")
-        check("A resource used for transport is no longer counted available",
-              inc.resources[0].status == .transporting && inc.availableResourceCount == 0)
+        check("A resource used for transport is no longer counted available", inc.resources[0].status == .transporting, inc.availableResourceCount == 0)
         check("Duplicate resource identifiers are flagged", !inc.duplicateResources(identifier: "lee county ems", excluding: nil).isEmpty)
         _ = inc.addAid(agency: "Lee County EMS", now: at(34), initials: "")
         check("Repeat requests to one agency stay separate", inc.aid.count == 2)
@@ -5430,14 +5474,11 @@ enum MCIChecks {
         // Roles and checklist
         inc.assignRole("Incident Commander", person: "Unit A (fictitious)", agencyChannel: "", reportsTo: "", at: at(35), notes: "", now: at(35), initials: "")
         inc.assignRole("Incident Commander", person: "Unit B (fictitious)", agencyChannel: "", reportsTo: "", at: at(40), notes: "", now: at(40), initials: "")
-        check("Reassignment relieves the previous holder and keeps history",
-              inc.currentAssignment("Incident Commander")?.person == "Unit B (fictitious)" && inc.roles.count == 2
-                && inc.roles.first { $0.person == "Unit A (fictitious)" }?.relievedAt == at(40))
+        check("Reassignment relieves the previous holder and keeps history", inc.currentAssignment("Incident Commander")?.person == "Unit B (fictitious)", inc.roles.count == 2, inc.roles.first { $0.person == "Unit A (fictitious)" }?.relievedAt == at(40))
         let item = inc.checklist[0].id
         inc.setChecklist(item, .completed, at: at(41), now: at(41), initials: "")
         inc.setChecklist(item, .pending, at: at(42), now: at(42), initials: "")
-        check("Reversing a checklist item keeps both changes in history",
-              inc.checklist[0].completedAt == nil && inc.events.filter { $0.recordID == item }.count == 2)
+        check("Reversing a checklist item keeps both changes in history", inc.checklist[0].completedAt == nil, inc.events.filter { $0.recordID == item }.count == 2)
 
         // Multi-day time display
         let nextDay = inc.createdAt.addingTimeInterval(26 * 3600)
@@ -5452,8 +5493,7 @@ enum MCIChecks {
                               transform: .identity, mask: nil)
         inc.inks.append(MCIInk(id: UUID(), recordID: sk, fieldID: "sketch", drawing: PKDrawing(strokes: [stroke]).dataRepresentation(),
                                pageCount: 1, width: 1024, pageHeight: 792, updatedAt: at(43)))
-        check("Sketch stores template, page and fixed canvas size",
-              inc.sketches.first { $0.id == sk }.map { $0.template == .roadway && $0.canvasWidth == 1024 && $0.canvasHeight == 792 } ?? false)
+        check("Sketch stores template, page and fixed canvas size", inc.sketches.first { $0.id == sk }.map { $0.template == .roadway && $0.canvasWidth == 1024 && $0.canvasHeight == 792 } ?? false)
 
         // Overflow content for the packet
         let long = String(repeating: "Long complaint text for pagination checks. ", count: 24) + "MARKER-END"
@@ -5464,22 +5504,20 @@ enum MCIChecks {
                                     category: cats[k % 5], departedAt: at(60 + Double(k)), retrospective: false, notes: "", now: at(60 + Double(k)), initials: "")
         }
         if let i = inc.patients.indices.last { inc.patients[i].tag = "LAST-PATIENT-MARKER" }
-        check("More than 20 patients and 14 departures are tracked", inc.activePatients.count >= 26 && inc.departures.filter { !$0.voided }.count > 14)
+        check("More than 20 patients and 14 departures are tracked", inc.activePatients.count >= 26, inc.departures.filter { !$0.voided }.count > 14)
 
         let pdf = MCIPacketPDF.make(inc, store: nil, generatedAt: at(120))
         if let doc = PDFDocument(data: pdf) {
             let text = doc.string ?? ""
-            check("Incident Packet paginates", doc.pageCount >= 6, "Pages: \(doc.pageCount)")
+            check("Incident Packet paginates", doc.pageCount >= 6, detail: "Pages: \(doc.pageCount)")
             check("Packet includes the end of a 1,000-character complaint", text.contains("MARKER-END"))
             check("Packet includes the last patient row", text.contains("LAST-PATIENT-MARKER"))
-            check("Packet keeps reported count and register separate",
-                  text.contains("Reported Scene Count") && text.contains("Patient Register") && text.contains("AT DEPARTURE"))
+            check("Packet keeps reported count and register separate", text.contains("Reported Scene Count"), text.contains("Patient Register"), text.contains("AT DEPARTURE"))
             check("Packet pages are numbered with a total", text.contains("OF \(doc.pageCount)"))
-            check("Packet carries the source triage reference, labelled as reference only",
-                  text.contains("JUMPSTART") && text.contains("REFERENCE ONLY"))
+            check("Packet carries the source triage reference, labelled as reference only", text.contains("JUMPSTART"), text.contains("REFERENCE ONLY"))
             check("Packet is 11 × 17 like the board", doc.page(at: 0).map { $0.bounds(for: .mediaBox).width == 1224 } ?? false)
         } else {
-            check("Incident Packet opens", false, "The generated PDF could not be read.")
+            check("Incident Packet opens", false, detail: "The generated PDF could not be read.")
         }
 
         // Backup round trip
@@ -5488,16 +5526,13 @@ enum MCIChecks {
             let b = try MCIBackupCodec.decode(data)
             let problems = MCIBackupCodec.validate(b.incident)
             let copy = MCIBackupCodec.restoredCopy(b, now: at(131), initials: "")
-            check("Backup validates", problems.isEmpty, problems.joined(separator: "; "))
-            check("Restored copy is separate, read-only and has new IDs",
-                  copy.id != inc.id && copy.isClosed && Set(copy.patients.map(\.id)).isDisjoint(with: Set(inc.patients.map(\.id))))
+            check("Backup validates", problems.isEmpty, detail: problems.joined(separator: "; "))
+            check("Restored copy is separate, read-only and has new IDs", copy.id != inc.id, copy.isClosed, Set(copy.patients.map(\.id)).isDisjoint(with: Set(inc.patients.map(\.id))))
             let sentA = inc.patientsSent().values.map { $0.values.reduce(0, +) }.reduce(0, +)
             let sentB = copy.patientsSent().values.map { $0.values.reduce(0, +) }.reduce(0, +)
-            check("Restored copy keeps links, counts and ink",
-                  MCIBackupCodec.validate(copy).isEmpty && copy.register() == inc.register() && sentA == sentB
-                    && copy.inks.count == inc.inks.count && copy.resources[0].aidRequestID == copy.aid.first { $0.agency == "Lee County EMS" && $0.status == .arrived }?.id)
+            check("Restored copy keeps links, counts and ink", MCIBackupCodec.validate(copy).isEmpty, copy.register() == inc.register(), sentA == sentB, copy.inks.count == inc.inks.count, copy.resources[0].aidRequestID == copy.aid.first { $0.agency == "Lee County EMS" && $0.status == .arrived }?.id)
         } catch {
-            check("Backup round trip", false, "\(error)")
+            check("Backup round trip", false, detail: "\(error)")
         }
         var rejected = false
         do { _ = try MCIBackupCodec.decode(Data("{\"not\": \"a backup\"}".utf8)) } catch { rejected = true }
@@ -5507,8 +5542,7 @@ enum MCIChecks {
         inc.close(now: at(140), initials: "")
         let closedResult = inc.recordDeparture(id: UUID(), patientID: ids[2], hospitalID: h1, resourceID: nil, unitText: "", category: nil,
                                                departedAt: nil, retrospective: false, notes: "", now: at(141), initials: "")
-        check("Closing keeps every patient and blocks new departures",
-              inc.isClosed && closedResult == .closed && inc.patients.count == 26)
+        check("Closing keeps every patient and blocks new departures", inc.isClosed, closedResult == .closed, inc.patients.count == 26)
         return out
     }
 }
