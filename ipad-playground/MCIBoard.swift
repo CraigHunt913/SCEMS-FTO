@@ -2437,7 +2437,9 @@ struct MCIRootView: View {
                     MCIHomeView(path: $path)
                 }
             }
-            if scenePhase != .active {
+            // Cover only once the app is in the background (app switcher). Covering on "inactive"
+            // also fires during keyboard and system prompts, which can drop text-field focus.
+            if scenePhase == .background {
                 ZStack {
                     MCIStyle.navy.ignoresSafeArea()
                     VStack(spacing: 8) {
