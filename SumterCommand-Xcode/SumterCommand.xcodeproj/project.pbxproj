@@ -1,0 +1,749 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03D5377CC9C33BF4BCECEE34 /* ShiftBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7476B7D4DF9C566160007A7 /* ShiftBackup.swift */; };
+		086ABC8C78DCEB19850E97A7 /* SumterCommandApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C39F83CEAC226731E2C6013E /* SumterCommandApp.swift */; };
+		1097ABD60E3C117FFA95AA05 /* Sumter_EMS_MCI_Command_Board_11x17.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 2CDE1AE896C0865C535AD01F /* Sumter_EMS_MCI_Command_Board_11x17.pdf */; };
+		1252E94D342D285782D0AC32 /* MCISharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C0856942E5077155CF12F1 /* MCISharedViews.swift */; };
+		15288AB2FE2B20894CA38F1F /* ShiftExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5391908AED213F84265EAC /* ShiftExport.swift */; };
+		1C966AA87AB40B2FF17F2A3B /* PendingEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322594BEB4B0FF5B701FDA02 /* PendingEditorView.swift */; };
+		22A27FE531F8B19C062F65D5 /* ShiftSettingsAndChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B94854D8F3943F5EF8DB978 /* ShiftSettingsAndChecks.swift */; };
+		24104E8914BDE7180C555759 /* MCIIncidentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4A889F83DD9E9BAA02242E /* MCIIncidentView.swift */; };
+		33D7E803DBE378071C604A8E /* ShiftEditors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70212CBDE20046D7CC922B9A /* ShiftEditors.swift */; };
+		356B9AFE8A7C22D739B45D73 /* SumterCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B6A207B892807F65E2F1060 /* SumterCommandTests.swift */; };
+		39B0FD0BD5033DBA63B23957 /* MCITransportSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD33615927BBC7BEA8B9EBB6 /* MCITransportSection.swift */; };
+		3E5D4A389A23FA86292AD2CE /* ShiftHandwriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53FFAA5AE5A056F77F9F036E /* ShiftHandwriting.swift */; };
+		4526F949ED2F8E32CB2644F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC34D3068FD9B8C5493251FC /* Assets.xcassets */; };
+		4B35B64B8FBB9E9D46807C49 /* MCIChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7654DF72C35FD6B8D8DAE096 /* MCIChecks.swift */; };
+		4E8350C3AAC010B7A4C0B847 /* UnitEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1522FB57A0DD84293BBE2125 /* UnitEditorView.swift */; };
+		501662C7D7A7A02A7B7F7197 /* ShiftTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C73771E7C38E13008F186F0 /* ShiftTime.swift */; };
+		5FF650EC5F3CA9D23DEF0973 /* ShiftTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA5DEDE4EA126BE60BB7C25 /* ShiftTheme.swift */; };
+		628C82923983E052154F5311 /* MCIRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE597EBAAA8722D8C0C81A2 /* MCIRecords.swift */; };
+		62E981D710DCFA431BA7EB21 /* ShiftChoices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F93B732C7E49C3F9A4AD576 /* ShiftChoices.swift */; };
+		65DB51666BD5152888829135 /* MCIStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC54376AE5D3EFAE4A426554 /* MCIStyle.swift */; };
+		6AE5D15551DAE73F66838AC6 /* ShiftHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEC5F1A1DD579CFDD3790BAF /* ShiftHomeView.swift */; };
+		6B8A48079E449B6B95022EA0 /* MCIIncidentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1937278E6448E51CD2288A9B /* MCIIncidentRules.swift */; };
+		6DB6FA393AC6A67BE7A856BB /* MCIStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D9EAC70244B9B97D6EA7A2 /* MCIStore.swift */; };
+		77123608CA4E6BBE655F39A2 /* Sumter_EMS_Scene_Sketch_Cards.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 5BA044E55374912C94234275 /* Sumter_EMS_Scene_Sketch_Cards.pdf */; };
+		7F34216F88E7721F3543722A /* MCISketchSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E159B78B75B17AD65B7E8F4 /* MCISketchSection.swift */; };
+		80A07F62621D68B9745B8142 /* TriageCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A561CEA301948EE3F559789 /* TriageCategory.swift */; };
+		85F1B866221ACF41C3E0F864 /* MCIHandwriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A22747D0E2978B370AA205 /* MCIHandwriting.swift */; };
+		8ACA6A53413C41F0CE6C435D /* ShiftSharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA1214B78B96E3A2B4A878F /* ShiftSharedViews.swift */; };
+		909C77951DDB1A75E8BB3414 /* MCIHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ED3D8BED5BDCD2EC038E77 /* MCIHomeView.swift */; };
+		90DCB14360FC6281306C279F /* MCISourceBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1325A26CF498B6AE042EC7 /* MCISourceBoard.swift */; };
+		94ABD2EE23253EA31890AC26 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2897445EAB1A5766F6E2016D /* BoardView.swift */; };
+		99C52DAA0A61098B9507CF8A /* ShiftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D5DD7E73002A000E6D946A /* ShiftStore.swift */; };
+		9C3B5EDDD6A44F6744E3DE49 /* ShiftRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 931D66414B3E5FC704E3C0EA /* ShiftRules.swift */; };
+		A6123D5099AB46A6ADB57690 /* MCIStagingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12BEF372E6B84161262E2514 /* MCIStagingSection.swift */; };
+		BFEDF58E062CBAA442CD86AD /* MCIHospitalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 926BA35B4CCBFE7BDE814385 /* MCIHospitalsSection.swift */; };
+		C6C98100A4010B72F6DE89C0 /* BoardCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4369C6507A936D20F40FF77F /* BoardCounts.swift */; };
+		C79375A335DD80BEFF4E1825 /* MCICommandSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD39C49C9DAB0DC8C265B27 /* MCICommandSection.swift */; };
+		CF3F3EAD34728F223C7030FE /* ShiftRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65308457508DE9E4379280B2 /* ShiftRecords.swift */; };
+		D5E6C9C7ED0E21E521B9D92D /* MCITriageSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4000D888BDD9EF660C158E9 /* MCITriageSection.swift */; };
+		DA58649146B4660C9750FD7C /* MCIPacketPDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1E9BE2A24610DA016BF10B /* MCIPacketPDF.swift */; };
+		DF42B3A28E8C679297B682A2 /* MCIOverviewSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0382F33EDC6BF779A254E79 /* MCIOverviewSection.swift */; };
+		E026F877646019B9370E7D43 /* ShiftRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6703D0A96249E3CE5B874AA3 /* ShiftRootView.swift */; };
+		E39E6454549BA8AD8F1EB68D /* MCITime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64990982AB69DF1418B09DDF /* MCITime.swift */; };
+		EC3D94B9998688240E32B0A3 /* MCISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35BC9483D972FFF3641B2D5 /* MCISettingsView.swift */; };
+		FBD7EDC86971C006845EE440 /* MCIBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07913C8EBD459AA3FD59A5A /* MCIBackup.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DEAED1F4BE792FD96D67C89A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 78FA1781E12CA4D08EEE9CD0 /* SumterCommand */;
+			remoteInfo = SumterCommand;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		12BEF372E6B84161262E2514 /* MCIStagingSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIStagingSection.swift; sourceTree = "<group>"; };
+		1522FB57A0DD84293BBE2125 /* UnitEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnitEditorView.swift; sourceTree = "<group>"; };
+		1937278E6448E51CD2288A9B /* MCIIncidentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIIncidentRules.swift; sourceTree = "<group>"; };
+		1A561CEA301948EE3F559789 /* TriageCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageCategory.swift; sourceTree = "<group>"; };
+		2897445EAB1A5766F6E2016D /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
+		29C0856942E5077155CF12F1 /* MCISharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCISharedViews.swift; sourceTree = "<group>"; };
+		2CDE1AE896C0865C535AD01F /* Sumter_EMS_MCI_Command_Board_11x17.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Sumter_EMS_MCI_Command_Board_11x17.pdf; sourceTree = "<group>"; };
+		322594BEB4B0FF5B701FDA02 /* PendingEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingEditorView.swift; sourceTree = "<group>"; };
+		3AA1214B78B96E3A2B4A878F /* ShiftSharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftSharedViews.swift; sourceTree = "<group>"; };
+		3B94854D8F3943F5EF8DB978 /* ShiftSettingsAndChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftSettingsAndChecks.swift; sourceTree = "<group>"; };
+		3C4A889F83DD9E9BAA02242E /* MCIIncidentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIIncidentView.swift; sourceTree = "<group>"; };
+		3F93B732C7E49C3F9A4AD576 /* ShiftChoices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftChoices.swift; sourceTree = "<group>"; };
+		4369C6507A936D20F40FF77F /* BoardCounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCounts.swift; sourceTree = "<group>"; };
+		4B5391908AED213F84265EAC /* ShiftExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftExport.swift; sourceTree = "<group>"; };
+		4B6A207B892807F65E2F1060 /* SumterCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SumterCommandTests.swift; sourceTree = "<group>"; };
+		53FFAA5AE5A056F77F9F036E /* ShiftHandwriting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftHandwriting.swift; sourceTree = "<group>"; };
+		54A22747D0E2978B370AA205 /* MCIHandwriting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIHandwriting.swift; sourceTree = "<group>"; };
+		5BA044E55374912C94234275 /* Sumter_EMS_Scene_Sketch_Cards.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Sumter_EMS_Scene_Sketch_Cards.pdf; sourceTree = "<group>"; };
+		5E159B78B75B17AD65B7E8F4 /* MCISketchSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCISketchSection.swift; sourceTree = "<group>"; };
+		64990982AB69DF1418B09DDF /* MCITime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCITime.swift; sourceTree = "<group>"; };
+		65308457508DE9E4379280B2 /* ShiftRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRecords.swift; sourceTree = "<group>"; };
+		6703D0A96249E3CE5B874AA3 /* ShiftRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRootView.swift; sourceTree = "<group>"; };
+		6AA5DEDE4EA126BE60BB7C25 /* ShiftTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftTheme.swift; sourceTree = "<group>"; };
+		6DD39C49C9DAB0DC8C265B27 /* MCICommandSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCICommandSection.swift; sourceTree = "<group>"; };
+		70212CBDE20046D7CC922B9A /* ShiftEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftEditors.swift; sourceTree = "<group>"; };
+		7654DF72C35FD6B8D8DAE096 /* MCIChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIChecks.swift; sourceTree = "<group>"; };
+		7C73771E7C38E13008F186F0 /* ShiftTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftTime.swift; sourceTree = "<group>"; };
+		82D9EAC70244B9B97D6EA7A2 /* MCIStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIStore.swift; sourceTree = "<group>"; };
+		82ED3D8BED5BDCD2EC038E77 /* MCIHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIHomeView.swift; sourceTree = "<group>"; };
+		8FE6301FB5ADDA567DE4909B /* SumterCommand.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SumterCommand.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		926BA35B4CCBFE7BDE814385 /* MCIHospitalsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIHospitalsSection.swift; sourceTree = "<group>"; };
+		931D66414B3E5FC704E3C0EA /* ShiftRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRules.swift; sourceTree = "<group>"; };
+		9D1325A26CF498B6AE042EC7 /* MCISourceBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCISourceBoard.swift; sourceTree = "<group>"; };
+		A07913C8EBD459AA3FD59A5A /* MCIBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIBackup.swift; sourceTree = "<group>"; };
+		A7476B7D4DF9C566160007A7 /* ShiftBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftBackup.swift; sourceTree = "<group>"; };
+		AC34D3068FD9B8C5493251FC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B4000D888BDD9EF660C158E9 /* MCITriageSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCITriageSection.swift; sourceTree = "<group>"; };
+		B6D5DD7E73002A000E6D946A /* ShiftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftStore.swift; sourceTree = "<group>"; };
+		BC54376AE5D3EFAE4A426554 /* MCIStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIStyle.swift; sourceTree = "<group>"; };
+		BD33615927BBC7BEA8B9EBB6 /* MCITransportSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCITransportSection.swift; sourceTree = "<group>"; };
+		BFE597EBAAA8722D8C0C81A2 /* MCIRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIRecords.swift; sourceTree = "<group>"; };
+		C0382F33EDC6BF779A254E79 /* MCIOverviewSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIOverviewSection.swift; sourceTree = "<group>"; };
+		C35BC9483D972FFF3641B2D5 /* MCISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCISettingsView.swift; sourceTree = "<group>"; };
+		C39F83CEAC226731E2C6013E /* SumterCommandApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SumterCommandApp.swift; sourceTree = "<group>"; };
+		CD1E9BE2A24610DA016BF10B /* MCIPacketPDF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCIPacketPDF.swift; sourceTree = "<group>"; };
+		D42F6C64563D5A11EE5E45D4 /* SumterCommandTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SumterCommandTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EEC5F1A1DD579CFDD3790BAF /* ShiftHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftHomeView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		13016A86624FA7ACA19A7C1D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		58758D507F266DED3D535DAB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		08FDC99CF9C0D50D3F0F5938 /* Ink */ = {
+			isa = PBXGroup;
+			children = (
+				53FFAA5AE5A056F77F9F036E /* ShiftHandwriting.swift */,
+			);
+			path = Ink;
+			sourceTree = "<group>";
+		};
+		1921ED2B8E9C09EDA088AC9E /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				A07913C8EBD459AA3FD59A5A /* MCIBackup.swift */,
+				82D9EAC70244B9B97D6EA7A2 /* MCIStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		25899EBE434243194F649057 /* Rules */ = {
+			isa = PBXGroup;
+			children = (
+				4369C6507A936D20F40FF77F /* BoardCounts.swift */,
+				931D66414B3E5FC704E3C0EA /* ShiftRules.swift */,
+			);
+			path = Rules;
+			sourceTree = "<group>";
+		};
+		2A02F547DA310F327E016A19 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				3AA1214B78B96E3A2B4A878F /* ShiftSharedViews.swift */,
+				6AA5DEDE4EA126BE60BB7C25 /* ShiftTheme.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		3B30D76CC22C3BC41A24FA9E /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				3F93B732C7E49C3F9A4AD576 /* ShiftChoices.swift */,
+				65308457508DE9E4379280B2 /* ShiftRecords.swift */,
+				7C73771E7C38E13008F186F0 /* ShiftTime.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		43327175E3C0E96DAA29407D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8FE6301FB5ADDA567DE4909B /* SumterCommand.app */,
+				D42F6C64563D5A11EE5E45D4 /* SumterCommandTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		58104C881825136E49CAA90D /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				C35BC9483D972FFF3641B2D5 /* MCISettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		66ADC382DA4DC6DC7D4A96AB = {
+			isa = PBXGroup;
+			children = (
+				EC5023B089197F402F970B98 /* SumterCommand */,
+				AB10262557CD71480F6B4E9B /* SumterCommandTests */,
+				43327175E3C0E96DAA29407D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6747F400ACC168F9796978E4 /* SharedUI */ = {
+			isa = PBXGroup;
+			children = (
+				29C0856942E5077155CF12F1 /* MCISharedViews.swift */,
+				BC54376AE5D3EFAE4A426554 /* MCIStyle.swift */,
+			);
+			path = SharedUI;
+			sourceTree = "<group>";
+		};
+		6D366CA5570E37634DB13EFD /* Export */ = {
+			isa = PBXGroup;
+			children = (
+				CD1E9BE2A24610DA016BF10B /* MCIPacketPDF.swift */,
+			);
+			path = Export;
+			sourceTree = "<group>";
+		};
+		7332849B90A3BC0825970CF4 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				7654DF72C35FD6B8D8DAE096 /* MCIChecks.swift */,
+			);
+			path = Diagnostics;
+			sourceTree = "<group>";
+		};
+		74AD671F047E6A819ED1CD0E /* Ink */ = {
+			isa = PBXGroup;
+			children = (
+				54A22747D0E2978B370AA205 /* MCIHandwriting.swift */,
+			);
+			path = Ink;
+			sourceTree = "<group>";
+		};
+		8335E543D23AC24519C1D61C /* Board */ = {
+			isa = PBXGroup;
+			children = (
+				2897445EAB1A5766F6E2016D /* BoardView.swift */,
+				322594BEB4B0FF5B701FDA02 /* PendingEditorView.swift */,
+				70212CBDE20046D7CC922B9A /* ShiftEditors.swift */,
+				1522FB57A0DD84293BBE2125 /* UnitEditorView.swift */,
+			);
+			path = Board;
+			sourceTree = "<group>";
+		};
+		858215C13CD3B7AF79ABBEA2 /* Rules */ = {
+			isa = PBXGroup;
+			children = (
+				1937278E6448E51CD2288A9B /* MCIIncidentRules.swift */,
+			);
+			path = Rules;
+			sourceTree = "<group>";
+		};
+		8BD22A693BE036A248B87D9F /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				A7476B7D4DF9C566160007A7 /* ShiftBackup.swift */,
+				B6D5DD7E73002A000E6D946A /* ShiftStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		9026491342F4E3E37B7C8CE8 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				EEC5F1A1DD579CFDD3790BAF /* ShiftHomeView.swift */,
+				6703D0A96249E3CE5B874AA3 /* ShiftRootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		AB10262557CD71480F6B4E9B /* SumterCommandTests */ = {
+			isa = PBXGroup;
+			children = (
+				4B6A207B892807F65E2F1060 /* SumterCommandTests.swift */,
+			);
+			path = SumterCommandTests;
+			sourceTree = "<group>";
+		};
+		B4B33AA5410379E111692BB1 /* ShiftBoard */ = {
+			isa = PBXGroup;
+			children = (
+				9026491342F4E3E37B7C8CE8 /* App */,
+				8335E543D23AC24519C1D61C /* Board */,
+				FC286C6131DDC12E10D33F19 /* Export */,
+				08FDC99CF9C0D50D3F0F5938 /* Ink */,
+				3B30D76CC22C3BC41A24FA9E /* Models */,
+				8BD22A693BE036A248B87D9F /* Persistence */,
+				25899EBE434243194F649057 /* Rules */,
+				FEAA96174A9BA8097FE47932 /* Settings */,
+				2A02F547DA310F327E016A19 /* Shared */,
+			);
+			path = ShiftBoard;
+			sourceTree = "<group>";
+		};
+		D1CF6C3E25023C5970BD9541 /* MCI */ = {
+			isa = PBXGroup;
+			children = (
+				F32469990234A7E7792BFB64 /* App */,
+				7332849B90A3BC0825970CF4 /* Diagnostics */,
+				6D366CA5570E37634DB13EFD /* Export */,
+				DFC6EAB6A479F44EB5DAFCAB /* Incident */,
+				74AD671F047E6A819ED1CD0E /* Ink */,
+				E9926B92DD4E742BA561D666 /* Models */,
+				1921ED2B8E9C09EDA088AC9E /* Persistence */,
+				858215C13CD3B7AF79ABBEA2 /* Rules */,
+				58104C881825136E49CAA90D /* Settings */,
+				6747F400ACC168F9796978E4 /* SharedUI */,
+				E5DB8E3ED61C0CE2FE8B46E1 /* SourceBoard */,
+			);
+			path = MCI;
+			sourceTree = "<group>";
+		};
+		DFC6EAB6A479F44EB5DAFCAB /* Incident */ = {
+			isa = PBXGroup;
+			children = (
+				6DD39C49C9DAB0DC8C265B27 /* MCICommandSection.swift */,
+				926BA35B4CCBFE7BDE814385 /* MCIHospitalsSection.swift */,
+				3C4A889F83DD9E9BAA02242E /* MCIIncidentView.swift */,
+				C0382F33EDC6BF779A254E79 /* MCIOverviewSection.swift */,
+				5E159B78B75B17AD65B7E8F4 /* MCISketchSection.swift */,
+				12BEF372E6B84161262E2514 /* MCIStagingSection.swift */,
+				BD33615927BBC7BEA8B9EBB6 /* MCITransportSection.swift */,
+				B4000D888BDD9EF660C158E9 /* MCITriageSection.swift */,
+			);
+			path = Incident;
+			sourceTree = "<group>";
+		};
+		E5DB8E3ED61C0CE2FE8B46E1 /* SourceBoard */ = {
+			isa = PBXGroup;
+			children = (
+				9D1325A26CF498B6AE042EC7 /* MCISourceBoard.swift */,
+			);
+			path = SourceBoard;
+			sourceTree = "<group>";
+		};
+		E877B303F175D0BC793E46C5 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				C39F83CEAC226731E2C6013E /* SumterCommandApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		E9926B92DD4E742BA561D666 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				BFE597EBAAA8722D8C0C81A2 /* MCIRecords.swift */,
+				64990982AB69DF1418B09DDF /* MCITime.swift */,
+				1A561CEA301948EE3F559789 /* TriageCategory.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		EC5023B089197F402F970B98 /* SumterCommand */ = {
+			isa = PBXGroup;
+			children = (
+				E877B303F175D0BC793E46C5 /* App */,
+				D1CF6C3E25023C5970BD9541 /* MCI */,
+				FBABF6EB9C632BBA5B7821DF /* Resources */,
+				B4B33AA5410379E111692BB1 /* ShiftBoard */,
+			);
+			path = SumterCommand;
+			sourceTree = "<group>";
+		};
+		F32469990234A7E7792BFB64 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				82ED3D8BED5BDCD2EC038E77 /* MCIHomeView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		FBABF6EB9C632BBA5B7821DF /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AC34D3068FD9B8C5493251FC /* Assets.xcassets */,
+				2CDE1AE896C0865C535AD01F /* Sumter_EMS_MCI_Command_Board_11x17.pdf */,
+				5BA044E55374912C94234275 /* Sumter_EMS_Scene_Sketch_Cards.pdf */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		FC286C6131DDC12E10D33F19 /* Export */ = {
+			isa = PBXGroup;
+			children = (
+				4B5391908AED213F84265EAC /* ShiftExport.swift */,
+			);
+			path = Export;
+			sourceTree = "<group>";
+		};
+		FEAA96174A9BA8097FE47932 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				3B94854D8F3943F5EF8DB978 /* ShiftSettingsAndChecks.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		78FA1781E12CA4D08EEE9CD0 /* SumterCommand */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4E95DCF7A413ED9C2F938D0D /* Build configuration list for PBXNativeTarget "SumterCommand" */;
+			buildPhases = (
+				68BC6B12E87F55AB1751BF41 /* Sources */,
+				58758D507F266DED3D535DAB /* Frameworks */,
+				DDC76EF00921F1CCE37AF749 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SumterCommand;
+			productName = SumterCommand;
+			productReference = 8FE6301FB5ADDA567DE4909B /* SumterCommand.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8AD524F7AFB130F2D623B5AA /* SumterCommandTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 829FE2EC02E203E5C6A29891 /* Build configuration list for PBXNativeTarget "SumterCommandTests" */;
+			buildPhases = (
+				979FB68645E321880D8152DD /* Sources */,
+				13016A86624FA7ACA19A7C1D /* Frameworks */,
+				2CE264082C5EF907A9E5F174 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				859B11099869E62E7541218C /* PBXTargetDependency */,
+			);
+			name = SumterCommandTests;
+			productName = SumterCommandTests;
+			productReference = D42F6C64563D5A11EE5E45D4 /* SumterCommandTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					78FA1781E12CA4D08EEE9CD0 /* SumterCommand */ = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					8AD524F7AFB130F2D623B5AA /* SumterCommandTests */ = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = 78FA1781E12CA4D08EEE9CD0 /* SumterCommand */;
+					};
+				};
+			};
+			buildConfigurationList = 812314D856B639773231C926 /* Build configuration list for PBXProject "SumterCommand" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 66ADC382DA4DC6DC7D4A96AB;
+			productRefGroup = 43327175E3C0E96DAA29407D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				78FA1781E12CA4D08EEE9CD0 /* SumterCommand */,
+				8AD524F7AFB130F2D623B5AA /* SumterCommandTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2CE264082C5EF907A9E5F174 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DDC76EF00921F1CCE37AF749 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4526F949ED2F8E32CB2644F9 /* Assets.xcassets in Resources */,
+				1097ABD60E3C117FFA95AA05 /* Sumter_EMS_MCI_Command_Board_11x17.pdf in Resources */,
+				77123608CA4E6BBE655F39A2 /* Sumter_EMS_Scene_Sketch_Cards.pdf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		68BC6B12E87F55AB1751BF41 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				086ABC8C78DCEB19850E97A7 /* SumterCommandApp.swift in Sources */,
+				909C77951DDB1A75E8BB3414 /* MCIHomeView.swift in Sources */,
+				4B35B64B8FBB9E9D46807C49 /* MCIChecks.swift in Sources */,
+				DA58649146B4660C9750FD7C /* MCIPacketPDF.swift in Sources */,
+				C79375A335DD80BEFF4E1825 /* MCICommandSection.swift in Sources */,
+				BFEDF58E062CBAA442CD86AD /* MCIHospitalsSection.swift in Sources */,
+				24104E8914BDE7180C555759 /* MCIIncidentView.swift in Sources */,
+				DF42B3A28E8C679297B682A2 /* MCIOverviewSection.swift in Sources */,
+				7F34216F88E7721F3543722A /* MCISketchSection.swift in Sources */,
+				A6123D5099AB46A6ADB57690 /* MCIStagingSection.swift in Sources */,
+				39B0FD0BD5033DBA63B23957 /* MCITransportSection.swift in Sources */,
+				D5E6C9C7ED0E21E521B9D92D /* MCITriageSection.swift in Sources */,
+				85F1B866221ACF41C3E0F864 /* MCIHandwriting.swift in Sources */,
+				628C82923983E052154F5311 /* MCIRecords.swift in Sources */,
+				E39E6454549BA8AD8F1EB68D /* MCITime.swift in Sources */,
+				80A07F62621D68B9745B8142 /* TriageCategory.swift in Sources */,
+				FBD7EDC86971C006845EE440 /* MCIBackup.swift in Sources */,
+				6DB6FA393AC6A67BE7A856BB /* MCIStore.swift in Sources */,
+				6B8A48079E449B6B95022EA0 /* MCIIncidentRules.swift in Sources */,
+				EC3D94B9998688240E32B0A3 /* MCISettingsView.swift in Sources */,
+				1252E94D342D285782D0AC32 /* MCISharedViews.swift in Sources */,
+				65DB51666BD5152888829135 /* MCIStyle.swift in Sources */,
+				90DCB14360FC6281306C279F /* MCISourceBoard.swift in Sources */,
+				6AE5D15551DAE73F66838AC6 /* ShiftHomeView.swift in Sources */,
+				E026F877646019B9370E7D43 /* ShiftRootView.swift in Sources */,
+				94ABD2EE23253EA31890AC26 /* BoardView.swift in Sources */,
+				1C966AA87AB40B2FF17F2A3B /* PendingEditorView.swift in Sources */,
+				33D7E803DBE378071C604A8E /* ShiftEditors.swift in Sources */,
+				4E8350C3AAC010B7A4C0B847 /* UnitEditorView.swift in Sources */,
+				15288AB2FE2B20894CA38F1F /* ShiftExport.swift in Sources */,
+				3E5D4A389A23FA86292AD2CE /* ShiftHandwriting.swift in Sources */,
+				62E981D710DCFA431BA7EB21 /* ShiftChoices.swift in Sources */,
+				CF3F3EAD34728F223C7030FE /* ShiftRecords.swift in Sources */,
+				501662C7D7A7A02A7B7F7197 /* ShiftTime.swift in Sources */,
+				03D5377CC9C33BF4BCECEE34 /* ShiftBackup.swift in Sources */,
+				99C52DAA0A61098B9507CF8A /* ShiftStore.swift in Sources */,
+				C6C98100A4010B72F6DE89C0 /* BoardCounts.swift in Sources */,
+				9C3B5EDDD6A44F6744E3DE49 /* ShiftRules.swift in Sources */,
+				22A27FE531F8B19C062F65D5 /* ShiftSettingsAndChecks.swift in Sources */,
+				8ACA6A53413C41F0CE6C435D /* ShiftSharedViews.swift in Sources */,
+				5FF650EC5F3CA9D23DEF0973 /* ShiftTheme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		979FB68645E321880D8152DD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				356B9AFE8A7C22D739B45D73 /* SumterCommandTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		859B11099869E62E7541218C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 78FA1781E12CA4D08EEE9CD0 /* SumterCommand */;
+			targetProxy = DEAED1F4BE792FD96D67C89A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		08A8D745E6D2F7503EE67BD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		44D3323D9E0FBC44342D5AD1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		4CA26ACABF605583C254D7F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Sumter EMS Command";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sumterems.SumterCommand;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		68D42B3298C9AAAADF70ACD7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sumterems.SumterCommandTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SumterCommand.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SumterCommand";
+			};
+			name = Debug;
+		};
+		6FD5ECC5D0DEBC7C7872EEB4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sumterems.SumterCommandTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SumterCommand.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SumterCommand";
+			};
+			name = Release;
+		};
+		C9850A0C9D3D462CEF0DF730 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Sumter EMS Command";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sumterems.SumterCommand;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4E95DCF7A413ED9C2F938D0D /* Build configuration list for PBXNativeTarget "SumterCommand" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4CA26ACABF605583C254D7F9 /* Debug */,
+				C9850A0C9D3D462CEF0DF730 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		812314D856B639773231C926 /* Build configuration list for PBXProject "SumterCommand" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08A8D745E6D2F7503EE67BD5 /* Debug */,
+				44D3323D9E0FBC44342D5AD1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		829FE2EC02E203E5C6A29891 /* Build configuration list for PBXNativeTarget "SumterCommandTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				68D42B3298C9AAAADF70ACD7 /* Debug */,
+				6FD5ECC5D0DEBC7C7872EEB4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
